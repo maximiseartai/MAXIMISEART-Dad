@@ -753,6 +753,20 @@ def test_format_logow_uruchomienia_nie_wczytuje_gospodarza_uruchomien_ani_diagno
     )
 
 
+def test_pakiet_ustawien_centrum_nie_wczytuje_przy_imporcie_zadnego_modulu_src() -> None:
+    found = _chains("rozliczenia/centrum/settings/__init__.py", lambda module: _file_of(module) is not None)
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Pakiet rozliczenia.centrum.settings nie wczytuje przy imporcie żadnego modułu src, bo moduł, który bierze z "
+            "niego tylko nazwę pliku albo typ (WORKERS_FILE, FieldPath), nie może przez to zależeć od właściciela Ustawień "
+            "ani od zapisu plików (atomic_file). Importuj nazwę z jej modułu (rozliczenia.centrum.settings.workers), "
+            "nie z pakietu.",
+        ]
+    )
+
+
 def _is_outside_catalog(module: str) -> bool:
     return module in NOT_IN_CATALOG or module.split(".")[0] in SERVER_LIBRARIES
 

@@ -1,16 +1,3 @@
-"""Lista Wykonawców w pliku ``wykonawcy.yaml`` (schemat 1): Wykonawcy i to, co tata ma rozstrzygnąć po przeniesieniu
-starych plików (``do_rozstrzygniecia``).
-
-Kształt pliku sprawdza ``parse`` (mapa, schemat, znane pola, typy), a reguły Listy Wykonawców ``WorkerList.of``, ta sama
-budowa co w silniku. Brak pliku to pusta lista. Zdanie złego ustawienia nie ma nazwy, loginu ani adresu, bo trafia do
-Historii Ustawień i do Zgłoszenia; miejsce mówi pole (``wykonawcy[2].adresy[0]``), złożone tylko ze znanych nazw pól i
-numerów (``FieldPath``), a nieznane pole jego numer, bo stary kształt wpisu (``login: Nazwa``) ma login w miejscu pola.
-
-Klucz Historii wpisu to ``wykonawcy[<login>]`` z jednym z jego loginów, a wartość przed i po to cały wpis; wpisy przed i
-po paruje wspólny login, bo login należy do jednego Wykonawcy. Zgłoszenie i Logi Centrum dostają tylko, co się zmieniło,
-bez loginu, nazwy i adresu (D4 projektu Ustawień).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -43,7 +30,6 @@ from rozliczenia.text import normalize_text
 from rozliczenia.worker_reports import Login, SenderAddress
 
 WORKERS_FILE: Final = "wykonawcy.yaml"
-"""Plik Listy Wykonawców w ``config``; czyta go i pisze tylko ``rozliczenia.centrum.settings``."""
 
 SECTION: Final = "wykonawcy"
 _SCHEMA_VERSION: Final = 1
@@ -70,8 +56,6 @@ Document = dict[str, object]
 
 
 def parse(data: bytes | None) -> WorkerList | FieldProblem:
-    """Lista Wykonawców z bajtów pliku; ``None`` (brak pliku) to pusta lista, zła treść to pierwszy problem."""
-
     if data is None:
         return WorkerList(())
     try:
@@ -132,8 +116,6 @@ def _bad(place: FieldPath) -> FieldProblem:
 
 
 def _texts(value: object, first: FieldName, *rest: FieldName | int) -> list[str] | FieldProblem:
-    """Lista tekstów pola w miejscu ``first, *rest``; liczba albo pusta wartość w liście to zły wpis tego miejsca."""
-
     if not isinstance(value, list):
         return _bad(FieldPath(first, *rest))
     for index, item in enumerate(value):
@@ -210,9 +192,6 @@ def _unresolved_entry(item: Unresolved) -> Document:
 
 
 def diff(before: WorkerList, after: WorkerList) -> tuple[KeyChange, ...]:
-    """Klucz na każdy dodany, usunięty albo zmieniony wpis (w kolejności listy po zmianie, potem usunięte) i jeden na
-    zmienione ``do_rozstrzygniecia``."""
-
     changes: list[KeyChange] = []
     paired: set[int] = set()
     for worker in after.workers:
@@ -251,10 +230,6 @@ def _unresolved_text(workers: WorkerList) -> str | None:
 
 
 def restore(workers: WorkerList, changes: tuple[KeyChange, ...]) -> WorkerList:
-    """``workers`` z każdym wpisem ``changes`` ustawionym na wpis sprzed zmiany: wpis z loginem z klucza albo z wpisu
-    przed i po zmianie znika, a wpis sprzed zmiany wraca na jego miejsce (usunięty na koniec). Nieznany klucz zostaje bez
-    zmian; listę sprawdza właściciel jak każdą zmianę."""
-
     entries = [_entry(worker) for worker in workers.workers]
     unresolved = [_unresolved_entry(item) for item in workers.unresolved]
     for change in changes:
@@ -299,22 +274,16 @@ def _listed(entry: Document) -> list[str]:
 
 @dataclass(frozen=True)
 class WorkerForm:
-    """Wykonawca z formularza sekcji Wykonawcy przed sprawdzeniem: loginy, nazwa i adresy tak, jak je wpisał tata."""
-
     logins: Sequence[str]
     name: str
     addresses: Sequence[str]
 
 
 def added(current: WorkerList, form: WorkerForm) -> WorkerList | FieldProblem:
-    """Lista z nowym Wykonawcą na końcu, aktywnym i z Przypomnieniami o raporcie."""
-
     return _with(current, None, WorkerEntry(form.logins, form.name, form.addresses))
 
 
 def edited(current: WorkerList, login: str, form: WorkerForm) -> WorkerList | FieldProblem:
-    """Lista z Wykonawcą, który ma login ``login``, zmienionym według formularza; przełączniki zostają."""
-
     index = _index(current, login)
     if index is None:
         return FieldProblem(None, messages.worker_unknown())
@@ -323,10 +292,6 @@ def edited(current: WorkerList, login: str, form: WorkerForm) -> WorkerList | Fi
 
 
 def address_assigned(current: WorkerList, login: str, address: str) -> WorkerList | FieldProblem:
-    """Lista z adresem nieznanego nadawcy ``address`` dopisanym na końcu adresów Wykonawcy z loginem ``login`` („Przypisz
-    do Wykonawcy…”) tymi samymi regułami co formularz: adres innego Wykonawcy albo zły adres to odmowa przy polu
-    ``adresy[i]``. Adres, który ten Wykonawca już ma, niczego nie zmienia."""
-
     index = _index(current, login)
     if index is None:
         return FieldProblem(None, messages.worker_unknown())
@@ -338,9 +303,6 @@ def address_assigned(current: WorkerList, login: str, address: str) -> WorkerLis
 
 
 def switched(current: WorkerList, login: str, *, active: bool | None, reminders: bool | None) -> WorkerList | FieldProblem:
-    """Lista z przełącznikiem Nieaktywnego Wykonawcy (``active``) albo jego Przypomnień o raporcie (``reminders``)
-    zmienionym; ``None`` zostawia przełącznik."""
-
     index = _index(current, login)
     if index is None:
         return FieldProblem(None, messages.worker_unknown())
@@ -360,8 +322,6 @@ def switched(current: WorkerList, login: str, *, active: bool | None, reminders:
 
 
 def removed(current: WorkerList, login: str) -> WorkerList | FieldProblem:
-    """Lista bez Wykonawcy z loginem ``login``."""
-
     index = _index(current, login)
     if index is None:
         return FieldProblem(None, messages.worker_unknown())
@@ -399,13 +359,9 @@ class RemoveWorker:
 
 
 WorkersEdit = AddWorker | ChangeWorker | AssignAddress | SwitchWorker | RemoveWorker
-"""Zmiana taty Listy Wykonawców z sekcji Wykonawcy albo widoku Raporty, którą zapisuje właściciel Ustawień
-(``dad_workers``)."""
 
 
 def dad_workers(current: WorkerList, edit: WorkersEdit) -> WorkerList | FieldProblem:
-    """Lista Wykonawców po zmianie taty ``edit`` albo odmowa z polem formularza."""
-
     match edit:
         case AddWorker(form=form):
             return added(current, form)
@@ -422,10 +378,6 @@ def dad_workers(current: WorkerList, edit: WorkersEdit) -> WorkerList | FieldPro
 
 
 def removed_logins(before: WorkerList, after: WorkerList) -> RemovedLogins | None:
-    """Loginy Wykonawców z ``before``, których w ``after`` nie ma u żadnego Wykonawcy (``None``: żadnego), z ``worker``,
-    gdy lista ma po zmianie mniej Wykonawców: tak usuwa formularz, „Usuń Wykonawcę” i „Cofnij” dodania albo dopisania
-    loginu."""
-
     staying = {login for worker in after.workers for login in worker.logins}
     logins = frozenset(login for worker in before.workers for login in worker.logins if login not in staying)
     if not logins:
@@ -434,8 +386,6 @@ def removed_logins(before: WorkerList, after: WorkerList) -> RemovedLogins | Non
 
 
 def worker_of(workers: WorkerList, login: str) -> Worker | None:
-    """Wykonawca z loginem ``login`` (po ``normalize_text``)."""
-
     index = _index(workers, login)
     return None if index is None else workers.workers[index]
 
@@ -450,11 +400,6 @@ def _as_entry(worker: Worker) -> WorkerEntry:
 
 
 def _with(current: WorkerList, index: int | None, entry: WorkerEntry) -> WorkerList | FieldProblem:
-    """Lista z ``entry`` na miejscu ``index`` (``None``: na końcu). Reguły sprawdza ``WorkerList.of`` z ``entry`` na końcu,
-    więc login, adres albo nazwa, które ma już inny Wykonawca, to odmowa przy polu formularza (``nazwa``,
-    ``adresy[1]``), a nie przy wpisie drugiego Wykonawcy. Sprawa „login bez Wykonawcy”, którego login ma teraz
-    Wykonawca, znika z ``do_rozstrzygniecia``."""
-
     others = [_as_entry(worker) for at, worker in enumerate(current.workers) if at != index]
     checked = WorkerList.of([*others, entry])
     if isinstance(checked, WorkerListProblem):
@@ -472,8 +417,6 @@ def _form_problem(problem: WorkerListProblem) -> FieldProblem:
 
 
 def reported(change: KeyChange) -> str:
-    """Zmiana w Zgłoszeniu bez loginu, nazwy i adresu: dodany, usunięty albo zmieniony Wykonawca z nazwami pól."""
-
     if change.key == _UNRESOLVED_HISTORY_KEY:
         return f"{SECTION}.{UNRESOLVED_KEY}: {len(_documents(change.before))} → {len(_documents(change.after))}"
     before, after = _documents(change.before), _documents(change.after)
@@ -486,8 +429,6 @@ def reported(change: KeyChange) -> str:
 
 
 def logged(key: str) -> str:
-    """Klucz w Logach Centrum: sekcja bez loginu z klucza wpisu."""
-
     return SECTION if key.startswith(f"{SECTION}[") else key
 
 

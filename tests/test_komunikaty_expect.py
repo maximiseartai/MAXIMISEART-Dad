@@ -1,20 +1,3 @@
-"""Komunikaty, które widzi tata, jako tekst w ``tests/expected/komunikaty.txt``.
-
-Plik ma próbkę każdej fabryki każdego katalogu z ``tests/fixtures/message_samples.py``, pogrupowaną po katalogu,
-z kodem i trzema częściami. Zmiana tekstu Komunikatu zmienia ten plik w tym samym PR, więc diff PR pokazuje,
-co tata zobaczy inaczej, obok zmiany kodu.
-
-Katalog to moduł fabryk Komunikatów: ma wpis w ``CATALOGS``, a każda jego publiczna funkcja ma próbkę.
-Moduł ``src/``, który tworzy Komunikat poza katalogiem, ma w ``OUTSIDE_CATALOGS`` próbkę każdej funkcji i stałej,
-która go tworzy (co liczy się jako utworzenie, mówi ``_creating``), więc i jego tekst trafia do pliku.
-Zdanie dla taty, które karta pokazuje przy Komunikacie (dopisek bez kodu i trzech części), ma próbkę w ``SENTENCES``.
-Błąd, który fabryka tłumaczy na Komunikat, niesie fakty, a nie zdanie dla taty, więc i jego tekst pisze katalog.
-Odmowę żądania API Centrum rozliczeń (``Refusal``) tworzy tylko katalog odmów ``centrum/refusal.py``, a każda jego
-publiczna funkcja ma próbkę w ``REFUSALS``, więc i zdanie odmowy trafia do pliku, z kodem HTTP zamiast kodu Komunikatu.
-Napis przycisku, który próbka cytuje w „…”, ma wpis w ``UI_TEXTS`` i stoi w jego pliku frontendu, a cytat spoza UI
-Centrum rozliczeń ma powód w ``QUOTES_OUTSIDE_UI``.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -27,7 +10,7 @@ import pkgutil
 import re
 from types import ModuleType
 import typing
-from typing import Final, get_args
+from typing import Final, NamedTuple, get_args
 
 import pytest
 
@@ -105,15 +88,15 @@ CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
     "Wpisanie raportów": (report_entering_messages, REPORT_ENTERING_SAMPLES),
     "Przypomnienia o raporcie": (reminder_messages, REMINDER_SAMPLES),
 }
-# Komunikat karty Urwanego Uruchomienia (common_contract.Message) nie ma kodu; tytuł procesu jest syntetyczny.
-# Zdania wspólne o pliku taty dostają od katalogu kod, plik, ogon i zwrot ponowienia; tu syntetyczne.
-_DAD_WORKBOOK = workbook_messages.DadWorkbook("Plik taty", "Pliku taty", "order_register", "Nic się nie zmieniło.", "ponów")
+_SYNTETYCZNY_PLIK_TATY = workbook_messages.DadWorkbook(
+    name="Plik taty", genitive="Pliku taty", dad_file="order_register", unchanged="Nic się nie zmieniło.", again="ponów"
+)
 OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], Message | common_contract.Message]]]]] = {
     "Plik taty (zdania wspólne)": (
         workbook_messages,
         {
-            "open_in_excel": [lambda: workbook_messages.open_in_excel("PLIK_OTWARTY", REGISTER, _DAD_WORKBOOK)],
-            "not_synced": [lambda: workbook_messages.not_synced("NIEDOSTEPNY_PLIK", REGISTER, _DAD_WORKBOOK)],
+            "open_in_excel": [lambda: workbook_messages.open_in_excel("PLIK_OTWARTY", REGISTER, _SYNTETYCZNY_PLIK_TATY)],
+            "not_synced": [lambda: workbook_messages.not_synced("NIEDOSTEPNY_PLIK", REGISTER, _SYNTETYCZNY_PLIK_TATY)],
         },
     ),
     "Wynik Uruchomienia": (runs, {"_RESULT_NOT_SHOWN": [lambda: runs._RESULT_NOT_SHOWN]}),
@@ -129,7 +112,6 @@ OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[],
 }
 
 
-# Zdania dla taty poza Komunikatem: dopisek, który karta pokazuje przy Komunikacie, bez kodu i trzech części.
 SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | None]]]]] = {
     "Wynik Uruchomienia (zdania)": (runs, {"stop_note": [lambda: runs.stop_note("for_maks")]}),
     "Karta Wpisania raportów (zdania)": (
@@ -201,7 +183,6 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "rule_hour": [settings_messages.rule_hour],
             "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],
             "needed_by_release_rules": [partial(settings_messages.needed_by_release_rules, "wizja")],
-            # Zapis usuwa się tylko spośród innych zapisów składnika, a nazwę zmienia się albo usuwa cały składnik.
             "release_component_taken": [
                 partial(settings_messages.release_component_taken, "wizja" if how == "zapis" else "instalacja ręczna", "instalacja ręczna", how)
                 for how in get_args(settings_messages.TakenAction)
@@ -255,7 +236,6 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
 }
 
 
-# Katalog odmów jest osobno: odmowa to kod HTTP i jedno zdanie, a nie Komunikat z kodem i trzema częściami.
 REFUSAL_CATALOG: Final = "Odmowy Centrum rozliczeń"
 
 
@@ -270,8 +250,6 @@ def _source(module: ModuleType) -> str:
 
 
 def _places(statements: list[ast.stmt], prefix: str = "") -> Iterator[tuple[str, ast.stmt]]:
-    """Instrukcje modułu z nazwą miejsca: funkcja, ``Klasa.metoda``, stała albo numer wiersza."""
-
     for statement in statements:
         match statement:
             case ast.ClassDef(name=name, body=body):
@@ -288,11 +266,6 @@ _PARTS = frozenset({"what", "where", "action"})
 
 
 def _copies(call: ast.Call, module_names: Set[str]) -> bool:
-    """``Message(what=message.what, where=message.where, …)``: każde pole z tego samego pola jednego obiektu funkcji.
-
-    Obiekt to parametr albo zmienna funkcji; nazwa modułu (stała, klasa, import) ma własny tekst, więc kopią nie jest.
-    """
-
     owners = [
         keyword.value.value.id
         for keyword in call.keywords
@@ -309,17 +282,10 @@ def _copies(call: ast.Call, module_names: Set[str]) -> bool:
 
 
 def _names_part(node: ast.expr) -> bool:
-    """Literał słownika z kluczem ``what``, ``where`` albo ``action``."""
-
     return isinstance(node, ast.Dict) and any(isinstance(key, ast.Constant) and key.value in _PARTS for key in node.keys)
 
 
 def _rewrites(call: ast.Call) -> bool:
-    """``komunikat.model_copy(update={"action": …})`` albo ``replace(komunikat, action=…)``: nowy tekst w kopii.
-
-    ``replace`` liczy się także z rozpakowanym literałem słownika (``replace(komunikat, **{"action": …})``).
-    """
-
     match call.func:
         case ast.Attribute(attr="model_copy"):
             return any(keyword.arg == "update" and _names_part(keyword.value) for keyword in call.keywords)
@@ -332,20 +298,6 @@ def _rewrites(call: ast.Call) -> bool:
 
 
 def _creating(path: Path) -> set[str]:
-    """Miejsca modułu (``_places``), które tworzą Komunikat.
-
-    Tworzy go wywołanie, którego nazwa po rozwiązaniu importów (``Message as M``) albo atrybut (``message.Message``,
-    ``common_contract.Message``) kończy się na ``Message``, konstruktor tej klasy (``Message.to_maintainer(…)``), budowa
-    modelu z danych (``common_contract.Message.model_validate(…)``, ``model_construct``) i kopia z nowym tekstem części
-    (``_rewrites``). Wywołanie, które tylko przepisuje pola innego
-    Komunikatu (``_copies``), nowego tekstu nie tworzy.
-
-    Granica: ``model_copy`` ze słownikiem ``update`` spoza literału (``update=zmiany``, ``update=dict(...)``),
-    ``replace`` z rozpakowaną zmienną (``**zmiany``), budowa modelu przez zmienną klasy (``typ = common_contract.Message``)
-    i przepisanie pól obiektu z tekstem, który powstał w funkcji (``t = SimpleNamespace(what="…")``), łapie tylko
-    przegląd.
-    """
-
     tree = drzewo(path)
     imported = {
         alias.asname or alias.name: alias.name
@@ -385,6 +337,116 @@ def _creating(path: Path) -> set[str]:
                 return False
 
     return {name for name, statement in _places(tree.body) if any(creates(node) for node in ast.walk(statement))}
+
+
+class Tworzenie(NamedTuple):
+    kod: str
+    miejsca: frozenset[str]
+
+
+_KOMUNIKAT = """\
+from dataclasses import replace
+from types import SimpleNamespace
+
+from rozliczenia import message
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract.common import Message as Karta
+from rozliczenia.message import Message
+from rozliczenia.message import Message as M
+from rozliczenia.message_wzory import WZOR
+
+"""
+TWORZENIE_KOMUNIKATU: Final = {
+    "wywolanie-klasy-message": Tworzenie(
+        'def komunikat() -> Message:\n    return Message("KOD", "Co.", "Gdzie.", "Co zrobić.")\n', frozenset({"komunikat"})
+    ),
+    "alias-importu-message": Tworzenie(
+        'def komunikat() -> Message:\n    return M("KOD", "Co.", "Gdzie.", "Co zrobić.")\n', frozenset({"komunikat"})
+    ),
+    "atrybut-modulu-message": Tworzenie(
+        'def komunikat() -> Message:\n    return message.Message("KOD", "Co.", "Gdzie.", "Co zrobić.")\n',
+        frozenset({"komunikat"}),
+    ),
+    "atrybut-common-contract-message": Tworzenie(
+        'def karta() -> Karta:\n    return common_contract.Message(what="Co.", where="Gdzie.", action="Co zrobić.")\n',
+        frozenset({"karta"}),
+    ),
+    "konstruktor-klasy-message": Tworzenie(
+        'def komunikat() -> Message:\n    return Message.to_maintainer("KOD", "Co.", "Gdzie.")\n', frozenset({"komunikat"})
+    ),
+    "budowa-modelu-model-validate": Tworzenie(
+        'def karta() -> Karta:\n    return common_contract.Message.model_validate({"what": "Co."})\n', frozenset({"karta"})
+    ),
+    "budowa-modelu-model-construct-z-aliasu-importu": Tworzenie(
+        'def karta() -> Karta:\n    return Karta.model_construct(what="Co.")\n', frozenset({"karta"})
+    ),
+    "kopia-z-nowa-czescia-model-copy": Tworzenie(
+        'def karta(wzor: Karta) -> Karta:\n    return wzor.model_copy(update={"action": "Nowe."})\n', frozenset({"karta"})
+    ),
+    "kopia-z-nowa-czescia-replace": Tworzenie(
+        'def komunikat(wzor: Message) -> Message:\n    return replace(wzor, action="Nowe.")\n', frozenset({"komunikat"})
+    ),
+    "kopia-z-nowa-czescia-replace-z-rozpakowanym-literalem": Tworzenie(
+        'def komunikat(wzor: Message) -> Message:\n    return replace(wzor, **{"action": "Nowe."})\n', frozenset({"komunikat"})
+    ),
+    "pola-obiektu-modulu-maja-wlasny-tekst": Tworzenie(
+        "def karta() -> Karta:\n    return Karta(what=WZOR.what, where=WZOR.where, action=WZOR.action)\n",
+        frozenset({"karta"}),
+    ),
+    "stala-modulu": Tworzenie('ZAPISANY = Message("KOD", "Co.", "Gdzie.", "Co zrobić.")\n', frozenset({"ZAPISANY"})),
+    "metoda-klasy": Tworzenie(
+        'class Karty:\n    def komunikat(self) -> Message:\n        return Message("KOD", "Co.", "Gdzie.", "Co zrobić.")\n',
+        frozenset({"Karty.komunikat"}),
+    ),
+    "instrukcja-modulu-bez-nazwy": Tworzenie(
+        'ZEBRANE: list[Message] = []\nZEBRANE.append(Message("KOD", "Co.", "Gdzie.", "Co zrobić."))\n',
+        frozenset({"wiersz 12"}),
+    ),
+    "kopia-pol-parametru-to-nie-nowy-tekst": Tworzenie(
+        "def karta(wzor: Karta) -> Karta:\n    return Karta(what=wzor.what, where=wzor.where, action=wzor.action)\n",
+        frozenset(),
+    ),
+    "kopia-pol-zmiennej-funkcji-to-nie-nowy-tekst": Tworzenie(
+        "def karta(wzory: list[Karta]) -> Karta:\n    wzor = wzory[0]\n"
+        "    return Karta(what=wzor.what, where=wzor.where, action=wzor.action)\n",
+        frozenset(),
+    ),
+    "model-copy-bez-czesci-komunikatu": Tworzenie(
+        'def karta(wzor: Karta) -> Karta:\n    return wzor.model_copy(update={"code": "INNY"})\n', frozenset()
+    ),
+    "granica-model-copy-ze-slownikiem-ze-zmiennej": Tworzenie(
+        'def karta(wzor: Karta) -> Karta:\n    zmiany = {"action": "Nowe."}\n    return wzor.model_copy(update=zmiany)\n',
+        frozenset(),
+    ),
+    "granica-model-copy-ze-slownikiem-z-dict": Tworzenie(
+        'def karta(wzor: Karta) -> Karta:\n    return wzor.model_copy(update=dict(action="Nowe."))\n', frozenset()
+    ),
+    "granica-replace-z-rozpakowana-zmienna": Tworzenie(
+        'def komunikat(wzor: Message) -> Message:\n    zmiany = {"action": "Nowe."}\n    return replace(wzor, **zmiany)\n',
+        frozenset(),
+    ),
+    "granica-budowa-modelu-przez-zmienna-klasy": Tworzenie(
+        'def karta() -> Karta:\n    typ = common_contract.Message\n    return typ.model_validate({"what": "Co."})\n',
+        frozenset(),
+    ),
+    "granica-kopia-pol-obiektu-z-tekstem-z-funkcji": Tworzenie(
+        'def karta() -> Karta:\n    tekst = SimpleNamespace(what="Co.", where="Gdzie.", action="Co zrobić.")\n'
+        "    return Karta(what=tekst.what, where=tekst.where, action=tekst.action)\n",
+        frozenset(),
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("kod", "miejsca"), [pytest.param(*przypadek, id=opis) for opis, przypadek in TWORZENIE_KOMUNIKATU.items()]
+)
+def test_miejsce_tworzace_komunikat_to_kazda_postac_tworzenia_a_granice_go_nie_maja(
+    tmp_path: Path, kod: str, miejsca: frozenset[str]
+) -> None:
+    plik = tmp_path / "komunikaty.py"
+    plik.write_text(_KOMUNIKAT + kod, encoding="utf-8")
+
+    assert _creating(plik) == miejsca
 
 
 def _entry(name: str, message: Message | common_contract.Message) -> list[str]:
@@ -447,23 +509,6 @@ def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:
 
 
 def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
-    """Klasa ``Refusal`` jako wartość stoi tylko w ``centrum/refusal.py``, więc tylko katalog tworzy odmowę.
-
-    Konstruktor bez dowodu katalogu (``refusal._CATALOG``) i podklasę odrzuca też mypy, a dowód poza katalogiem ruff
-    (``TID251``), ale typ gubi klasę wziętą jako wartość, np. ``Refusal.__new__(Refusal)`` (odmowa bez
-    ``status_code``, przegląd #1371 r1) i ``get_args(Refusal | None)[0](…)`` (#1179 r2). Te łapie ten test.
-    Próbki ``ZNANE_LUKI`` pokazują znane luki: postacie, które przepuszczają wszystkie te mechanizmy, a nazwa próbki
-    mówi ich klasę.
-
-    Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
-    odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu, pola albo zmiennej, w nawiasach typu i unii
-    ``|`` w instrukcji modułu albo klasy poza wywołaniem i lambdą (alias ``Callable[[], Refusal | None]``), w
-    ``except``, w drugim argumencie ``isinstance``/``issubclass`` i w argumencie ``exception_handler``.
-    Każde inne odwołanie pada, w tym wywołanie, argument wywołania (``partial(Refusal, 500)``), przypisanie do nazwy
-    (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa, odwołanie wewnątrz wywołania albo lambdy i
-    nawiasy typu albo unia w ciele funkcji (``make = Refusal | Refusal``, ``list[Refusal].__args__[0](…)``).
-    """
-
     assert {module.__name__ for module in _engine_modules() if _refusal_as_value(module)} == {refusal.__name__}, (
         "odmowę żądania API Centrum (Refusal: kod HTTP i zdanie dla taty) tworzy tylko katalog odmów "
         "src/rozliczenia/centrum/refusal.py: dopisz tam fabrykę z próbką w message_samples i wołaj ją, a poza katalogiem "
@@ -471,8 +516,72 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     )
 
 
-# Znane luki strażnika katalogu odmów (tests/fixtures/znane_luki.py): „klasa, którą przepuszczają mechanizmy: postać” →
-# moduł, który tworzy odmowę poza katalogiem, a mimo to przechodzi przez mypy, ruff z konfiguracją src/ i test nazw wyżej.
+class Odwolanie(NamedTuple):
+    kod: str
+    jako_wartosc: bool
+
+
+_ODMOWA = "from rozliczenia.centrum.refusal import Refusal\n\n\n"
+ODWOLANIA_DO_ODMOWY: Final = {
+    "adnotacja-parametru": Odwolanie("def obsluz(odmowa: Refusal) -> None:\n    pass\n", False),
+    "adnotacja-zwrotu": Odwolanie("def odmowa() -> Refusal | None:\n    return None\n", False),
+    "adnotacja-pola-klasy": Odwolanie("class Wynik:\n    odmowa: Refusal | None = None\n", False),
+    "adnotacja-zmiennej-modulu": Odwolanie("OSTATNIA: Refusal | None = None\n", False),
+    "nawiasy-typu-w-aliasie-modulu": Odwolanie(
+        "from collections.abc import Callable\n\nFabryka = Callable[[], Refusal | None]\n", False
+    ),
+    "unia-w-instrukcji-modulu": Odwolanie("Odmowa = Refusal | None\n", False),
+    "except": Odwolanie("def obsluz() -> None:\n    try:\n        pass\n    except Refusal:\n        pass\n", False),
+    "drugi-argument-isinstance": Odwolanie(
+        "def jest_odmowa(blad: object) -> bool:\n    return isinstance(blad, Refusal)\n", False
+    ),
+    "drugi-argument-issubclass": Odwolanie(
+        "def jest_odmowa(klasa: type) -> bool:\n    return issubclass(klasa, Refusal)\n", False
+    ),
+    "argument-exception-handler": Odwolanie(
+        "from typing import Any\n\n\ndef zarejestruj(app: Any) -> None:\n    app.exception_handler(Refusal)\n", False
+    ),
+    "atrybut-modulu-w-adnotacji": Odwolanie(
+        "from rozliczenia.centrum import refusal\n\n\ndef odmowa() -> refusal.Refusal | None:\n    return None\n", False
+    ),
+    "alias-importu-modulu-w-adnotacji": Odwolanie(
+        "from rozliczenia.centrum import refusal as odmowy\n\n\ndef odmowa() -> odmowy.Refusal | None:\n    return None\n",
+        False,
+    ),
+    "wywolanie": Odwolanie('def odmowa() -> Exception:\n    return Refusal(500, "Zdanie.", None)\n', True),
+    "argument-wywolania": Odwolanie("from functools import partial\n\nFABRYKA = partial(Refusal, 500)\n", True),
+    "przypisanie-do-nazwy-modulu": Odwolanie("KLASA = Refusal\n", True),
+    "przypisanie-lokalne": Odwolanie("def klasa() -> type:\n    wynik = Refusal\n    return wynik\n", True),
+    "element-kolekcji": Odwolanie("KLASY = (Refusal,)\n", True),
+    "wartosc-domyslna": Odwolanie("def klasa(wybrana: type = Refusal) -> type:\n    return wybrana\n", True),
+    "klasa-bazowa": Odwolanie("class Moja(Refusal):\n    pass\n", True),
+    "wnetrze-lambdy": Odwolanie(
+        "from collections.abc import Callable\n\nKLASA: Callable[[], type] = lambda: Refusal\n", True
+    ),
+    "wywolanie-w-nawiasach-w-instrukcji-modulu": Odwolanie(
+        "from collections import defaultdict\n\nTABELA: defaultdict[str, int] = defaultdict(int)\n"
+        "WYNIK = TABELA[repr(Refusal)]\n",
+        True,
+    ),
+    "nawiasy-typu-w-ciele-funkcji": Odwolanie("def klasa() -> object:\n    return list[Refusal].__args__[0]\n", True),
+    "unia-w-ciele-funkcji": Odwolanie("def klasa() -> object:\n    return Refusal | Refusal\n", True),
+    "refusal-new-bez-status-code": Odwolanie("def odmowa() -> Exception:\n    return Refusal.__new__(Refusal)\n", True),
+    "get-args-unii-w-ciele-funkcji": Odwolanie(
+        "from typing import get_args\n\n\ndef klasa() -> object:\n    return get_args(Refusal | None)[0]\n", True
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("kod", "jako_wartosc"), [pytest.param(*przypadek, id=opis) for opis, przypadek in ODWOLANIA_DO_ODMOWY.items()]
+)
+def test_odwolanie_do_odmowy_poza_katalogiem_przechodzi_tylko_jako_typ(tmp_path: Path, kod: str, jako_wartosc: bool) -> None:
+    plik = tmp_path / "odwolanie.py"
+    plik.write_text(_ODMOWA + kod, encoding="utf-8")
+
+    assert _refusal_as_value(modul(plik)) is jako_wartosc
+
+
 ZNANE_LUKI: Final = {
     "ufa tłumieniu ruff: _refused zaimportowana z noqa": """\
 from rozliczenia.centrum.refusal import Refusal, _refused  # noqa: TID251
@@ -586,9 +695,6 @@ def test_znane_luki_strazy_katalogu_odmow_przechodza_przez_kazdy_jego_mechanizm(
     assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py")
 
 
-# Znane luki strażnika miejsca złego ustawienia (tests/fixtures/znane_luki.py): opis postaci → moduł Ustawień Centrum,
-# który kładzie tekst z pliku (nieznany klucz) w miejscu złego ustawienia albo w zdaniu o nim, a mimo to przechodzi przez
-# mypy na konstruktorze FieldPath i ruff z konfiguracją src/.
 ZNANE_LUKI_FIELD_PATH: Final = {
     "klucz z json.loads jako Any": """\
 import json
@@ -649,10 +755,13 @@ def test_znane_luki_miejsca_zlego_ustawienia_przechodza_przez_mypy_i_ruff(tmp_pa
     assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_FIELD_PATH)")
 
 
-# Drogi funkcji z trasy do zapisu pliku Ustawień (#1577 W1 r2: trasa uzupełniała Listę Urządzeń w funkcji podanej
-# właścicielowi, a „Cofnij” tego kroku nie miało): opis → (moduł Centrum, fragment zgłoszenia, które go odrzuca).
+class DrogaDoZapisu(NamedTuple):
+    kod: str
+    odrzucenie: str
+
+
 DROGI_DO_ZAPISU_USTAWIEN: Final = {
-    "domknięcie trasy z uzupełnieniem listy do change(DEVICES, …) (#1577 W1 r2)": (
+    "domknięcie trasy z uzupełnieniem listy do change(DEVICES, …)": DrogaDoZapisu(
         """\
 from rozliczenia.centrum import device_forms
 from rozliczenia.centrum.device_forms import DeviceEdit
@@ -676,7 +785,7 @@ def zapisz(settings: CentrumSettings, edit: DeviceEdit) -> Saved | Refused | Not
 """,
         '"CentrumSettings" has no attribute "change"',
     ),
-    "funkcja trasy do change(RULES, …)": (
+    "funkcja trasy do change(RULES, …)": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
 from rozliczenia.centrum.settings.quantity_rules import RULES
@@ -687,7 +796,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         '"CentrumSettings" has no attribute "change"',
     ),
-    "funkcja trasy z kluczami Historii do dawnego change_with_used_keys": (
+    "funkcja trasy z kluczami Historii do dawnego change_with_used_keys": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
 from rozliczenia.centrum.settings.quantity_rules import DEVICES
@@ -698,7 +807,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
 """,
         '"CentrumSettings" has no attribute "change_with_used_keys"',
     ),
-    "funkcja trasy przez prywatne _with_used_keys": (
+    "funkcja trasy przez prywatne _with_used_keys": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
 from rozliczenia.centrum.settings.quantity_rules import DEVICES
@@ -709,7 +818,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
 """,
         "ruff SLF001",
     ),
-    "funkcja trasy do zapisu Listy Urządzeń przez zmianę z Wydania (#1904 W1 r1)": (
+    "funkcja trasy do zapisu Listy Urządzeń przez zmianę z Wydania": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
@@ -728,7 +837,7 @@ def zapisz(settings: CentrumSettings) -> None:
 """,
         'Too many arguments for "apply_release_changes" of "CentrumSettings"',
     ),
-    "funkcja trasy do change(FOLDERS, …) (Ustawienia)": (
+    "funkcja trasy do change(FOLDERS, …) (Ustawienia)": DrogaDoZapisu(
         """\
 from dataclasses import replace
 
@@ -741,7 +850,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         '"CentrumSettings" has no attribute "change"',
     ),
-    "funkcja trasy do change(EXCEPTIONS, …) (Kontrola ilości)": (
+    "funkcja trasy do change(EXCEPTIONS, …) (Kontrola ilości)": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS
@@ -752,7 +861,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         '"CentrumSettings" has no attribute "change"',
     ),
-    "funkcja trasy do change(WORKERS, …) (Wykonawcy)": (
+    "funkcja trasy do change(WORKERS, …) (Wykonawcy)": DrogaDoZapisu(
         """\
 from dataclasses import replace
 
@@ -767,7 +876,7 @@ def dodaj(settings: CentrumSettings, form: WorkerForm) -> Saved | Refused | NotS
 """,
         '"CentrumSettings" has no attribute "change"',
     ),
-    "plik pary jako Any przez cast do dawnego change": (
+    "plik pary jako Any przez cast do dawnego change": DrogaDoZapisu(
         """\
 from typing import Any, cast
 
@@ -780,7 +889,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         '"CentrumSettings" has no attribute "change"',
     ),
-    "plik pary jako Any przez getattr modułu do dawnego change": (
+    "plik pary jako Any przez getattr modułu do dawnego change": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings import quantity_rules
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
@@ -791,7 +900,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         '"CentrumSettings" has no attribute "change"',
     ),
-    "plik Folderów z nazwą pliku pary do dawnego change (#1904 r2 D1: właściciel rozpoznaje parę po nazwie pliku, a _Plain patrzył na typ wartości)": (
+    "plik Folderów z nazwą pliku pary do dawnego change (właściciel rozpoznaje parę po nazwie pliku)": DrogaDoZapisu(
         """\
 from dataclasses import replace
 
@@ -805,7 +914,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         '"CentrumSettings" has no attribute "change"',
     ),
-    "funkcja trasy w miejscu polecenia Wykonawców": (
+    "funkcja trasy w miejscu polecenia Wykonawców": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
 
@@ -815,7 +924,7 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         'Argument 1 to "change_workers" of "CentrumSettings" has incompatible type',
     ),
-    "funkcja trasy przez prywatne _by_dad": (
+    "funkcja trasy przez prywatne _by_dad": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
 from rozliczenia.centrum.settings.workers import WORKERS
@@ -884,18 +993,15 @@ def zapisz(config: Path, log: CentrumLog, autostart: Autostart, periods: WorkerP
 
 @wymaga_ruff_i_mypy
 def test_funkcja_trasy_do_zapisu_ustawien_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
-    """Każdy plik Ustawień tata zmienia tylko typowanym poleceniem do właściciela, więc trasa nie poda mu funkcji, której
-    krok „Cofnij” by ominął (#1577 W1 r2); znane luki tego typu przechodzą."""
-
-    probki = {opis: kod for opis, (kod, _) in DROGI_DO_ZAPISU_USTAWIEN.items()} | ZNANE_LUKI_POLECENIA_USTAWIEN
+    probki = {opis: droga.kod for opis, droga in DROGI_DO_ZAPISU_USTAWIEN.items()} | ZNANE_LUKI_POLECENIA_USTAWIEN
     pliki = zapisz(probki, tmp_path)
 
     zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
 
     assert {
         opis: zgloszenia[opis]
-        for opis, (_, odrzucenie) in DROGI_DO_ZAPISU_USTAWIEN.items()
-        if not any(odrzucenie in z for z in zgloszenia[opis])
+        for opis, droga in DROGI_DO_ZAPISU_USTAWIEN.items()
+        if not any(droga.odrzucenie in z for z in zgloszenia[opis])
     } == {}
     assert_znane_luki(
         {opis: zgloszenia[opis] for opis in ZNANE_LUKI_POLECENIA_USTAWIEN},
@@ -904,8 +1010,6 @@ def test_funkcja_trasy_do_zapisu_ustawien_nie_przechodzi_mypy_a_znane_luki_przec
 
 
 def _refusal_as_value(module: ModuleType) -> bool:
-    """Moduł odwołuje się do ``Refusal`` poza typem (``test_odmowe_api_centrum_tworzy_tylko_katalog_odmow``)."""
-
     tree = drzewo(Path(str(module.__file__)))
     typed = {id(inner) for root in _type_positions(tree) for inner in _type_nodes(root)}
     return any(
@@ -915,8 +1019,6 @@ def _refusal_as_value(module: ModuleType) -> bool:
 
 
 def _type_nodes(root: ast.AST) -> Iterator[ast.AST]:
-    """Węzły typu w ``root`` bez wnętrza wywołań i lambd, więc ``CACHE[Refusal(500, "x")]`` nie jest typem."""
-
     if isinstance(root, ast.Call | ast.Lambda):
         return
     yield root
@@ -925,8 +1027,6 @@ def _type_nodes(root: ast.AST) -> Iterator[ast.AST]:
 
 
 def _type_positions(tree: ast.AST) -> Iterator[ast.expr]:
-    """Wyrażenia, w których klasa stoi jako typ, a nie wartość (lista w docstringu strażnika katalogu odmów)."""
-
     called = {
         id(inner)
         for node in wezly(tree)
@@ -968,8 +1068,6 @@ def _engine_modules() -> list[ModuleType]:
 
 
 def _factories(modules: Sequence[ModuleType]) -> list[Callable[..., object]]:
-    """Funkcje modułów z adnotacją ``-> Message``: fabryki katalogów i ich funkcje prywatne."""
-
     return [
         function
         for module in modules
@@ -979,8 +1077,6 @@ def _factories(modules: Sequence[ModuleType]) -> list[Callable[..., object]]:
 
 
 def _resolved(module: ModuleType, node: ast.expr) -> object:
-    """Obiekt nazwy (``StopError``) albo atrybutu (``settlement_messages.collective_file_invalid``) w module."""
-
     match node:
         case ast.Name(id=name):
             return vars(module).get(name)
@@ -991,8 +1087,6 @@ def _resolved(module: ModuleType, node: ast.expr) -> object:
 
 
 def _caught_for_message(module: ModuleType, makers: Sequence[object]) -> Iterator[object]:
-    """Typy z ``except`` modułu, którego obsługa woła fabrykę Komunikatu albo tworzy ``StopError``."""
-
     tree = drzewo(Path(str(module.__file__)))
     for handler in wezly(tree):
         if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
@@ -1007,18 +1101,13 @@ def _variants(hint: object) -> tuple[object, ...]:
     return typing.get_args(hint) or (hint,)
 
 
-def test_blad_ktory_proces_tlumaczy_na_komunikat_niesie_fakty_a_nie_tekst() -> None:
-    """Wyjątek, z którego powstaje Komunikat, nie przyjmuje ``str``: zdanie dla taty pisze katalog, nie kod błędu.
+class BledyFabryk(NamedTuple):
+    w_sygnaturach: set[object]
+    zlapane: set[object]
+    z_tekstem: set[str]
 
-    Taki wyjątek stoi w sygnaturze fabryki Komunikatu albo w ``except``, którego obsługa woła fabrykę albo tworzy
-    ``StopError``. Sprawdzenie widzi parametry ``__init__`` z adnotacją ``str`` (także w unii) w klasach
-    ``src/rozliczenia``, a błąd bez własnego ``__init__`` przyjmuje każdy tekst w ``args``, więc nie stoi w sygnaturze
-    fabryki. Granica: pole ustawione bez parametru, parametr bez adnotacji, ``except`` na zmiennej (``except errors``),
-    ``match`` na złapanym błędzie w obsłudze ``except BaseException``, tekst w dataclass faktu i błąd bez własnego
-    ``__init__`` tylko w ``except``, którego obsługa przekaże fabryce jego tekst (``str(error)``).
-    """
 
-    modules = _engine_modules()
+def _errors_for_messages(modules: Sequence[ModuleType], own: str) -> BledyFabryk:
     factories = _factories(modules)
     in_signatures = {
         kind for factory in factories for hint in typing.get_type_hints(factory).values() for kind in _variants(hint)
@@ -1027,7 +1116,7 @@ def test_blad_ktory_proces_tlumaczy_na_komunikat_niesie_fakty_a_nie_tekst() -> N
     errors = {
         kind
         for kind in in_signatures | caught
-        if inspect.isclass(kind) and issubclass(kind, BaseException) and kind.__module__.startswith("rozliczenia.")
+        if inspect.isclass(kind) and issubclass(kind, BaseException) and kind.__module__.startswith(own)
     }
     with_text = {
         f"{error.__name__}.{parameter}"
@@ -1036,17 +1125,87 @@ def test_blad_ktory_proces_tlumaczy_na_komunikat_niesie_fakty_a_nie_tekst() -> N
         for parameter, hint in typing.get_type_hints(error.__init__).items()
         if str in _variants(hint)
     } | {f"{error.__name__}.args" for error in errors & in_signatures if not inspect.isfunction(error.__init__)}
+    return BledyFabryk(in_signatures, caught, with_text)
 
-    assert with_text == set()
-    assert {WorkbookError, PeriodFolderError, PeriodFolderLookupError} <= in_signatures
-    assert {PeriodFolderInaccessible, WorkbookSaveError} <= caught
+
+def test_blad_ktory_proces_tlumaczy_na_komunikat_niesie_fakty_a_nie_tekst() -> None:
+    bledy = _errors_for_messages(_engine_modules(), "rozliczenia.")
+
+    assert bledy.z_tekstem == set()
+    assert {WorkbookError, PeriodFolderError, PeriodFolderLookupError} <= bledy.w_sygnaturach
+    assert {PeriodFolderInaccessible, WorkbookSaveError} <= bledy.zlapane
+
+
+_BLAD_Z_TEKSTEM = """\
+class Blad(Exception):
+    def __init__(self, tekst: str) -> None:
+        super().__init__(tekst)
+"""
+_BLAD_BEZ_INIT = "class Blad(Exception):\n    pass\n"
+_FABRYKA_BLEDU = "\n\ndef komunikat(blad: Blad) -> Message:\n    raise NotImplementedError\n"
+_FABRYKA = "\n\ndef komunikat() -> Message:\n    raise NotImplementedError\n"
+_OBSLUGA = "\n\ndef obsluz() -> Message:\n    try:\n        raise Blad(\"Zdanie.\")\n"
+BLEDY_Z_TEKSTEM: Final = {
+    "parametr-str-bledu-z-sygnatury-fabryki": (_BLAD_Z_TEKSTEM + _FABRYKA_BLEDU, {"Blad.tekst"}),
+    "parametr-unii-ze-str": (_BLAD_Z_TEKSTEM.replace("tekst: str", "tekst: str | None") + _FABRYKA_BLEDU, {"Blad.tekst"}),
+    "blad-z-except-ktorego-obsluga-wola-fabryke": (
+        _BLAD_Z_TEKSTEM + _FABRYKA + _OBSLUGA + "    except Blad:\n        return komunikat()\n",
+        {"Blad.tekst"},
+    ),
+    "blad-z-except-ktorego-obsluga-tworzy-stoperror": (
+        _BLAD_Z_TEKSTEM + _OBSLUGA + "    except Blad as blad:\n        raise StopError(None) from blad\n",
+        {"Blad.tekst"},
+    ),
+    "blad-bez-wlasnego-init-w-sygnaturze-fabryki": (_BLAD_BEZ_INIT + _FABRYKA_BLEDU, {"Blad.args"}),
+    "granica-pole-ustawione-bez-parametru": (
+        "class Blad(Exception):\n    def __init__(self) -> None:\n        super().__init__()\n"
+        "        self.tekst = \"Zdanie dla taty.\"\n" + _FABRYKA_BLEDU,
+        set(),
+    ),
+    "granica-parametr-bez-adnotacji": (_BLAD_Z_TEKSTEM.replace("tekst: str", "tekst") + _FABRYKA_BLEDU, set()),
+    "granica-except-na-zmiennej": (
+        _BLAD_Z_TEKSTEM + "\n\nBLEDY = (Blad,)" + _FABRYKA + _OBSLUGA + "    except BLEDY:\n        return komunikat()\n",
+        set(),
+    ),
+    "granica-match-na-bledzie-zlapanym-przez-except-baseexception": (
+        _BLAD_Z_TEKSTEM
+        + _FABRYKA
+        + _OBSLUGA
+        + "    except BaseException as blad:\n        match blad:\n            case Blad():\n"
+        "                return komunikat()\n        raise\n",
+        set(),
+    ),
+    "granica-tekst-w-dataclass-faktu": (
+        "from dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass Fakt:\n    tekst: str\n\n\n"
+        "class Blad(Exception):\n    def __init__(self, fakt: Fakt) -> None:\n        super().__init__(fakt)\n"
+        + _FABRYKA_BLEDU,
+        set(),
+    ),
+    "granica-blad-bez-wlasnego-init-tylko-w-except-ktory-podaje-fabryce-jego-tekst": (
+        _BLAD_BEZ_INIT
+        + "\n\ndef komunikat(tekst: str) -> Message:\n    raise NotImplementedError\n"
+        + _OBSLUGA
+        + "    except Blad as blad:\n        return komunikat(str(blad))\n",
+        set(),
+    ),
+}
+
+
+@pytest.mark.parametrize(("kod", "z_tekstem"), [pytest.param(*przypadek, id=opis) for opis, przypadek in BLEDY_Z_TEKSTEM.items()])
+def test_blad_z_tekstem_widzi_kazda_droge_bledu_do_komunikatu_a_granice_przechodza(
+    tmp_path: Path, kod: str, z_tekstem: set[str]
+) -> None:
+    plik = tmp_path / "bledy_procesu.py"
+    plik.write_text("from rozliczenia.message import Message, StopError\n\n\n" + kod, encoding="utf-8")
+    probka = modul(plik)
+
+    assert _errors_for_messages([probka], probka.__name__).z_tekstem == z_tekstem
 
 
 def test_komunikaty_ktore_widzi_tata_odpowiadaja_plikowi_expect() -> None:
     assert_expected(_rendered(), ROOT / "tests" / "expected" / "komunikaty.txt")
 
 
-# Napisy UI Centrum rozliczeń, które Komunikaty cytują w „…”, każdy z plikiem frontendu, w którym tata go widzi.
 UI_TEXTS: Final = {
     "Wyślij do Maksa": "frontend/src/components/report-to-maks.tsx",
     "Spróbuj ponownie": "frontend/src/components/report-to-maks.tsx",
@@ -1060,8 +1219,6 @@ UI_TEXTS: Final = {
     "Zapisz": "frontend/src/pages/settings/setting-row.tsx",
     "Usuń składnik": "frontend/src/pages/settings/devices-section.tsx",
 }
-# Cytaty Komunikatów, których test nie szuka w pliku frontendu, każdy z powodem: tekst spoza UI Centrum rozliczeń
-# albo napis UI w postaci, której ``_ui_text`` nie czyta.
 QUOTES_OUTSIDE_UI: Final = {
     "Centrum rozliczeń": "skrót na pulpicie taty, nie napis w UI",
     "Zawsze zachowuj na tym urządzeniu": "polecenie OneDrive w menu Eksploratora plików",
@@ -1080,15 +1237,6 @@ QUOTES_OUTSIDE_UI: Final = {
 
 
 def _ui_text(text: str) -> re.Pattern[str]:
-    """Napis w jednej z form, w których plik TSX pokazuje go tacie jako napis przycisku.
-
-    Test szuka napisu w tych postaciach: tekst dziecka elementu JSX (``<Button>…Kontynuuj</Button>``, także po ikonie
-    ``{…}`` i złamany w linii), prop ``label="…"`` albo ``label={"…"}`` (nie ``aria-label``) i właściwość
-    ``label: "…"`` obiektu napisów; w propie i właściwości napis stoi w podwójnym cudzysłowie i cały.
-    Gdy napisu nie ma w pliku w żadnej z tych postaci, test czerwieni: przycisk zmienił brzmienie albo zniknął.
-    Napis przycisku w innej postaci (np. w gałęzi warunku) ma powód w ``QUOTES_OUTSIDE_UI``.
-    """
-
     words = r"\s+".join(re.escape(word) for word in text.split())
     literal = f'"{words}"'
     forms = (
@@ -1100,15 +1248,6 @@ def _ui_text(text: str) -> re.Pattern[str]:
 
 
 def test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum() -> None:
-    """Komunikat, który każe kliknąć „Napis”, nie rozjeżdża się z przyciskiem, który tata widzi w Centrum rozliczeń.
-
-    Cytaty są z próbek wszystkich katalogów (``_rendered``), więc zmiana cytatu w Pythonie albo napisu w pliku TSX
-    czerwieni ten test; nowy cytat dostaje wpis w ``UI_TEXTS`` albo powód w ``QUOTES_OUTSIDE_UI``.
-    Plik UI ma napis w jednej z postaci: dziecko JSX, ``label="…"``, ``label={"…"}`` albo ``label: "…"``.
-    Próbki ``ZNANE_LUKI_NAPISOW_UI`` i ``ZNANE_LUKI_CYTATOW`` pokazują znane luki: postacie, które test przepuszcza bez
-    przycisku z cytowanym napisem, a nazwa próbki mówi ich klasę.
-    """
-
     quoted = set(re.findall(r"„([^”]*)”", _rendered()))
     missing_in_ui = {
         text: path for text, path in UI_TEXTS.items() if not _ui_text(text).search((ROOT / path).read_text(encoding="utf-8"))
@@ -1125,9 +1264,28 @@ def test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum() -> None:
     )
 
 
-# Znane luki strażnika napisów przycisków (tests/fixtures/znane_luki.py): „klasa, którą przepuszcza test: postać” →
-# plik TSX z napisem „Kontynuuj” z UI_TEXTS bez przycisku, który tata widzi, a mimo to przechodzi przez test wyżej jako
-# plik tego napisu.
+NAPISY_W_PLIKU_UI: Final = {
+    "dziecko-elementu-jsx": ("Kontynuuj", "<Button>Kontynuuj</Button>", True),
+    "dziecko-elementu-jsx-po-ikonie": ("Kontynuuj", "<Button>\n  {ikona}\n  Kontynuuj\n</Button>", True),
+    "dziecko-elementu-jsx-zlamane-w-linii": ("Uzupełnij i zapisz", "<Button>\n  Uzupełnij i\n  zapisz\n</Button>", True),
+    "prop-label": ("Kontynuuj", '<Pole label="Kontynuuj" />', True),
+    "prop-label-w-klamrach": ("Kontynuuj", '<Pole label={"Kontynuuj"} />', True),
+    "wlasciwosc-label-obiektu-napisow": ("Kontynuuj", 'const NAPISY = { label: "Kontynuuj" }', True),
+    "granica-prop-aria-label": ("Kontynuuj", '<Button aria-label="Kontynuuj" />', False),
+    "granica-napis-w-zdaniu": ("Kontynuuj", "<p>Kliknij Kontynuuj, aby przejść dalej.</p>", False),
+    "granica-prop-z-dluzszym-napisem": ("Kontynuuj", '<Pole label="Kontynuuj teraz" />', False),
+    "granica-prop-w-pojedynczym-cudzyslowie": ("Kontynuuj", "<Pole label='Kontynuuj' />", False),
+    "granica-galaz-warunku": ("Diagnoza", '{gotowe ? "Kontynuuj" : "Diagnoza"}', False),
+}
+
+
+@pytest.mark.parametrize(
+    ("napis", "tsx", "pokazuje"), [pytest.param(*przypadek, id=opis) for opis, przypadek in NAPISY_W_PLIKU_UI.items()]
+)
+def test_napis_przycisku_stoi_w_pliku_ui_w_kazdej_postaci_przycisku_a_w_innej_nie(napis: str, tsx: str, pokazuje: bool) -> None:
+    assert bool(_ui_text(napis).search(tsx)) is pokazuje
+
+
 ZNANE_LUKI_NAPISOW_UI: Final = {
     "dopasowuje tekst, nie element przycisku: nagłówek": "export function Okno() {\n  return <h2>Kontynuuj</h2>\n}\n",
     "nie odróżnia komentarza od kodu: przycisk w komentarzu JSX": (
@@ -1140,9 +1298,6 @@ ZNANE_LUKI_NAPISOW_UI: Final = {
         "export function StareOkno() {\n  return <Button>Kontynuuj</Button>\n}\n"
     ),
 }
-# Znane luki tego strażnika po stronie Komunikatu: „klasa: postać” → moduł z fabryką, której gałąź cytuje napis spoza
-# UI_TEXTS i QUOTES_OUTSIDE_UI, i z krotką PROBKI, której Komunikaty tego cytatu nie mają; test dokłada moduł do
-# SENTENCES, więc strażnik czyta go tą samą drogą co katalogi repozytorium.
 ZNANE_LUKI_CYTATOW: Final = {
     "widzi tylko Komunikaty z próbek: cytat w gałęzi bez próbki": """\
 def komunikat(zapisany: bool) -> str:
@@ -1159,8 +1314,6 @@ PROBKI = (lambda: komunikat(zapisany=True),)
 def _zgloszenia_napisow(
     ui_texts: Mapping[str, str], sentences: Mapping[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | None]]]]]
 ) -> list[str]:
-    """Linie zgłoszenia testu napisów przycisków, gdy ``UI_TEXTS`` to ``ui_texts``, a ``SENTENCES`` to ``sentences``."""
-
     with pytest.MonkeyPatch.context() as podmiana:
         podmiana.setitem(globals(), "UI_TEXTS", ui_texts)
         podmiana.setitem(globals(), "SENTENCES", sentences)
