@@ -31,8 +31,8 @@ checkoucie, do ostatniego kroku narzędzia strażnika (przy mypy także ruff), w
 jak sprawdzenia zakazów ruff w kroku reguł chwastów tego zadania: zakaz ``banned-api`` albo ``import *`` z tego biegu
 to znalezisko, gdy przywrócony plik nie używa tej nazwy na drzewie bez przywrócenia, czyli nazwa spoza prawa
 właściciela (wiersz ``OWNERS`` w ``tests/test_zakazy_ruff.py``) albo pod ``noqa``. Nazwę z ``from moduł import nazwa``
-ruff zgłasza na linii importu, więc zakaz ruff liczy się też na imporcie nazwy, której kod zakresu ``Gdzie`` używa
-(``_imports_into``), a inne znalezisko na imporcie nie, bo w pliku z FAIL to zwykle dryf API. Krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
+ruff zgłasza na linii importu, więc zakaz ``TID251`` liczy się też na imporcie, gdy kod zakresu ``Gdzie`` używa właśnie
+zakazanej nazwy (``_imports_into``), a inne znalezisko na imporcie nie, bo w pliku z FAIL to zwykle dryf API. Krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
 to ``KROK PISZE PLIKI``, bo Required CI liczy dalsze kroki na zmienionych plikach, a zakres ``Gdzie`` z FAIL ich nie
 opisuje; kopia wraca do stanu sprzed biegu. Każdy krok mypy i ruff i każdy bieg pytest biegnie w piaskownicy systemu
 (``piaskownica.prefix``: Landlock na Linuksie, ``sandbox-exec`` na macOS), w której zapis poza kopią biegu, jej ``HOME``
@@ -432,30 +432,36 @@ def _scope(root: Path, tree: str, case: Case, path: str) -> set[int]:
 
 
 def _counted(root: Path, guard: Guard, tree: str, case: Case, finding: tuple[str, int, str]) -> bool:
-    """Czy znalezisko z przywróconego pliku liczy się do dowodu: w zakresie ``_scope``, a zakaz ruff (``_BANNED_CODES``)
-    także na linii importu nazwy, której kod zakresu używa, bo ``from moduł import nazwa`` ruff zgłasza na imporcie."""
+    """Czy znalezisko z przywróconego pliku liczy się do dowodu: w zakresie ``_scope``, a zakaz ``TID251`` także na
+    linii nazwy z importu, gdy to zakazana nazwa i kod zakresu jej używa, bo ``from moduł import nazwa`` ruff zgłasza
+    na imporcie."""
 
     path, line, message = finding
     scope = _scope(root, tree, case, path)
     if line in scope:
         return True
-    return guard.kind is Kind.RUFF and message.partition(" ")[0] in _BANNED_CODES and line in _imports_into(_text(root, case.failed, path) or "", scope)
+    banned = message.split("`")[1] if message.startswith("TID251 ") and message.count("`") >= 2 else None
+    return banned is not None and any(
+        first <= line <= last and (banned == name or banned.endswith(f".{name}")) for first, last, name in _imports_into(_text(root, case.failed, path) or "", scope)
+    )
 
 
-def _imports_into(text: str, lines: set[int]) -> set[int]:
-    """Linie importów kodu Pythona ``text``, które wiążą nazwę użytą w liniach ``lines``; tekst spoza Pythona nie ma żadnej."""
+def _imports_into(text: str, lines: set[int]) -> list[tuple[int, int, str]]:
+    """Nazwy importów kodu Pythona ``text``, których kod linii ``lines`` używa: linie instrukcji importu i nazwa
+    z modułem (``moduł.nazwa``, przy imporcie względnym bez kropek); tekst spoza Pythona nie ma żadnej."""
 
     try:
         tree = ast.parse(text)
     except SyntaxError:
-        return set()
+        return []
     used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.lineno in lines}
-    return {
-        number
+    return [
+        (node.lineno, node.end_lineno or node.lineno, f"{node.module}.{alias.name}" if isinstance(node, ast.ImportFrom) and node.module else alias.name)
         for node in ast.walk(tree)
-        if isinstance(node, ast.Import | ast.ImportFrom) and any((alias.asname or alias.name.partition(".")[0]) in used for alias in node.names)
-        for number in range(node.lineno, (node.end_lineno or node.lineno) + 1)
-    }
+        if isinstance(node, ast.Import | ast.ImportFrom)
+        for alias in node.names
+        if (alias.asname or alias.name.partition(".")[0]) in used
+    ]
 
 
 def _judged(build: Build, mutation: Mutation) -> tuple[Verdict, str]:
