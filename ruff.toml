@@ -129,6 +129,7 @@ extend-select = [
 # jako parametr, i Przypomnienia rdzenia, które biorą je jako pole.
 "src/rozliczenia/worker_reports/{_memory,_operation,_reminders}.py" = ["TID251"]
 "tools/lib/import_dynamiczny.py" = ["TID251"]
+"src/rozliczenia/centrum/settings/files.py" = ["TID251"]
 "tests/conftest.py" = ["TID251"]
 "tests/fixtures/linie_watkow.py" = ["TID251"]
 ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py" = ["TID251"]
@@ -194,6 +195,10 @@ extend-select = [
 "runpy".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 "pkgutil".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 "zipimport".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"yaml.dump".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.dump_all".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.safe_dump".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.safe_dump_all".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
 # Pliki Ustawień Centrum zna tylko rozliczenia.centrum.settings (ADR 0032): ścieżka obok niego omija Historię
 # Ustawień, pamięć właściciela i wykrycie zmiany spoza Centrum.
 "rozliczenia.tool_files.SETTINGS".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"

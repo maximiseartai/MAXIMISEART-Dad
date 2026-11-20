@@ -205,6 +205,10 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Mypy wyłączony na funkcji bez komentarza tłumienia, którego licznik tłumień nie widzi (przegląd #1689, W1).
     "import typing\n@typing.no_type_check\ndef f() -> int:\n    return '1'": (SRC_CONFIG, ("rozliczenia",), "typing.no_type_check"),
     "from typing_extensions import no_type_check as unchecked": (TESTS_CONFIG, (), "typing_extensions.no_type_check"),
+    "import yaml\ntekst = yaml.safe_dump_all(dokumenty, sort_keys=False)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.safe_dump_all"),
+    "import yaml\ntekst = yaml.safe_dump(regula)": (ROOT_CONFIG, (), "yaml.safe_dump"),
+    "from yaml import dump as zapisz": (SRC_CONFIG, ("rozliczenia",), "yaml.dump"),
+    "import yaml as y\ny.dump_all(dokumenty, plik)": (DRIVE_CONFIG, (), "yaml.dump_all"),
     # Treść z Wydania w miejscu pliku Ustawień bez odczytu: postacie z tabeli przypadków przy ZNANE_LUKI_TRESCI_Z_WYDANIA,
     # pierwsza to mail z treścią z Wydania z przeglądu #2029 (r1, W1).
     "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL": (
@@ -311,7 +315,7 @@ def test_katalog_z_wlasnymi_zakazami_ruff_powtarza_kazdy_zakaz_korzenia() -> Non
         problems += [
             f"{where}: brak zakazu {name} z ruff.toml korzenia"
             for name, entry in root.items()
-            if local.get(name) != entry and not (path == TESTS_CONFIG and name in DYNAMIC_IMPORT)
+            if local.get(name) != entry and not (path == TESTS_CONFIG and name in (*DYNAMIC_IMPORT, *ZAPIS_YAML))
         ]
 
     assert problems == [], "\n".join(
@@ -943,6 +947,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_mails.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
+    "src/rozliczenia/centrum/settings/files.py": frozenset({"yaml.dump"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),
@@ -1107,6 +1112,7 @@ def _release_content_findings(*arguments: str, code: str | None = None) -> list[
 # Nazwy pakietu importlib wynikają z biblioteki działającego Pythona (test nazw niżej); reszta to moduły, których zadaniem
 # jest import albo wykonanie modułu. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po
 # nazwie, są znaną luką z próbkami w ZNANE_LUKI_IMPORTU, nie pełną listą.
+ZAPIS_YAML = ("yaml.dump", "yaml.dump_all", "yaml.safe_dump", "yaml.safe_dump_all")
 DYNAMIC_IMPORT = (
     "importlib.import_module",
     "importlib.__import__",
