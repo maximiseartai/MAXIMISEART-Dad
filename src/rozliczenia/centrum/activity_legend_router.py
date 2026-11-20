@@ -1,21 +1,3 @@
-"""Interfejs HTTP sekcji Legenda czynności okna Ustawień (ADR 0038): Kody czynności jako zdania i formularze, kolumny do
-wyboru, formularz kodu (dodaj, zmień, usuń) i podgląd zmiany przed zapisem.
-
-Legendę daje właściciel Ustawień (``CentrumSettings.activity_legend``), tę samą, którą liczy następne Uruchomienie;
-trasy tylko parsują żądanie, wołają właściciela i tłumaczą jego wynik na HTTP. Każdy zapis formularza idzie poleceniem do
-właściciela (``CentrumSettings.change_legend``), który sam robi zmianę (``legend_forms``) i sprawdza legendę po zmianie,
-a jego odmowa stoi przy polu formularza. Podgląd pyta właściciela o to samo polecenie bez zapisu
-(``CentrumSettings.legend_after``) i liczy jego skutek na ostatnich Plikach zbiorczych (``activity_legend_preview``), więc
-zapis jest możliwy także przy różnicach od taty. Zmiana albo usunięcie kodu, którego już nie ma, to 404, a zapis i
-podgląd przy pliku legendy, którego system nie daje teraz czytać, to 409 o tym pliku
-(``refusal.settings_file_unreadable``), a podgląd także przy pliku pary Reguł ilości albo Folderów bez odczytu
-(``CentrumSettings``), nie podgląd liczony Regułami ilości z Wydania. Id kodu w adresie może mieć „/” (``dzielnik1/2``).
-
-Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego (``PriceList``), a Wzorzec, którego nie da się
-przeczytać, daje same litery. Odczyt i podgląd niczego nie zapisują poza wierszem Historii zmiany spoza Centrum, który
-dopisuje każdy odczyt właściciela.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -69,8 +51,6 @@ def activity_legend_router(
         )
 
     def saved(edit: contract.ActivityCodeEdit) -> contract.ActivityLegendSaved:
-        """Zapis zmiany przez właściciela Ustawień na bieżącej wartości pliku legendy, z jego sprawdzeniem legendy."""
-
         _known_code(edit, settings.activity_legend())
         match settings.change_legend(edit):
             case Saved(change=change):
@@ -127,9 +107,6 @@ def activity_legend_router(
 
 
 def _known_code(edit: contract.ActivityCodeEdit, view: ActivityLegendView) -> None:
-    """409, gdy system nie daje teraz czytać pliku legendy, więc nie wiadomo, co w nim jest, a 404, gdy zmiana albo
-    usunięcie dotyczy kodu, którego w legendzie już nie ma."""
-
     codes = view.codes
     if isinstance(codes, Unreadable):
         raise refusal.settings_file_unreadable(LEGEND.name)
@@ -142,8 +119,6 @@ def _column(letter: str, names: Mapping[str, str]) -> contract.LegendColumn:
 
 
 def with_legend_sentences(others: Callable[[], RuleSentences], price_list: PriceList) -> Callable[[], RuleSentences]:
-    """Zdania Historii Ustawień innych sekcji (``others``) i do tego Kodów czynności (klucz ``kody.<id>``)."""
-
     def reader() -> RuleSentences:
         other = others()
         names = price_list.names()

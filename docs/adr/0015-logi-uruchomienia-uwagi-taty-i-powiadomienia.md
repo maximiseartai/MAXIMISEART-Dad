@@ -264,7 +264,9 @@ co stało się z tym, co wysłał.
   brak powodu to rozwiązana, `not_planned` albo `duplicate` to przeczytana).
   Zgłoszenie, które czeka w kolejce, ma stan „czeka na internet” jak Uwaga i
   przy dostarczeniu staje się wysłanym, bez kropki (#426). Powiadomienie o nowej wersji ma notkę Wydania (GitHub Release w
-  formacie `release_notes`), rozwiązane sprawy taty wysłane z tego komputera i
+  formacie `release_notes`; notka jest publiczna, a Skrzynka Zgłoszeń prywatna, więc
+  rozwiązana sprawa taty stoi w notce tylko numerem issue i tytułem, nigdy treścią),
+  rozwiązane sprawy taty wysłane z tego komputera i
   przycisk Aktualizacji narzędzia, ten sam co w Konfiguracji i Diagnozie
   (`offers_update`). Z Wydań kropkę zapala tylko najnowsze Wydanie na `main` i
   tylko wtedy, gdy jest nowsze od wersji taty; starsze stoją na liście jako
