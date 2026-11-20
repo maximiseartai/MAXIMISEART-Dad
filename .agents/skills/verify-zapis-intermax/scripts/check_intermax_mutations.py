@@ -98,11 +98,6 @@ BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {
     "BEZ_UTRATY_ZMIAN": CHANGE_AFTER_READ,
     "KOPIA_ZASTAPIONEGO": {**CHANGE_AFTER_READ, "copy": (COPY_OF_NEW,)},
 }
-"""Broken variants just outside each part of the shape of each known finding of the explorer (``FindingShape``), by
-its name and part: the same harm as the finding's, but with that one part other than its story says, so each must give
-a new violation (#920). ``tests/test_mutacje_skilli.py`` reds an entry of ``KNOWN_FINDINGS`` with a part without one
-here. Both findings share the parts of how the worker's change was lost, and the same worker's change breaks both
-rules; only KOPIA_ZASTAPIONEGO has a part for the Kopia."""
 
 MUTATIONS = (
     Mutation(

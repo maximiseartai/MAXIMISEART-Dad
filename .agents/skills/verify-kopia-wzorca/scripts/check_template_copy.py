@@ -95,7 +95,7 @@ CONTENT_TYPES = "[Content_Types].xml"
 ORDER_NUMBER = pliki_taty.ORDER_COLUMN  # F, NUMER ZL.: the column whose Hiperłącza Dad clicks
 FIRST_DATA_ROW = pliki_taty.FIRST_DATA_ROW
 HEADER_ROW = pliki_taty.HEADER_ROW
-DATA_COLUMNS = pliki_taty.DATA_ROW_COLUMNS[-1]  # AT
+DATA_COLUMNS = pliki_taty.DATA_ROW_COLUMNS[-1]
 LOOK_COLUMNS = pliki_taty.LOOK_COLUMNS[-1]  # L: the columns with the Wygląd Wiersza danych
 ROWS_PER_CHUNK = 64  # Excel's shared-formula block and the copy's compression chunk (``_ROWS_PER_CHUNK``)
 DEFAULT_EXAMPLES = 60
@@ -164,9 +164,6 @@ NUM_FMTS, FONTS, FILLS, BORDERS, CELL_XFS = (
 STYLE_LISTS = (NUM_FMTS, FONTS, FILLS, BORDERS, CELL_XFS)
 _XF_ID = {name: re.compile(rb'\s%b="(\d+)"' % name.encode()) for name in ("numFmtId", "fontId", "fillId", "borderId")}
 _ROW_HEIGHT = re.compile(rb'\s(?:ht|customHeight)="[^"]*"')
-
-
-# --- Wzorce ----------------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -246,8 +243,6 @@ def build_templates(directory: Path, real_template: Path | None, names: Sequence
         )
     return templates
 
-
-# --- Wiersze danych ---------------------------------------------------------------------------------
 
 EDGE_TEXTS = (
     "",
@@ -512,9 +507,6 @@ def cases(template: Template) -> st.SearchStrategy[Case]:
     return st.lists(settlements(template), min_size=1, max_size=3).map(
         lambda workers: Case(template, tuple(tuple(rows) for rows in workers))
     )
-
-
-# --- one Rozliczenie pracownika --------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -937,9 +929,6 @@ def _styles_shape(styles: bytes, sheet: bytes) -> list[Divergence]:
     return found
 
 
-# --- one Przebieg rozliczeń ------------------------------------------------------------------------
-
-
 class Violation(AssertionError):
     def __init__(self, case: Case, divergences: list[tuple[int, Divergence]]) -> None:
         super().__init__(f"{case!r}: {[divergence.rule for _, divergence in divergences]}")
@@ -1003,9 +992,6 @@ class Run:
         if divergences:
             statistics.violated = True
             raise Violation(case, divergences)
-
-
-# --- report -----------------------------------------------------------------------------------------
 
 
 def _first(items: Sequence[str]) -> str:

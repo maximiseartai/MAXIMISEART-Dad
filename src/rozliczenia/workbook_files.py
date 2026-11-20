@@ -117,8 +117,6 @@ ExcelRow = tuple[_ExcelCellValue, ...]
 
 
 class Problem(Enum):
-    """Powód, dla którego skoroszytu nie da się użyć."""
-
     MISSING = "brak pliku"
     OPEN_IN_EXCEL = "otwarty w Excelu"
     INACCESSIBLE = "niedostępny"
@@ -206,14 +204,10 @@ class DataRow:
     cells: tuple[DataCell, ...]
 
     def value(self, column: str) -> _ExcelCellValue:
-        """Wartość komórki w kolumnie ``column`` (litera, np. ``N``)."""
-
         return self.cells[column_index_from_string(column) - 1].value
 
     @property
     def worker(self) -> _ExcelCellValue:
-        """Surowa wartość WYKONAWCA z kolumny H Pliku zbiorczego."""
-
         return self.value(WORKER_HEADER.column)
 
 
@@ -285,9 +279,6 @@ def unreadable_as_error(path: Path) -> Iterator[None]:
 
 
 def file_bytes(path: Path) -> bytes:
-    """Bajty skoroszytu z dysku; błąd systemu plików to ``Problem.INACCESSIBLE``, nie uszkodzenie. Jedyny odczyt bajtów
-    skoroszytu z dysku w ``src`` (``tests/test_jeden_odczyt_skoroszytu.py``)."""
-
     try:
         return path.read_bytes()
     except OSError as exc:
@@ -371,12 +362,9 @@ def _forbidden_columns(header: Sequence[object]) -> tuple[tuple[client_data.Forb
 
 @dataclass(frozen=True)
 class _Collective:
-    """Arkusz Pliku zbiorczego z jednego odczytu po sprawdzeniu układu (``_collective_sheet``)."""
-
     file: ReadFile
     title: str
     header: ExcelRow
-    """Wartości A17:AP17: nagłówki A:K i nazwy pozycji cennika N:AP."""
     content: bytes = field(repr=False)
     """Bajty, które czyta openpyxl: plik bez wierszy, które nie mogą mieć wartości w A:K (``rows_with_input``)."""
     rows: Iterator[tuple[int, tuple[object, ...], ExcelRow]]
@@ -520,9 +508,6 @@ def collective_workers(path: Path, files: DadFiles) -> frozenset[str]:
 
 
 def price_list(header: Sequence[object], columns: Sequence[int] = QUANTITY_COLUMNS) -> dict[str, str]:
-    """Nazwy pozycji cennika z wartości wiersza 17 od kolumny A: litera kolumny z ``columns`` (bez nich N:AP) → tekst
-    komórki z pojedynczymi spacjami, pusta komórka (także za końcem ``header``) to ``""``."""
-
     return {
         get_column_letter(column): "" if column > len(header) or is_blank(header[column - 1]) else " ".join(str(header[column - 1]).split())
         for column in columns
@@ -540,8 +525,6 @@ class ComputedRow:
     values: ExcelRow
 
     def value(self, column: str) -> _ExcelCellValue:
-        """Wartość komórki w kolumnie ``column`` (litera, np. ``AU``)."""
-
         index = column_index_from_string(column) - 1
         return self.values[index] if index < len(self.values) else None
 
@@ -574,8 +557,6 @@ def read_computed_rows(path: Path, files: DadFiles) -> ComputedRows:
 
 
 def workbook_content(path: Path) -> bytes:
-    """Bajty skoroszytu, który jest na dysku i nie jest otwarty w Excelu; inaczej ``WorkbookError``."""
-
     ensure_available(path)
     return file_bytes(path)
 

@@ -126,8 +126,6 @@ class NoOrderSheet:
 
 @dataclass(frozen=True)
 class MissingHeaders:
-    """Arkusz z większością, ale nie kompletem wymaganych nagłówków: ten, któremu brakuje najmniej, i brakujące."""
-
     sheet: str
     labels: tuple[str, ...]
 
@@ -142,14 +140,10 @@ class DuplicatedHeaders:
 
 
 HeadersProblem = NoOrderSheet | MissingHeaders | DuplicatedHeaders
-"""Wiersz 1 Rejestru bez arkusza zleceń, który proces tłumaczy na swój Komunikat."""
 
 
 @dataclass(frozen=True)
 class RecognizedSheet:
-    """Arkusz zleceń z rozpoznania: nazwa, kolumna (od 1) każdej kolumny ``COLUMNS`` i każdy nagłówek wiersza 1
-    (po ``normalize_text``) z kolumną."""
-
     name: str
     positions: Mapping[Column, int]
     header: Mapping[str, int]
@@ -218,7 +212,6 @@ class OrderSheet:
     header: tuple[object, ...] = field(repr=False)
     paste: PasteArea | None
     part: str = field(repr=False)
-    """Część zip arkusza, z której ``OrderSheets.workers`` czyta kolumnę ``WYKONAWCA``."""
 
     @property
     def look_columns(self) -> frozenset[int]:
@@ -306,8 +299,6 @@ class OrderSheets:
 
 @dataclass(frozen=True, eq=False)
 class RegisterFile:
-    """Rejestr zleceń przeczytany raz: plik z uchwytu (``content`` to jego bajty), rozpoznanie i części paczki."""
-
     path: Path
     content: bytes = field(repr=False)
     order_sheets: OrderSheets | HeadersProblem
@@ -401,8 +392,6 @@ def recent_workers(areas: Sequence[PasteArea], since: date) -> Counter[str]:
 
 
 class PasteArea:
-    """Obszar wklejania arkusza zleceń (od ``AKCJE`` do ``UWAGI``) czytany od dołu: fakty wierszy, pamięć i Kopia."""
-
     def __init__(
         self,
         sheet: str,
@@ -431,8 +420,6 @@ class PasteArea:
 
     @cached_property
     def sheet_xml(self) -> RowsFromBottom:
-        """XML arkusza z wierszami od dołu; ``UnsupportedShape``, gdy ``<sheetData>`` jest nie jeden."""
-
         try:
             return RowsFromBottom(self._xml)
         except IrregularSheetData as error:
@@ -523,8 +510,6 @@ class PasteArea:
         )
 
     def _facts_from_bottom(self) -> Iterator[RowFacts]:
-        """Fakty wierszy od dołu; ``UnsupportedShape``, gdy przeczytanych wierszy nie da się rozdzielić."""
-
         sheet, read = self.sheet_xml, self._facts_read
         try:
             for row in sheet:
@@ -546,15 +531,10 @@ def _values(facts: RowFacts) -> dict[int, object]:
 
 @dataclass(frozen=True)
 class RegisterSheet:
-    """Arkusz zleceń w Odczycie danych Przygotowania: wiersze z danymi i numery całkowicie pustych wierszy z odczytanego
-    zakresu."""
-
     name: str
     register_rows: tuple[RegisterRow, ...]
-    """Wiersze z danymi; komórki pod nagłówkiem docelowym."""
     empty_rows: tuple[int, ...]
     _positions: tuple[int, ...]
-    """Numery kolumn ``COLUMNS`` w arkuszu (od 1)."""
 
     def column_letter(self, column: Column) -> str:
         """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
@@ -569,13 +549,9 @@ class RegisterSheet:
 
 
 _SheetsKey = tuple[tuple[str, tuple[int, ...], tuple[int, ...]], ...]
-"""Arkusze zleceń: nazwa, numery kolumn ``COLUMNS`` (od 1) i kolumny wyglądu (``OrderSheet.look_columns``)."""
 
 
 class _ReadRow(NamedTuple):
-    """Wiersz okna: wartości całego wiersza od A, wiersz z komórkami pod nagłówkiem docelowym i czy ma wygląd
-    uporządkowany."""
-
     values: tuple[object, ...]
     row: RegisterRow
     ordered: bool
@@ -590,8 +566,6 @@ class _WindowRow:
 
 @dataclass(frozen=True)
 class _Window:
-    """Arkusz okna i jego wiersze z danymi z położeniami, które poznają pamięć i Kopia."""
-
     sheet: RegisterSheet
     rows: tuple[_WindowRow, ...]
 
@@ -621,9 +595,6 @@ def _period_read(
 
 
 def _windows(path: Path, content: bytes, sheets: _SheetsKey, ranges: Mapping[str, range]) -> tuple[_Window, ...]:
-    """Okno każdego arkusza zleceń w openpyxl z bajtów ``content``: wiersze z ``ranges`` (od 2), a arkusz bez zakresu
-    od wiersza 2 do końca."""
-
     with workbook_files.open_workbook(path, content, read_only=True) as workbook:
         windows = []
         for name, columns, look_columns in sheets:
@@ -725,8 +696,6 @@ def _value_at(values: Sequence[object], column: int) -> object:
 
 @dataclass(frozen=True)
 class _ReadStyles:
-    """Style komórek z ``xl/styles.xml``, które czyta rozpoznanie: czcionka i żółte wypełnienie."""
-
     faces: tuple[tuple[str | None, float | None], ...]
     yellow: tuple[bool, ...]
 
@@ -753,8 +722,6 @@ def _is_yellow(fill: ElementTree.Element) -> bool:
 
 @dataclass(frozen=True)
 class _Values:
-    """Fakty komórek Rejestru: wartości (``CellValues``) z krojem czcionki i żółtym wypełnieniem stylu."""
-
     styles: _ReadStyles
     cells: CellValues
 

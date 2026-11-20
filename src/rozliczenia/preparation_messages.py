@@ -31,8 +31,6 @@ _STAGING_LEFT: Final = "Obok Folderu okresu został folder tymczasowy, którego 
 
 
 def period_file_exists(period_directory: Path, filename: str) -> Message:
-    """Nienadpisywanie: plik okresu już istnieje w Folderze okresu."""
-
     return Message(
         code="PLIK_OKRESU_ISTNIEJE",
         what=f"Plik tego okresu już istnieje, więc nie został nadpisany. {_NOTHING_CREATED}",
@@ -45,8 +43,6 @@ def period_file_exists(period_directory: Path, filename: str) -> Message:
 
 
 def invalid_period_token(token: str) -> Message:
-    """Token okresu nie opisuje przedziału od wtorku do poniedziałku."""
-
     return Message(
         code="ZLY_TOKEN_OKRESU",
         what="Okres nie ma postaci dd_dd_mm_rrrr od wtorku do poniedziałku.",
@@ -112,8 +108,6 @@ def _template_unreadable(template_path: Path) -> Message:
 
 
 def _template_without_header(template_path: Path, sheet: str, row: int, header: str) -> Message:
-    """Wzorzec nie ma oczekiwanego nagłówka, więc nie wiadomo, gdzie wpisać zlecenia."""
-
     return Message.to_maintainer(
         code="ZLY_WZORZEC",
         what=(
@@ -141,8 +135,6 @@ def _template_with_worker_outside_h(template_path: Path, sheet: str, column: str
 
 
 def _template_with_merged_cells(template_path: Path, sheet: str, cell_range: str) -> Message:
-    """Komórki wzorca, do których trafiają zlecenia, są scalone."""
-
     return Message.to_maintainer(
         code="SCALONE_KOMORKI_WZORCA",
         what=(
@@ -154,8 +146,6 @@ def _template_with_merged_cells(template_path: Path, sheet: str, cell_range: str
 
 
 def _template_with_bad_layout(template_path: Path, fault: LayoutFault | None) -> Message:
-    """Wzorzec bez nagłówka na swoim miejscu albo ze scalonymi komórkami tam, gdzie trafiają zlecenia."""
-
     match fault:
         case MissingHeader(sheet=sheet, found_in=str(column)):
             return _template_with_worker_outside_h(template_path, sheet, column)
@@ -221,8 +211,6 @@ def _header_list(headers: Sequence[str]) -> str:
 
 
 def register_without_headers(register_path: Path, sheet: str, headers: Sequence[str]) -> Message:
-    """Arkusz ze zleceniami nie ma w pierwszym wierszu wszystkich wymaganych nagłówków."""
-
     single = len(headers) == 1
     noun = "wymaganego nagłówka" if single else "wymaganych nagłówków"
     fix = "nagłówek" if single else "nagłówki"
@@ -239,8 +227,6 @@ def register_without_headers(register_path: Path, sheet: str, headers: Sequence[
 
 
 def register_with_duplicated_headers(register_path: Path, sheet: str, headers: Sequence[str]) -> Message:
-    """Wymagany nagłówek występuje w pierwszym wierszu arkusza ze zleceniami więcej niż raz."""
-
     single = len(headers) == 1
     return Message(
         code="POWTORZONY_NAGLOWEK_REJESTRU",
@@ -259,8 +245,6 @@ def register_with_duplicated_headers(register_path: Path, sheet: str, headers: S
 
 
 def register_without_data_sheet(register_path: Path, required_headers: Sequence[str]) -> Message:
-    """Żaden arkusz Rejestru nie ma wymaganych nagłówków w pierwszym wierszu."""
-
     return Message(
         code="BRAK_ARKUSZA_ZLECEN",
         dad_file="order_register",
@@ -277,8 +261,6 @@ def register_without_data_sheet(register_path: Path, required_headers: Sequence[
 
 
 def period_orders_in_many_sheets(register_path: Path, sheets: Sequence[str], period: str) -> Message:
-    """Zlecenia okresu leżą w więcej niż jednym arkuszu ze zleceniami."""
-
     return Message(
         code="ZLECENIA_W_WIELU_ARKUSZACH",
         dad_file="order_register",
@@ -295,8 +277,6 @@ def period_orders_in_many_sheets(register_path: Path, sheets: Sequence[str], per
 
 
 def raw_orders_not_ordered(register_path: Path, sheet: str, first_row: int, last_row: int) -> Message:
-    """Okres może mieć Surowe zlecenia: wklejone zlecenia na dole arkusza zleceń nie są jeszcze uporządkowane."""
-
     rows = row_range(first_row, last_row)
     return Message(
         code="SUROWE_ZLECENIA_W_OKRESIE",
@@ -335,8 +315,6 @@ def folder_inaccessible(folder: Path) -> Message:
 
 
 def period_folder_lookup_problem(error: PeriodFolderLookupError) -> Message:
-    """Układ folderów taty: Folderu okresu nie ma w żadnym miesiącu albo jest w kilku."""
-
     token = error.period.token
     if not error.locations:
         return Message(
@@ -360,8 +338,6 @@ _LISTED_ROWS = 10
 
 
 def _rows_label(row_numbers: Sequence[int]) -> str:
-    """Numery wierszy; przy długiej liście tylko pierwsze i liczba pozostałych."""
-
     if len(row_numbers) == 1:
         return f"wiersz {row_numbers[0]}"
     listed = ", ".join(str(row) for row in row_numbers[:_LISTED_ROWS])
@@ -374,8 +350,6 @@ def _register_location(register_path: Path, sheet: str) -> str:
 
 
 def rows_without_date(register_path: Path, sheet: str, row_numbers: Sequence[int]) -> Message:
-    """Wiersz z danymi bez poprawnej daty leży między pierwszym a ostatnim zleceniem okresu."""
-
     subject = "jest wiersz z danymi" if len(row_numbers) == 1 else "są wiersze z danymi"
     return Message(
         code="WIERSZ_BEZ_DATY",
@@ -394,8 +368,6 @@ def rows_without_date(register_path: Path, sheet: str, row_numbers: Sequence[int
 
 @dataclass(frozen=True)
 class CellContent:
-    """Komórka ``SKUTECZNE`` z wartością inną niż ``tak`` i ``nie``: numer wiersza Rejestru i odczytana zawartość."""
-
     row_number: int
     value: object
 
@@ -443,8 +415,6 @@ def _shown_content(value: object) -> str:
 
 
 def _cell_ranges(column: str, row_numbers: Sequence[int]) -> list[str]:
-    """Adresy komórek kolumny w kolejności Rejestru; kolejne wiersze są sklejone w zakres, np. ``L3–L5``."""
-
     labels: list[str] = []
     for _, run in groupby(enumerate(row_numbers), key=lambda item: item[1] - item[0]):
         rows = [row for _, row in run]
@@ -483,8 +453,6 @@ def unknown_workers(
 
 
 def no_period_orders(register_path: Path, sheet: str, period: str) -> Message:
-    """W Rejestrze nie ma żadnego zlecenia z wybranego okresu."""
-
     return Message(
         code="BRAK_ZLECEN_OKRESU",
         dad_file="order_register",
@@ -503,8 +471,6 @@ def too_few_zero_rows(
     zero_row_count: int,
     first_row_without_zeros: int,
 ) -> Message:
-    """Ostrzeżenie: Zleceń skutecznych jest więcej niż wierszy Wzorca pliku zbiorczego z zerami."""
-
     last_row = first_row_without_zeros + successful_count - zero_row_count - 1
     rows = row_range(first_row_without_zeros, last_row)
     return Message(
@@ -523,8 +489,6 @@ def too_few_zero_rows(
 
 
 def unknown_devices(collective_filename: str, row_numbers: Sequence[int]) -> Message:
-    """Ostrzeżenie: Reguły ilości nie znają składnika ``URZĄDZENIA``, więc wiersz ma tylko ilości od niego niezależne."""
-
     return Message(
         code="NIEZNANE_URZADZENIA",
         what=(
@@ -613,14 +577,11 @@ def columns_from_description(collective_filename: str, columns: Sequence[str], *
 
 
 _FROM_WEEKDAY = ("z poniedziałku", "z wtorku", "ze środy", "z czwartku", "z piątku", "z soboty", "z niedzieli")
-"""Dzień tygodnia w dopełniaczu, z przyimkiem (``date.weekday()``: 0 = poniedziałek)."""
 
 
 def incomplete_period(
     register_path: Path, sheet: str, period: str, last_order_day: date, monday: date
 ) -> Message:
-    """Ostrzeżenie: ostatnie zlecenie okresu jest sprzed poniedziałku okresu."""
-
     return Message(
         code="NIEPELNY_OKRES",
         what=(
@@ -637,8 +598,6 @@ def incomplete_period(
 
 
 def incomplete_period_refused(period: str, continue_hint: str) -> Message:
-    """Tata nie zgodził się kontynuować po ostrzeżeniu o niepełnym okresie."""
-
     return Message(
         code="PRZERWANO_NIEPELNY_OKRES",
         dad_file="order_register",
@@ -652,8 +611,6 @@ def incomplete_period_refused(period: str, continue_hint: str) -> Message:
 
 
 def write_failed(period_directory: Path) -> Message:
-    """Zapis lub publikacja plików okresu nie powiodły się."""
-
     return Message(
         code="BLAD_ZAPISU",
         what=f"Nie udało się zapisać plików okresu. {_NOTHING_CREATED}",
@@ -689,8 +646,6 @@ def staging_left(message: Message, periods_directory: Path, staging_prefix: str)
 
 
 def write_failed_with_file_left(period_directory: Path, filename: str) -> Message:
-    """Publikacja nie powiodła się, a już opublikowanego pliku okresu nie udało się usunąć."""
-
     return Message(
         code="BLAD_ZAPISU_POZOSTAL_PLIK",
         what="Zapisano tylko jeden z dwóch plików okresu i nie udało się go usunąć.",
@@ -704,8 +659,6 @@ def write_failed_with_file_left(period_directory: Path, filename: str) -> Messag
 
 
 def unexpected_failure() -> Message:
-    """Nieprzewidziany błąd; treść wyjątku nie trafia do taty."""
-
     return Message(
         code="BLAD_NIEOCZEKIWANY",
         what=f"Wystąpił nieoczekiwany błąd. {_NOTHING_CREATED}",
@@ -715,8 +668,6 @@ def unexpected_failure() -> Message:
 
 
 def summary_not_shown() -> Message:
-    """Pliki okresu powstały, ale podsumowania nie dało się pokazać; treść wyjątku nie trafia do taty."""
-
     return Message.to_maintainer(
         code="BLAD_PODSUMOWANIA",
         what="Pliki okresu powstały, ale nie udało się pokazać podsumowania.",
@@ -727,8 +678,6 @@ def summary_not_shown() -> Message:
 
 
 def plan_not_shown() -> Message:
-    """DRY-RUN skończył się, ale planu nie dało się pokazać; nic nie zapisano."""
-
     return Message.to_maintainer(
         code="BLAD_PLANU",
         what="Nie udało się pokazać planu. Nic nie zapisano.",

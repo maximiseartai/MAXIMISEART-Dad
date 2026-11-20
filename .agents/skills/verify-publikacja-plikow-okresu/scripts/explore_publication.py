@@ -79,9 +79,6 @@ class ModelGap(BaseException):
     """The real code made a filesystem call that the in-memory disk does not model."""
 
 
-# --- In-memory disk with Windows semantics -------------------------------------------------------
-
-
 @dataclass
 class Entry:
     is_dir: bool
@@ -347,8 +344,6 @@ class Scheduler(Interleaving[Run]):
         super()._switch(thread)
 
 
-# --- Interception of os.* for paths on the in-memory disk ------------------------------------------
-
 _GUARDED_DISK: VirtualDisk | None = None
 
 
@@ -455,9 +450,6 @@ def intercepted(disk: VirtualDisk, scheduler: Scheduler) -> Iterator[None]:
         _GUARDED_DISK = None
         for owner, name, original in reversed(originals):
             setattr(owner, name, original)
-
-
-# --- Steps of the code outside the os calls: workbook writing and the staging directory -----------------
 
 
 def period_disk(disk: VirtualDisk, scheduler: Scheduler) -> preparation_files.Disk:
@@ -570,9 +562,6 @@ def probe_interception() -> list[str]:
     return problems
 
 
-# --- Scopes, initial states and Dad's actions -----------------------------------------------------
-
-
 NO_FOLDER = "brak Folderu okresu"
 EMPTY_FOLDER = "pusty Folder okresu"
 DAD_INTERNAL = "Folder okresu z plikiem taty o nazwie Rozliczenia wewnętrznego"
@@ -608,13 +597,13 @@ SCOPES = {
 @dataclass(frozen=True)
 class RiskShape:
     """The exact shape of an accepted risk or a known finding of RAZEM_ALBO_ZADEN, each part taken from its story and
-    each required, so an entry cannot match on fewer of them (#920):
+    each required, so an entry cannot match on fewer of them:
 
     - ``killed_before``: the steps before which the process was killed (``Pending.step``); a run that was not killed
       (``None``) is outside every shape;
     - ``left``: the run's period files left in the Folder okresu, exactly;
     - ``unlink_failed``: whether an ``os.unlink`` of the run failed; a rollback whose ``os.unlink`` failed is the case
-      of issue #92 (``BLAD_ZAPISU_POZOSTAL_PLIK``), which ADR 0005 does not cover.
+      ``BLAD_ZAPISU_POZOSTAL_PLIK``, which ADR 0005 does not cover.
 
     Each part has in ``check_publication_mutations.BOUNDARIES`` a broken variant just outside it, which must give a new
     violation (``tests/test_mutacje_skilli.py``)."""
@@ -717,9 +706,6 @@ def dad_actions(disk: VirtualDisk, layout: Layout) -> list[tuple[str, Callable[[
         for target in (layout.files.folder.internal_settlement, layout.files.folder.collective_file)
         if disk.entry(target) is None
     ]
-
-
-# --- One schedule ---------------------------------------------------------------------------------
 
 
 @dataclass
@@ -870,9 +856,6 @@ def execute(scope: Scope, choices: Choices, visited: set[object]) -> Execution:
                 violations.append(violation)
     undisturbed_success = not cut and not disturbances and runs[0].result == "SUKCES"
     return Execution(trace, violations, gaps, successes, undisturbed_success, cut, disturbances)
-
-
-# --- Exploration and report ----------------------------------------------------------------------
 
 
 @dataclass

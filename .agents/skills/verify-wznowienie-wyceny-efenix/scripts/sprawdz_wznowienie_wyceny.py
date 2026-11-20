@@ -1,12 +1,3 @@
-"""Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
-opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu
-z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko
-ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
-
-    .venv/bin/python .agents/skills/verify-wznowienie-wyceny-efenix/scripts/sprawdz_wznowienie_wyceny.py
-    py -3 .agents\\skills\\verify-wznowienie-wyceny-efenix\\scripts\\sprawdz_wznowienie_wyceny.py
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -20,7 +11,6 @@ from model_tlc import Model, Obietnica, Stan, main
 
 OPIS = "Sprawdza model TLA+ wznowienia Wyceny w efenix przy każdej kolejności Zatrzymań, zgaśnięć i zmian taty w efenix."
 
-# Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
     "Start": "tata uruchamia Wycenę w efenix (tryb: bez albo z Przekazaniem)",
     "Otworz": "okno szuka zlecenia {z}, a gdy nie jest „Do akceptacji”, otwiera je i decyduje (_outcome, completion)",
@@ -60,7 +50,6 @@ MODEL = Model(
     werdykt="WZNOWIENIE WYCENY",
     skill=Path(__file__).resolve().parents[1],
     specyfikacja="WznowienieWyceny.tla",
-    # Zmienna historii każdej obietnicy: zbiór z jednym zbiorem śladów w chwili zdarzenia, które ją łamie.
     obietnice={
         "NieCzysciWycenyTaty": Obietnica(
             "narzędzie ładuje Wycenę Emmetta do zlecenia, które ma już ilości, i czyści je.", "czysciTate"

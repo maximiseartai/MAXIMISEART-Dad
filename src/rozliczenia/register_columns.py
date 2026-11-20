@@ -31,8 +31,6 @@ class Column:
 
     @property
     def label(self) -> str:
-        """Nagłówek w komunikacie: wszystkie przyjmowane zapisy."""
-
         return " albo ".join(self.register_headers)
 
 
@@ -61,7 +59,6 @@ COLUMNS: Final[tuple[Column, ...]] = (
     COMPLETED,
 )
 TARGET_HEADERS: Final[tuple[str, ...]] = tuple(column.target_header for column in COLUMNS)
-"""Nagłówki docelowe obu plików okresu, pod którymi stają komórki wiersza Rejestru."""
 
 ORDERED_FONT: Final = "Calibri"
 ORDERED_SIZE: Final = 8
