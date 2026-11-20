@@ -48,9 +48,7 @@ class FillKind(StrEnum):
     """Rodzaj Ilości do uzupełnienia, który ma listę wierszy."""
 
     WITHOUT_RULE = "without_rule"
-    """Nieznane ``URZĄDZENIA``: Reguły ilości dały najwyżej ilości reguł dla składnika spoza listy (z Wydania V, T i N)."""
     FROM_DESCRIPTION = "from_description"
-    """Prewencja, niedostępność usług albo puste ``URZĄDZENIA``: Reguły ilości nie dały nic."""
 
 
 _KINDS: Final[Mapping[type[RuleResult], FillKind]] = {
@@ -61,15 +59,11 @@ _KINDS: Final[Mapping[type[RuleResult], FillKind]] = {
 
 @dataclass(frozen=True)
 class ToolEntry:
-    """Wpis narzędzia w jednym Wierszu danych (zob. opis modułu)."""
-
     rules: RuleResult | None
-    """Wynik Reguł ilości; ``None``: ``DATA`` nie jest datą."""
     read: DescriptionRead
     quantities: Quantities
     """Kolumna ``N:AP`` → Ilość usług reguł i legendy razem, w kolejności kolumn."""
     amount: int
-    """Kwota w ``AS``; 0: bez kwoty."""
     fills: Mapping[str, FillColour]
     columns: frozenset[str]
     """Kolumny narzędzia (``N:AP`` i ``AS``): porównywane Regułami ilości, wpisane legendą, ``AS`` przy kwocie."""
@@ -82,9 +76,6 @@ class ToolEntry:
 
     @property
     def kind(self) -> FillKind | None:
-        """Rodzaj Ilości do uzupełnienia, gdy wiersz czeka na tatę; wiersz z opisu z Kodami czynności bez Błędu opisu nie
-        czeka."""
-
         kind = None if self.rules is None else _KINDS.get(type(self.rules))
         if kind is FillKind.FROM_DESCRIPTION and self.closed:
             return None
@@ -95,16 +86,10 @@ _NONE: Final[Mapping[str, FillColour]] = MappingProxyType({})
 
 
 def description(cell: object) -> str:
-    """Opis technika z komórki ``CZYNNOŚCI ZREALIZOWANE`` tak, jak go pokazuje Excel (``client_data.shown``); pusta
-    komórka i same spacje to ``""``."""
-
     return "" if is_blank(cell) else shown(cell)
 
 
 def tool_entry(content: OrderContent | None, completed: str, rules: QuantityRules, legend: ActivityLegend) -> ToolEntry:
-    """Wpis narzędzia dla treści ``content`` (``None`` albo bez pory: bez Reguł ilości) i opisu technika ``completed``
-    (``description`` komórki)."""
-
     result = evaluated(rules, content)
     read = legend.read(completed, fault=is_fault(result))
     by_rules: Quantities = {} if result is None else result.quantities

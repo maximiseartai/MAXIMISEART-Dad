@@ -32,17 +32,12 @@ def cell_value(row: RegisterRow, column: Column) -> object:
 
 
 def read(path: Path, files: DadFiles) -> RegisterFile:
-    """Rejestr ``path`` przeczytany uchwytem ``files``; zatrzymanie, gdy go nie ma, jest otwarty w Excelu, niedostępny
-    albo nieczytelny."""
-
     with _stops():
         return register_file.read(path, files)
 
 
 @dataclass(frozen=True)
 class RawOrders:
-    """Surowe zlecenia, które mogą należeć do okresu: arkusz zleceń i jego wiersze od ``first_row`` do ``last_row``."""
-
     sheet: str
     first_row: int
     last_row: int

@@ -20,20 +20,14 @@ from datetime import date, datetime, timezone
 
 
 def utc_now() -> datetime:
-    """Teraz w UTC: chwila do zapisu i porównania."""
-
     return datetime.now(timezone.utc)
 
 
 def local_now() -> datetime:
-    """Teraz na zegarze komputera w jego strefie czasu: chwila taty."""
-
     return utc_now().astimezone()
 
 
 def dad_today() -> date:
-    """Dzień taty: dzisiejsza data w strefie komputera, nie w UTC."""
-
     return local_now().date()
 
 

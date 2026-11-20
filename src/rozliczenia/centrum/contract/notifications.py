@@ -12,7 +12,6 @@ from rozliczenia.centrum.contract.runs import Count, Pricing
 
 
 CaseKey = Literal["uwaga", "zgloszenie"]
-"""Rodzaj sprawy taty: Uwaga taty albo Zgłoszenie."""
 
 
 class Resolved(Model):
