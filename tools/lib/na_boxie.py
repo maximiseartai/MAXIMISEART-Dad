@@ -19,11 +19,15 @@ w sesji pytest, zostaje przy wołającym. Wołający, który sam robi ciężką 
 macOS). Pytest bez workerów albo z jednym zostaje na Macu, bo jest lekki. Decyzja czyta tylko środowisko, ``PATH``
 i liczbę workerów pytest, a nie tekst polecenia.
 
-Polecenie jedzie na box jako plik skryptu (``boatbox run --file``), który ``boatbox`` wysyła przez stdin, bo jeden
-argument polecenia na Linuksie boxa ma najwyżej 128 KiB, a plan mutacji bywa większy. Skrypt biegnie z
-``PYTEST_XDIST_AUTO_NUM_WORKERS`` równym liczbie rdzeni boxa, a inne zmienne środowiska Maca tam nie trafiają. Plik
-``--plik`` mutacji jedzie w skrypcie, bo box widzi tylko pliki worktree, które widzi git. Ścieżki bezwzględne pod
-korzeniem repo stają się względne; ścieżka po ``=`` w opcji i ścieżka spoza repo zostają, jak są.
+Box widzi to, co wiezie ``boatbox``: HEAD, każdą gałąź lokalną i ``origin/*`` (więc rewizja z argumentów, np. gałąź
+rodzica w ``--baza`` albo krótki SHA z innej gałęzi, rozwiązuje się tam jak tutaj) oraz pliki worktree, które widzi
+git. Plik ``--plik`` mutacji jedzie w skrypcie. Słowo polecenia, którego box nie zobaczy (``niewidoczne``: ścieżka spoza
+repo, wejście albo wyjście, i istniejąca ścieżka, którą git ignoruje), to odmowa ``ODMOWA`` przed startem boxa z jego
+nazwą, a nie bieg, który pada na boxie albo zostawia tam wynik. Polecenie jedzie na box jako plik skryptu
+(``boatbox run --file``), który ``boatbox`` wysyła przez stdin, bo jeden argument polecenia na Linuksie boxa ma
+najwyżej 128 KiB, a plan mutacji bywa większy. Skrypt biegnie z ``PYTEST_XDIST_AUTO_NUM_WORKERS`` równym liczbie
+rdzeni boxa, a ścieżki pod korzeniem repo stają się względne. Pliki, które narzędzie zapisze w repo na boxie, zostają
+tam (``boatbox get``).
 """
 
 from __future__ import annotations
@@ -43,10 +47,13 @@ import textwrap
 from typing import Any, NoReturn, Protocol
 
 import potomne
+import repo
 
 BOX = "BOATBOX_BOX"
 TUTAJ = "BOATBOX_HERE"
 NIE_WSTAL = 75
+ODMOWA = 2
+"""Kod przeniesienia, którego box nie wykona, bo nie zobaczy słowa polecenia (``niewidoczne``); box nie startuje."""
 """Kod ``boatbox``, gdy box nie wstał, a polecenie nie ruszyło (EX_TEMPFAIL, jak ``box_boat.KOD_WYJSCIA``: powtórz)."""
 START_S = 300
 """Tyle ``uruchom`` daje boxowi na start, załadowanie dysku i sync ponad limit samego polecenia."""
@@ -100,6 +107,41 @@ def skrypt(words: Sequence[str], cwd: Path, *, root: Path = ROOT, carried: tuple
     return "\n".join([*lines, "exec " + " ".join(parts)]) + "\n"
 
 
+def niewidoczne(words: Sequence[str], cwd: Path, *, root: Path = ROOT, carried: Path | None = None) -> list[str]:
+    """Słowa ``words`` (bez interpretera) i wartości po ``=`` w opcji, których box nie zobaczy, każde z powodem: ścieżka
+    bezwzględna spoza ``root`` i istniejąca ścieżka pod ``root``, którą git ignoruje, poza ``.venv`` (box ma własne, a
+    jego interpreter to dowiązanie spoza repo, więc ta granica patrzy na ścieżkę przed rozwiązaniem dowiązań) i plikiem
+    ``carried``, który jedzie w skrypcie."""
+
+    found = []
+    for word in words[1:]:
+        option, equals, value = word.partition("=")
+        for given in (word, value) if equals else (word,):
+            path = Path(given) if os.path.isabs(given) else cwd / given
+            plain = Path(os.path.abspath(path))
+            if not given or (carried is not None and path.resolve() == carried) or plain.is_relative_to(root / ".venv"):
+                continue
+            if os.path.isabs(given) and not (plain.is_relative_to(root) or path.resolve().is_relative_to(root)):
+                found.append(f"{given} (spoza repo)")
+            elif path.exists() and path.resolve().is_relative_to(root) and repo.succeeds(root, "check-ignore", "-q", str(path)):
+                found.append(f"{given} (ignorowana przez gita)")
+    return found
+
+
+def _odmowa(found: Sequence[str]) -> NoReturn:
+    """Odmowa ``niewidoczne`` z kodem ``ODMOWA`` przez ``os._exit``: w ``pytest_configure`` ``SystemExit`` byłby
+    wewnętrznym błędem pytest, a przed startem boxa nie ma czego sprzątać."""
+
+    print(
+        f"NA BOXIE ODMOWA | box nie zobaczy: {', '.join(found)}; ciężkie narzędzie repo nie biegnie na Macu, więc podaj ścieżkę"
+        " w repo, którą widzi git (wynik zabierze boatbox get), albo uruchom całość przez boatbox run z danymi na boxie",
+        file=sys.stderr,
+        flush=True,
+    )
+    sys.stdout.flush()
+    os._exit(ODMOWA)
+
+
 def plik_skryptu(text: str) -> Path:
     """Plik ``SKRYPTY`` z treścią ``text``, nazwany jej skrótem: równoległe przeniesienia tego samego polecenia (z dwóch
     worktree) dają ten sam plik, więc proces zapisuje go obok i podmienia atomowo, a ``boatbox`` czyta zawsze pełny."""
@@ -128,6 +170,8 @@ def przenies(plik: str | os.PathLike[str] | None = None) -> None:
     if not przeniesc():
         return
     carried = (Path(plik).resolve(), Path(plik).read_bytes()) if plik is not None and Path(plik).is_file() else None
+    if found := niewidoczne(sys.orig_argv, Path.cwd(), carried=carried[0] if carried else None):
+        _odmowa(found)
     _exec(skrypt(sys.orig_argv, Path.cwd(), carried=carried))
 
 
@@ -138,6 +182,8 @@ def przenies_pytest(config: Konfiguracja) -> None:
 
     workers = config.getoption("numprocesses", default=None)
     if isinstance(workers, int) and workers > 1 and przeniesc():
+        if found := niewidoczne(sys.orig_argv, Path.cwd()):
+            _odmowa(found)
         _exec(skrypt(sys.orig_argv, Path.cwd()))
 
 

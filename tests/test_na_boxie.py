@@ -37,11 +37,7 @@ SZYBKO = [PYTHON, "tools/szybko.py", "--baza", "nie/ma/takiej"]
 HEAVY = [
     pytest.param(lambda tmp: SZYBKO, {}, id="szybko"),
     pytest.param(lambda tmp: [PYTHON, "tools/mutacje_zmiany.py"], CI, id="mutacje-zmiany"),
-    pytest.param(
-        lambda tmp: [PYTHON, "tools/benchmark_przebiegu.py", "freeze", "--commit", "0", "--reference-dir", str(tmp / "r"), "--mirror-dir", str(tmp / "l")],
-        {},
-        id="benchmark-freeze",
-    ),
+    pytest.param(lambda tmp: [PYTHON, "tools/benchmark_przebiegu.py", "freeze", "--commit", "0"], {}, id="benchmark-freeze"),
     pytest.param(lambda tmp: [PYTHON, "tools/ci_lokalnie.py", "--tylko", "pytest", "--kazdy-commit", "nie/ma/takiej"], CI, id="ci-lokalnie-pytest"),
     pytest.param(lambda tmp: [*PYTEST, "-n", "2"], {}, id="pytest-z-workerami"),
     pytest.param(lambda tmp: [PYTHON, "tools/na_scalonych_pr.py", "--commit", "HEAD", "--", "tools/mutacje_zmiany.py", "--baza", "HEAD"], {}, id="na-scalonych-pr"),
@@ -163,6 +159,35 @@ def test_lekki_tryb_albo_szybka_odmowa_ciezkiego_narzedzia_zostaje_na_macu(comma
     done = _run(command, tmp_path, extra=extra)
 
     assert (done.returncode != ATRAPA_KOD, _moved(tmp_path)) == (True, None), done.stdout + done.stderr
+
+
+@pytest.mark.parametrize(
+    ("build", "unseen"),
+    [
+        pytest.param(
+            lambda tmp: [PYTHON, "tools/na_scalonych_pr.py", "--commit", "HEAD", "--wyniki", str(tmp / "wyniki"), "--", "tools/mutacje_zmiany.py"],
+            lambda tmp: f"{tmp / 'wyniki'} (spoza repo)",
+            id="katalog-wyniku-spoza-repo",
+        ),
+        pytest.param(lambda tmp: [*PYTEST, "-n", "2", f"--basetemp={tmp / 'b'}"], lambda tmp: f"{tmp / 'b'} (spoza repo)", id="sciezka-po-rownasie"),
+        pytest.param(
+            lambda tmp: [*PYTEST, "-n", "2", "tools/lib/__pycache__"], lambda tmp: "tools/lib/__pycache__ (ignorowana przez gita)", id="ignorowana-przez-gita"
+        ),
+    ],
+)
+def test_slowo_ktorego_box_nie_zobaczy_to_odmowa_przed_startem_boxa(
+    build: Callable[[Path], list[str]], unseen: Callable[[Path], str], tmp_path: Path
+) -> None:
+    (ROOT / "tools" / "lib" / "__pycache__").mkdir(exist_ok=True)
+
+    done = _run(build(tmp_path), tmp_path)
+
+    assert (done.returncode, _moved(tmp_path)) == (na_boxie.ODMOWA, None), done.stderr
+    assert f"NA BOXIE ODMOWA | box nie zobaczy: {unseen(tmp_path)};" in done.stderr
+
+
+def test_venv_repo_box_ma_wlasne_wiec_slowo_pod_nim_nie_jest_odmowa() -> None:
+    assert na_boxie.niewidoczne([PYTHON, ".venv/bin/pytest", str(ROOT / ".venv" / "bin" / "python"), "-n", "2"], ROOT) == []
 
 
 def test_polecenie_z_podkatalogu_wchodzi_do_niego_a_sciezka_pod_repo_jest_wzgledna(tmp_path: Path) -> None:
