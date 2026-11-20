@@ -1050,6 +1050,15 @@ def test_nowy_skladnik_z_grupa_staje_na_koncu_listy_urzadzen_a_historia_mowi_dod
     assert "ont-x" in [component.id for component in _tools_rules(app.tool.config).devices.components]
 
 
+def test_zapis_powtorzony_w_formularzu_skladnika_zapisuje_sie_raz(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    saved = app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": ["ont x", "ONT-X2", "ont-x2"], "group": None})
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["quantity_rules"]["devices"][-1]["other_spellings"] == ["ont-x2"]
+
+
 @pytest.mark.parametrize(
     ("request_line", "body", "refusal"),
     [

@@ -1020,6 +1020,10 @@ def test_karta_porazki_mowi_czy_tata_klika_jeszcze_raz_czy_przekazuje_sprawe_mak
     view = centrum.client.get("/api/tool-update").json()
 
     assert (view["state"], view["draft"]["title"].split(":")[0], view["next_action"]) == ("failed", shown, next_action)
+    action = view["message"]["action"]
+    assert ("„Zaktualizuj narzędzie” jeszcze raz" in action) == (next_action == "retry"), action
+    assert next_action == "retry" or "„Wyślij do Maksa”" in action, action
+    assert (STILL_WORKS in action) == (shown != ROLLBACK_FAILED), action
 
 
 def test_zgloszony_wynik_nie_wraca_gdy_dysk_nie_pozwala_usunac_jego_pliku(
