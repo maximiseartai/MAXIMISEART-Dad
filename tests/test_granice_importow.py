@@ -511,20 +511,27 @@ def skrzynka() -> ssl.SSLSocket:
     ),
     "czyta tylko pliki .py: Centrum z modułu bez źródła .pyc": "from rozliczenia.centrum import runs\n\nGOSPODARZ = runs\n",
     "czyta tylko pliki .py: imaplib z modułu bez źródła .pyc": "import imaplib\n\nSKRZYNKA = imaplib.IMAP4_SSL\n",
+    "czyta tylko instrukcje importu: przeglądarka okna efenix przez wbudowane __import__": (
+        'OKNO = __import__("rozliczenia.efenix_browser")\n'
+    ),
+    "czyta tylko pliki .py: przeglądarka okna efenix z modułu, który Python na Windows importuje z .pyw": (
+        "from rozliczenia import efenix_browser\n\nOKNO = efenix_browser\n"
+    ),
+    "czyta tylko pliki .py: przeglądarka okna efenix z modułu bez źródła .pyc": (
+        "from rozliczenia import efenix_browser\n\nOKNO = efenix_browser\n"
+    ),
 }
 
 
 def _contract_tree(src: Path) -> None:
-    """Najmniejszy pakiet ``rozliczenia`` w ``src`` z modułami, które nazywają kontrakty z ``IMPORT_LINTER_CONFIG``, i
-    moduł ``kontrola``, który łamie oba kontrakty importem wprost: jego zgłoszenie dowodzi, że ``lint-imports`` czytał
-    to drzewo."""
-
     for name, code in {
         "__init__.py": "",
         "centrum/__init__.py": "",
         "centrum/runs.py": "",
+        "centrum/efenix_chrome.py": "from rozliczenia import efenix_browser\n",
+        "efenix_browser.py": "",
         "worker_report_inbox.py": "import imaplib\nimport smtplib\n",
-        "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\n",
+        "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\nimport rozliczenia.efenix_browser\n",
     }.items():
         (src / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
         (src / "rozliczenia" / name).write_text(code, encoding="utf-8")
@@ -552,6 +559,7 @@ def test_znane_luki_kontraktow_importow_przechodza_przez_ruff_i_import_linter(tm
 
     assert "rozliczenia.kontrola is not allowed to import rozliczenia.centrum:" in wynik, wynik
     assert "rozliczenia.kontrola -> imaplib" in wynik, wynik
+    assert "rozliczenia.kontrola -> rozliczenia.efenix_browser" in wynik, wynik
     assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_KONTRAKTOW)")
 
 
