@@ -49,8 +49,6 @@ class Konfiguracja(Protocol):
     """Ta część ``pytest.Config``, której potrzebuje ``przenies_pytest``: moduł importują skrypty workflow na systemowym
     ``python3`` bez pytest."""
 
-    pluginmanager: Any
-
     def getoption(self, name: str, default: Any = ...) -> Any: ...
 
 
@@ -109,14 +107,12 @@ def przenies(plik: str | os.PathLike[str] | None = None) -> None:
 
 def przenies_pytest(config: Konfiguracja) -> None:
     """``przenies`` dla sesji pytest z ``pytest_configure`` kontrolera: przenosi tylko sesję z więcej niż jednym workerem
-    xdist (pytest-xdist liczy już ``-n auto`` w ``pytest_cmdline_main``), po zatrzymaniu przechwytywania wyjścia, które
-    inaczej zabrałoby wyjście ``boatbox``. Sesja, która zostaje, wpisuje ``SESJA`` dla procesów swoich testów."""
+    xdist (pytest-xdist liczy już ``-n auto`` w ``pytest_cmdline_main``, a przechwytywanie wyjścia pytest jest wtedy
+    zawieszone, więc wyjście ``boatbox`` idzie do wołającego). Sesja, która zostaje, wpisuje ``SESJA`` dla procesów
+    swoich testów."""
 
     workers = config.getoption("numprocesses", default=None)
     if isinstance(workers, int) and workers > 1 and przeniesc():
-        capture = config.pluginmanager.getplugin("capturemanager")
-        if capture is not None:
-            capture.stop_global_capturing()
         _exec(polecenie(sys.orig_argv, Path.cwd()))
     os.environ[SESJA] = "1"
 
