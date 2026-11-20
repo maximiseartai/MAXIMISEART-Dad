@@ -13,18 +13,12 @@ import { useResource } from "@/lib/use-resource"
 import { columnLabel } from "@/pages/settings/rule-sentence"
 import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
 
-/** Tyle różnic widać od razu; resztę rozwija „Pokaż wszystkie”. */
 const FIRST = 5
 
 const DIFFERENCES = { one: "różnica", few: "różnice", many: "różnic" }
 
 const TITLE = "Tu wpisałeś inaczej niż reguła"
 
-/**
- * Różnice z Kontroli ilości ostatnich okresów, liczone przez serwer tym samym rachunkiem co Kontrola ilości: kolumna,
- * ilość z reguł, wpis taty i wiersz bez adresu i numerów. „Popraw regułę” otwiera edytor z formularzem z serwera
- * (`fix`), „To był wyjątek” zapisuje wyjątek z „Zapisano · Cofnij”. Bez różnic lista się nie pokazuje.
- */
 export function QuantityDifferences({ fix }: { fix: (draft: RuleForm) => void }) {
   const { resource, reload, replace } = useResource(getQuantityDifferences, [])
 
@@ -47,7 +41,6 @@ export function QuantityDifferences({ fix }: { fix: (draft: RuleForm) => void })
   }
 }
 
-/** Złe ustawienie pliku wyjątków i lista; bez różnic i bez nieczytelnego pliku sama lista się nie pokazuje. */
 function Found({
   found,
   fix,

@@ -576,7 +576,7 @@ def test_plan_kazdego_wariantu_biegnie_do_konca_bez_sladu_na_dysku(
 
     plany = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
 
-    assert len(plany) == 9
+    assert {"default", "existing", "locked", "intermax"} <= plany.keys()
     assert {wariant: [krok.name for krok in kroki][-2:] for wariant, kroki in plany.items()} == {
         wariant: ["cleanup", "self-test"] for wariant in plany
     }

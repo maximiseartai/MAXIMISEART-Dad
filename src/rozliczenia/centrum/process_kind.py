@@ -217,10 +217,6 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     logs: Callable[[SummaryT | None, object], ProcessLogs] = lambda _summary, _facts: ProcessLogs()
     quantity_check: Callable[[SummaryT], CheckResult] | None = None
 
-    def __post_init__(self) -> None:
-        modes = self.view.pricing_modes
-        assert not modes or modes[0] == runs_contract.DEFAULT_PRICING, f"{self.key}: pierwszy tryb to {runs_contract.DEFAULT_PRICING}"
-
     @property
     def title(self) -> str:
         return self.core.name
@@ -286,7 +282,6 @@ class PeriodProcessKind(ProcessKind[InputsT, SummaryT]):
     start: PeriodStart
 
     def __post_init__(self) -> None:
-        super().__post_init__()
         assert (self.start.no_preview is None) is (self.core.preview is not None), (
             f"{self.key}: odmowa startu bez zapisu wtedy i tylko wtedy, gdy rdzeń nie ma Podglądu bez zapisu"
         )

@@ -5,12 +5,6 @@ import type { MailingPeriod, MailingRow } from "@/api/generated"
 import { useAction } from "@/lib/action"
 import type { ShownState } from "@/pages/settlement-mailing/periods"
 
-/**
- * Wysyłka okresu w tej wizycie na stronie. `shown`: stany z odpowiedzi wysyłki, które stoją nad stanem z odczytu
- * strony, dopóki nowy odczyt ich nie zna; `sent` i `failed`: Wykonawcy, których mail w tej wizycie poszedł albo nie
- * wyszedł; `round`: trwająca wysyłka (który mail z ilu); `glows`: ile wysyłek skończyło się bez porażki, a każda daje
- * jedną poświatę paska.
- */
 type Visit = {
   shown: Readonly<Record<string, ShownState>>
   sent: ReadonlySet<string>

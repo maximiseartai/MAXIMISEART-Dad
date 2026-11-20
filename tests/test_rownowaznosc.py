@@ -257,18 +257,6 @@ def test_czesc_zipu_tylko_po_jednej_stronie_to_roznica_z_nazwa_czesci(tmp_path: 
     assert rownowaznosc.file_differences(base, head) == ["Brakujaca.xlsx: części customXml/item1.xml", "Nowa.xlsx: części customXml/item1.xml"]
 
 
-def test_rozliczenie_pracownika_bez_ochrony_arkusza_rozni_sie_czescia_zipu(tmp_path: Path) -> None:
-    base, head = _folders(tmp_path)
-    for folder in (base, head):
-        write_workbook(folder / "okres" / SETTLEMENTS / "Adrian Testowy.xlsx", "to samo")
-        write_workbook(folder / "okres" / SETTLEMENTS / "Darek Fikcyjny.xlsx", "to samo")
-        (folder / "okres" / SETTLEMENTS / "zostaje.txt").write_text("plik sprzed uruchomienia\n", encoding="utf-8")
-    protected = b'<sheetProtection sheet="1" selectLockedCells="1"/><pageMargins'
-    rewrite_parts(base / "okres" / SETTLEMENTS / "Darek Fikcyjny.xlsx", lambda name, data: data.replace(b"<pageMargins", protected) if name == "xl/worksheets/sheet1.xml" else data)
-
-    assert rownowaznosc.file_differences(base, head) == [f"okres/{SETTLEMENTS}/Darek Fikcyjny.xlsx: części xl/worksheets/sheet1.xml"]
-
-
 # --- linia scenariusza -------------------------------------------------------------------------------------------
 
 

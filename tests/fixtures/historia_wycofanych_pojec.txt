@@ -7,11 +7,8 @@ README.md	Mają odznakę `.cmd`: to stare Uruchomienia z dawnych launcherów i C
 src/rozliczenia/centrum/contract/metrics.py	rekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.
 src/rozliczenia/centrum/run_origins.py	``.cmd``: stare Uruchomienia taty z dawnych launcherów i CLI oraz rekordy ze
 
-# Git biegnie bez terminala
-src/rozliczenia/centrum/tool_update.py	terminala, bez pomocnika logowania i bez okna konsoli w Windows. Każde kończy
-
 # tekst błędu Gita
-src/rozliczenia/centrum/tool_update.py	_LOGIN_SIGNS: Final = ("terminal prompts disabled", "could not read username", "could not read password", "authentication failed")
+src/rozliczenia/centrum/tool_update.py	"terminal prompts disabled",
 
 # starszy ADR sprzed ADR-u, który wycofał pojęcie; jego Status prowadzi do tego ADR-u
 docs/adr/0001-local-deterministic-settlement-engine.md	uruchomienia tego samego silnika: `Utwórz rozliczenia.cmd` oraz adapter VBA w

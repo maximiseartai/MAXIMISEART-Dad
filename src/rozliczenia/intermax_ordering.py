@@ -1,7 +1,8 @@
 """Uporządkowanie INTERMAX: Surowe zlecenia dnia na dole Rejestru zleceń stają się uporządkowanym dniem.
 
 Operacją procesu jest ``order_register()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty
-rozpoznania, planu dnia i zapisu na Komunikaty: Sprawdzanie (INTERMAX jest i nie jest otwarty w Excelu), Odczyt
+rozpoznania, planu dnia i zapisu na Komunikaty: Sprawdzanie (obok INTERMAX nie leży kopia konfliktu OneDrive,
+``onedrive_conflicts.beside``, a INTERMAX jest i nie jest otwarty w Excelu), Odczyt
 danych (``register_file.read`` i obszary wklejania z rozpoznania arkuszy zleceń, ``paste_areas``, oraz Baza zleceń
 ``order_base.read``, gdy wejście ją ma), Planowanie (``raw_orders.recognize`` w każdym obszarze wklejania, odmowa dnia,
 który już jest Dniem uporządkowanym (``_ordered_days``), Historia adresu każdego Surowego zlecenia z Bazy zleceń i
@@ -28,7 +29,7 @@ from types import MappingProxyType
 
 from openpyxl.utils.cell import get_column_letter
 
-from . import intermax_file, order_base, raw_orders, register_file, workbook_files
+from . import intermax_file, onedrive_conflicts, order_base, raw_orders, register_file, workbook_files
 from . import intermax_messages as messages
 from .dad_files import DadFiles
 from .domain import ProgressPhase
@@ -148,6 +149,8 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
     files = context.files
 
     def check() -> None:
+        if copies := onedrive_conflicts.beside(register_path):
+            raise StopError(messages.conflict_copy(copies[0]))
         try:
             workbook_files.ensure_available(register_path)
         except WorkbookError as error:
@@ -308,10 +311,13 @@ def _obstacle(register: Path, sheet: str, obstacle: Obstacle) -> Message:
 def register_problem(register_path: Path, files: DadFiles) -> Message | None:
     """Komunikat, którym Sprawdzanie albo Odczyt danych zatrzymałyby Uporządkowanie INTERMAX; ``None``, gdy przechodzą.
 
-    Tylko czyta, uchwytem ``files``, więc Diagnoza sprawdza INTERMAX tą samą regułą co proces. ``register_file.read``
-    sprawdza najpierw to samo co Sprawdzanie i daje ten sam Komunikat, więc wystarcza sam.
+    Tylko czyta, uchwytem ``files``, więc Diagnoza sprawdza INTERMAX tą samą regułą co proces: kopię konfliktu OneDrive
+    obok INTERMAX jak Sprawdzanie, a ``register_file.read`` sprawdza najpierw resztę Sprawdzania i daje ten sam
+    Komunikat.
     """
 
+    if copies := onedrive_conflicts.beside(register_path):
+        return messages.conflict_copy(copies[0])
     try:
         paste_areas(register_file.read(register_path, files))
     except WorkbookError as error:

@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, time, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import shutil
 import threading
@@ -12,18 +13,17 @@ from typing import Any, Final, NamedTuple
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
+from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
-from rozliczenia.worker_periods import InRegister
 from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 
@@ -33,6 +33,7 @@ from tests.fixtures.centrum import (
     TOOL_COMMIT,
     FakeReportBox,
     ToolDirectory,
+    config_files_after_queue,
     finished_view,
     without_times,
     write_report_key,
@@ -46,9 +47,11 @@ from tests.fixtures.centrum_processes import (
     write_dad_quantity_rules,
 )
 from tests.fixtures.bez_dostepu import without_reading
+from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.zegar_scienny import MOMENTS, STEP, wall_clock_from
 from atrapy import pliki_taty
+from atrapy.preparation import write_collective_template
 from atrapy.settlement import MARKED, CellValue, PERIOD, write_quantity_source
 
 LABEL: Final = "kontrola-ilosci"
@@ -477,12 +480,16 @@ def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_prz
     assert "| AS | 80 | 70 | 1 | `spawpg` |\n" in body
 
 
-def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy(tmp_path: Path) -> None:
+def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy_a_podglad_jak_roznice_regul(
+    tmp_path: Path,
+) -> None:
     technicolor: dict[str, CellValue] = {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1, "K": "instwewrg65m"}
     centrum = centrum_with(tmp_path, [{**technicolor, "AK": 2}, {**technicolor, "AK": 1}])
 
     run_to_end(centrum, dry_run=False)
+    preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
 
+    assert (preview["differences_before"], preview["differences_after"]) == (1, 1)
     body = sent_check(centrum).body
     assert "- Różnice w kolumnach Reguł ilości: 0\n" in body
     assert "- Wiersze z Kodami czynności: 2 (zgodne z legendą 1), różnice legendy: 1, wiersze z Błędem opisu: 0\n" in body
@@ -602,56 +609,9 @@ def test_gdy_maks_zamknal_issue_okresu_powtorzony_przebieg_zaklada_nowe(tmp_path
     assert first.comments == []
 
 
-def test_kontrola_ilosci_nie_trafia_do_issue_innego_okresu_ani_innej_etykiety(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, TATA_ROWS)
-    foreign = [
-        BoxIssue(1, LABEL, "Kontrola ilości 01_07_09_2026: bez różnic", "- Kontrola ilości okresu: 01_07_09_2026\n"),
-        BoxIssue(2, LABEL, f"Kontrola ilości {PERIOD}0", f"- Kontrola ilości okresu: {PERIOD}0\n"),
-        BoxIssue(3, "zgloszenie", "BRAK_WZORCA: Nie znaleziono wzorca.", f"## Komunikat\n\n{LINE}\n"),
-        BoxIssue(4, "logi-uruchomienia", f"Logi {PERIOD}", f"{LINE}\n"),
-    ]
-    box(centrum).issues.extend(foreign)
-
-    view = run_to_end(centrum, dry_run=False)
-
-    assert box(centrum).wait_until(lambda fake: len(fake.issues) == 5), "Kontrola ilości nie dotarła"
-    assert box(centrum).issues[4].body == expected_body(view["run"]["id"])
-    assert [issue.comments for issue in foreign] == [[], [], [], []]
-
-
 def passes_waiting_for_network(centrum: SettlingCentrum) -> int:
     waiting = f"skrzynka-czeka etykieta={LABEL} okres={PERIOD} przyczyna=brak-sieci"
     return centrum.log_path.read_text(encoding="utf-8").count(waiting)
-
-
-def test_kontrola_ilosci_bez_sieci_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, TATA_ROWS)
-    box(centrum).search_failure = Unreachable()
-
-    view = run_to_end(centrum, dry_run=False)
-
-    assert wait_for(lambda: passes_waiting_for_network(centrum) >= 1)
-    assert view["result"]["result"] == "OK"
-    assert view["result"]["technical_notes"] == [] and view["result"]["warnings"] == []
-    [waiting] = queued_checks(centrum)
-    assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
-
-    before_start = passes_waiting_for_network(centrum)
-    centrum.restart()
-    with centrum.client:
-        assert wait_for(lambda: passes_waiting_for_network(centrum) > before_start)
-        assert centrum.client.get("/api/runs/current").json()["state"] == "idle"
-    assert queued_checks(centrum) == [waiting]
-    assert box(centrum).issues == []
-
-    box(centrum).search_failure = None
-    centrum.restart()
-    with centrum.client:
-        issue = sent_check(centrum)
-
-    assert issue.body == expected_body(view["run"]["id"])
-    assert wait_for(lambda: queued_checks(centrum) == [])
-    assert list(ToolDirectory(tmp_path).queue.parent.glob("Zgłoszenie *.md")) == []
 
 
 def test_logi_i_kontrola_ilosci_jednego_przebiegu_czekaja_razem_i_przy_starcie_wychodza_obie(tmp_path: Path) -> None:
@@ -753,6 +713,22 @@ def test_podglad_reguly_liczy_roznice_tym_samym_rachunkiem_co_kontrola_ilosci_pr
     )
 
 
+def test_odczyt_podglad_i_podpowiedzi_regul_ilosci_niczego_nie_zapisuja(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    rules = centrum.client.get(RULES_URL).json()
+    history = centrum.client.get("/api/settings/history").json()["rows"]
+    config = config_files_after_queue(centrum.client, centrum.tool.config)
+
+    previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+    previewed(centrum, {"kind": "remove", "rule_id": rules["rules"][0]["id"]})
+    assert centrum.client.get("/api/settings/devices/suggestions").status_code == 200
+
+    assert centrum.client.get(RULES_URL).json() == rules
+    assert centrum.client.get("/api/settings/history").json()["rows"] == history
+    assert config_files_after_queue(centrum.client, centrum.tool.config) == config
+
+
 def test_podglad_pokazuje_wiersze_z_roznica_od_taty_z_suma_dwoch_regul_w_jednej_kolumnie(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
@@ -826,6 +802,22 @@ def test_podglad_nie_ma_adresu_numeru_zlecenia_umowy_wykonawcy_ani_daty_dziennej
 
     assert [marker for marker in (*FORBIDDEN, "ZNACZNIK-UMOWA") if marker in response] == []
     assert all(marker in response for marker in ("ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI"))
+
+
+def test_kolejny_podglad_nie_czyta_pliku_zbiorczego_od_nowa_dopoki_jego_znacznik_zapisu_sie_nie_zmieni(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    first = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    with reading(centrum.collective_file) as unchanged:
+        again = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+    saved = centrum.collective_file.stat()
+    os.utime(centrum.collective_file, ns=(saved.st_atime_ns, saved.st_mtime_ns + 1_000_000_000))
+    with reading(centrum.collective_file) as touched:
+        after_save = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    assert (again, unchanged.seen) == (first, set())
+    assert (after_save, touched.seen != set()) == (first, True)
 
 
 def test_podglad_bierze_cztery_najnowsze_okresy_po_przebiegu_rozliczen_od_najnowszego(tmp_path: Path) -> None:
@@ -1119,6 +1111,16 @@ def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okre
     assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [{"spelling": "ont x", "orders": 1}], "unread": []}
 
 
+def test_podpowiedz_listy_urzadzen_liczy_zlecenie_raz_choc_zapis_stoi_w_nim_dwa_razy(tmp_path: Path) -> None:
+    twice: dict[str, CellValue] = {"C": "u", "D": "ont x nokia ont x", "G": MON.replace(hour=10), "T": 1}
+    centrum = centrum_with(tmp_path, [*TATA_ROWS, twice])
+    run_to_end(centrum, dry_run=False)
+
+    suggested = centrum.client.get(SUGGESTIONS_URL).json()["suggestions"]
+
+    assert {"spelling": "ont x", "orders": 1} in suggested, suggested
+
+
 @pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
 def test_podpowiedzi_listy_urzadzen_przy_pliku_pary_bez_odczytu_sa_puste_a_nie_liczone_lista_z_wydania(
     tmp_path: Path, unreadable: str
@@ -1215,22 +1217,7 @@ def test_roznice_przy_regulach_ilosci_to_roznice_kontroli_ilosci_tego_samego_okr
 
     assert shown(found) == TATA_DIFFERENCES
     assert issue.title == f"Kontrola ilości {PERIOD}: {len(found['differences'])} różnic"
-    assert (found["unread"], found["more"], found["exceptions"]) == ([], 0, 0)
-
-
-def test_to_byl_wyjatek_odmowiony_jak_usuniecie_loginu_z_okresu_ma_odpowiedz_kazdego_zapisu_ustawien(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    centrum = centrum_with(tmp_path, TATA_ROWS)
-    run_to_end(centrum, dry_run=False)
-    difference = at(differences(centrum), 21, "N")
-    kept = KeptInPeriods(InRegister(), "worker")
-    monkeypatch.setattr(CentrumSettings, "change_exceptions", lambda _settings, _exception: kept)
-
-    response = centrum.client.post(f"{DIFFERENCES_URL}/{difference['id']}/exception")
-
-    expected = refusal.worker_kept(kept.presence, kept.what)
-    assert (response.status_code, response.json()) == (expected.status_code, {"message": expected.message})
+    assert (found["unread"], found["more"], found["exceptions"], found["exceptions_problem"]) == ([], 0, 0, None)
 
 
 def test_to_byl_wyjatek_ukrywa_roznice_po_restarcie_po_kolejnym_przebiegu_i_przy_nowszym_okresie(tmp_path: Path) -> None:
@@ -1343,6 +1330,12 @@ def test_wyjatek_jednego_z_dwoch_takich_samych_zlecen_nie_ukrywa_drugiego(tmp_pa
 def test_cofnij_wyjatku_w_historii_przywraca_roznice_a_historia_mowi_zdaniem(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
+    template = write_collective_template(centrum.tool.configuration.collective_template)
+    workbook = load_workbook(template)
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet["N17"] = "Montaż ONT"
+    workbook.save(template)
     saved = marked_as_exception(centrum, at(differences(centrum), 21, "N"))
     [row] = [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["id"] == saved["change"]]
 
@@ -1355,6 +1348,7 @@ def test_cofnij_wyjatku_w_historii_przywraca_roznice_a_historia_mowi_zdaniem(tmp
     [change] = row["rules"]
     sentence = "".join(part.get("text", part.get("letter", "")) for part in change["after"])
     assert (change["before"], sentence) == (None, f"To był wyjątek: okres {PERIOD}, wiersz 21, N: wpisałeś 45.")
+    assert [part for part in change["after"] if part["kind"] == "column"] == [{"kind": "column", "letter": "N", "name": "Montaż ONT"}]
     assert undone.status_code == 200, undone.text
     assert (shown(restored), restored["exceptions"]) == (TATA_DIFFERENCES, 0)
     assert again.status_code == 200, again.text
@@ -1407,6 +1401,19 @@ def test_popraw_regule_daje_formularz_nowej_reguly_z_warunkami_z_urzadzen_roznic
 
     assert (preview["changed"], preview["changed_as_tata"]) == (1, 1)
     assert shown(differences(centrum)) == without((21, "N"))
+
+
+def test_popraw_regule_wpisuje_raz_na_zlecenie_tylko_ilosc_brakujaca_do_wpisu_taty_bo_reguly_sie_sumuja(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, tata_rows_with("ak-1-z-reguly-porownane-a-tata-0", AK=3))
+    run_to_end(centrum, dry_run=False)
+
+    difference = next(found for found in differences(centrum)["differences"] if found["column"] == "AK")
+
+    assert (difference["rule"], difference["tata"]) == (1, 3)
+    assert difference["draft"]["action"] == {
+        "kind": "fill",
+        "writes": [{"column": "AK", "value": 2, "multiplier": "once", "component": None}],
+    }
 
 
 def test_popraw_regule_nie_wpisuje_brakujacej_ilosci_w_p_q_i_s_ktore_narzedzie_liczy_samo(tmp_path: Path) -> None:

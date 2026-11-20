@@ -290,6 +290,9 @@ def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -
         "    return workbook_files.template_content(path)\n"
         "def opened_values(path, content):\n"
         "    return workbook_files.open_workbook(path, content, read_only=True)\n"
+        "from .workbook_files import file_bytes  # noqa: TID251 - sonda\n"
+        "def raw(path):\n"
+        "    return file_bytes(path)\n"
     )
 
     found, _ = _src_findings({"rozliczenia/sonda.py": reader})
@@ -302,39 +305,14 @@ def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -
             "src/rozliczenia/sonda.py:7: workbook_content(...) w rozliczenia/sonda.py::first_address_after_check",
             "src/rozliczenia/sonda.py:10: workbook_files.template_content(...) w rozliczenia/sonda.py::template_address",
             "src/rozliczenia/sonda.py:12: workbook_files.open_workbook(...) w rozliczenia/sonda.py::opened_values",
+            "src/rozliczenia/sonda.py:15: file_bytes(...) w rozliczenia/sonda.py::raw",
         ]
     )
 
 
 
-def test_wywolanie_nazwy_zaimportowanej_z_noqa_ruff_wywraca_straznika() -> None:
-    """Ruff ``TID251`` oznacza tylko linię importu, więc nowe wywołanie nazwy, którą moduł zaimportował z ``noqa``
-    albo z prawem właściciela (jak ``template_file.py``), łapie tylko ten strażnik."""
-    reader = (
-        "from .workbook_files import file_bytes, open_workbook, template_content  # noqa: TID251 - sonda\n"
-        "def values(path):\n"
-        "    with open_workbook(path, template_content(path), read_only=True) as read:\n"
-        "        return read.workbook.active['B18'].value\n"
-        "def raw(path):\n"
-        "    return file_bytes(path)\n"
-    )
-
-    found, _ = _src_findings({"rozliczenia/centrum/app.py": reader})
-
-    assert sorted(found) == [
-        "src/rozliczenia/centrum/app.py:3: open_workbook(...) w rozliczenia/centrum/app.py::values",
-        "src/rozliczenia/centrum/app.py:3: template_content(...) w rozliczenia/centrum/app.py::values",
-        "src/rozliczenia/centrum/app.py:6: file_bytes(...) w rozliczenia/centrum/app.py::raw",
-    ]
-
 def _patching_candidates() -> list[Path]:
     return sorted([*TESTS.rglob("*.py"), *ATRAPY.rglob("*.py")])
-
-
-def test_sprawdzenie_latania_czyta_testy_i_atrapy() -> None:
-    read = {path.relative_to(ROOT).as_posix() for path in _patching_candidates()}
-
-    assert {"tests/test_jeden_odczyt_skoroszytu.py", "tools/lib/atrapy/workbooks.py"} <= read
 
 
 def test_test_podstawia_bajty_plikow_taty_przez_zrodlo_uchwytu_a_nie_latajac_modul_skoroszytu() -> (
@@ -355,16 +333,16 @@ def test_test_podstawia_bajty_plikow_taty_przez_zrodlo_uchwytu_a_nie_latajac_mod
     )
 
 
-def test_sprawdzenie_latania_zglasza_latanie_w_atrapie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Łatanie modułu skoroszytu w atrapie obok pustego katalogu testów: strażnik je zgłasza, więc czyta atrapy, a nie
-    tylko ``tests/`` (przegląd #1170 r2, Drobne 1)."""
+def test_sprawdzenie_latania_zglasza_latanie_w_atrapie_i_w_tescie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Łatanie modułu skoroszytu w atrapie i w teście: strażnik zgłasza oba, więc czyta atrapy i ``tests/``
+    (przegląd #1170 r2, Drobne 1)."""
 
     atrapy = tmp_path / "tools" / "lib" / "atrapy"
     atrapy.mkdir(parents=True)
-    (atrapy / "naruszenie.py").write_text(
-        'from unittest import mock\nmock.patch("rozliczenia.workbook_files.file_bytes", lambda path: b"")\n', encoding="utf-8"
-    )
+    naruszenie = 'from unittest import mock\nmock.patch("rozliczenia.workbook_files.file_bytes", lambda path: b"")\n'
+    (atrapy / "naruszenie.py").write_text(naruszenie, encoding="utf-8")
     (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_naruszenie.py").write_text(naruszenie, encoding="utf-8")
     module = sys.modules[__name__]
     for name, path in (("ROOT", tmp_path), ("TESTS", tmp_path / "tests"), ("ATRAPY", atrapy)):
         monkeypatch.setattr(module, name, path)
@@ -373,6 +351,7 @@ def test_sprawdzenie_latania_zglasza_latanie_w_atrapie(tmp_path: Path, monkeypat
         test_test_podstawia_bajty_plikow_taty_przez_zrodlo_uchwytu_a_nie_latajac_modul_skoroszytu()
 
     assert "tools/lib/atrapy/naruszenie.py:2: mock.patch(" in str(raised.value)
+    assert "tests/test_naruszenie.py:2: mock.patch(" in str(raised.value)
 
 
 def test_latanie_atrybutu_o_nazwie_modulu_skoroszytu_w_module_konsumenta_wywraca_straznika() -> None:

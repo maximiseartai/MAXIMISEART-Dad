@@ -1,17 +1,3 @@
-"""Przeniesienie dnia wdrożenia przypomnień (``przypomnienia-od.txt``) i stopki taty (``stopka-przypomnien.txt``) do
-Ustawień Centrum (``przypomnienia.yaml``): zmiana z Wydania ``2026-11-przypomnienia`` (ADR 0032, zmienia ADR 0030).
-
-Po Aktualizacji bez zmian Wykonawcy dostają te same przypomnienia co dotąd: dzień wdrożenia z pliku Maksa włącza
-przypomnienia od tego dnia, stopka przechodzi tekstem bez zmian, a pory, godzina pierwszego przypomnienia i treść mają
-wartości domyślne, czyli dawne stałe. Pliki czyta ta sama reguła co dotąd: tekst w UTF-8 (z BOM z Notatnika) albo
-UTF-16 (z PowerShell 5.1), dzień jako jedyna linia ``rrrr-mm-dd``; inna treść albo brak pliku dnia wdrożenia to
-przypomnienia wyłączone, a pusta albo nieczytelna stopka to przypomnienia bez stopki, tak jak przed Wydaniem.
-Plik, którego system nie daje teraz czytać (np. trzyma go antywirus), to ``Later``: treść jest nieznana, a nie zła.
-
-Bez żadnego starego pliku edycja daje wartości domyślne, czyli to samo co brak pliku, więc właściciel nie pisze pliku
-ani wiersza Historii. Stare pliki zostają w ``config``; ten moduł jest ich jedynym czytelnikiem.
-"""
-
 from __future__ import annotations
 
 import codecs
@@ -30,7 +16,7 @@ OLD_FOOTER_FILE: Final = "stopka-przypomnien.txt"
 
 
 class _Unreadable(Exception):
-    """Starego pliku nie dało się teraz przeczytać, choć jest."""
+    pass
 
 
 def propose(inputs: ReleaseInputs[ReminderSettings]) -> Proposal[ReminderSettings]:
@@ -49,9 +35,6 @@ def propose(inputs: ReleaseInputs[ReminderSettings]) -> Proposal[ReminderSetting
 
 
 def _text(path: Path) -> str | None:
-    """Tekst starego pliku (BOM UTF-8 z Notatnika, UTF-16 z PowerShell 5.1); ``None`` bez pliku albo przy treści, która
-    nie jest tekstem. ``_Unreadable``, gdy plik jest, a system go nie oddaje."""
-
     try:
         content = path.read_bytes()
     except OSError as error:
@@ -66,8 +49,6 @@ def _text(path: Path) -> str | None:
 
 
 def _rollout(text: str | None) -> date | None:
-    """Dzień wdrożenia z jedynej linii ``rrrr-mm-dd``; ``None`` bez pliku albo przy innej treści."""
-
     lines = [] if text is None else text.split()
     try:
         return date.fromisoformat(lines[0]) if len(lines) == 1 and len(lines[0]) == len("rrrr-mm-dd") else None
@@ -76,4 +57,3 @@ def _rollout(text: str | None) -> date | None:
 
 
 CHANGE: Final = ReleaseChange(id="2026-11-przypomnienia", file=REMINDERS, propose=propose)
-"""Przypomnienia ze starych plików, bez „Cofnij”: cofnięcie wyłączyłoby przypomnienia i zgubiło stopkę (D8)."""

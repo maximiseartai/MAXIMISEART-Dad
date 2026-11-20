@@ -46,12 +46,6 @@ C = TypeVar("C", bound=str)
 
 
 class Choices:
-    """Wybory jednego harmonogramu: najpierw opcje z ``prefix``, potem zawsze pierwsza; zapisuje, co mógł wybrać.
-
-    ``budget`` to rodzaj awarii → ile razy może się zdarzyć w harmonogramie; ``pick`` pomija rodzaj, którego budżet się
-    wyczerpał, a wybrany zapisuje w ``faults`` z nazwą kroku.
-    """
-
     def __init__(self, prefix: Sequence[int], budget: Mapping[str, int] | None = None) -> None:
         self._prefix = prefix
         self.taken: list[int] = []
@@ -80,8 +74,6 @@ class Choices:
         return chosen
 
     def next_prefix(self) -> list[int] | None:
-        """Prefiks następnego harmonogramu w głąb: ostatni wybór, który ma jeszcze dalszą opcję; ``None`` na końcu."""
-
         for depth in range(len(self.taken) - 1, -1, -1):
             if self.taken[depth] + 1 < self.widths[depth]:
                 return [*self.taken[:depth], self.taken[depth] + 1]
@@ -100,8 +92,6 @@ def schedules(execute: Callable[[Choices], T], budget: Mapping[str, int] | None 
 
 @dataclass
 class Thread:
-    """Wątek modelu: greenlet, który ``Interleaving`` puszcza od kroku do kroku. ``go`` to wynik kroku, który dostanie."""
-
     name: str
     status: Literal["new", "running", "parked", "done"] = "new"
     go: str | None = None
@@ -121,7 +111,7 @@ class Interleaving(Generic[W]):
     """
 
     def __init__(self) -> None:
-        self.home = getcurrent()  # eksplorator, który wybiera każdy krok
+        self.home = getcurrent()
         self.threads: list[W] = []
 
     def spawn(self, thread: W, body: Callable[[], None]) -> W:
@@ -133,7 +123,6 @@ class Interleaving(Generic[W]):
             finally:
                 thread.status = "done"
 
-        # Wątek założony przez inny wątek kończy się w eksploratorze, a nie w wątku, który go założył.
         thread.greenlet = greenlet(main, parent=self.home)
         thread.greenlet.thread = thread
         thread.status = "running"
@@ -142,23 +131,17 @@ class Interleaving(Generic[W]):
 
     @staticmethod
     def current() -> Thread | None:
-        """Wątek modelu, w którym biegnie wywołujący; ``None`` poza wątkiem modelu."""
-
         thread: Thread | None = getattr(getcurrent(), "thread", None)
         return thread
 
     def park(self, thread: W) -> str:
-        """Zatrzymuje ``thread`` przed krokiem, aż eksplorator go puści; zwraca wynik kroku z ``release``."""
-
         thread.status = "parked"
         self.home.switch()
         outcome, thread.go = thread.go, None
-        assert outcome is not None  # release ustawił go przed przełączeniem tutaj
+        assert outcome is not None
         return outcome
 
     def settle(self) -> None:
-        """Puszcza każdy puszczony albo nowy wątek do jego kolejnego kroku albo końca."""
-
         while (thread := next((thread for thread in self.threads if thread.status == "running"), None)) is not None:
             self._switch(thread)
 
@@ -170,10 +153,7 @@ class Interleaving(Generic[W]):
         thread.go = outcome
 
 
-# --- Wpisy i raport ---------------------------------------------------------------------------------------------------
-
 Kind = Literal["known", "accepted"]
-"""Rodzaj wybaczonego naruszenia: znane ustalenie (``KNOWN_FINDINGS``) albo przyjęte ryzyko (``ACCEPTED_RISKS``)."""
 
 
 class Shape(Protocol):
@@ -242,10 +222,6 @@ def gone_lines(
     known: Iterable[Excuse[Any]] = (),
     accepted: Iterable[Excuse[Any]] = (),
 ) -> list[str]:
-    """Linia ``ZNALEZISKO ZNIKNĘŁO`` każdego wpisu z jednostkami z jego ``after``, które przeszły do końca (``ran``), a
-    nie pokazały go (``shown``: pary nazwa wpisu i jednostka), każda osobno, więc poprawka po jednej jednostce wychodzi,
-    choć po innych wpis dalej występuje. Wpis ``flaky`` nie znika nigdy."""
-
     return [
         *(_gone_line("known", entry, units) for entry, units in _gone(known, ran, shown)),
         *(_gone_line("accepted", entry, units) for entry, units in _gone(accepted, ran, shown)),
@@ -270,9 +246,6 @@ def _gone_line(kind: Kind, entry: Excuse[Any], units: Sequence[str]) -> str:
 def verdict(
     name: str, *, new: int, gone: int, known: int = 0, accepted: int = 0, gaps: int = 0, gap_reason: str = ""
 ) -> tuple[str, int]:
-    """Ostatnia linia raportu i kod wyjścia: luka modelu (2) przed nowym naruszeniem (1) przed zniknięciem wpisu (1)
-    przed OK z liczbą wybaczonych (0)."""
-
     if gaps:
         return f"{name}: LUKA MODELU ({gaps}){gap_reason}", 2
     if new:

@@ -1,18 +1,3 @@
-"""Uwaga taty (ADR 0015): treść issue, wysyłka przez kolejkę Skrzynki Zgłoszeń i stan Uwag na tym komputerze.
-
-Treść issue powstaje tylko w ``note_issue``: podgląd „Maks dostanie” i wysyłka wołają tę samą funkcję, więc tata widzi
-dokładnie to, co dostanie Maks. „Wyślij” zapisuje Uwagę bez numeru issue jako sprawę taty (``DadCases``), kładzie ją w
-kolejce Skrzynki Zgłoszeń jako osobne issue z etykietą ``uwaga-taty`` i czeka na skrzynkę najwyżej ``DELIVERY_WAIT_S``,
-a gdy jej nie przyjęła, mówi, na co Uwaga czeka (``DadCases.queued``). Numer issue dopisuje wątek kolejki, także po
-następnym starcie Centrum, a zamknięcie issue przez Maksa sprawdzanie Powiadomień. Sprawa ma tylko tytuł Uwagi i
-przypięte Uruchomienie, bez treści.
-
-Uwaga przypięta do Uruchomienia procesu z Centrum niesie w stopce jego proces, okres, tryb, wynik i datę oraz
-odnośnik do jego Logów Uruchomienia w Skrzynce. Uruchomienia do wyboru i do przypięcia pochodzą z historii metryk
-(``History``). Gdy Logi jeszcze czekają w kolejce, stopka szkicu mówi, że są w drodze; co z tą linią dzieje się w
-kolejce, wiedzą Sprawy taty w Skrzynce (``case_delivery``).
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -40,26 +25,17 @@ from rozliczenia.wall_clock import utc_now
 RECENT_RUNS: Final = 6
 
 History = Callable[[], list[metrics_contract.ProcessRun]]
-"""Uruchomienia procesu z plików metryk od najnowszego (``metrics.History.runs``); ``OSError``: pliki nieczytelne."""
 LogsAddress = Callable[[str], str | None]
-"""Adres pierwszego komentarza Logów Uruchomienia o tym identyfikatorze w Skrzynce; ``None``: jeszcze ich tam nie ma."""
 
 
 @dataclass(frozen=True)
 class PinnedRun:
-    """Uruchomienie z Centrum, do którego tata przypiął Uwagę, i adres jego Logów.
-
-    ``logs`` ``None``: Logi Uruchomienia jeszcze nie doszły do Skrzynki Zgłoszeń.
-    """
-
     run: dad_notes_contract.PinnableRun
     logs: str | None
 
 
 @dataclass(frozen=True)
 class NoteIssue:
-    """Issue Uwagi taty do wysyłki i jego treść w podglądzie „Maks dostanie” (``DadNoteDraft.shown_body``)."""
-
     title: Outgoing
     body: Outgoing
     shown_body: str
@@ -68,14 +44,6 @@ class NoteIssue:
 def note_issue(
     title: str, body: str, commit: str | None, pinned: PinnedRun | None, forbidden: ForbiddenValues
 ) -> NoteIssue:
-    """Issue Uwagi taty: jej tytuł, a w treści jej tekst i stopka (bez tekstu sama stopka).
-
-    Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów. Tytuł i
-    tekst przechodzą przez strażnika reguły danych pracy Centrum (ADR 0025), a uwaga techniczna o zamaskowanej wartości
-    staje pod tekstem, więc tata widzi w podglądzie dokładnie to, co dostanie Maks, z odnośnikiem do Logów jako samym
-    napisem.
-    """
-
     version = f"wersja narzędzia {version_label(commit)}"
     title_guarded = guarded(forbidden, title, "tytuł Uwagi taty")
     body_guarded = guarded(forbidden, body, "treść Uwagi taty")
@@ -97,8 +65,6 @@ def _pinned_footer(pinned: PinnedRun, version: str, logs: Callable[[str, str | N
 
 
 def _pinnable(history: History) -> list[dad_notes_contract.PinnableRun]:
-    """Uruchomienia z Centrum z historii, od najnowszego; Uruchomienie bez identyfikatora nie ma czego przypiąć."""
-
     try:
         runs = history()
     except OSError:
@@ -107,17 +73,10 @@ def _pinnable(history: History) -> list[dad_notes_contract.PinnableRun]:
 
 
 def _pickable(own: list[dad_notes_contract.PinnableRun], selected: str | None) -> list[dad_notes_contract.PinnableRun]:
-    """Uruchomienia do wyboru w oknie Uwagi: ``RECENT_RUNS`` najnowszych i starsze ``selected``.
-
-    ``selected`` to Uruchomienie z karty, z której tata otworzył okno; nieznane jest pomijane.
-    """
-
     return own[:RECENT_RUNS] + [run for run in own[RECENT_RUNS:] if run.run_id == selected]
 
 
 def _pinned(run_id: str | None, history: History, logs: LogsAddress) -> PinnedRun | None:
-    """Uruchomienie spoza historii to odmowa 404."""
-
     if run_id is None:
         return None
     run = next((run for run in _pinnable(history) if run.run_id == run_id), None)
@@ -135,8 +94,6 @@ def send(
     pinned: PinnedRun | None,
     forbidden: ForbiddenValues,
 ) -> common_contract.SendState:
-    """Uwaga, której kolejka nie zapisała, to odmowa: inaczej tekst taty przepadłby po cichu."""
-
     issue = note_issue(request.title, request.body, commit, pinned, forbidden)
     run_id = None if pinned is None else pinned.run.run_id
     note = Case(NOTE, uuid.uuid4().hex, issue.title, commit, utc_now(), number=None, run_id=run_id)

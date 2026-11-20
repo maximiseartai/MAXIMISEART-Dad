@@ -229,9 +229,10 @@ def _unresolved_text(workers: WorkerList) -> str | None:
     return json.dumps([_unresolved_entry(item) for item in workers.unresolved], ensure_ascii=False)
 
 
-def restore(workers: WorkerList, changes: tuple[KeyChange, ...]) -> WorkerList:
+def restore(workers: WorkerList, changes: tuple[KeyChange, ...]) -> WorkerList | FieldProblem:
     entries = [_entry(worker) for worker in workers.workers]
     unresolved = [_unresolved_entry(item) for item in workers.unresolved]
+    brought_back: list[Document] = []
     for change in changes:
         if change.key == _UNRESOLVED_HISTORY_KEY:
             unresolved = _documents(change.before)
@@ -245,8 +246,19 @@ def restore(workers: WorkerList, changes: tuple[KeyChange, ...]) -> WorkerList:
         before = _documents(change.before)
         if before:
             entries.insert(len(entries) if at is None else at, before[0])
+            brought_back.append(before[0])
     restored = parse(_dump(entries, unresolved))
-    return workers if isinstance(restored, FieldProblem) else restored
+    if isinstance(restored, FieldProblem):
+        return FieldProblem(None, messages.worker_undo_breaks_list(restored.sentence, _colliding(entries, brought_back)))
+    return restored
+
+
+def _colliding(entries: list[Document], brought_back: list[Document]) -> tuple[str, ...]:
+    back = _entries(brought_back)
+    others = _entries([entry for entry in entries if all(entry is not item for item in brought_back)])
+    if isinstance(back, FieldProblem) or isinstance(others, FieldProblem):
+        return ()
+    return tuple(other.name for other in others if isinstance(WorkerList.of([*back, other]), WorkerListProblem))
 
 
 def _dump(entries: list[Document], unresolved: list[Document]) -> bytes:

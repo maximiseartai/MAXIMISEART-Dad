@@ -16,9 +16,10 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from rozliczenia import workbook_files
 from tests.fixtures.centrum import view_timing
-from tests.fixtures.centrum_processes import PreparingCentrum, filling_centrum, run_logs_handled, run_to_end
-from atrapy.preparation import PERIOD
+from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, filling_centrum, run_logs_handled, run_to_end
+from atrapy.preparation import COLLECTIVE_FILE_NAME, PERIOD
 
 URL = f"/api/periods/{PERIOD}/quantities-to-fill"
 N_AP = (
@@ -145,14 +146,25 @@ def test_plik_bez_odczytu_daje_komunikat_na_stronie_rodzaju(tmp_path: Path) -> N
 
     table = _table(centrum, "without_rule")
 
-    assert table["state"] == "problem"
-    assert table["message"]["what"]
+    assert (table["state"], table["message"]["what"], table["message"]["where"]) == (
+        "problem",
+        "Plik zbiorczy jest uszkodzony albo nie jest skoroszytem Excela.",
+        f"plik {COLLECTIVE_FILE_NAME}, folder {PERIOD}",
+    )
 
 
-def test_nieznany_rodzaj_jest_odrzucony(tmp_path: Path) -> None:
-    centrum = _prepared(tmp_path)
+def test_strona_rodzaju_otwiera_plik_zbiorczy_jednym_odczytem(tmp_path: Path) -> None:
+    opened: list[Path] = []
 
-    assert centrum.client.get(f"{URL}/description_columns").status_code == 422
+    def counted(path: Path) -> bytes:
+        opened.append(path)
+        return workbook_files.file_bytes(path)
+
+    centrum = filling_centrum(tmp_path, surroundings=Surroundings(source=counted))
+    opened.clear()
+
+    assert _table(centrum, "without_rule")["state"] == "ready"
+    assert opened == [centrum.fixture.collective_file_path]
 
 
 def test_strona_rodzaju_nie_niesie_adresu_numeru_zlecenia_ani_umowy(tmp_path: Path) -> None:

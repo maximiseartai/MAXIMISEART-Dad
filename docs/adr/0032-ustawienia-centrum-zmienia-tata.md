@@ -46,7 +46,8 @@ w `config/` prowadzone przez Maksa, Wzorce w Excelu albo stałe w kodzie.
   #2254: plik zostaje, gdy po „Cofnij” zostałaby w nim późniejsza zmiana innego klucza, bo brak pliku by ją zgubił, a
   Lista Wykonawców zostaje z plikiem, bo jej brak pliku może znaczyć czekającą migrację z Wydania.
 - **Lista Wykonawców w jednym pliku** zastępuje osobne pliki identyfikatorów i adresów, które musiały się zgadzać.
-  Pierwszy start po Aktualizacji łączy oba stare pliki i zostawia je jako kopię. Wykonawca może mieć świadomie
+  Pierwszy start po Aktualizacji łączy oba stare pliki i zostawia je jako kopię; stare pliki `config`, także przypomnień,
+  czyta tylko ich przeniesienie z Wydania (`centrum/settings/migrations`), a nic ich nie usuwa. Wykonawca może mieć świadomie
   dodany drugi login. Dwa różne wpisy z tą samą nazwą dalej są odrzucane. Wykonawcy z identyfikatorem w
   którymkolwiek okresie nie da się usunąć, tylko oznaczyć jako Nieaktywnego. Zmiana nazwy ostrzega, gdy w okresie
   leży już Rozliczenie pracownika ze starą nazwą; plików taty nic nie przemianowuje.

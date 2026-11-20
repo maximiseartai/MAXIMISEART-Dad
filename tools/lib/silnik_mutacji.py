@@ -66,7 +66,7 @@ liczą tak noc (``tools/mutacje_zmiany.py``) i ``check_all`` skryptów mutacji s
 (test tylko wolniejszy), więc ``in_ci`` nie liczy go jak WYKRYTA, a skrypty skilli liczą go jak przeżytą. Noc też go
 nie liczy jak wykrytą, ale ``--limit-s`` dotyczy u niej całego zbioru testów przebiegu, który bez mutacji trwa blisko
 limitu, więc mutacja, po której test pada, też potrafi go przekroczyć (#1339): mutację z PRZEKROCZONYM CZASEM w
-ostatnim przebiegu testów noc zgłasza w issue z dopiskiem, że nie dała jej werdyktu, a nie jako przeżytą. W narzędziu z
+ostatnim przebiegu testów noc liczy jako bez werdyktu i nie daje jej issue, tylko linię ``MUTACJE NOCNE BEZ ISSUE``. W narzędziu z
 wiersza poleceń, którego używa przegląd PR, oba są porażką.
 
 Mutację, którą polecenie przepuściło (NIEWYKRYTA, PRZEKROCZONY CZAS), noc (poza cofnięciem fragmentu do bazy, które

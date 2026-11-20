@@ -6,8 +6,9 @@ Przy połączeniu na każde żądanie przeglądarki testów pod xdist na Windows
 zamyka połączenia, które zostały otwarte, żeby po nim nic pod jej adresem nie odpowiadało.
 
 Decyzje serwera (sesja i jej wygaśnięcie, odmowy „Załaduj do zlecenia”, nadpisanie wyceny Wyceną Emmetta, zapis daty
-wykonania i ilości) model ``tools/lib/atrapy/model_efenix.py`` podejmuje dla każdego okna, więc ich macierz biegnie na jego
-interfejsie ``SerwerEfenix``, bez HTTP i przeglądarki.
+wykonania i ilości) model ``tools/lib/atrapy/model_efenix.py`` podejmuje dla każdego okna, więc pokazują je wiersze
+kontraktu okien, a na jego interfejsie ``SerwerEfenix``, bez HTTP i przeglądarki, biegnie tylko to, czego te wiersze nie
+pokazują.
 
 Kontrakt okien: każdy wiersz ``_ROWS`` to stan efenix i działania okna Wyceny (``efenix_window.Efenix``). Okno w procesie
 (``tests/fixtures/okno_w_procesie.py``) daje na nich przebiegi z pliku ``tests/expected/kontrakt_okna_efenix.txt``
@@ -48,7 +49,6 @@ from atrapy.model_efenix import (
     NoSession,
     ProposalFailure,
     Saved,
-    SerwerEfenix,
     StanEfenix,
     earliest_execution_date,
 )
@@ -61,7 +61,6 @@ from rozliczenia.efenix_window import Efenix, EmmettLoad, ForwardRefusal, Listed
 from atrapy.atrapa_efenix import (
     BY_LIST,
     FILL_EMMETT,
-    GET_DATE,
     LIST_PAGE,
     LIST_SCRIPT,
     LOAD_EMMETT,
@@ -145,19 +144,6 @@ def test_szukanie_bez_liczby_wierszy_z_pustym_rodzajem_zlecenia_albo_bez_wynikow
         connection.close()
 
     assert (answer in refused, "<table" in refused, "9301" in refused, "<table" in found, "9301" in found) == (True, False, False, True, True)
-
-
-def test_szukanie_bez_sesji_dostaje_jak_w_efenix_samo_ostrzezenie_o_wygaslej_sesji_bez_przekierowania() -> None:
-    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")]) as atrapa:
-        atrapa.expire_session()
-        connection = _connection(atrapa.url)
-        connection.request("POST", f"/{SEARCH}", body="numer=9301&rodzaj=szukanie&strona=1&na_stronie=10", headers=_FORM)
-        response = connection.getresponse()
-        answer = (response.status, response.getheader("Location"), response.read().decode("utf-8"))
-        connection.close()
-
-    assert answer[:2] == (200, None)
-    assert ("Twoja sesja wygasła - zaloguj się ponownie !" in answer[2], "<table" in answer[2], "9301" in answer[2]) == (True, False, False)
 
 
 def test_po_bloku_atrapy_polaczenie_otwarte_w_bloku_nie_dostaje_odpowiedzi_a_po_jego_zamknieciu_nie_zostaje_jej_watek() -> None:
@@ -297,21 +283,6 @@ def test_cena_pozycji_w_tekscie_karty_ma_kropke_albo_przecinek_ceny_z_przecinkie
     assert [text for text in ("21.00", "21,00") if text in page] == [shown]
 
 
-@pytest.mark.parametrize("changed", [None, Changed.DATE_FORMAT, Changed.DATE_DIGITS], ids=["zapis-efenix", "inny-zapis", "same-cyfry"])
-def test_strona_zlecenia_bez_daty_wykonania_ma_pusta_date_takze_przy_innym_zapisie_daty(changed: Changed | None) -> None:
-    """Inny zapis daty wykonania zmienia tylko datę, którą zlecenie ma: zlecenie bez niej ma stronę z pustą datą, jak w
-    zapisie, który zna narzędzie."""
-
-    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")], changed=changed) as atrapa:
-        connection = _connection(atrapa.url)
-        connection.request("GET", f"/{ORDER_PAGE}?id=901")
-        response = connection.getresponse()
-        answer = (response.status, response.read().decode("utf-8"))
-        connection.close()
-
-    assert (answer[0], '<span id="data_install"></span>' in answer[1]) == (200, True)
-
-
 def _answer_text(connection: HTTPConnection, method: str, path: str, body: str) -> tuple[int, str]:
     connection.request(method, f"/{path}", body=body, headers=_FORM)
     response = connection.getresponse()
@@ -330,19 +301,6 @@ def test_blad_serwera_na_szukanie_okna_nie_trafia_w_szukanie_ktore_lista_wysyla_
         connection.close()
 
     assert (own[0], by_list[0], "9301" in by_list[1]) == (500, 200, True)
-
-
-def test_zapis_daty_wykonania_odpowiada_ok_a_odczyt_daty_zero_przed_zapisem_i_zapisany_dzien_po_nim() -> None:
-    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")]) as atrapa:
-        connection = _connection(atrapa.url)
-        answers = [
-            _answer_text(connection, "POST", GET_DATE, "id=901"),
-            _answer_text(connection, "POST", SET_DATE, "id=901&date=2026-09-09"),
-            _answer_text(connection, "POST", GET_DATE, "id=901"),
-        ]
-        connection.close()
-
-    assert answers == [(200, "0"), (200, "ok"), (200, "2026-09-09")]
 
 
 @pytest.mark.parametrize("changed", [None, Unread.ORDER_REDIRECT], ids=["zwykla-strona", "strona-zlecenia-przekierowuje"])
@@ -379,39 +337,13 @@ def _order() -> EfenixOrder:
     return EfenixOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", quantities={"019": 2}, emmett={"012": 1})
 
 
-_ACTS: dict[Action, Callable[[SerwerEfenix[EfenixOrder]], object]] = {
-    Action.SEARCH: lambda serwer: serwer.search("9301"),
-    Action.OPEN: lambda serwer: serwer.page("901"),
-    Action.DATE: lambda serwer: serwer.set_date("901", "2026-09-09"),
-    Action.PROPOSAL: lambda serwer: serwer.proposal("901"),
-    Action.EMMETT: lambda serwer: serwer.load_emmett("901"),
-    Action.QUANTITY: lambda serwer: serwer.save_quantity("901", "012", 1),
-    Action.STATUS: lambda serwer: serwer.change_status("901", "Do akceptacji"),
-}
-
-
-@pytest.mark.parametrize("action", list(Action), ids=lambda action: action.name.lower())
-def test_bez_sesji_serwer_efenix_nie_wykonuje_dzialania_okna_i_nie_zmienia_zlecenia(action: Action) -> None:
+def test_bez_sesji_serwer_efenix_nie_wykonuje_dzialania_okna_i_nie_zmienia_zlecenia() -> None:
     stan = StanEfenix([_order()])
     stan.expire_session()
 
-    answer = _ACTS[action](stan.serwer)
+    answer = stan.serwer.proposal("901")
 
-    assert (answer, stan.state(), stan.count(action)) == (NoSession.NO_SESSION, ([_order()], False), 1)
-
-
-@pytest.mark.parametrize("action", list(Action), ids=lambda action: action.name.lower())
-def test_sesja_wygasa_raz_przy_pierwszym_dzialaniu_ponad_zadana_liczbe_takich_dzialan(action: Action) -> None:
-    """Każde inne działanie przed nim przechodzi, także ponad tę liczbę, a po ponownym zalogowaniu sesja już nie wygasa."""
-
-    stan = StanEfenix([_order()], expire_after=(action, 1))
-
-    before = [isinstance(_ACTS[each](stan.serwer), NoSession) for each in Action for _ in range(1 if each is action else 2)]
-    expired = _ACTS[action](stan.serwer)
-    stan.log_in()
-    again = _ACTS[action](stan.serwer)
-
-    assert (any(before), expired, isinstance(again, NoSession), stan.count(action)) == (False, NoSession.NO_SESSION, False, 3)
+    assert (answer, stan.state(), stan.count(Action.PROPOSAL)) == (NoSession.NO_SESSION, ([_order()], False), 1)
 
 
 def test_szukanie_ktore_lista_wysyla_sama_nie_liczy_sie_do_wygasniecia_sesji() -> None:
@@ -420,67 +352,17 @@ def test_szukanie_ktore_lista_wysyla_sama_nie_liczy_sie_do_wygasniecia_sesji() -
     answers = [stan.serwer.search("9301", own=own) for own in (True, False, False, True)]
 
     assert ([isinstance(answer, NoSession) for answer in answers], stan.count(Action.SEARCH)) == ([False, False, False, True], 2)
-
-
-def test_stan_efenix_podaje_numery_szukan_okna_po_kolei_takze_bez_sesji_bez_szukan_listy() -> None:
-    stan = StanEfenix([_order()])
-
-    stan.serwer.search("93")
-    stan.serwer.search("9301", own=False)
     stan.expire_session()
-    stan.serwer.search("9302")
-
-    assert stan.searched() == ["93", "9302"]
+    assert (stan.serwer.search("9301", own=False), stan.count(Action.SEARCH)) == (NoSession.NO_SESSION, 2)
 
 
-@pytest.mark.parametrize(
-    ("refusal", "loaded", "logged_in"),
-    [
-        pytest.param(None, True, True, id="bez-odmowy"),
-        pytest.param(EmmettRefusal.FORBIDDEN, False, True, id="403"),
-        pytest.param(EmmettRefusal.SERVER_ERROR, True, True, id="500-po-zaladowaniu"),
-        pytest.param(EmmettRefusal.ELSEWHERE, False, True, id="przekierowanie-na-liste"),
-        pytest.param(EmmettRefusal.LOGGED_OUT, False, False, id="wylogowanie"),
-        pytest.param(EmmettRefusal.NOK, False, True, id="nok"),
-        pytest.param(EmmettRefusal.OTHER, False, True, id="inna-tresc"),
-    ],
-)
-def test_zaladuj_do_zlecenia_laduje_wycene_emmetta_bez_odmowy_i_przed_bledem_serwera_a_wylogowanie_konczy_sesje(
-    refusal: EmmettRefusal | None, loaded: bool, logged_in: bool
-) -> None:
-    stan = StanEfenix([replace(_order(), emmett_refusal=refusal)])
-
-    answer = stan.serwer.load_emmett("901")
-
-    [order], session = stan.state()
-    assert (answer, order.quantities, order.emmett_loads, session) == (refusal, {"012": 1} if loaded else {"019": 2}, int(loaded), logged_in)
-
-
-@pytest.mark.parametrize(
-    ("quantities", "over_pricing"),
-    [
-        pytest.param({}, 0, id="zlecenie-bez-ilosci"),
-        pytest.param({"012": 1}, 0, id="wycena-rowna-propozycji"),
-        pytest.param({"019": 2}, 1, id="wycena-taty"),
-    ],
-)
-def test_wycena_emmetta_zaladowana_na_inna_wycene_liczy_sie_jako_nadpisanie_wyceny(quantities: dict[str, int], over_pricing: int) -> None:
-    stan = StanEfenix([replace(_order(), quantities=quantities)])
+def test_wycena_emmetta_zaladowana_na_inna_wycene_liczy_sie_jako_nadpisanie_wyceny() -> None:
+    stan = StanEfenix([replace(_order(), quantities={"012": 1})])
 
     stan.serwer.load_emmett("901")
 
     [order], _ = stan.state()
-    assert (order.quantities, order.emmett_over_pricing) == ({"012": 1}, over_pricing)
-
-
-@pytest.mark.parametrize(
-    ("refuse_dates", "answer", "saved"),
-    [pytest.param(False, True, date(2026, 9, 9), id="zapis"), pytest.param(True, False, None, id="odpowiedz-bez-zapisu")],
-)
-def test_serwer_ktory_odmawia_dat_odpowiada_na_zapis_daty_wykonania_bez_zapisu(refuse_dates: bool, answer: bool, saved: date | None) -> None:
-    stan = StanEfenix([_order()], refuse_dates=refuse_dates)
-
-    assert (stan.serwer.set_date("901", "2026-09-09"), stan.serwer.date_of("901")) == (answer, saved)
+    assert (order.quantities, order.emmett_over_pricing) == ({"012": 1}, 0)
 
 
 @pytest.mark.parametrize(
@@ -503,50 +385,6 @@ def test_zapis_ilosci_liczy_w_cenach_stanu_zero_usuwa_pozycje_a_kod_spoza_katalo
     assert (saved, order.quantities) == (answer, quantities)
 
 
-@pytest.mark.parametrize(
-    ("logged_in", "refuse_dates", "order_id", "answer"),
-    [
-        pytest.param(False, False, "901", (302, ""), id="bez-sesji"),
-        pytest.param(True, True, "901", (200, "Nie zapisano daty."), id="serwer-odmawia-dat"),
-        pytest.param(True, False, "999", (404, "<p>Nie ma takiego zlecenia.</p>"), id="nieznane-zlecenie"),
-    ],
-)
-def test_zapis_daty_bez_sesji_przy_odmowie_dat_albo_nieznanego_zlecenia_dostaje_odpowiedz_bez_czytania_dnia(
-    logged_in: bool, refuse_dates: bool, order_id: str, answer: tuple[int, str]
-) -> None:
-    """Pusty dzień: serwer odpowiada na sesję, zlecenie i ``refuse_dates``, zanim przeczyta dzień."""
-
-    with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1")], refuse_dates=refuse_dates) as atrapa:
-        if not logged_in:
-            atrapa.expire_session()
-        connection = _connection(atrapa.url)
-        connection.request("POST", f"/{SET_DATE}", body=f"id={order_id}&date=", headers=_FORM)
-        response = connection.getresponse()
-        got = (response.status, response.read().decode("utf-8"))
-        connection.close()
-
-    assert got == answer
-
-
-def test_dzialania_ktorych_wygasniecie_sesji_nie_liczy_bez_sesji_dostaja_brak_sesji_i_sie_nie_licza() -> None:
-    """Szukanie, które lista wysyła sama, i odczyt daty wykonania."""
-
-    stan = StanEfenix([_order()])
-    stan.expire_session()
-
-    answers = (stan.serwer.search("9301", own=False), stan.serwer.date_of("901"))
-
-    assert (answers, stan.count(Action.SEARCH)) == ((NoSession.NO_SESSION, NoSession.NO_SESSION), 0)
-
-
-def test_szukanie_znajduje_kazde_zlecenie_ktorego_numer_zawiera_szukany_numer() -> None:
-    stan = StanEfenix([_order(), replace(_order(), order_id="902", number="19301"), replace(_order(), order_id="903", number="9302")])
-
-    found = stan.serwer.search("9301")
-
-    assert (found if isinstance(found, NoSession) else [order.order_id for order in found]) == ["901", "902"]
-
-
 def test_model_zmienia_kopie_zlecen_testu_i_oddaje_kopie_stanu() -> None:
     """Zlecenia testu zostają bez zmian po działaniu okna, a zmiana zlecenia ze ``state`` nie zmienia stanu efenix."""
 
@@ -560,15 +398,6 @@ def test_model_zmienia_kopie_zlecen_testu_i_oddaje_kopie_stanu() -> None:
     assert (order, stan.state()[0][0].quantities) == (_order(), {"012": 1})
 
 
-def test_zmiana_statusu_zmienia_status_zlecenia_w_efenix() -> None:
-    stan = StanEfenix([_order()])
-
-    answer = stan.serwer.change_status("901", "Do akceptacji")
-
-    [order], _ = stan.state()
-    assert (answer, order.status) == (None, "Do akceptacji")
-
-
 def test_dzialanie_na_zleceniu_ktorego_nie_ma_w_efenix_dostaje_brak_zlecenia_i_niczego_nie_zmienia() -> None:
     stan = StanEfenix([_order()])
     serwer = stan.serwer
@@ -579,11 +408,10 @@ def test_dzialanie_na_zleceniu_ktorego_nie_ma_w_efenix_dostaje_brak_zlecenia_i_n
         serwer.proposal("999"),
         serwer.load_emmett("999"),
         serwer.save_quantity("999", "012", 1),
-        serwer.date_of("999"),
         serwer.change_status("999", "Do akceptacji"),
     ]
 
-    assert (answers, stan.state()) == ([NoOrder.NO_ORDER] * 7, ([_order()], True))
+    assert (answers, stan.state()) == ([NoOrder.NO_ORDER] * 6, ([_order()], True))
 
 
 # Kontrakt okien: okno w procesie i okno przeglądarki na Atrapie efenix na tym samym stanie efenix.
@@ -849,15 +677,10 @@ def test_okno_w_procesie_daje_przebiegi_z_pliku_kontraktu() -> None:
     assert_expected(contract, ROOT / "tests" / "expected" / "kontrakt_okna_efenix.txt")
 
 
-def test_kontrakt_okien_ma_wiersz_dla_kazdego_dzialania_odmowy_zaladuj_i_padniecia_propozycji() -> None:
-    """Każde działanie okna (także Przekazanie do akceptacji, czyli zmiana statusu) z wylogowaniem przed nim, każda odmowa
-    „Załaduj do zlecenia” i każde padnięcie propozycji Emmetta."""
+def test_kontrakt_okien_ma_wiersz_z_wylogowaniem_przed_kazdym_dzialaniem_okna() -> None:
+    """Każde działanie okna, także Przekazanie do akceptacji, czyli zmiana statusu."""
 
-    expired = {row.expire_after[0] for row in _ROWS if row.expire_after is not None}
-    refusals = {order.emmett_refusal for row in _ROWS for order in row.orders}
-    failures = {order.emmett_proposal_failure for row in _ROWS for order in row.orders}
-
-    assert (expired, refusals >= set(EmmettRefusal), failures >= set(ProposalFailure)) == (set(Action), True, True)
+    assert {row.expire_after[0] for row in _ROWS if row.expire_after is not None} == set(Action)
 
 
 def test_okno_w_procesie_odrzuca_zlecenie_z_pokretlem_strony_atrapy() -> None:

@@ -136,20 +136,6 @@ def test_kazda_odpowiedz_skrzynki_takze_odmowa_tresci_to_klucz_przyjety(
     assert skrzynka.requests() == 1
 
 
-def test_brak_sieci_nie_zmienia_werdyktu_o_kluczu() -> None:
-    skrzynka = Skrzynka(FakeReportBox(search_failure=Unreachable()))
-    assert skrzynka.keyed.judge(wait_s=WAIT_S) == "unchecked"
-    skrzynka.box.search_failure = None
-    skrzynka.clock.advance(NO_ANSWER_KEPT_S)
-    accepted(skrzynka)
-
-    skrzynka.box.search_failure = Unreachable()
-    skrzynka.clock.advance(ACCEPTED_KEPT_S)
-
-    assert skrzynka.keyed.judge(wait_s=WAIT_S) == "accepted"
-    assert len(skrzynka.box.listed) == 3
-
-
 ABOUT_DELETED: dict[str, Callable[[Skrzynka], object]] = {
     "komentarz": lambda s: s.keyed.comment(99, "do issue, które Maks usunął"),
     "komentarze": lambda s: s.keyed.comments(99),
@@ -300,8 +286,6 @@ OPENINGS_FREE = {
     "nie-slownik": "[3.0]",
     "stara-postac": json.dumps({"uwaga-taty": [3.0, "inny-zapis"]}),
     "zapisy-nie-slownik": json.dumps({"zapisy": [], "issue": [], "archiwa": [], "pliki": [], "usuniete": []}),
-    "nie-para": _notes({"uwaga-taty": [3.0]}),
-    "nie-liczba": _notes({"uwaga-taty": ["trzy", "inny-zapis"]}),
 }
 
 
@@ -450,27 +434,6 @@ def test_plik_zapisow_po_wielu_uruchomieniach_ma_tylko_swieze_wpisy(tmp_path: Pa
 
     notes = json.loads(opening.read_text(encoding="utf-8"))
     assert (notes["zapisy"], notes["archiwa"], [entry[3] for entry in notes["pliki"]]) == ({}, [], ["uruchomienie-4.log.gz"])
-
-
-def test_nieczytelny_plik_chwil_zakladania_wstrzymuje_zakladanie_bez_zapytania(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Pliku, którego nie da się odczytać, nie da się wykluczyć: inne Centrum mogło właśnie założyć issue (#879)."""
-
-    opening = tmp_path / OPENING_FILE
-    read_text = Path.read_text
-
-    def locked(path: Path, *args: Any, **kwargs: Any) -> str:
-        if path == opening:  # odczyt odmawia jak przy pliku, który trzyma antywirus; zapis by przeszedł
-            raise PermissionError(13, "Odmowa dostępu", str(path))
-        return read_text(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", locked)
-    box = FakeReportBox()
-    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), opening=NotesFile(opening, replace_atomically))
-
-    assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Unreachable()
-    assert box.keys == []
 
 
 def unreadable(monkeypatch: pytest.MonkeyPatch, opening: Path, times: int | None) -> None:

@@ -9,7 +9,7 @@ A Wydanie is the only version that reaches Dad's computer (ADR 0014, `GLOSSARY.m
 The tag is immutable and Dad's update never goes back, so a bad Wydanie is fixed only by the next one.
 That is why Maks's explicit yes is the gate, and nothing before it creates anything.
 
-`tools/wydanie.py` does every mechanical step and every check (its docstring says what `plan` and `wydaj` do); this skill is the judgement around it.
+`tools/wydanie.py` does every mechanical step and every check (its `--help` says what `plan` and `wydaj` do); this skill is the judgement around it.
 Work from Maks's main checkout (`/Users/Max/MAXIMISEART-Dad`, which has `gh` logged in and Dad's real Wzorce in `config/`) after `git -C /Users/Max/MAXIMISEART-Dad pull --ff-only`, so the tool is the one on `main`, and keep run files in `~/.t3/notes/wydanie/<tag>/`.
 
 ## 1. Plan

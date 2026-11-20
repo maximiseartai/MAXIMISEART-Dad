@@ -239,7 +239,7 @@ def replace_register(
     copies: Path,
     now: Callable[[], datetime],
     waiting: Waiting,
-    disk: Disk = LOCAL_DISK,
+    disk: Disk,
 ) -> Replaced | Refusal:
     """Zastępuje INTERMAX ``register`` o bajtach ``current`` bajtami ``content`` z Kopią INTERMAX ``before`` w
     ``copies``.
@@ -297,7 +297,7 @@ def replace_without_copy(
     check: Callable[[bytes], None],
     *,
     waiting: Waiting,
-    disk: Disk = LOCAL_DISK,
+    disk: Disk,
 ) -> Refusal | None:
     """Zastępuje INTERMAX ``register`` o bajtach ``current`` bajtami ``content`` bez Kopii INTERMAX (Wpisanie raportów,
     ADR 0028); ``None``: INTERMAX podmieniony.

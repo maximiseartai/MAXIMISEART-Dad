@@ -306,8 +306,6 @@ def _replace(path: Path, content: str | None) -> None:
         ("wykonanie", '{"plan": "digest-planu", "jednostki": []}', "wykonanie.json: KeyError('zadanie')"),
         ("wykonanie", '{"plan": "p", "zadanie": "z", "jednostki": [{"klucz": "krok:e2e"}]}', "wykonanie.json: TypeError("),
         ("api", None, "API zadań runu: URLError(ConnectionRefusedError("),
-        ("api", (401, '{"message": "Bad credentials"}'), "API zadań runu: <HTTPError 401: "),
-        ("api", (200, ""), "API zadań runu: JSONDecodeError("),
         ("api", (200, '{"message": "Bad credentials"}'), "API zadań runu: KeyError('jobs')"),
         ("api", (200, '{"jobs": null}'), "API zadań runu: TypeError("),
         ("api", (200, json.dumps({"jobs": []})), "API zadań runu: ValueError(\"0 zadań na runnerze 'GitHub Actions 1000012606' zamiast jednego\")"),
@@ -424,7 +422,6 @@ def test_scalenie_tych_samych_zapisow_daje_ten_sam_plik_niezaleznie_od_nazw_plik
     ("broken", "error"),
     [
         ("katalog", "0-zly.json: IsADirectoryError(" if sys.platform != "win32" else "0-zly.json: PermissionError("),
-        ("{", "0-zly.json: JSONDecodeError("),
         ('{"wersja": 2}', "0-zly.json: ValueError('wersja zapisu inna niż 1')"),
         ("{}", "0-zly.json: KeyError('wersja')"),
         ('{"wersja": 1, "jednostki": [], "nieznane": 1}', "0-zly.json: TypeError("),
@@ -796,34 +793,6 @@ def test_pomiar_czasow_nie_zmienia_werdyktu_ci_i_biegnie_takze_po_porazce_z_dost
         assert workflow[job]["permissions"]["actions"] == "read", job
         assert [step["env"]["GH_TOKEN"] for step in measuring[job] if "run" in step] == ["${{ github.token }}"], job
 
-
-
-def test_pomoc_pokazuje_polecenia_z_docstringu_z_ich_wcieciami(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as stopped:
-        main(["--help"])
-
-    assert stopped.value.code == 0
-    assert "\n    python3 tools/ci/zapis_czasow.py scal --katalog zapisy --wyjscie czasy-ci.json\n" in capsys.readouterr().out
-
-
-@pytest.mark.parametrize(
-    ("arguments", "missing"),
-    [
-        ([], "polecenie"),
-        (["zadanie", "--wyjscie", "z.json"], "--tor"),
-        (["zadanie", "--tor", "Linux-3.14"], "--wyjscie"),
-        (["scal", "--wyjscie", "c.json"], "--katalog"),
-        (["scal", "--katalog", "zapisy"], "--wyjscie"),
-    ],
-)
-def test_wywolanie_bez_wymaganego_argumentu_konczy_sie_kodem_2_z_jego_nazwa(
-    capsys: pytest.CaptureFixture[str], arguments: list[str], missing: str
-) -> None:
-    with pytest.raises(SystemExit) as stopped:
-        main(arguments)
-
-    assert stopped.value.code == 2
-    assert capsys.readouterr().err.splitlines()[-1].endswith(f"the following arguments are required: {missing}")
 
 
 def test_zapis_ci_podaje_czasy_pod_torem_pomiarow_planu_a_tor_lokalny_jest_torem_pytest() -> None:

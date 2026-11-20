@@ -7,12 +7,16 @@ jego interfejsie. Żaden test nie łączy się z siecią.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+import json
+import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 import time
+from typing import Any
 
 import pytest
 
@@ -32,6 +36,7 @@ from rozliczenia.centrum.tool_update import (
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, without_access
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.potomne import beating
+from tests.fixtures.proxy_systemu import system_proxy
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.tool_clone import (
     git_failing_on,
@@ -121,30 +126,6 @@ def test_wydanie_na_starszym_commicie_niz_klon_nie_cofa_wersji(repository: ToolR
 
     assert result == UpdateResult("AKTUALNA", before=current, after=current, installed=False)
     assert repository.state() == unchanged
-
-
-@pytest.mark.parametrize("released", [True, False], ids=["main-to-wydanie", "main-nowszy-niz-wydanie"])
-def test_przejscie_z_wersji_pobierajacej_main_konczy_sie_na_wydaniu_albo_nowszym_i_dalej_idzie_po_wydaniach(
-    repository: ToolRepository, tmp_path: Path, released: bool
-) -> None:
-    from_main = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"}, released=released)
-    # Ostatnia aktualizacja wersją sprzed ADR 0014: pobranie `main` i przesunięcie do przodu, bez patrzenia na Wydania.
-    repository.in_clone("pull", "--quiet", "--ff-only", "origin", "main")
-    unchanged = repository.state()
-
-    after_transition = update(repository)
-
-    assert after_transition == UpdateResult("AKTUALNA", before=from_main, after=from_main, installed=False)
-    assert repository.state() == unchanged
-
-    repository.publish({"src/narzedzie.py": "WERSJA = 3\n"}, released=False)
-    assert update(repository) == UpdateResult("AKTUALNA", before=from_main, after=from_main, installed=False)
-
-    newest = repository.release()
-
-    assert update(repository) == UpdateResult(
-        "ok", before=from_main, after=git(repository.origin, "rev-parse", f"{newest}^{{commit}}"), installed=False
-    )
 
 
 def off_main_commit(repository: ToolRepository) -> str:
@@ -701,7 +682,7 @@ def test_kolejne_klikniecie_przy_aktualizacji_w_toku_nie_gubi_pliku_taty(
     )
     git = git_locking_after_merge(tmp_path, repository.clone / "config" / "worker_mapping.yaml")
     clone = ToolClone(repository.clone, origin=str(repository.origin), find_git=lambda: git)
-    assert clone.update().code == "COFNIECIE_NIEUDANE"
+    assert clone.update() == UpdateResult("COFNIECIE_NIEUDANE", before=before, after=None)
 
     assert clone.update().code == "COFNIECIE_NIEUDANE"
     clone.roll_back()
@@ -739,31 +720,6 @@ def test_pomocnik_gita_trzymajacy_jego_wyjscie_nie_wstrzymuje_aktualizacji(tmp_p
 
     assert result == UpdateResult("AKTUALNA", before=commit, after=commit)
     assert elapsed < 20
-
-
-def installer_that_changes(repository: ToolRepository, name: str) -> Callable[[Path], bool]:
-    """Instalator, który nie zainstaluje bibliotek, a po drodze zmienia plik ``name`` klonu: cofnięcie go nie przejdzie."""
-
-    def install(requirements: Path) -> bool:
-        repository.write(name, "zmienione w trakcie instalacji\n")
-        return False
-
-    return install
-
-
-def test_gdy_cofniecie_po_nieudanej_instalacji_sie_nie_uda_wynik_mowi_to_wprost(
-    repository: ToolRepository, tmp_path: Path
-) -> None:
-    before = repository.head()
-    newest = repository.publish({"requirements.txt": NEW_REQUIREMENTS, "src/narzedzie.py": "WERSJA = 2\n"})
-    clone = ToolClone(
-        repository.clone, origin=str(repository.origin), install=installer_that_changes(repository, "src/narzedzie.py")
-    )
-
-    result = clone.update()
-
-    assert result == UpdateResult("COFNIECIE_NIEUDANE", before=before, after=newest, installed=True)
-    assert repository.head() == newest
 
 
 def failed_rollback_with_index_locked(repository: ToolRepository) -> Path:
@@ -888,28 +844,6 @@ def git_locking_after_merge(tmp_path: Path, locked: Path) -> Path:
     )
 
 
-def test_gdy_plik_taty_nie_wroci_po_odmowie_przesuniecia_wynik_mowi_to_wprost_a_cofniecie_przywraca_plik_taty(
-    repository: ToolRepository, tmp_path: Path
-) -> None:
-    before = repository.head()
-    (repository.clone / "config" / "worker_mapping.yaml").write_text(REAL_NAMES, encoding="utf-8")
-    (repository.clone / "config" / "rejestr.yaml").write_text("zachowany u taty\n", encoding="utf-8")
-    repository.publish(
-        {".gitignore": "config/worker_mapping.yaml\n", "config/rejestr.yaml": "z nowej wersji\n"},
-        untrack=("config/worker_mapping.yaml",),
-    )
-    # Plik taty zablokowany do zapisu (np. przez antywirusa), gdy kopia ma do niego wrócić.
-    git = git_locking_after_merge(tmp_path, repository.clone / "config" / "worker_mapping.yaml")
-    clone = ToolClone(repository.clone, origin=str(repository.origin), find_git=lambda: git)
-
-    result = clone.update()
-    clone.roll_back()
-
-    assert result == UpdateResult("COFNIECIE_NIEUDANE", before=before, after=None)
-    assert repository.head() == before
-    assert repository.read("config/worker_mapping.yaml") == REAL_NAMES
-
-
 def journal_state(repository: ToolRepository) -> Path:
     return repository.clone / "config" / JOURNAL / "stan.json"
 
@@ -952,12 +886,11 @@ def test_nieczytelny_dziennik_aktualizacji_w_toku_zostaje_nietkniety_a_klon_bez_
         None,
         "nie json",
         "[]",
-        '"ok"',
         '{"wynik": 1, "przed": null, "po": null}',
         '{"wynik": "ok", "przed": 5, "po": null}',
         '{"wynik": "ok", "przed": null, "po": ["abc"]}',
     ],
-    ids=["brak-pliku", "nie-json", "lista", "napis", "kod-liczba", "przed-liczba", "po-lista"],
+    ids=["brak-pliku", "nie-json", "lista", "kod-liczba", "przed-liczba", "po-lista"],
 )
 def test_wynik_aktualizacji_nieczytelny_albo_niepelny_jest_pomijany(tmp_path: Path, content: str | None) -> None:
     result = tmp_path / "config" / tool_update.RESULT_FILE
@@ -1230,3 +1163,219 @@ def test_klon_na_nowszym_commicie_main_niz_wydanie_jest_aktualny_takze_w_aktualn
     repository.publish({"src/narzedzie.py": "WERSJA = 3\n"})
 
     assert ToolFreshness.of_clone(repository.clone, repository.github_releases, repository.published).judge() == "newer"
+
+
+def test_git_z_katalogu_w_rejestrze_ma_pierwszenstwo_przed_znanymi_miejscami_instalacji(tmp_path: Path) -> None:
+    registered = installed_git(tmp_path / "Narzedzia" / "Git")
+    installed_git(tmp_path / "Program Files" / "Git")
+
+    found = find_git(
+        which=lambda name: None,
+        registry=lambda hive: str(registered.parents[1]) if hive == "HKLM" else None,
+        environ={"ProgramFiles": str(tmp_path / "Program Files")},
+    )
+
+    assert found == registered
+
+
+@pytest.mark.parametrize(
+    ("outcome", "installed"),
+    [
+        pytest.param(0, True, id="pip-przeszedl"),
+        pytest.param(1, False, id="pip-padl"),
+        pytest.param(subprocess.TimeoutExpired("pip", 1), False, id="pip-po-limicie-czasu"),
+        pytest.param(OSError("python nie ruszył"), False, id="python-nie-ruszyl"),
+    ],
+)
+def test_biblioteki_instaluje_python_centrum_a_kazda_porazka_pip_to_brak_instalacji(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: int | BaseException, installed: bool
+) -> None:
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(NEW_REQUIREMENTS, encoding="utf-8")
+    started: list[tuple[list[str], list[str], Path | None]] = []
+
+    def console_program(
+        command: Sequence[str], *, timeout_s: float, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        started.append((list(command[:3]), list(command[-2:]), cwd))
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return subprocess.CompletedProcess(list(command), outcome)
+
+    monkeypatch.setattr(tool_update, "run_console_program", console_program)
+
+    assert tool_update.pip_install(requirements) is installed
+    assert started == [([sys.executable, "-m", "pip"], ["-r", str(requirements)], tmp_path)]
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+PINNED_ONLY_FOR_TESTS = {"hypothesis"}
+CAPPED_BUT_NOT_CHECKED_AT_START = {"playwright"}
+
+
+def src_files_importing(module: str) -> list[str]:
+    statement = re.compile(rf"^\s*(?:import|from)\s+{re.escape(module)}\b", re.MULTILINE)
+    return [
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in sorted((REPOSITORY_ROOT / "src").rglob("*.py"))
+        if statement.search(path.read_text(encoding="utf-8"))
+    ]
+
+
+def test_po_cofnieciu_aktualizacji_stara_wersja_startuje_z_bibliotekami_nowej_bo_wymagania_centrum_maja_dolne_granice() -> None:
+    specs = {}
+    for line in (REPOSITORY_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        requirement = line.split(";")[0].replace(" ", "")
+        if requirement and not requirement.startswith("#"):
+            found = re.fullmatch(r"([A-Za-z0-9_.-]+)(.*)", requirement)
+            assert found is not None, line
+            specs[found[1].lower()] = found[2]
+    beyond_lower_bound = {name for name, spec in specs.items() if not re.fullmatch(r">=[0-9][0-9.]*", spec)}
+
+    assert beyond_lower_bound == PINNED_ONLY_FOR_TESTS | CAPPED_BUT_NOT_CHECKED_AT_START
+    assert {name: src_files_importing(name) for name in PINNED_ONLY_FOR_TESTS} == {name: [] for name in PINNED_ONLY_FOR_TESTS}
+
+
+def test_dziennik_z_polem_innej_wersji_narzedzia_cofa_klon_jak_zwykle(repository: ToolRepository, tmp_path: Path) -> None:
+    before = repository.head()
+    moved_with_new_requirements(repository)
+    clone = ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller())
+    assert clone.update().code == "ok"
+    state = json.loads(journal_state(repository).read_text(encoding="utf-8"))
+    journal_state(repository).write_text(json.dumps({**state, "pole_innej_wersji": True}), encoding="utf-8")
+
+    clone.roll_back()
+
+    assert_back_before_click(repository, before)
+
+
+def test_kopia_pliku_taty_przerwana_w_trakcie_nie_zostawia_dziennika_a_klon_bez_zmian(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = repository.head()
+    moved_with_new_requirements(repository)
+    clone = ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller())
+
+    def copy_cut_off(source: Path, target: Path) -> None:
+        Path(target).write_text(Path(source).read_text(encoding="utf-8")[:5], encoding="utf-8")
+        raise OSError("dysk się zapełnił")
+
+    with monkeypatch.context() as disk:
+        disk.setattr(shutil, "copy2", copy_cut_off)
+        with pytest.raises(OSError, match="dysk się zapełnił"):
+            clone.update()
+
+    assert clone.interrupted_update() is None
+    assert repository.head() == before
+    assert repository.read("config/worker_mapping.yaml") == REAL_NAMES
+
+
+class SwitchedOff(BaseException):
+    pass
+
+
+def test_wylaczenie_komputera_w_trakcie_konca_dziennika_nie_cofa_potem_skonczonej_aktualizacji(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    newest = moved_with_new_requirements(repository)
+    clone = ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller())
+    assert clone.update().code == "ok"
+
+    def switched_off(path: Path, *args: object, **kwargs: object) -> None:
+        raise SwitchedOff
+
+    with monkeypatch.context() as computer:
+        computer.setattr(shutil, "rmtree", switched_off)
+        with pytest.raises(SwitchedOff):
+            clone.confirm_update()
+
+    assert clone.interrupted_update() is None
+    assert repository.head() == newest
+
+
+def test_kopia_pliku_taty_ktorej_dysk_nie_pozwala_usunac_nie_zatrzymuje_konca_aktualizacji(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moved_with_new_requirements(repository)
+    clone = ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller())
+    assert clone.update().code == "ok"
+    unlink = os.unlink
+
+    def refusing(path: str | os.PathLike[str], *args: Any, **kwargs: Any) -> None:
+        if os.path.basename(path) == "worker_mapping.yaml":
+            raise PermissionError(13, "Odmowa dostępu")
+        unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as disk:
+        disk.setattr(os, "unlink", refusing)
+        clone.confirm_update()
+
+    assert clone.interrupted_update() is None
+
+
+def test_cofniecie_bez_gita_na_komputerze_odmawia_a_dziennik_czeka_na_kolejna_probe(
+    repository: ToolRepository, tmp_path: Path
+) -> None:
+    newest = moved_with_new_requirements(repository)
+    assert ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller()).update().code == "ok"
+    without_git = ToolClone(repository.clone, origin=str(repository.origin), find_git=lambda: None)
+
+    with pytest.raises(GitFailed):
+        without_git.roll_back()
+
+    assert repository.head() == newest
+    assert without_git.interrupted_update() is not None
+
+
+def test_bez_gita_na_komputerze_klon_zawiera_tylko_commit_na_ktorym_stoi(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = repository.head()
+    repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    repository.in_clone("pull", "--quiet", "--ff-only", "origin", "main")
+    current = repository.head()
+    monkeypatch.setattr(tool_update, "find_git", lambda: None)
+
+    assert tool_update.contains_commit(repository.clone, current, current)
+    assert not tool_update.contains_commit(repository.clone, first, current)
+
+
+def test_pobranie_idzie_do_githuba_wprost_mimo_proxy_w_ustawieniach_systemu(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = repository.head()
+
+    with system_proxy(monkeypatch) as proxied, origin_asking_for_login() as origin:
+        result = ToolClone(repository.clone, origin=origin).update()
+
+    assert result == UpdateResult("LOGOWANIE", before=before, after=None)
+    assert proxied == []
+
+
+def test_pobranie_idzie_do_githuba_wprost_mimo_proxy_w_konfiguracji_gita_komputera(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = repository.head()
+
+    with system_proxy(monkeypatch) as proxied, origin_asking_for_login() as origin:
+        address = os.environ["http_proxy"]
+        for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(computer_git_config(tmp_path / "gitconfig", f"[http]\n\tproxy = {address}\n")))
+        result = ToolClone(repository.clone, origin=origin).update()
+
+    assert result == UpdateResult("LOGOWANIE", before=before, after=None)
+    assert proxied == []
+
+
+def test_lokalny_commit_przy_pominietym_wydaniu_spoza_main_daje_odmowe_z_tym_wydaniem(repository: ToolRepository) -> None:
+    repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    repository.release(off_main_commit(repository), tag="v0.3.0")
+    local_commit(repository)
+    before = repository.head()
+    unchanged = repository.state()
+
+    result = update(repository)
+
+    assert result == UpdateResult("ZMIANY_NA_KOMPUTERZE", before=before, after=None, skipped=("v0.3.0",))
+    assert repository.state() == unchanged

@@ -6,7 +6,6 @@ import { useNotifications } from "@/lib/notifications"
 import { href } from "@/lib/address"
 import { NOTIFICATIONS_PAGE } from "@/pages"
 
-/** Dzwonek w nagłówku: prowadzi do widoku Powiadomienia, czerwona kropka znaczy nowe Powiadomienia. */
 export function NotificationsBell({ current }: { current: boolean }) {
   const { notifications } = useNotifications()
   const unread = notifications.state === "ready" && notifications.data.unread > 0

@@ -53,16 +53,18 @@ after a rollback when the port was never released (#726).
 
 **TataNieZostajeBezOdpowiedzi**: when nothing runs any more (no update, no
 guardian, no Centrum), Dad sees a native dialog with a Komunikat or a computer
-that switched off, never only a card that no longer answers. The docstring of
-`restart_guardian.py` and the docstring of `main` promise it: „karta nie ma już
-z kim rozmawiać, więc tata widzi jedno okienko zamiast ciszy”.
+that switched off, never only a card that no longer answers: the card has
+nobody left to talk to, so Dad sees one dialog instead of silence
+(`test_gdy_nie_startuje_zadna_wersja_opiekun_pokazuje_jedno_okienko_a_klon_stoi_na_starym_commicie`
+in `tests/test_opiekun_ponownego_startu.py`).
 
 **KartaNieKlamie**: the card says „Narzędzie zaktualizowane” only while
 Centrum runs in the new version. Every Centrum reads the result file
 (`config/centrum-aktualizacja.json`) once at start
-(`ToolUpdates._after_restart`), and the docstring of `launcher._roll_back`
-says the card of a rolled-back version must show the failure even when the
-file already said „ok”.
+(`ToolUpdates._after_restart`), and the card of a rolled-back version
+(`launcher._roll_back`) shows the failure even when the file already said „ok”
+(`test_wynik_ok_przy_dzialajacej_poprzedniej_wersji_to_porazka_nieoczekiwana_z_rada_i_zgloszeniem`
+in `tests/test_centrum_aktualizacja.py`).
 
 **KartaNieStraszy**: the card of the new version, while it runs, shows no
 failure of the update. A failure in the result file comes from the guardian or
@@ -178,6 +180,7 @@ Each constant is a way to fail or a bound of a configuration (`stale` in `model/
 | `nowaUsuwaPlikTaty`, `nowaZmieniaWymagania`, `nowaStartuje` | the new version, chosen once: it removes or stops tracking Dad's file (`_DadFiles.leaving` finds it), it changes `requirements.txt` (`_Git.changed`), it answers `/api/health` with its libraries |
 | `centrum`, `pc`, `krok` | the version of the running Centrum (or none), the step of the update (`spoczynek` while none runs), and the last step in the code's words, from which the counterexample is told |
 | `slady` | the causes of known findings that already happened |
+| `klikniecia` | the counter of the `MaxKlikniec` constant |
 | `skrot`, `skrotyWTrakcie` | a shortcut clicked while the guardian runs holds the port from `listen_locally` to `listener.close()`; how many such clicks Dad made |
 | `cofa` | who calls `_roll_back`: `centrum` (`ToolClone.update`, `ToolUpdates._moved_back`, also after a refused merge), `klik` (`ToolClone.update` before the fetch, on a journal without a guardian's lease), `opiekun` (`restart_guardian._rolled_back` after a new version that does not answer), `opiekun_bez_portu` (the same when the port was never released) or `skrot` (`launcher._roll_back` at start) |
 | `wynik` | `config/centrum-aktualizacja.json` (`write_result`): none, „ok” (`UPDATED`) or a failure (any other code) |
@@ -215,11 +218,11 @@ no longer describes.
 1. Read the diff of the covered files since their digests (the `git diff`
    above; the drift line names each changed file and definition). For each
    hunk, find its row in the table.
-2. Change the matching actions so that one action stays one indivisible step
-   of the code, and write the code's names in its row of the table, not in a
-   comment: the model has none, and a new action, definition, constant or
-   variable gets its own row. TLA+ strings must be ASCII (no Polish letters
-   inside `"…"`).
+2. Change the matching actions so that one action stays one indivisible step of
+   the code, and write the code's names in its row of the table, not in a
+   comment: the model has none, and a new action of `Next`, constant or variable
+   gets its own row, and a new definition gets one when it models code. TLA+
+   strings must be ASCII (no Polish letters inside `"…"`).
 3. A new way to fail gets a `CONSTANT` with its row, a branch guarded by it, and a value in
    `stale` of every configuration in `model/konfiguracje.json`. Turn it on in the
    configuration whose theme fits, or give it its own configuration there.

@@ -1,15 +1,3 @@
-"""Zmiany Ustawień Centrum w Wydaniu (ADR 0032, furtka Maksa): jawne, nazwane, jednorazowe zmiany, które Wydanie niesie
-w kodzie, bo Aktualizacja narzędzia nie nadpisuje plików w ``config``.
-
-Zmiany dostaje konstruktor właściciela, a ten (``CentrumSettings.apply_release_changes``) stosuje przy każdym starcie
-Centrum, przed pierwszym zapytaniem, każdą zmianę, której jeszcze nie zapamiętał, z tymi samymi sprawdzeniami co zmiana
-taty. Zmiana, która weszła, ma w Historii Ustawień źródło z numerem Wydania i „Cofnij”, a odrzucona ma powód i nie wraca.
-Wydanie bez wpisu niczego nie pisze.
-
-Edycja jest deklaratywna („ustaw”, „dodaj, jeśli nie ma”), bo po utracie pamięci właściciela zmiana biegnie jeszcze
-raz i wtedy nie może dać różnicy ani wiersza.
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -25,14 +13,6 @@ from rozliczenia.period_folder import PeriodFolderInaccessible, layout_root
 
 
 def periods_directory_from_layout_root(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:
-    """Folder okresów zapisany w środku układu folderów taty (tydzień, ``INEA``, miesiąc) zamienia się na korzeń
-    układu (``Załączniki``), od którego Centrum i tak liczy (ADR 0032); tata może to cofnąć.
-
-    Korzeń i układ płaski zostają bez wiersza. Na później zostaje plik Ustawień zły albo nieczytelny (zmiana nie
-    nadpisuje go ostatnią dobrą wartością), folder bez dostępu i folder, którego nie ma, a nad nim nie widać układu
-    (OneDrive mógł go jeszcze nie oddać).
-    """
-
     if not isinstance(inputs.current, Good):
         return Later("plik Ustawień ma złą treść albo nie da się go teraz przeczytać")
     settings = inputs.current.value
@@ -56,4 +36,3 @@ RELEASE_CHANGES: Final[tuple[ReleaseChange[Any], ...]] = (
     reminders_migration.CHANGE,
     ReleaseChange("2026-11-rt2-bez-usterek", LEGEND, not_counted_in_fault("rt2")),
 )
-"""Zmiany Ustawień Centrum, które niesie to Wydanie i każde poprzednie."""

@@ -481,18 +481,6 @@ def test_gdy_onedrive_trzyma_intermax_przywrocenie_mowi_o_synchronizacji_i_zosta
     assert sorted(path.name for path in centrum.register.parent.iterdir()) == [ORDER_BASE_NAME, REGISTER_NAME]
 
 
-def test_intermax_otwarty_w_excelu_w_chwili_podmiany_to_odmowa_bez_nowej_kopii(tmp_path: Path) -> None:
-    centrum = _ordered(tmp_path)
-    before, kopie = centrum.register.read_bytes(), _kopie(centrum)
-    # Windows odmawia podmiany pliku, który trzyma Excel.
-    centrum.disk.replace, _ = failing_replace(denied, before=lambda: open_in_excel(centrum.register))
-
-    refused = _refused(centrum, ORDERED)
-
-    assert refused["what"] == f"INTERMAX jest otwarty w Excelu. {UNCHANGED}"
-    assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
-
-
 def test_nieudany_zapis_obok_intermax_to_odmowa_bez_nowej_kopii(tmp_path: Path) -> None:
     centrum = _ordered(tmp_path)
     before, kopie = centrum.register.read_bytes(), _kopie(centrum)

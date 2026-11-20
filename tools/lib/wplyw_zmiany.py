@@ -1,8 +1,9 @@
 """Wpływ zmiany: ścieżki, którymi checkout różni się od bazy, zmiany, które uruchamiają wszystko, i testy, których dotyczą.
 
 Jedyne miejsce, które odpowiada na pytanie „czego dotyka ta zmiana”; pytają o to ``tools/szybko.py``, plan CI
-(``tools/plan_ci.py``), mutacje zmian (``tools/mutacje_zmiany.py``), zakres runu CI (``tools/lib/zakres_runu.py``)
-i ``tools/skille_dla_zmiany.py``:
+(``tools/plan_ci.py``), mutacje zmian (``tools/mutacje_zmiany.py``), zakres runu CI (``tools/lib/zakres_runu.py``),
+``tools/skille_dla_zmiany.py`` i stawka przeglądu PR w ``tools/scal_pr.py`` (bramka korzenia, bramka strażnika,
+``--przeglad``):
 
     changed = changed_since(root, "origin/main")    # merge-base, diff --no-renames, nieśledzone
     full = run_all(changed, Context.PR_GATE)         # posortowane ścieżki, przez które biegnie wszystko
@@ -11,6 +12,7 @@ i ``tools/skille_dla_zmiany.py``:
     repository.reaching("tools/mutacje.py")          # pliki testów, które sięgają pliku
     repository.imported("tools/plan_ci.py")          # pliki, do których plik dochodzi importem
     unchanged_tests(root, base, "tests/test_x.py")   # testy pliku z tym samym kodem co na commicie base
+    light_review(root, "origin/main", head)          # lekka runda przeglądu PR (ADR 0042, aneks z 20.11.2026)
 
 Zmiana to ścieżki, którymi checkout, razem z niezacommitowanymi i nieśledzonymi plikami, różni się od ``merge-base``
 HEAD z bazą; przeniesienie daje starą i nową ścieżkę, a usunięty plik też jest zmianą.
@@ -36,6 +38,12 @@ wszystkie testy, odległość liczy się bez niego, a plik, który go importuje 
 szybko biegnie przed testami bez drogi w grafie; każdy taki plik wchodzi też do odcisku każdego testu. Testy
 ``STRUCTURE`` graf nie wiąże ze zmianą, więc biegną przy każdej.
 
+Lekką rundę przeglądu (``light_review``) dostaje zmiana od ``merge-base`` HEAD PR z bazą, w której każda ścieżka
+to plik pod ``tools/`` poza ``tools/wydanie.py``, plik pod ``.github/`` albo test narzędzi: plik ``.py`` pod ``tests/``,
+który na HEAD (usunięty: na ``merge-base``) sam importuje moduł z ``tools/``, a importem, wprost albo przez inny moduł,
+nie dochodzi do żadnego z ``src/``; nazwy modułów w napisach, które graf wyboru testów liczy, się tu nie liczą. Pliki Wydania
+(``DAD_FILES`` w ``tools/wydanie.py``, ``config/`` z ``src/rozliczenia/tool_files.py``) leżą poza ``tools/``.
+
 Testy, które sięgają pliku (``Repository.reaching``), to inna reguła niż wybór: krawędź katalogu, globu i danych
 pakietu prowadzi dalej tylko ze źródeł w ``tests/``, a ścieżka nazwana tylko w narzędziu się nie liczy.
 
@@ -46,7 +54,7 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict, deque
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 import enum
 from fnmatch import fnmatchcase
@@ -59,7 +67,7 @@ import sys
 import repo
 from sciezki_w_kodzie import Glob, references
 
-__all__ = ["STRUCTURE", "Context", "Impact", "Repository", "changed_since", "run_all", "unchanged_tests", "with_structure"]
+__all__ = ["STRUCTURE", "Context", "Impact", "Repository", "changed_since", "light_review", "run_all", "unchanged_tests", "with_structure"]
 
 
 class Context(enum.Enum):
@@ -204,6 +212,44 @@ def with_structure(tests: Iterable[str]) -> tuple[str, ...]:
 
     chosen = sorted(tests)
     return (*chosen, *(node for node in STRUCTURE if node.partition("::")[0] not in chosen))
+
+
+LIGHT_REVIEW = ("tools/", ".github/")
+RELEASE_TOOL = "tools/wydanie.py"
+
+
+def light_review(root: Path, base: str, head: str) -> bool:
+    fork = repo.merge_base(root, base, head)
+    changed = repo.changed(root, fork, head)
+    tests = [path for path in changed if not path.startswith(LIGHT_REVIEW)]
+    if not changed or RELEASE_TOOL in changed or not all(path.startswith("tests/") and path.endswith(".py") for path in tests):
+        return False
+    if not tests:
+        return True
+    files = changed | frozenset(path for path in repo.git(root, "ls-tree", "-r", "-z", "--name-only", head).split("\0") if path)
+    modules = _modules(files)
+    imported: dict[str, set[str]] = {}
+
+    def imports(path: str) -> set[str]:
+        if path not in imported:
+            try:
+                nodes = list(ast.walk(ast.parse(repo.blob(root, head, path) or repo.blob(root, fork, path) or b"")))
+            except (SyntaxError, ValueError):
+                nodes = []
+            imported[path] = {target for name in _imports(nodes, path) for target in _resolve(name, path, modules, files)}
+        return imported[path]
+
+    return all(_tools_test(path, imports) for path in tests)
+
+
+def _tools_test(path: str, imports: Callable[[str], set[str]]) -> bool:
+    reached, pending = {path}, [path]
+    while pending:
+        for target in imports(pending.pop()) - reached:
+            reached.add(target)
+            if target.endswith(".py"):
+                pending.append(target)
+    return any(target.startswith("tools/") for target in imports(path)) and not any(target.startswith("src/") for target in reached)
 
 
 @dataclass(frozen=True)
@@ -499,7 +545,7 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
 
     Pakiet ``tests`` nie ma danych: ``tests/__init__.py`` robiłby z każdego pliku spod ``tests/expected/`` i z
     ``tests/ruff.toml`` wejście każdego testu. ``tests/fixtures`` zostaje pakietem z danymi, bo jego plik czyta fixture
-    (``uwagi-taty-z-powiadomieniami.json`` dla ``test_zgloszenia_ci.py``).
+    (``schemat_logow_wydan.json`` dla ``test_centrum_karta_z_logow.py``).
 
     Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request, gdy graf
     (``sciezki_w_kodzie``) zobaczy ścieżkę tego pliku w pliku testu albo w module, który test importuje. Ten docstring

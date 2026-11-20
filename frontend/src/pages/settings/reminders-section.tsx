@@ -16,21 +16,14 @@ import {
 } from "@/pages/settings/setting-form"
 import { SettingRow, SettingsPanel } from "@/pages/settings/setting-row"
 
-/** Sekcja okna Ustawień z Przypomnieniami o raporcie: tu tata wpisuje też stopkę. */
 export const REMINDERS_SECTION = "przypomnienia"
 
 const REMINDERS = "Przypomnienia o raporcie"
 
-/** Wiersze formularza, pod którymi stoi zdanie odmowy albo złego pliku: pierwszy człon pola z serwera. */
 const FORM_ROWS = ["pora_poranna", "pora_wieczorna", "pierwsze_przypomnienie", "tresc", "stopka"] as const
 
 type FormRow = (typeof FORM_ROWS)[number]
 
-/**
- * Przypomnienia o raporcie (ADR 0032): przełącznik zapisuje się od razu, a pory, godzina pierwszego przypomnienia,
- * pierwsze zdanie i stopka dopiero przyciskiem „Zapisz”. Podgląd pokazuje mail za wczoraj tak, jak dostanie go
- * Wykonawca, ze stałym tematem, bez zapisu i bez wysyłki. Zmiana działa od następnego sprawdzenia przypomnień.
- */
 export function RemindersSection() {
   return (
     <SettingFormSection
@@ -50,7 +43,6 @@ function formOf(setting: RemindersSetting): RemindersForm {
   return { morning, evening, first, text, footer }
 }
 
-/** Przełącznik: do odpowiedzi serwera stoi w wybranym położeniu, a drugie kliknięcie niczego nie wysyła. */
 function Switched({ setting }: { setting: RemindersSetting }) {
   const { sectionSaved, saveFailed } = useSettings()
   const [pending, setPending] = React.useState<boolean | null>(null)
@@ -213,7 +205,6 @@ function TimeInput({
   )
 }
 
-/** Przypomnienie z formularza za wczoraj, tak jak dostanie je Wykonawca, także przed zapisem. */
 function Preview({ form }: { form: RemindersForm }) {
   return (
     <MailPreview form={form} preview={previewReminder} label="Podgląd przypomnienia" skeleton="h-40">

@@ -49,7 +49,8 @@ Formy wpisu:
 - ``ts``, ``css``, ``html``, ``yaml``, ``powłoka``: komentarz w drzewie składni ast-grep (TS, TSX, JS, CSS, HTML,
   YAML, skrypt ``.sh``); ``#`` w napisie YAML albo w skrypcie ``run: |`` workflowu jest napisem, nie komentarzem YAML;
 - ``toml``, ``ini``: ``#`` (w ``ini`` także ``;``), bez którego ``tomllib`` albo ``configparser`` czyta ten sam plik;
-- ``gitignore`` (``.gitignore``, ``.gitattributes``, ``.ignore``) i ``requirements`` (``requirements*.txt``).
+- ``gitignore`` (``.gitignore``, ``.gitattributes``, ``.ignore``; w ``.gitattributes`` także wcięty, bo git zdejmuje
+  wcięcie linii) i ``requirements`` (``requirements*.txt``).
 
 Pliku innego formatu (np. Markdown, model TLA+, ``.jsonc``), pliku z atrybutem ``merge=wygenerowane``
 (``.gitattributes``) i pliku frontendu z ``ignorePatterns`` w ``frontend/.oxlintrc.json`` inwentarz nie czyta, a ostatnia
@@ -85,7 +86,8 @@ uruchamia lokalnie ``tools/ci_lokalnie.py``, a podstaw spoza pull requestu i kro
 (``tools/skille_dla_zmiany.py``, linie ``LICZY MAIN`` i ``LICZY NOC``). FAIL znalezienia kroku skilla z zakresu to
 porażka. Linia jednostki: ``MAIN|NOC | rodzaj | nazwa | wynik``.
 Ostatnia linia: ``DOWÓD FALI OK|FAIL | baza SHA | zmiana N plików | lokalnie: pytest P plików, rozjazd modelu R skilli |
-po merge'u: kroki CI C, podstawy B, noc Q``, z porażkami po ``FAIL |``; kod 1 to porażka, brak zmiany albo nieznana baza.
+po merge'u: kroki CI C, podstawy B, noc Q | praca PR: Required CI``, z porażkami po ``FAIL |``; kod 1 to porażka, brak
+zmiany albo nieznana baza.
 
     .venv/bin/python tools/inwentarz_komentarzy.py tools/hooks tools/lib/atrapy      # wpisy fali
     .venv/bin/python tools/inwentarz_komentarzy.py --json .github                     # pełny tekst
@@ -117,7 +119,8 @@ DYREKTYWA: Final = re.compile(r"^[ \t]*(?:#+|//+|/\*+|\*+|<!--|;)?[ \t]*(?:@\w|[
 PYTHON: Final = frozenset({".py", ".pyi"})
 DEKLARACJE_JS: Final = ("function_declaration", "class_declaration", "method_definition", "variable_declarator")
 DEKLARACJE_TS: Final = (*DEKLARACJE_JS, "interface_declaration", "type_alias_declaration", "enum_declaration")
-GITIGNORE: Final = frozenset({".gitignore", ".gitattributes", ".ignore"})
+GITIGNORE: Final = frozenset({".gitignore", ".ignore"})
+GITATTRIBUTES: Final = ".gitattributes"
 INI: Final = frozenset({".importlinter", ".cfg", ".ini"})
 AST_GREP: Final = shutil.which("ast-grep", path=sysconfig.get_path("scripts")) or shutil.which("ast-grep")
 
@@ -125,6 +128,7 @@ PR: Final = "PR"
 MAIN: Final = "MAIN"
 NOC: Final = "NOC"
 PO_MERGE: Final = "po merge'u"
+PRACA_PR: Final = "praca PR: Required CI"
 NIE_MA_ZMIANY: Final = "brak zmiany od bazy"
 
 
@@ -294,6 +298,8 @@ def _czytnik(nazwa: PurePosixPath, plik: Path) -> Callable[[str, str], list[Wpis
         return lambda sciezka, tekst: _przez_ciecie(sciezka, tekst, "ini", "#;", _ini)
     if nazwa.name in GITIGNORE:
         return lambda sciezka, tekst: _liniowe(sciezka, tekst, "gitignore", _komentarz_gitignore)
+    if nazwa.name == GITATTRIBUTES:
+        return lambda sciezka, tekst: _liniowe(sciezka, tekst, "gitignore", _komentarz_gitattributes)
     if nazwa.name.startswith("requirements") and nazwa.suffix == ".txt":
         return lambda sciezka, tekst: _liniowe(sciezka, tekst, "requirements", _komentarz_requirements)
     return None
@@ -539,6 +545,11 @@ def _komentarz_gitignore(linia: str) -> int | None:
     return 0 if linia.startswith("#") else None
 
 
+def _komentarz_gitattributes(linia: str) -> int | None:
+    tresc = linia.lstrip(" \t")
+    return len(linia) - len(tresc) if tresc.startswith("#") else None
+
+
 def _komentarz_requirements(linia: str) -> int | None:
     trafienie = re.search(r"(?:^|\s)#", linia)
     return None if trafienie is None else trafienie.end() - 1
@@ -639,6 +650,7 @@ def dowod_fali(root: Path, baza: str) -> int:
     print(
         f"DOWÓD FALI {stan} | baza {poczatek[:10]} | zmiana {len(zmiana)} plików | lokalnie: pytest {len(poza_wyborem)} plików,"
         f" rozjazd modelu {sum(map(_ma_model, podstawy))} skilli | {PO_MERGE}: kroki CI {len(kroki_ci)}, podstawy {len(podstawy)}, noc {len(nocne)}"
+        f" | {PRACA_PR}"
     )
     return 1 if porazki else 0
 

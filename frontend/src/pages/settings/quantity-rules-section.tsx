@@ -10,23 +10,16 @@ import { Sentence } from "@/pages/settings/rule-sentence"
 import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
 import { WithSettingsRead } from "@/pages/settings/settings-read"
 
-/** Grupy reguł według zakresu, w kolejności z ADR 0033; grupa bez reguł się nie pokazuje. */
 const SCOPES: ReadonlyArray<{ scope: QuantityRuleSentence["scope"]; title: string }> = [
   { scope: "known", title: "Gdy Lista Urządzeń zna każdy składnik" },
   { scope: "unknown", title: "Gdy jest składnik spoza listy" },
   { scope: "every", title: "Każde zlecenie" },
 ]
 
-/** Nowa reguła zaczyna bez warunków i bez działania: działanie wybiera tata. */
 const NEW_RULE: RuleForm = { scope: "known", conditions: [], action: null }
 
-/** Reguła w edytorze: `id` `null` to nowa reguła; `prefilled`: formularz z różnicy („Popraw regułę”), jeszcze niezapisany. */
 type Editing = { id: string | null; rule: RuleForm; prefilled?: boolean }
 
-/**
- * Reguły ilości jako zdania „jeśli … to …”; kolumna ma nazwę pozycji cennika z Wzorca. „Dodaj regułę” i „Zmień”
- * otwierają edytor w miejscu listy, a po zapisie lista wraca z regułą już zapisaną.
- */
 export function QuantityRulesSection() {
   const [editing, setEditing] = React.useState<Editing | null>(null)
 
@@ -109,7 +102,6 @@ export function Problem({ problem }: { problem: SettingProblem | null }) {
   return problem === null ? null : <FieldSentence>{problem.message}</FieldSentence>
 }
 
-/** Sekcja z Regułami ilości i Listą Urządzeń (`WithSettingsRead`). */
 export function WithQuantityRules({
   children,
 }: {

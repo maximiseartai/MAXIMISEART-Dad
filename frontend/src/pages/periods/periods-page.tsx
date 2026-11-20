@@ -67,7 +67,6 @@ function PeriodsContent() {
   )
 }
 
-/** Nieudany odczyt Tablicy okresów pokazuje Komunikat strony nad nią, więc tu nie ma nic. */
 function PeriodBoardSection({
   board,
   metrics,

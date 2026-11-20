@@ -19,7 +19,6 @@ import { cn } from "cn"
 
 type Tone = "sent" | "by_hand" | "changed" | "failed" | "plain" | "off"
 
-/** Każdy stan Rozliczenia pracownika w Wysyłce: słowa, ikona i ton odznaki oraz kropki przy awatarze. */
 const LOOK: Record<ShownState["state"], { words: string; icon: LucideIcon; tone: Tone }> = {
   sending: { words: "Wysyłam…", icon: SendIcon, tone: "plain" },
   to_send: { words: "Do wysłania", icon: CircleDashedIcon, tone: "plain" },
@@ -51,7 +50,6 @@ const DOT: Record<Tone, string> = {
   off: "bg-border",
 }
 
-/** `Wysłane 19.10.2026 08:02`, `Zmienione po wysłaniu`: stan słowami, z chwilą wysłania, gdy mail poszedł. */
 export function stateWords(state: ShownState): string {
   const { words } = LOOK[state.state]
 
@@ -70,10 +68,6 @@ export function MailStateBadge({ state }: { state: ShownState }) {
   )
 }
 
-/**
- * Awatar Wykonawcy z inicjałami i kropką stanu: wysłane (pełna), wysłane ręcznie (pusta w środku), zmienione po
- * wysłaniu (bursztynowa), nie wyszło (czerwona), reszta szara. Stan słowami niesie nazwa obrazka.
- */
 export function WorkerAvatar({ worker, state, size = "sm" }: { worker: string; state?: ShownState; size?: "sm" | "default" }) {
   return (
     <Avatar size={size} role={state === undefined ? undefined : "img"} aria-label={state === undefined ? undefined : `${worker}: ${stateWords(state)}`}>

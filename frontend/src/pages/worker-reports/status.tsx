@@ -7,9 +7,7 @@ import type { Choice, Status } from "@/pages/worker-reports/day-state"
 type Look = {
   label: string
   icon: LucideIcon
-  /** Tło i napis kafelka, znaczka w popoverze i pola w liście filtra Status. */
   tile: string
-  /** Kolor stanu: pasek w popoverze i kropka przy przycisku Status. */
   color: string
 }
 

@@ -57,3 +57,15 @@ allowed_importers =
 broken_contract_guidance =
     Skrzynkę raportów czyta tylko rozliczenia/worker_report_inbox.py, który otwiera ją tylko do odczytu (ADR 0028):
     weź z niego ImapInbox, WorkerReportInbox albo ReminderMailbox zamiast imaplib i smtplib.
+
+[importlinter:contract:okno-efenix]
+name = Przeglądarkę okna efenix importuje tylko centrum/efenix_chrome.py
+type = protected
+protected_modules =
+    rozliczenia.efenix_browser
+allowed_importers =
+    rozliczenia.centrum.efenix_chrome
+broken_contract_guidance =
+    Okno efenix otwiera tylko centrum/efenix_chrome.py (EfenixWindow, atrapa_opening): Centrum bierze okno z
+    create_app(efenix_window=...), więc testy i weryfikacja dają mu okno na Atrapie efenix (ADR 0024), a katalog
+    procesów dostaje gotowe process_kind.EfenixOpening. Weź okno z efenix_chrome.py zamiast efenix_browser.

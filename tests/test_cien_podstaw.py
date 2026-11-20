@@ -52,28 +52,6 @@ def _rekordy(*pr: RunPr, main: tuple[RunMain, ...] = (), pr_runow: int = 60, od:
     return Rekordy(od, "2026-12-03", pr_runow, pr, main)
 
 
-@pytest.mark.parametrize(
-    ("run", "kandydat"),
-    [
-        (_pr(naprawa=("src/rozliczenia/a.py",)), True),
-        (_pr(naprawa=(".agents/skills/verify-a/scripts/drive.py",)), True),
-        # Naprawa w folderze innego skilla, w testach albo jej brak (flaky, infrastruktura, ostatni run gałęzi): to nie kandydat.
-        (_pr(naprawa=(".agents/skills/verify-b/SKILL.md",)), False),
-        (_pr(naprawa=("tests/test_a.py",)), False),
-        (_pr(naprawa=None), False),
-        # Defekt, który złapał też pytest, NF nie złapał sam.
-        (_pr(pytest=Pytest.PADL), False),
-        # Krok spoza NF albo w N0 nie różni wariantów.
-        (_pr(padle=("verify-b/ci",), naprawa=("src/b.py",)), False),
-        (_pr(cien={**CIEN, "N0": Wariant(("verify-a/ci",), 200.0)}), False),
-    ],
-    ids=["naprawa w src", "naprawa w folderze skilla", "naprawa w innym skillu", "naprawa w testach", "bez następnego runu",
-         "padł też pytest", "krok tylko w V0", "krok też w N0"],  # fmt: skip
-)
-def test_kandydat_nf_to_padly_krok_nf_spoza_n0_przy_zielonym_pytest_z_naprawa_w_folderze_skilla_albo_src(run: RunPr, kandydat: bool) -> None:
-    assert _klucze(rozstrzygnij(_rekordy(run)).kandydaci) == (("1 verify-a/ci",) if kandydat else ())
-
-
 def _linie_porazek(rekordy: Rekordy) -> dict[str, list[str]]:
     """Klucz każdej porażki kroku skilla czerwonych runów rekordów → pierwsze pole linii wyniku, której drugie pole to
     ten klucz (przy ``NIE LICZY SIĘ`` z powodem)."""
@@ -96,12 +74,15 @@ def _linie_porazek(rekordy: Rekordy) -> dict[str, list[str]]:
         (_pr(pytest=Pytest.PADL), {"1 verify-a/ci": ["NIE LICZY SIĘ | padł też pytest: pytest złapał"]}),
         (_pr(cien={**CIEN, "N0": Wariant(("verify-a/ci",), 200.0)}), {"1 verify-a/ci": ["NIE LICZY SIĘ | krok spoza NF albo w N0: warianty się nie różnią"]}),
         (_pr(naprawa=("tests/test_a.py",)), {"1 verify-a/ci": ["NIE LICZY SIĘ | naprawa tylko poza folderem skilla i src/: tests/test_a.py"]}),
+        (_pr(naprawa=(".agents/skills/verify-a/scripts/drive.py",)), {"1 verify-a/ci": ["KANDYDAT NF 1/1"]}),
+        (_pr(naprawa=(".agents/skills/verify-b/SKILL.md",)), {"1 verify-a/ci": ["NIE LICZY SIĘ | naprawa tylko poza folderem skilla i src/: .agents/skills/verify-b/SKILL.md"]}),
         (_pr(naprawa=()), {"1 verify-a/ci": ["NIE LICZY SIĘ | własna zmiana PR przy następnej głowie ta sama co przy czerwonej (np. tylko scalenie main)"]}),
         (_pr(padle=("verify-a/ci", "verify-b/ci")),
          {"1 verify-a/ci": ["KANDYDAT NF 1/1"], "1 verify-b/ci": ["NIE LICZY SIĘ | krok spoza NF albo w N0: warianty się nie różnią"]}),
     ],
     ids=["kandydat", "bez następnego runu", "przepisana historia", "bez cienia z naprawą", "bez cienia bez naprawy", "padł też pytest", "krok też w N0",
-         "naprawa poza folderem skilla i src", "bez zmiany własnej zmiany PR", "dwa kroki jednego runu"],  # fmt: skip
+         "naprawa poza folderem skilla i src", "naprawa w folderze skilla", "naprawa w innym skillu", "bez zmiany własnej zmiany PR",
+         "dwa kroki jednego runu"],
 )
 def test_kazda_porazka_kroku_skilla_czerwonego_runu_stoi_w_wyniku_dokladnie_raz_z_postacia_z_tabeli_docstringu(
     run: RunPr, linie: dict[str, list[str]]
@@ -173,17 +154,11 @@ def test_kandydat_wymaga_audytu_gdy_kazdy_plik_naprawy_kroku_zmienil_main_albo_r
 @pytest.mark.parametrize(
     ("runy", "niepoliczony"),
     [
-        ((_pr(naprawa=(), przepisana=True),), True),
         ((_pr(naprawa=("tests/test_a.py",), przepisana=True),), True),
-        ((_pr(naprawa=None),), True),
-        ((_pr(naprawa=(), przepisana=False),), False),
-        # Ten sam krok gałęzi z naprawą w innym runie nie ukrywa tej porażki; z pytest albo spoza NF to nie krok NF.
-        ((_pr(naprawa=(), przepisana=True), _pr(run=2)), True),
         ((_pr(naprawa=(), przepisana=True, pytest=Pytest.PADL),), False),
         ((_pr(naprawa=(), przepisana=True, cien={**CIEN, "N0": Wariant(("verify-a/ci",), 200.0)}),), False),
     ],
-    ids=["bez plików naprawy", "naprawa spoza folderu skilla i src", "bez następnego runu z wynikiem", "głowa czerwona przodkiem następnej",
-         "krok gałęzi kandydatem w innym runie", "padł też pytest", "krok też w N0"],  # fmt: skip
+    ids=["naprawa spoza folderu skilla i src", "padł też pytest", "krok też w N0"],
 )
 def test_porazka_kroku_nf_bez_naprawy_z_przepisana_historia_albo_bez_nastepnego_runu_jest_niepoliczona_do_audytu(
     runy: tuple[RunPr, ...], niepoliczony: bool

@@ -3,12 +3,10 @@ import * as React from "react"
 import { failureMessage } from "@/api/client"
 import { toast } from "@/components/ui/toast"
 
-/** Odmowa albo awaria akcji jako powiadomienie z Komunikatem serwera. */
 export function showFailure(failure: Error, title = "Nie udało się") {
   toast.add({ title, description: failureMessage(failure), type: "error" })
 }
 
-/** Koniec `run`: akcja się udała, zawiodła (powiadomienie już stoi) albo nic nie wysłała, bo poprzednia jeszcze trwa. */
 export type ActionOutcome = "done" | "failed" | "ignored"
 
 /**

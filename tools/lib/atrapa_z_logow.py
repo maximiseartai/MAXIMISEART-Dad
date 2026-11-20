@@ -97,18 +97,6 @@ class _Synthetic:
         )
 
 
-def unread(orders: Sequence[LoggedOrder]) -> list[str]:
-    """Granice blokujące: szukanie z trafieniami bez odczytu wierszy listy (Logi sprzed #843)."""
-
-    if any(
-        step.action is WindowAction.SEARCH and step.found and step.results is None for order in orders for step in order.steps
-    ):
-        return [
-            "Logi Wyceny w efenix nie mają odczytu wierszy listy po szukaniu (Logi sprzed #843), więc Atrapa nie wie, co pokazać"
-        ]
-    return []
-
-
 @dataclass(frozen=True)
 class _Shown:
     """``Dane adresowe`` zlecenia Atrapy: tekst i części (``None``: bez rozbioru)."""

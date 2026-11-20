@@ -146,7 +146,7 @@ kodu pliku to ich podzbiór bez xdist, więc przekroczyłyby limit znowu, ADR 00
 przebiegu nie jest też przeżyta: limit dotyczy całego polecenia ``pytest``, a sam zbiór testów pliku trwa blisko niego
 (run 42783639074, część 10/37: 802.59 s bez wykrycia), więc mutacja, po której test pada, potrafi go przekroczyć przed
 końcem ``-x`` (#1339). Gdy nie wykryje jej brama typów (cofnięcia fragmentu brama nie sprawdza), trafia do zapisu
-jako ``przekroczony_czas``, a do issue z dopiskiem, że noc nie dała jej werdyktu.
+jako ``przekroczony_czas``, a noc nie daje jej issue, tylko linię ``MUTACJE NOCNE BEZ ISSUE`` logu zgłoszenia.
 Mutację, która przeżyła ostatni przebieg testów albo nie ma żadnego testu, sprawdza jeszcze brama typów
 (``silnik_mutacji.type_gate``): ruff i mypy obu systemów, kroki bramy pre-push. Mutację, która idzie do testów pliku,
 brama sprawdza przed nimi (linia z dopiskiem ``(przed testami pliku)``), bo trwa sekundy, a one minuty na wszystkich
@@ -178,7 +178,8 @@ W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py`
 workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje, mutacje bez
 werdyktu po limicie czasu części i mutacje z przekroczonym czasem testów w ostatnim przebiegu: plik, linię i opis z
 nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a do tego kod wyjścia; z nich
-``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie. Zapis ma też tożsamości (``Tozsamosc``)
+``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił linie przeżytej, a mutacje bez werdyktu i z
+przekroczonym czasem liczy tylko w linii ``MUTACJE NOCNE BEZ ISSUE``. Zapis ma też tożsamości (``Tozsamosc``)
 mutacji, których werdykt nie potrzebuje issue (``osadzone``: wykrytych testem, także ``ZAWIESZENIE``, albo bramą typów,
 ``ZDOMINOWANA``, ``WYJĄTEK`` i ``POMINIĘTA``). Przeżytych, bez werdyktu, z przekroczonym czasem i ``NIEAKTUALNA`` w nim
 nie ma, bo to, czy przeżyta ma już issue, rozstrzygają tylko klucze w issue. Plan nocy po czerwonej, która nie

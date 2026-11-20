@@ -379,6 +379,7 @@ def _every_replacement(factory: str) -> list[Callable[[], Message]]:
     return [sample for samples in _REPLACING for sample in samples[factory]]
 
 
+CONFLICT_COPY = REGISTER.with_name(f"{REGISTER.stem}-LAPTOP-TATY{REGISTER.suffix}")
 INTERMAX_SAMPLES: Samples = {
     "register_unusable": _every_replacement("register_unusable"),
     "register_missing": _every_replacement("register_missing"),
@@ -406,6 +407,7 @@ INTERMAX_SAMPLES: Samples = {
         lambda: intermax_messages.day_already_ordered(REGISTER, SHEET, SEPTEMBER_14, 816, 840),
         lambda: intermax_messages.day_already_ordered(REGISTER, SHEET, SEPTEMBER_14, 816, 816),
     ],
+    "conflict_copy": [lambda: intermax_messages.conflict_copy(CONFLICT_COPY)],
     "unsupported_shape": [lambda: intermax_messages.unsupported_shape(REGISTER, SHEET)],
     "refused": _every_replacement("refused"),
     "old_copies_kept": _every_replacement("old_copies_kept"),
@@ -424,8 +426,6 @@ INTERMAX_ORDERING_ONLY: Samples = {**INTERMAX_SAMPLES, **_REPLACING[0]}
 """Próbki katalogu INTERMAX, w których Komunikaty zależne od procesu mają tylko wariant Uporządkowania INTERMAX; bez
 końcówki ``_SAMPLES``, bo to widok katalogu, a nie osobny katalog z plikiem expect."""
 
-# Kopia konfliktu OneDrive obok INTERMAX: jego nazwa z dopiskiem nazwy komputera (``onedrive_conflicts``).
-CONFLICT_COPY = REGISTER.with_name(f"{REGISTER.stem}-LAPTOP-TATY{REGISTER.suffix}")
 REPORT_ENTERING_SAMPLES: Samples = {
     "inbox_access_missing": [report_entering_messages.inbox_access_missing],
     "inbox_access_unreadable": [report_entering_messages.inbox_access_unreadable],

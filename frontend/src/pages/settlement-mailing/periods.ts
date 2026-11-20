@@ -1,6 +1,5 @@
 import type { MailingPeriod, MailingRow } from "@/api/generated"
 
-/** Stan wiersza na ekranie: stan Rozliczenia pracownika z serwera albo „wysyłam”, dopóki jego mail jest w drodze. */
 export type ShownState = MailingRow["state"] | { state: "sending" }
 
 /**
@@ -21,12 +20,10 @@ const PLACE = {
   not_listed: "aside",
 } as const satisfies Record<ShownState["state"], "done" | "open" | "aside">
 
-/** Plik ma mail, więc liczy się do „z Y”. */
 export function counted(state: ShownState): boolean {
   return PLACE[state.state] !== "aside"
 }
 
-/** Mail z plikiem jest w „Wysłanych”, z Centrum albo ręcznie, i plik się od tamtej pory nie zmienił. */
 export function delivered(state: ShownState): boolean {
   return PLACE[state.state] === "done"
 }
@@ -39,7 +36,6 @@ export function tally(states: ReadonlyArray<ShownState>): Tally {
   return { sent: mailed.filter(delivered).length, of: mailed.length }
 }
 
-/** Najpóźniejsza chwila wysłania w okresie albo `null`, gdy nic jeszcze nie poszło. */
 export function lastSent(states: ReadonlyArray<ShownState>): string | null {
   const moments = states.flatMap((state) => (state.state === "sent" || state.state === "sent_by_hand" ? [state.at] : []))
 
@@ -65,7 +61,6 @@ export function periodKind(period: MailingPeriod, readable: boolean): PeriodKind
   return period.rows.some((row) => row.sendable) ? "fix" : "settled"
 }
 
-/** Okres w widoku „Do wysłania”: ma co wysłać albo poprawić, albo skrzynka nie mówi, co już poszło. */
 export function waiting(period: MailingPeriod, readable: boolean): boolean {
   return !readable || periodKind(period, readable) !== "settled"
 }

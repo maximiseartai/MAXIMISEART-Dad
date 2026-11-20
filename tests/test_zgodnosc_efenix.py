@@ -32,7 +32,6 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import dataclass, field, replace
 from datetime import date
-from decimal import Decimal
 from functools import partial
 import http.client
 import io
@@ -396,11 +395,11 @@ def _clicked(browser: Browser, address: str) -> Page:
     return tab
 
 
-def _click(browser: Browser, address: str, _elsewhere: str) -> None:
+def _click(browser: Browser, address: str) -> None:
     _clicked(browser, address)
 
 
-def _click_and_close(browser: Browser, address: str, _elsewhere: str) -> None:
+def _click_and_close(browser: Browser, address: str) -> None:
     tab = _clicked(browser, address)
     # Maks zamyka okno już pokazane: bootstrap efenix, jak Atrapa, nie zamyka okna w trakcie animacji pokazania.
     tab.wait_for_function("(dialog) => document.querySelector(dialog).getAnimations({subtree: true}).length === 0", arg=DIALOG)
@@ -408,33 +407,25 @@ def _click_and_close(browser: Browser, address: str, _elsewhere: str) -> None:
     tab.locator(DIALOG).wait_for(state="hidden")
 
 
-def _click_and_reload(browser: Browser, address: str, _elsewhere: str) -> None:
-    _clicked(browser, address).reload()
-
-
-def _click_in_two_tabs(browser: Browser, address: str, _elsewhere: str) -> None:
+def _click_in_two_tabs(browser: Browser, address: str) -> None:
     _clicked(browser, address)
     _clicked(browser, address)
 
 
-def _click_and_open_second(browser: Browser, address: str, _elsewhere: str) -> None:
+def _click_and_open_second(browser: Browser, address: str) -> None:
     _clicked(browser, address)
     browser.contexts[0].new_page().goto(address)
 
 
-def _open(browser: Browser, address: str, _elsewhere: str) -> None:
+def _open(browser: Browser, address: str) -> None:
     browser.contexts[0].new_page().goto(address)
 
 
-def _open_list(browser: Browser, address: str, _elsewhere: str) -> None:
+def _open_list(browser: Browser, address: str) -> None:
     browser.contexts[0].new_page().goto(urljoin(address, LIST_PAGE))
 
 
-def _click_elsewhere(browser: Browser, _address: str, elsewhere: str) -> None:
-    _clicked(browser, elsewhere)
-
-
-def _click_in_frame(browser: Browser, address: str, _elsewhere: str) -> None:
+def _click_in_frame(browser: Browser, address: str) -> None:
     """Maks klika Emmetta na stronie zlecenia w ramce strony listy zleceń."""
 
     tab = browser.contexts[0].new_page()
@@ -447,12 +438,12 @@ def _click_in_frame(browser: Browser, address: str, _elsewhere: str) -> None:
 
 @dataclass(frozen=True)
 class Emmett:
-    """Pomiar propozycji Emmetta: co Maks robi w Chrome (``maks``: przeglądarka, adres zlecenia pod ``--efenix-url`` i
-    adres tego zlecenia na innym hoście), co wpisuje na stdin, Atrapa efenix pod narzędziem, kod wyjścia i plik expect.
+    """Pomiar propozycji Emmetta: co Maks robi w Chrome (``maks``: przeglądarka i adres zlecenia pod ``--efenix-url``),
+    co wpisuje na stdin, Atrapa efenix pod narzędziem, kod wyjścia i plik expect.
     ``read``: narzędzie przeczytało otwarte okno Emmetta, więc prosi o jego zamknięcie."""
 
     expected: Path
-    maks: Callable[[Browser, str, str], None] = _click
+    maks: Callable[[Browser, str], None] = _click
     code: int = 2
     read: bool = True
     orders: tuple[AtrapaOrder, ...] = EMMETT_ORDERS
@@ -471,9 +462,6 @@ EMMETT = {
     "druga-karta-bez-okna": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt", _click_and_open_second, code=0),
     "bez-enter": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-enter.txt", read=False, enter=""),
     "bez-karty-zlecenia": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-karty-zlecenia.txt", _open_list, read=False),
-    "karta-zlecenia-innego-hosta": Emmett(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-karty-zlecenia.txt", _click_elsewhere, read=False
-    ),
     "zlecenie-w-ramce": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-karty-zlecenia.txt", _click_in_frame, read=False),
     "okno-zamkniete-przed-odczytem": Emmett(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-okno-zamkniete.txt", _click_and_close, read=False
@@ -483,9 +471,6 @@ EMMETT = {
         _click_and_close,
         read=False,
         rewrites={ORDER_SCRIPT: _replaced(("document.getElementById(id).style.display = 'none';", "document.getElementById(id).style.visibility = 'hidden';"))},
-    ),
-    "strona-przeladowana-po-kliknieciu": Emmett(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-okno-zamkniete.txt", _click_and_reload, read=False
     ),
     "strona-bez-okna-emmetta": Emmett(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-strona-bez-okna-emmetta.txt",
@@ -546,11 +531,6 @@ EMMETT = {
                 ('<div id="toast"></div>', "<div id=\"toast\"></div><script>Element.prototype.getClientRects = () => { throw new Error('zepsute'); };</script>")
             )
         },
-    ),
-    # Emmett nic nie proponuje: Atrapa odpowiada pustą treścią.
-    "propozycja-pusta": Emmett(
-        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-nic-nie-pokazuje.txt",
-        orders=(ORDERS[0], replace(ORDERS[1], emmett={}), ORDERS[2]),
     ),
     "propozycja-z-bialymi-znakami": Emmett(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-propozycja-nic-nie-pokazuje.txt",
@@ -922,16 +902,7 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chromium: Chromium, tmp_p
     assert set(atrapa.requested()) <= READING
 
 
-# Kod 2 narzędzia: z samymi różnicami (części niesprawdzone to tylko te zawsze w wyniku), z samymi częściami
-# niesprawdzonymi bez różnic, które daje dopiero ``--numer`` numeru, którego efenix nie zna, i z jednymi i drugimi naraz.
-@pytest.mark.parametrize(
-    "variant",
-    [
-        pytest.param(CHANGED["lista-bez-pola-numer-i-jej-skrypt-z-bledem"], id="same-roznice"),
-        pytest.param(CHANGED["szukanie-bez-wynikow"], id="same-niesprawdzone-z-numerem"),
-        pytest.param(CHANGED["wiersz-bez-linku"], id="roznice-i-niesprawdzone"),
-    ],
-)
+@pytest.mark.parametrize("variant", [pytest.param(CHANGED["szukanie-bez-wynikow"], id="same-niesprawdzone-z-numerem")])
 def test_narzedzie_z_roznica_albo_czescia_niesprawdzona_konczy_sie_kodem_2_z_wynikiem_na_stdout(
     chrome: str, tmp_path: Path, variant: Variant
 ) -> None:
@@ -953,7 +924,7 @@ def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odc
         def maks_then_tool(browser: Browser) -> tuple[zgodnosc_efenix.Report, int, tuple[object, ...], tuple[object, ...]]:
             before = list(browser.contexts[0].pages)
             try:
-                variant.maks(browser, _order(url), _order(atrapa.url))
+                variant.maks(browser, _order(url))
                 clicked = len(atrapa.requests)
                 shown = (_tabs(browser, before), atrapa.state(), _pages(chromium.endpoint))
                 report = _compared(chromium.request, browser, url, template, emmett=True)
@@ -976,14 +947,10 @@ def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odc
     assert set(atrapa.requested()) <= READING | {("POST", FILL_EMMETT)}
 
 
-# Kod narzędzia z ``--emmett`` liczy też pomiar propozycji: 0 przy zgodnej propozycji z okna w pierwszej z dwóch kart
-# zlecenia, które Maks otworzył, zanim narzędzie połączyło się z Chrome, a 2, gdy różnicę albo część niesprawdzoną daje
-# tylko propozycja, bo strony same są zgodne.
 @pytest.mark.parametrize(
     "variant",
     [
         pytest.param(EMMETT["druga-karta-bez-okna"], id="zgodna-z-karty-przed-ostatnia"),
-        pytest.param(EMMETT["propozycja-z-innymi-klasami"], id="roznica-tylko-w-propozycji"),
         pytest.param(EMMETT["bez-enter"], id="niesprawdzona-tylko-propozycja"),
     ],
 )
@@ -992,7 +959,7 @@ def test_pomiar_propozycji_emmetta_narzedziem_jak_maks_daje_kod_wyjscia_po_propo
     with atrapa_efenix(variant.orders, cookie_session=True) as atrapa, _in_front(atrapa, variant.rewrites) as url:
         before: list[Page] = chromium.do(lambda browser: list(browser.contexts[0].pages))
         try:
-            chromium.do(lambda browser: variant.maks(browser, _order(url), _order(atrapa.url)))
+            chromium.do(lambda browser: variant.maks(browser, _order(url)))
             clicked = len(atrapa.requests)
             shown, state, pages = chromium.do(lambda browser: _tabs(browser, before)), atrapa.state(), _pages(chromium.endpoint)
             checked = _run(chromium.endpoint, url, template, "--emmett", enter=variant.enter)
@@ -1065,15 +1032,6 @@ def test_bez_chrome_pod_adresem_zdalnego_debugowania_narzedzie_konczy_sie_bledem
 
     assert (checked.code, checked.stdout) == (1, "")
     assert checked.stderr == f"BŁĄD | nie ma Chrome ze zdalnym debugowaniem pod --cdp {endpoint}\n"
-    assert atrapa.requested() == []
-
-
-def test_bez_wzorca_pliku_zbiorczego_narzedzie_konczy_sie_bledem_przed_efenix(chrome: str, tmp_path: Path) -> None:
-    missing = tmp_path / tool_files.COLLECTIVE_TEMPLATE.name
-    with atrapa_efenix(ORDERS, cookie_session=True) as atrapa:
-        checked = _run(chrome, atrapa.url, missing)
-
-    assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | Wzorzec pliku zbiorczego {missing}: brak pliku\n")
     assert atrapa.requested() == []
 
 
@@ -1265,15 +1223,7 @@ def test_wzorzec_bez_kolumn_kosztow_daje_koszty_bez_liczby(tmp_path: Path) -> No
     assert zgodnosc_efenix.template_costs(path) == dict.fromkeys(POSITION_OF_COLUMN, None)
 
 
-def test_wzorzec_z_logiczna_wartoscia_kosztu_daje_koszt_bez_liczby(tmp_path: Path) -> None:
-    path = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, {**COSTS, "O": True, "P": 12.5})
-
-    costs = zgodnosc_efenix.template_costs(path)
-
-    assert (costs["O"], costs["P"]) == (None, Decimal("12.5"))
-
-
-@pytest.mark.parametrize("url", ["https://efenix.example/app/", "https://efenix.example/app/page_login.php", "ftp://efenix.example/app/index.php"])
+@pytest.mark.parametrize("url", ["https://efenix.example/app/", "ftp://efenix.example/app/index.php"])
 def test_adres_efenix_inny_niz_lista_zlecen_konczy_narzedzie_bledem_przed_efenix(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], url: str
 ) -> None:

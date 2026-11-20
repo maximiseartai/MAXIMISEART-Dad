@@ -5,16 +5,10 @@ import { REMINDERS_SECTION } from "@/pages/settings/reminders-section"
 import { MailPreview, SaveButtons, SettingFormSection, TextRow, useSettingForm } from "@/pages/settings/setting-form"
 import { SettingRow, SettingsPanel } from "@/pages/settings/setting-row"
 
-/** Sekcja okna Ustawień z tematem i treścią Maila z rozliczeniem (ADR 0040). */
 export const SETTLEMENT_MAIL_SECTION = "wysylka-rozliczen"
 
-/** Wiersze formularza, pod którymi stoi zdanie odmowy albo złego pliku: pole z serwera. */
 const FORM_ROWS = ["temat", "tresc"] as const
 
-/**
- * Temat i treść Maila z rozliczeniem: zapisują się przyciskiem „Zapisz”, a podgląd pokazuje mail pierwszego Wykonawcy
- * z Listy za ostatni pełny okres, jak go dostanie. Stopka jest wspólna z Przypomnieniami o raporcie, jeden podpis taty.
- */
 export function SettlementMailSection() {
   return (
     <SettingFormSection setting={(settings) => settings.settlement_mail} rows={FORM_ROWS} formOf={formOf}>

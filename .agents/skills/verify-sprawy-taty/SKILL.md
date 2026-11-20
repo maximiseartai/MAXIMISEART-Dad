@@ -37,21 +37,25 @@ without an issue number to `config/sprawy-taty.json` (`DadCases.add`), puts the 
 `config/zgloszenia/kolejka/` (`Outbox.post`), and the queue thread `skrzynka-kolejka` delivers it; the delivery gives
 the case its issue number (`_CaseDelivery.delivered` → `DadCases.numbered`), and a rejected text stays in the memory of
 this Centrum work (`DadCases.rejected`), because the queue tries it again only at the next start. The card shows
-the state of the `ReportHandle`, and the Powiadomienia show `DadCases.state`. The docstrings promise, and the model
-checks over every order of steps:
+the state of the `ReportHandle`, and the Powiadomienia show `DadCases.state`. The model checks over every order of
+steps:
 
 - **CzekaMaPlik**: every case that waits (no issue number, „czeka” on the card and in the Powiadomienia) has its file in
   the Kolejka wysyłki, except during the one request between `DadCases.add` and the write of its file or its
-  withdrawal. Source: the `finally` of `Reports._queue` and the docstring of the class `Reports` („Sprawa, której
-  wysyłka nie trafiła do pliku kolejki, znika od razu, bo czekałaby wiecznie, a tata nie mógłby kliknąć jeszcze raz”)
-  and the docstring of `dad_cases.py` (an Uwaga „bez numeru czeka w kolejce Skrzynki, dopóki `numbered` nie dopisze
-  numeru”). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
+  withdrawal. Source: the `finally` of `Reports._queue`, which withdraws a case whose file was not written (it would
+  wait forever, and Dad could not click again), with
+  `test_zgloszenie_ktorego_kolejka_nie_zapisala_daje_komunikat_i_nie_zostawia_sprawy` in
+  `tests/test_centrum_uchwyt_zgloszenia.py`, and
+  `test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum` in
+  `tests/test_centrum_uwaga_taty.py` (an Uwaga without a number waits with its file in the queue until `numbered` gives
+  it the number of its issue). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
   forever, and `_pending` turns every later click and every return of the problem into that same answer, without a
   new file.
 - **OdrzuconaNieCzeka**: once the Sprawy taty know that the Skrzynka rejected the text of the waiting Zgłoszenie in this
-  Centrum work and the handle has heard it, the card does not say „czeka w kolejce”. Source: the docstring of
-  `reports.py` („Zgłoszenie, którego treść Skrzynka odrzuciła, nie czeka na nic, co mógłby naprawić tata albo
-  internet”) and GLOSSARY, Kolejka wysyłki (a rejected text stays until the next start; Dad should contact Maks).
+  Centrum work and the handle has heard it, the card does not say „czeka w kolejce”. Source:
+  `test_zgloszenie_odrzucone_przez_skrzynke_kaze_skontaktowac_sie_z_maksem_zamiast_czekac_na_internet` in
+  `tests/test_centrum_token_do_zgloszen.py` and GLOSSARY, Kolejka wysyłki (a rejected text stays until the next start;
+  Dad should contact Maks).
   Harm: Dad waits for the internet instead of calling Maks, and `_done` returns „czeka w kolejce” for every click.
 - **Zbieganie** (liveness): once failures and switch-offs stop and Centrum keeps running, the card says what the Sprawy
   taty and the Skrzynka know (a waiting case: „czeka w kolejce” or „odrzucone”; no waiting case: neither, except
@@ -108,7 +112,8 @@ Definitions the actions share:
 | `Ostatnia(s)`, `CzekaZgl(s)` | `DadCases.find(REPORT, F)`: the index of the last case of the problem (0 without one); `Reports._pending`: that case has no issue number |
 | `Czekajaca(odrz)`, `StanZgl(s, otw, odrz)` | `DadCases.queued(F)`: a rejected text waits for nothing, otherwise the case waits in the queue (for the internet or the Token); `Reports._state_of`: a case in the queue, then the Skrzynka's answer of this Centrum work, without one the last case |
 | `Wycofana(s, sid)`, `Zapomniana(s, id)` | `DadCases.withdraw(case)`: without that one case; `DadCases.forget(NOTE, id)`: without every Uwaga of that id |
-| `Nasze(s, rodzaj, id)`, `NumerowaneSidy(s, rodzaj, id)` | `DadCases.numbered`: the cases that get the number (a Zgłoszenie: the last waiting one; an Uwaga: each of that id), and a waiting case disappears when another case already has the number (the wysyłka went to an open Zgłoszenie) |
+| `Nasze(s, rodzaj, id)`, `NumerowaneSidy(s, rodzaj, id)` | `DadCases.numbered`: the cases of that kind and id, and the identities of the cases that get the number (a Zgłoszenie: the last waiting one; an Uwaga: each of that id) |
+| `Numerowane(s, rodzaj, id, n)` | `DadCases.numbered` with its `_change`: an Uwaga gets the number in each of its cases, also in one that already has a number; a Zgłoszenie gives it only to its last waiting case, and without one nothing changes; when another case already has the number (the wysyłka went to an open Zgłoszenie known on this computer, and issue numbers are shared by the whole Skrzynka), the waiting case disappears, because one issue is one case and one Powiadomienie |
 | `Zapisz(nowe)` | `DadCases._change`: the cases in memory, and the state file gets them unless the write fails (`StateFile` keeps the content in memory, and the next `_change`, also without a change, or the retry of the Powiadomienia writes it or a newer one) |
 | `Odrzucane` | whether the Skrzynka rejects the text of a new queue file: the same text every time, also after a start |
 | `KoniecQueue(wynik)` | the end of `Reports._queue`: `send` shows the result (`Pokaz`), a return in `_ask` only clears `_sending`; it records whether the Sprawy taty already knew that the Skrzynka rejected the text |
@@ -283,8 +288,9 @@ When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
 2. Change the model so each action is again one indivisible step of the code, and write the code's names in its row of
-   the table above, not in a comment: the model has none, and a new action, definition, constant or variable gets its
-   own row. TLA+ strings must be ASCII. Never weaken a promise or narrow a configuration to make the check pass.
+   the table above, not in a comment: the model has none, and a new action of `Next`, constant or variable gets its own
+   row, and a new definition gets one when it models code. TLA+ strings must be ASCII. Never weaken a promise or narrow
+   a configuration to make the check pass.
 3. A new way to fail gets a constant with its row, a branch guarded by it, and a value in `stale` of every configuration
    in `model/konfiguracje.json`. A new change of the cases that a failed write can leave unsaved gets its own history
    variable and cause in `PrzyczynaZgasniecia`, never a cause as wide as „the file differs from memory”. A new action of `Next` gets its words in `_STEPS` of the script.
@@ -346,6 +352,6 @@ is wrong:
 Left out: the text of a Zgłoszenie or an Uwaga and its guard, which of „na internet” and „na Token” a waiting case shows,
 the Logs line of a pinned Uwaga (`_CaseDelivery.prepare` and the comment after rejected Logs), an unreadable queue file
 (it stays, so the case keeps its file), a queue file whose removal failed, an unreadable `config/sprawy-taty.json` (no
-cases at all: their files are delivered and number nothing), the old files before one store (`OLD_REPORTS_FILE`,
-`OLD_NOTES_FILE`), an exception other than `OSError` from `Outbox.post` in `dad_notes.send` (no `finally` there; no
+cases at all: their files are delivered and number nothing), the old file before one store (`OLD_REPORTS_FILE`),
+an exception other than `OSError` from `Outbox.post` in `dad_notes.send` (no `finally` there; no
 known path raises one), and Maks reopening an issue.

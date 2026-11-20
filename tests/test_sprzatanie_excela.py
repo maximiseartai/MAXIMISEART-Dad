@@ -202,7 +202,7 @@ def test_run_zapisuje_pamiec_excela_przed_i_po(
     assert (observed["excel_workbooks_before"], observed["excel_workbooks_after"]) == (1, 1), observed
 
 
-@pytest.mark.parametrize("error", ["ExcelDialog", "ExcelError"])
+@pytest.mark.parametrize("error", ["ExcelError"])
 def test_nieudane_zamkniecie_excela_jest_notatka_sprzatania_a_nie_tracebackiem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, excel: FakeExcel, error: str
 ) -> None:

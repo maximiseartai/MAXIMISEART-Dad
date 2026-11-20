@@ -134,6 +134,7 @@ Each constant is a way to fail or a bound of a configuration (`stale` in `model/
 | `status` | the order's status in efenix: „Do wyceny” or „Do akceptacji” |
 | `tryb` | the mode of this Uruchomienie (`PricingMode`) |
 | `tataZmienial` | Dad changed something in the order by hand |
+| `uruchomienia`, `zmian` | the counters of the `MaxUruchomien` and `MaxZmianTaty` constants |
 | `slady` | the causes of known findings that already happened, one set per order |
 | `czysciTate`, `obniza`, `zlyWynikPoTacie`, `zlyZnacznik`, `bladBezPowodu`, `zlePrzekazanie`, `zmianaPrzekazanego` | the history variable of each promise: `{}` until an event breaks it, then the `slady` of the order at that moment |
 
@@ -213,9 +214,10 @@ When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
 2. Change the model so each action is again one indivisible step of the code, and write the code's names in its row of
-   the table above, not in a comment: the model has none, and a new action, definition, constant or variable gets its
-   own row. Never weaken a promise or narrow a configuration to make the check pass. A new action of `Next` gets its words in
-   `_STEPS` of the script, or the check ends with `BŁĄD MODELU` before TLC.
+   the table above, not in a comment: the model has none, and a new action of `Next`, constant or variable gets its own
+   row, and a new definition gets one when it models code. Never weaken a promise or narrow a configuration to make the
+   check pass. A new action of `Next` gets its words in `_STEPS` of the script, or the check ends with `BŁĄD MODELU`
+   before TLC.
 3. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
    to `scripts/check_model_wznowienia_mutations.py` with the code counterpart in its name.
 4. Run the check. A new violation is a finding: replay it on the code (see Read a result) before you call it a bug,

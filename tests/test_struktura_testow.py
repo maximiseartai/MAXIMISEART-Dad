@@ -1,25 +1,23 @@
-"""Struktura testów: moduły niczego nie eksportują, narzędzia na ``sys.path`` kładzie tylko ``conftest.py``, a test
-czeka na stan przez ``wait_for`` i mierzy czas bez stałej liczby sekund.
-
-Wspólne dane i pomocniki są w ``tests.fixtures``.
-"""
-
 from __future__ import annotations
 
 import ast
 from collections.abc import Callable, Iterator
+import importlib.util
 from itertools import pairwise
 import os
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import shutil
 import subprocess
 import sys
 import sysconfig
+from typing import NamedTuple
 
 import pytest
 
-from rozliczenia import tool_files
+import repo
+from repo import IMPORT_ROOTS
+from rozliczenia import period_folder, tool_files
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.outbox import QUEUE_THREAD
@@ -37,7 +35,6 @@ from tests.fixtures.znane_luki import (
 )
 
 TESTS = Path(__file__).resolve().parent
-# Atrapy wspólne z testami żyją poza tests/ (granica N13d), ale reguły czekania i limitów czasu obejmują je jak testy.
 ATRAPY = TESTS.parent / "tools" / "lib" / "atrapy"
 CLOCKS = frozenset({"time.monotonic", "time.perf_counter"})
 TIME_READINGS = CLOCKS | {
@@ -49,8 +46,7 @@ TIME_READINGS = CLOCKS | {
     "datetime.datetime.utcnow",
 }
 SLEEPS = frozenset({"time.sleep", "asyncio.sleep"})
-# Jedyne czekanie na stan w testach: pętla z terminem, która śpi między pytaniami.
-WAITING = "fixtures/potomne.py::wait_for"
+POLLING_LOOP = "fixtures/potomne.py::wait_for"
 SIMULATED_TIME = {
     "test_centrum_przygotowanie.py::test_czas_czekania_na_decyzje_nie_wlicza_sie_do_czasu_ani_metryk": (
         "tata myśli 1,5 s nad Decyzją, a test mierzy zegarem testu, że ten czas nie wlicza się do metryk (f17b7fe)"
@@ -85,36 +81,20 @@ def test_moduly_testow_importuja_pomocniki_tylko_z_fixtures() -> None:
 
 
 CONFTEST = TESTS / "conftest.py"
-# Ostatnia część nazwy wywołania (z każdym odbiorcą: ``monkeypatch.``, ``importlib.util.``, ``util.``, i bez niego), miejsce
-# argumentu ścieżki i jego nazwa.
-PREPEND = ("syspath_prepend", 0, "path")
-LOAD = ("spec_from_file_location", 1, "location")
-# Katalogi, które conftest kładzie na ``sys.path``, względem ``tools``.
-ON_PATH = frozenset({(), ("lib",), ("ci",)})
+
+
+class PathCall(NamedTuple):
+    last_name: str
+    path_position: int
+    path_keyword: str
+
+
+PREPEND = PathCall("syspath_prepend", 0, "path")
+LOAD = PathCall("spec_from_file_location", 1, "location")
+ON_PATH = frozenset(PurePosixPath(root).parts[1:] for root in IMPORT_ROOTS if PurePosixPath(root).parts[:1] == ("tools",))
 
 
 def _tools_on_path(tree: ast.Module) -> list[int]:
-    """Linie wstawek ścieżki z częścią ``tools`` przez ``syspath_prepend`` i wczytań pliku z ``tools``, ``tools/lib``
-    albo ``tools/ci``: ``tests/conftest.py`` już kładzie te katalogi na ``sys.path`` każdego testu, więc druga wstawka w
-    module testu albo fixture tylko to powtarza, fixture, który przez nią importuje narzędzie, kusi, żeby je
-    re-eksportować, a moduł wczytany z pliku bez wpisu w ``sys.modules`` jest drugą kopią narzędzia, w której dataclass
-    nie działa (K2 F15, 7 testów do 9.11.2026).
-
-    Każde użycie ``sys.path`` w ``tests/`` (``sys.path.insert``, ``sys.path[:0] = …``, ``from sys import path``)
-    odrzuca ruff ``TID251`` z ``tests/ruff.toml``, a to sprawdzenie łapie, na poziomie modułu i w funkcji:
-
-    - wywołanie, którego nazwa kończy się na ``syspath_prepend`` (``monkeypatch.``, inna nazwa fixture), ze ścieżką
-      pierwszym argumentem albo ``path=``;
-    - wywołanie, którego nazwa kończy się na ``spec_from_file_location`` (``importlib.util.``, ``util.`` po ``from
-      importlib import util``, sama nazwa), z plikiem ``.py`` drugim argumentem albo ``location=``.
-
-    Ścieżkę czyta ze stałych napisów (``ROOT / "tools" / "lib"``, ``".../tools/ci"``, ``"C:\\repo\\tools"``), z nazw, które
-    moduł przypisuje na swoim poziomie (``TOOLS = ROOT / "tools"`` albo ``TOOLS: Final = …``, potem ``TOOLS / "lib"``), i
-    z argumentów pozycyjnych wywołań (``str(…)``).
-    Katalog ``scripts`` skilla, plik z ``tools/hooks`` i wstawka w napisie kodu podprocesu przechodzą, bo conftest ich
-    nie kładzie, a podproces nie ma conftest. Postacie, których nie łapie ani ruff, ani to sprawdzenie, są próbkami w
-    ``ZNANE_LUKI_SYS_PATH``."""
-
     assigned = {
         target.id: node.value
         for node in tree.body
@@ -135,8 +115,6 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
                 yield from texts(assigned[part.id], seen | {part.id})
 
     def parts(node: ast.AST, seen: frozenset[str]) -> list[str]:
-        """Części ścieżki w kolejności zapisu: ze stałych napisów, ``/`` między nimi, nazw modułu i argumentów wywołań."""
-
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return list(PureWindowsPath(node.value).parts)
         if isinstance(node, ast.Name) and node.id in assigned and node.id not in seen:
@@ -153,13 +131,12 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
     def called(node: ast.Call) -> str:
         return node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id if isinstance(node.func, ast.Name) else ""
 
-    def path_of(node: ast.Call, call: tuple[str, int, str]) -> ast.expr | None:
-        name, position, keyword = call
-        if called(node) != name:
+    def path_of(node: ast.Call, call: PathCall) -> ast.expr | None:
+        if called(node) != call.last_name:
             return None
-        if len(node.args) > position:
-            return node.args[position]
-        return next((argument.value for argument in node.keywords if argument.arg == keyword), None)
+        if len(node.args) > call.path_position:
+            return node.args[call.path_position]
+        return next((argument.value for argument in node.keywords if argument.arg == call.path_keyword), None)
 
     def has_tools(node: ast.AST) -> bool:
         return any("tools" in PureWindowsPath(text).parts for text in texts(node, frozenset()))
@@ -187,8 +164,6 @@ def test_tylko_conftest_kladzie_narzedzia_na_sys_path_testow() -> None:
     )
 
 
-# Każda postać wstawki katalogu narzędzi, którą zna sprawdzenie (``sys.path`` odrzuca ruff ``TID251``, z próbkami w
-# ``tests/test_zakazy_ruff.py``).
 TOOLS_ON_PATH = {
     "monkeypatch-z-katalogu-windows": 'def f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend("C:\\\\repo\\\\tools")',
     "monkeypatch-z-nazwy-przez-nazwe": 'REPO = ROOT\nTOOLS = REPO / "tools"\nLIB = TOOLS / "lib"\ndef f(monkeypatch) -> None:\n    monkeypatch.syspath_prepend(str(LIB))',
@@ -210,26 +185,36 @@ def test_sprawdzenie_sys_path_lapie_kazda_wyliczona_postac_wstawki_narzedzi(code
     assert len(_tools_on_path(ast.parse(code))) == 1
 
 
-def test_sprawdzenie_sys_path_przepuszcza_skrypty_skilli_i_kod_podprocesu() -> None:
-    code = (
-        'SKILL = ROOT / ".agents" / "skills" / "verify-x"\n'
-        'monkeypatch.syspath_prepend(str(SKILL / "scripts"))\n'
-        'monkeypatch.syspath_prepend("my_tools")\n'
-        'KOD = "import sys\\nsys.path.insert(0, \'tools\')\\nimport mutacje\\n"\n'
-        'LISTA = [str(ROOT / "tools")]\n'
-        'HOOK = ROOT / "tools" / "hooks" / "czekanie.py"\n'
-        'importlib.util.spec_from_file_location("czekanie", HOOK)\n'
-        'importlib.util.spec_from_file_location("x", ROOT / ".agents" / "skills" / "verify-x" / "scripts" / "x.py")\n'
-        'importlib.util.spec_from_file_location("x", ROOT / "tools" / "lib" / "atrapy" / "x.py")\n'
-        'importlib.util.spec_from_file_location("lib", ROOT / "tools" / "lib")\n'
-    )
+TOOLS_NOT_ON_PATH = {
+    "katalog-scripts-skilla-poza-conftest": 'SKILL = ROOT / ".agents" / "skills" / "verify-x"\nmonkeypatch.syspath_prepend(str(SKILL / "scripts"))',
+    "katalog-z-tools-w-nazwie": 'monkeypatch.syspath_prepend("my_tools")',
+    "wstawka-w-napisie-kodu-podprocesu-bez-conftest": 'KOD = "import sys\\nsys.path.insert(0, \'tools\')\\nimport mutacje\\n"',
+    "sciezka-tools-bez-wstawki": 'LISTA = [str(ROOT / "tools")]',
+    "plik-z-tools-hooks-poza-conftest": 'HOOK = ROOT / "tools" / "hooks" / "czekanie.py"\nimportlib.util.spec_from_file_location("czekanie", HOOK)',
+    "plik-skryptu-skilla": 'importlib.util.spec_from_file_location("x", ROOT / ".agents" / "skills" / "verify-x" / "scripts" / "x.py")',
+    "plik-atrapy-poza-conftest": 'importlib.util.spec_from_file_location("x", ROOT / "tools" / "lib" / "atrapy" / "x.py")',
+    "katalog-zamiast-pliku-py": 'importlib.util.spec_from_file_location("lib", ROOT / "tools" / "lib")',
+}
 
+
+@pytest.mark.parametrize("code", TOOLS_NOT_ON_PATH.values(), ids=TOOLS_NOT_ON_PATH.keys())
+def test_sprawdzenie_sys_path_przepuszcza_skrypty_skilli_i_kod_podprocesu(code: str) -> None:
     assert _tools_on_path(ast.parse(code)) == []
 
 
-# Znane luki sprawdzenia sys.path (tests/fixtures/znane_luki.py): opis postaci → moduł testu, który kładzie katalog
-# narzędzi na sys.path albo wczytuje narzędzie z pliku, a mimo to przechodzi przez ruff z konfiguracją tests/ i
-# _tools_on_path.
+def test_narzedzie_wczytane_z_pliku_to_druga_kopia_z_innymi_klasami_niz_narzedzie_z_importu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = importlib.util.spec_from_file_location("repo_z_pliku", repo.__file__)
+    assert spec is not None and spec.loader is not None
+    kopia = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, kopia)
+    spec.loader.exec_module(kopia)
+
+    assert kopia.Worktree is not repo.Worktree
+    assert not issubclass(repo.Worktree, kopia.Worktree)
+
+
 ZNANE_LUKI_SYS_PATH = {
     "ścieżka z argumentu funkcji": """\
 from pathlib import Path
@@ -321,9 +306,6 @@ def test_znane_luki_sprawdzenia_sys_path_przechodza_przez_ruff_i_sprawdzenie(tmp
 
 @wymaga_ruff_i_mypy
 def test_znane_luki_licza_mypy_na_kazdej_platformie_krokow_ci(tmp_path: Path) -> None:
-    """Required CI liczy mypy z ``--platform`` każdego kroku zadania „Ruff, mypy”, więc próbka-kontrola z błędem typu
-    w gałęzi ``sys.platform == platforma`` ma zgłoszenie tylko tej platformy, na każdym systemie, na którym biegnie test."""
-
     platformy = platformy_mypy_ci()
     assert {"linux", "win32"} <= set(platformy), platformy
     kontrole = {platforma: f'import sys\n\nif sys.platform == "{platforma}":\n    x: int = "a"\n' for platforma in platformy}
@@ -336,7 +318,6 @@ def test_znane_luki_licza_mypy_na_kazdej_platformie_krokow_ci(tmp_path: Path) ->
     assert all(lista[0].endswith("[assignment]") for lista in zgloszenia.values()), zgloszenia
 
 
-# Pliki, w których nazwa pliku narzędzia albo stanu Centrum zostaje literałem, z powodem.
 OWNED_NAMES_AS_LITERALS = {
     "test_opiekun_ponownego_startu.py": "test kontraktu nazw tool_files i scenariusze repozytorium Git opiekuna",
     "test_uszkodzone_wejscia.py": "test kontraktu miejsc plików stanu Centrum",
@@ -345,30 +326,11 @@ OWNED_NAMES_AS_LITERALS = {
     "fixtures/tool_clone.py": "pierwsza wersja repozytorium narzędzia w historii Git",
     "tools/lib/atrapy/pliki_taty.py": "kopia celowa świata taty: atrapy budują pliki taty niezależnie od src",
 }
-# Testy kontraktu: każda nazwa właściciela stoi w jednym z nich literałem.
 CONTRACTS = ("test_opiekun_ponownego_startu.py", "test_uszkodzone_wejscia.py")
 SRC = TESTS.parent / "src" / "rozliczenia"
 
 
 def test_nazwy_plikow_narzedzia_i_stanu_centrum_biora_testy_od_wlasciciela() -> None:
-    """Nazwę pliku narzędzia albo stanu Centrum test i atrapa biorą od właściciela, a literałem stoi ona tylko w plikach
-    ``OWNED_NAMES_AS_LITERALS``: test kontraktu przypina ją raz, a zmiana nazwy w ``src`` nie zostawia testów na starym
-    pliku.
-
-    Nazwy wylicza ``_owned_names`` z ``src``, więc nowy plik stanu nie potrzebuje wpisu tutaj: nazwa każdej ścieżki z
-    suffiksem w ``tool_files`` (Konfiguracja wykonawców, Wzorce, Ustawienia, pliki metryk) poza ``LOG_PATH`` i każda
-    stała tekstowa bez ``{`` przypisana na poziomie modułu ``src/rozliczenia`` do nazwy kończącej się na ``_FILE``
-    (``REPORT_KEY_FILE``, ``DAD_CASES_FILE``, ``NOTIFICATIONS_FILE``, ``CENTRUM_RUNS_FILE``…). Każda z nich musi też
-    stać literałem w jednym z ``CONTRACTS``.
-
-    Łapie stałą tekstową (także część f-stringu) równą nazwie albo ścieżkę, która się nią kończy po ``/`` albo ``\\``, w
-    ``tests/**/*.py`` i ``tools/lib/atrapy/**/*.py``. Każdą inną postać i nazwę sprawdza tylko przegląd: nazwę w dłuższym
-    zdaniu (tekst Komunikatu, który czyta tata, zostaje literałem jak w ``tests/expected``), nazwę sklejoną z części,
-    foldery (``config``, ``logs``, ``kolejka``, ``uruchomienia``: słowa ogólne, także nazwy stron), nazwę dziennika
-    Centrum (``LOG_PATH``: ``CentrumLog`` w teście jednostki dostaje dowolną ścieżkę), stałe spoza tej reguły nazw
-    (``RUN_LOGS_DIRECTORY``, ``PROFILE_DIRECTORY``) i pliki okresu, które niosą token okresu.
-    """
-
     names = _owned_names()
     found = sorted(
         f"{name}:{node.lineno}: {node.value!r}"
@@ -384,8 +346,6 @@ def test_nazwy_plikow_narzedzia_i_stanu_centrum_biora_testy_od_wlasciciela() -> 
 
 
 def _owned_names() -> set[str]:
-    """Nazwy plików, które znają właściciele w ``src``; regułę opisuje docstring strażnika."""
-
     names = {
         path.name
         for path in vars(tool_files).values()
@@ -417,8 +377,52 @@ def _ends_with(value: str, owned: str) -> bool:
     return value == owned or value.endswith((f"/{owned}", f"\\{owned}"))
 
 
+NAZWY_WLASCICIELA = {
+    "napis-rowny-nazwie": (f"PLIK = {REPORT_KEY_FILE!r}\n", [REPORT_KEY_FILE]),
+    "sciezka-konczaca-sie-nazwa-po-ukosniku": (f'PLIK = "config/{REPORT_KEY_FILE}"\n', [f"config/{REPORT_KEY_FILE}"]),
+    "sciezka-windows-konczaca-sie-nazwa": (f'PLIK = r"config\\{REPORT_KEY_FILE}"\n', [f"config\\{REPORT_KEY_FILE}"]),
+    "czesc-f-stringu": (f'PLIK = f"{{KATALOG}}/{REPORT_KEY_FILE}"\n', [f"/{REPORT_KEY_FILE}"]),
+    "nazwa-sciezki-z-tool-files": (f"WZORZEC = {tool_files.WORKER_TEMPLATE.name!r}\n", [tool_files.WORKER_TEMPLATE.name]),
+    "nazwa-stalej-file-z-src": (f"PLIK = {WORKERS_FILE!r}\n", [WORKERS_FILE]),
+    "granica-nazwa-w-zdaniu-komunikatu-taty-jak-w-tests-expected": (
+        f'TEKST = "Zapisz {REPORT_KEY_FILE} w folderze config."\n',
+        [],
+    ),
+    "granica-folder-to-slowo-ogolne-takze-nazwa-strony": ('KATALOG = "config"\nSTRONA = "uruchomienia"\n', []),
+    "granica-dziennik-centrum-centrumlog-w-tescie-dostaje-dowolna-sciezke": (
+        f'DZIENNIK = "logs/{tool_files.LOG_PATH.name}"\n',
+        [],
+    ),
+}
+
+
+@pytest.mark.parametrize(("code", "found"), NAZWY_WLASCICIELA.values(), ids=NAZWY_WLASCICIELA.keys())
+def test_straznik_nazw_wlasciciela_lapie_napis_i_koniec_sciezki_a_przepuszcza_granice(
+    tmp_path: Path, code: str, found: list[str]
+) -> None:
+    module = tmp_path / "test_nazwa.py"
+    module.write_text(code, encoding="utf-8")
+
+    assert [node.value for node in _owned_literals(module, _owned_names())] == found
+
+
+ZNANE_LUKI_NAZW_WLASCICIELA = {
+    "nazwa sklejona z części w trakcie działania": f"PLIK = {REPORT_KEY_FILE[:5]!r} + {REPORT_KEY_FILE[5:]!r}\n",
+    "stała tekstowa src bez przyrostka _FILE": f"STAN = {tool_files.REPORT_ENTERING_STATE!r}\n",
+    "plik okresu z tokenem okresu": f"PLIK = {period_folder.collective_file_name_with('01_07_09_2026')!r}\n",
+}
+
+
+def test_znane_luki_straznika_nazw_wlasciciela_przechodza_przez_niego(tmp_path: Path) -> None:
+    names = _owned_names()
+    pliki = zapisz(ZNANE_LUKI_NAZW_WLASCICIELA, tmp_path)
+
+    zgloszenia = {opis: [f"_owned_literals: {node.value!r}" for node in _owned_literals(plik, names)] for opis, plik in pliki.items()}
+
+    assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_NAZW_WLASCICIELA)")
+
+
 def _scanned() -> list[tuple[Path, str]]:
-    """Pliki testów i atrap z nazwą do list wyjątków: względem ``tests/`` dla testów, względem korzenia dla atrap."""
     return [(path, path.relative_to(TESTS).as_posix()) for path in sorted(TESTS.rglob("*.py"))] + [
         (path, _shown(path)) for path in sorted(ATRAPY.rglob("*.py"))
     ]
@@ -438,8 +442,6 @@ Definition = ast.Lambda | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
 
 
 def _is_sleep(call: ast.Call, names: dict[str, str]) -> bool:
-    """``time.sleep`` i ``asyncio.sleep`` pod każdą nazwą z importu i czekanie na nowe ``threading.Event``, którego nikt nie ustawi."""
-
     function = call.func
     return dotted(function, names, "") in SLEEPS or (
         isinstance(function, ast.Attribute)
@@ -450,12 +452,6 @@ def _is_sleep(call: ast.Call, names: dict[str, str]) -> bool:
 
 
 def _handed_over(definition: Definition, tree: ast.Module, parents: dict[ast.AST, ast.AST]) -> bool:
-    """Test przekazuje podróbkę jako wartość, więc jej sen woła kod pod testem, a nie sam test.
-
-    Funkcję test woła sam, gdy jej nazwa stoi tylko w ``f(...)``, klasę, gdy tylko w ``C(...).metoda``, a lambdę,
-    gdy woła ją od razu albo przez nazwę, do której ją przypisał.
-    """
-
     if isinstance(definition, ast.Lambda):
         parent = parents[definition]
         if isinstance(parent, ast.Call) and parent.func is definition:
@@ -478,13 +474,6 @@ def _handed_over(definition: Definition, tree: ast.Module, parents: dict[ast.AST
 
 
 def _fixed_sleeps(tree: ast.Module) -> Iterator[tuple[ast.Call, str]]:
-    """Sen poza podróbką, z nazwą funkcji, w której jest; pętla z własnym terminem też się liczy.
-
-    Podróbka to lambda, funkcja albo klasa, którą test przekazuje dalej jako wartość: jej sen udaje czas pracy kodu pod
-    testem. Znana granica: zdarzenie w zmiennej, którego nikt nie ustawia (``hold.wait(2)``), podróbka, którą test woła
-    sam przez inną nazwę, i pętla z terminem bez snu przechodzą, bo odróżnienie ich wymaga analizy przepływu danych.
-    """
-
     names = imports(tree)
     parents = {child: node for node in wezly(tree) for child in ast.iter_child_nodes(node)}
     for call in wezly(tree):
@@ -501,11 +490,88 @@ def _fixed_sleeps(tree: ast.Module) -> Iterator[tuple[ast.Call, str]]:
             yield call, functions[0].name if functions else "<moduł>"
 
 
+SNY = {
+    "time-sleep": ("import time\ndef test_a() -> None:\n    time.sleep(1)\n", ["test_a"]),
+    "modul-time-pod-inna-nazwa": ("import time as zegar\ndef test_a() -> None:\n    zegar.sleep(1)\n", ["test_a"]),
+    "sleep-z-importu-pod-inna-nazwa": ("from time import sleep as pauza\ndef test_a() -> None:\n    pauza(1)\n", ["test_a"]),
+    "asyncio-sleep": ("import asyncio\nasync def test_a() -> None:\n    await asyncio.sleep(1)\n", ["test_a"]),
+    "czekanie-na-nowe-zdarzenie-ktorego-nikt-nie-ustawi": (
+        "import threading\ndef test_a() -> None:\n    threading.Event().wait(1)\n",
+        ["test_a"],
+    ),
+    "sen-poza-funkcja": ("import time\ntime.sleep(1)\n", ["<moduł>"]),
+    "petla-z-wlasnym-terminem": (
+        "import time\ndef test_a(stan) -> None:\n    koniec = time.monotonic() + 5\n"
+        "    while not stan() and time.monotonic() < koniec:\n        time.sleep(0.1)\n",
+        ["test_a"],
+    ),
+    "funkcja-ktora-test-wola-sam": (
+        "import time\ndef pomocnik() -> None:\n    time.sleep(1)\ndef test_a() -> None:\n    pomocnik()\n",
+        ["pomocnik"],
+    ),
+    "klasa-ktorej-metode-test-wola-sam": (
+        "import time\nclass Wolny:\n    def czekaj(self) -> None:\n        time.sleep(1)\n"
+        "def test_a() -> None:\n    Wolny().czekaj()\n",
+        ["czekaj"],
+    ),
+    "lambda-wolana-od-razu": ("import time\ndef test_a() -> None:\n    (lambda: time.sleep(1))()\n", ["test_a"]),
+    "lambda-wolana-przez-nazwe": (
+        "import time\ndef test_a() -> None:\n    czekaj = lambda: time.sleep(1)\n    czekaj()\n",
+        ["test_a"],
+    ),
+    "granica-podrobka-funkcja-przekazana-kodowi-pod-testem": (
+        "import time\ndef wolno() -> None:\n    time.sleep(1)\ndef test_a(kod) -> None:\n    kod(wolno)\n",
+        [],
+    ),
+    "granica-podrobka-klasa-przekazana-kodowi-pod-testem": (
+        "import time\nclass Wolny:\n    def czekaj(self) -> None:\n        time.sleep(1)\n"
+        "def test_a(kod) -> None:\n    kod(Wolny)\n",
+        [],
+    ),
+    "granica-podrobka-lambda-przekazana-kodowi-pod-testem": (
+        "import time\ndef test_a(kod) -> None:\n    kod(lambda: time.sleep(1))\n",
+        [],
+    ),
+    "granica-podrobka-lambda-z-nazwy-przekazana-kodowi-pod-testem": (
+        "import time\ndef test_a(kod) -> None:\n    czekaj = lambda: time.sleep(1)\n    kod(czekaj)\n",
+        [],
+    ),
+}
+
+
+@pytest.mark.parametrize(("code", "functions"), SNY.values(), ids=SNY.keys())
+def test_sprawdzenie_snu_zglasza_sen_testu_z_jego_funkcja_a_przepuszcza_sen_podrobki(code: str, functions: list[str]) -> None:
+    assert [function for _, function in _fixed_sleeps(ast.parse(code))] == functions
+
+
+ZNANE_LUKI_SNU = {
+    "zdarzenie w zmiennej, którego nikt nie ustawia": (
+        "import threading\ndef test_a() -> None:\n    hold = threading.Event()\n    hold.wait(2)\n"
+    ),
+    "podróbka, którą test woła sam przez inną nazwę": (
+        "import time\ndef wolno() -> None:\n    time.sleep(1)\ndef test_a() -> None:\n    inna = wolno\n    inna()\n"
+    ),
+    "pętla z terminem bez snu": (
+        "import time\ndef test_a(stan) -> None:\n    koniec = time.monotonic() + 5\n"
+        "    while not stan() and time.monotonic() < koniec:\n        pass\n"
+    ),
+}
+
+
+def test_znane_luki_sprawdzenia_snu_przechodza_przez_nie() -> None:
+    zgloszenia = {
+        opis: [f"_fixed_sleeps: {ast.unparse(call)} w {function}" for call, function in _fixed_sleeps(ast.parse(kod))]
+        for opis, kod in ZNANE_LUKI_SNU.items()
+    }
+
+    assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_SNU)")
+
+
 def test_testy_czekaja_na_stan_a_nie_stala_liczbe_sekund() -> None:
     found, simulated = [], set()
     for path, name in _scanned():
         for call, function in _fixed_sleeps(drzewo(path)):
-            if f"{name}::{function}" == WAITING:
+            if f"{name}::{function}" == POLLING_LOOP:
                 continue
             if f"{name}::{function}" in SIMULATED_TIME:
                 simulated.add(f"{name}::{function}")
@@ -575,8 +641,6 @@ CONSTANT_TIME_BOUNDS = {
 
 
 def _unpacked(target: ast.expr, value: ast.expr | None) -> Iterator[tuple[str, ast.expr | None]]:
-    """Nazwa w celu przypisania i jej wartość: ``took, _ = a, b`` wiąże ``took`` z ``a``."""
-
     if isinstance(target, ast.Name):
         yield target.id, value
         return
@@ -594,12 +658,6 @@ def _unpacked(target: ast.expr, value: ast.expr | None) -> Iterator[tuple[str, a
 
 
 def _bindings(tree: ast.Module) -> dict[str, list[ast.expr | None]]:
-    """Każda wartość przypisana nazwie w module; ``None``, gdy nazwę wiąże coś innego niż przypisanie.
-
-    ``took += x`` to ``took = took + x``: dla ``_constant`` nazwa zależy od siebie, więc nie jest stałą, a dla
-    ``_measured`` niesie odczyt zegara z ``x``.
-    """
-
     bound: dict[str, list[ast.expr | None]] = {}
     for node in wezly(tree):
         if isinstance(node, ast.Assign):
@@ -622,8 +680,6 @@ def _bindings(tree: ast.Module) -> dict[str, list[ast.expr | None]]:
 
 
 def _constant(expression: ast.expr, bound: dict[str, list[ast.expr | None]], seen: frozenset[str] = frozenset()) -> bool:
-    """Liczba znana przed uruchomieniem: literał, działanie na literałach albo nazwa przypisana tylko takiej liczbie."""
-
     if isinstance(expression, ast.Constant):
         return isinstance(expression.value, (int, float)) and not isinstance(expression.value, bool)
     if isinstance(expression, ast.UnaryOp):
@@ -640,9 +696,6 @@ def _constant(expression: ast.expr, bound: dict[str, list[ast.expr | None]], see
 def _measured(
     expression: ast.expr, bound: dict[str, list[ast.expr | None]], names: dict[str, str], measured_names: set[str]
 ) -> bool:
-    """Zmierzony czas: wyrażenie z nazwą czasu (``elapsed``, ``duration``, ``_ms``, ``_s``), z odczytem zegara
-    albo z nazwą z ``measured_names`` (``_measured_names``)."""
-
     if _constant(expression, bound):
         return False
     for node in ast.walk(expression):
@@ -657,12 +710,6 @@ def _measured(
 
 
 def _measured_names(bound: dict[str, list[ast.expr | None]], names: dict[str, str]) -> set[str]:
-    """Nazwy, którym moduł przypisuje zmierzony czas (``took = time.monotonic() - started``), także przez inne nazwy.
-
-    Najmniejszy punkt stały raz na moduł: przejście każdej ścieżki wiązań osobno rośnie wykładniczo z liczbą nazw
-    wiązanych w module wiele razy (#1010: ``tests/test_wycena_efenix.py`` po #995 trwał 25 s).
-    """
-
     measured: set[str] = set()
     changed = True
     while changed:
@@ -677,8 +724,6 @@ def _measured_names(bound: dict[str, list[ast.expr | None]], names: dict[str, st
 
 
 def _negated(compare: ast.Compare, statement: ast.Assert, parents: dict[ast.AST, ast.AST]) -> bool:
-    """Porównanie pod nieparzystą liczbą ``not``: ``assert not elapsed >= 2`` to ``assert elapsed < 2``."""
-
     nots = 0
     node: ast.AST = compare
     while node is not statement:
@@ -688,15 +733,6 @@ def _negated(compare: ast.Compare, statement: ast.Assert, parents: dict[ast.AST,
 
 
 def _constant_time_bounds(tree: ast.Module) -> Iterator[tuple[ast.Compare, str]]:
-    """Asercja, że zmierzony czas jest mniejszy od stałej liczby, z nazwą funkcji, w której jest.
-
-    Znana granica, bo wymaga analizy przepływu danych albo znajomości bibliotek: stała, która przychodzi parametrem
-    (``pytest.mark.parametrize``), z innego modułu, z atrybutu klasy albo z ``timedelta(...)``; nazwa, którą moduł
-    gdzie indziej wiąże z czymś innym niż liczba; zmierzony czas w pomocniku z innego modułu; granica bez porównania
-    w ``assert``: ``pytest.approx(..., abs=...)``, ``math.isclose(..., abs_tol=...)`` i ``if elapsed > 2:
-    pytest.fail(...)``.
-    """
-
     names = imports(tree)
     bound = _bindings(tree)
     measured_names = _measured_names(bound, names)
@@ -763,6 +799,109 @@ def test_czas_przypisany_nazwie_bez_slowa_czasu_jest_zmierzonym_czasem(module: s
     assert [ast.unparse(compare) for compare, _ in _constant_time_bounds(ast.parse(module))] == ["took < 2"]
 
 
+GRANICE_CZASU = {
+    "nazwa-elapsed": ("def test_a(elapsed) -> None:\n    assert elapsed < 2\n", ["elapsed < 2"]),
+    "nazwa-duration": ("def test_a(duration) -> None:\n    assert duration <= 2\n", ["duration <= 2"]),
+    "nazwa-z-przyrostkiem-ms": ("def test_a(took_ms) -> None:\n    assert took_ms < 200\n", ["took_ms < 200"]),
+    "atrybut-z-przyrostkiem-s": ("def test_a(wynik) -> None:\n    assert wynik.load_s < 2\n", ["wynik.load_s < 2"]),
+    "odczyt-zegara": (
+        "import time\ndef test_a() -> None:\n    started = time.monotonic()\n    assert time.monotonic() - started < 2\n",
+        ["time.monotonic() - started < 2"],
+    ),
+    "odczyt-datetime-now-pod-nazwa-z-importu": (
+        "from datetime import datetime\ndef test_a(start) -> None:\n    assert (datetime.now() - start).seconds < 2\n",
+        ["(datetime.now() - start).seconds < 2"],
+    ),
+    "stala-z-lewej": ("def test_a(elapsed) -> None:\n    assert 2 > elapsed\n", ["2 > elapsed"]),
+    "pod-nieparzysta-liczba-not": ("def test_a(elapsed) -> None:\n    assert not elapsed >= 2\n", ["elapsed >= 2"]),
+    "pod-parzysta-liczba-not": ("def test_a(elapsed) -> None:\n    assert not not elapsed < 2\n", ["elapsed < 2"]),
+    "stala-z-dzialania-na-liczbach": ("def test_a(elapsed) -> None:\n    assert elapsed < -2 * 3\n", ["elapsed < -2 * 3"]),
+    "stala-z-nazwy-przypisanej-tylko-liczbie": (
+        "LIMIT = 2\ndef test_a(elapsed) -> None:\n    assert elapsed < LIMIT\n",
+        ["elapsed < LIMIT"],
+    ),
+    "porownanie-lancuchowe": ("def test_a(elapsed) -> None:\n    assert 0 <= elapsed < 2\n", ["0 <= elapsed < 2"]),
+    "nazwa-z-rozpakowania-krotki": (
+        "import time\ndef test_a(started) -> None:\n    took, _ = time.monotonic() - started, 0\n    assert took < 2\n",
+        ["took < 2"],
+    ),
+    "nazwa-z-przyrostu": (
+        "import time\ndef test_a(started) -> None:\n    took = 0\n    took += time.monotonic() - started\n    assert took < 2\n",
+        ["took < 2"],
+    ),
+    "granica-dolna-granica-pod-not": ("def test_a(elapsed) -> None:\n    assert not elapsed < 2\n", []),
+    "granica-dolna-granica": ("def test_a(elapsed) -> None:\n    assert elapsed >= 2\n", []),
+    "granica-wartosc-bez-czasu": ("def test_a(count) -> None:\n    assert count < 2\n", []),
+    "granica-nazwa-czasu-przypisana-liczbie": ("wait_s = 2\ndef test_a(count) -> None:\n    assert count * wait_s < 3\n", []),
+    "granica-limit-z-parametru": ("def test_a(elapsed, wait_s) -> None:\n    assert elapsed < wait_s * 2\n", []),
+    "granica-limit-przypisany-liczbie-i-petli": (
+        "LIMIT = 2\ndef test_a(elapsed) -> None:\n    for LIMIT in (1, 3):\n        assert elapsed < LIMIT\n",
+        [],
+    ),
+    "granica-limit-zalezny-od-siebie": (
+        "LIMIT = 2\nLIMIT += 1\ndef test_a(elapsed) -> None:\n    assert elapsed < LIMIT\n",
+        [],
+    ),
+    "granica-wartosc-logiczna": ("def test_a(elapsed) -> None:\n    assert elapsed < True\n", []),
+}
+
+
+@pytest.mark.parametrize(("module", "bounds"), GRANICE_CZASU.values(), ids=GRANICE_CZASU.keys())
+def test_sprawdzenie_granicy_czasu_lapie_kazda_wyliczona_postac_a_przepuszcza_granice(module: str, bounds: list[str]) -> None:
+    assert [ast.unparse(compare) for compare, _ in _constant_time_bounds(ast.parse(module))] == bounds
+
+
+def test_nazwy_wiazane_wiele_razy_bez_zegara_nie_daja_granicy_czasu_bez_przejscia_kazdej_sciezki_wiazan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rebound = 60
+    chain = "".join(f"n{number + 1} = n{number}\nn{number + 1} = n{number} + 1\n" for number in range(rebound))
+    values = 2 * rebound + 1
+    evaluated: list[ast.expr] = []
+    measured = _measured
+
+    def counted(
+        expression: ast.expr, bound: dict[str, list[ast.expr | None]], names: dict[str, str], measured_names: set[str]
+    ) -> bool:
+        evaluated.append(expression)
+        assert len(evaluated) <= values**2, "licz nazwy ze zmierzonym czasem punktem stałym raz na moduł, a nie każdą ścieżką wiązań osobno"
+        return measured(expression, bound, names, measured_names)
+
+    monkeypatch.setattr(sys.modules[__name__], "_measured", counted)
+
+    assert list(_constant_time_bounds(ast.parse(f"n0 = wczytaj()\n{chain}assert n{rebound} < 2\n"))) == []
+
+
+ZNANE_LUKI_GRANICY_CZASU = {
+    "stała z parametru pytest.mark.parametrize": (
+        'import pytest\n@pytest.mark.parametrize("limit", [2])\ndef test_a(elapsed, limit) -> None:\n    assert elapsed < limit\n'
+    ),
+    "stała z innego modułu": "from stale import LIMIT\ndef test_a(elapsed) -> None:\n    assert elapsed < LIMIT\n",
+    "stała z atrybutu klasy": "class Stale:\n    LIMIT = 2\ndef test_a(elapsed) -> None:\n    assert elapsed < Stale.LIMIT\n",
+    "stała z timedelta": (
+        "from datetime import timedelta\ndef test_a(elapsed) -> None:\n    assert elapsed < timedelta(seconds=2)\n"
+    ),
+    "nazwa wiązana gdzie indziej czymś innym niż liczba": (
+        "LIMIT = 2\ndef inny() -> None:\n    LIMIT = wczytaj()\ndef test_a(elapsed) -> None:\n    assert elapsed < LIMIT\n"
+    ),
+    "zmierzony czas w pomocniku z innego modułu": (
+        "from pomocnicy import zmierz\ndef test_a() -> None:\n    took = zmierz()\n    assert took < 2\n"
+    ),
+    "pytest.approx z abs": "import pytest\ndef test_a(elapsed) -> None:\n    assert elapsed == pytest.approx(1, abs=1)\n",
+    "math.isclose z abs_tol": "import math\ndef test_a(elapsed) -> None:\n    assert math.isclose(elapsed, 1, abs_tol=1)\n",
+    "if z pytest.fail": 'import pytest\ndef test_a(elapsed) -> None:\n    if elapsed > 2:\n        pytest.fail("za wolno")\n',
+}
+
+
+def test_znane_luki_sprawdzenia_granicy_czasu_przechodza_przez_nie() -> None:
+    zgloszenia = {
+        opis: [f"_constant_time_bounds: {ast.unparse(compare)}" for compare, _ in _constant_time_bounds(ast.parse(kod))]
+        for opis, kod in ZNANE_LUKI_GRANICY_CZASU.items()
+    }
+
+    assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_GRANICY_CZASU)")
+
+
 @pytest.mark.parametrize(
     ("guard", "atrapa", "reported"),
     [
@@ -782,9 +921,6 @@ def test_czas_przypisany_nazwie_bez_slowa_czasu_jest_zmierzonym_czasem(module: s
 def test_straznik_czekania_i_limitow_czasu_zglasza_naruszenie_w_atrapie(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard: Callable[[], None], atrapa: str, reported: str
 ) -> None:
-    """Naruszenie w atrapie obok pustego katalogu testów: strażnik je zgłasza, więc czyta atrapy, a nie tylko ``tests/``
-    (przegląd #1170 r2, Drobne 1)."""
-
     atrapy = tmp_path / "tools" / "lib" / "atrapy"
     atrapy.mkdir(parents=True)
     (atrapy / "naruszenie.py").write_text(atrapa, encoding="utf-8")
@@ -800,7 +936,6 @@ def test_straznik_czekania_i_limitow_czasu_zglasza_naruszenie_w_atrapie(
 
 SRC = TESTS.parent / "src"
 THREAD_CONSTANT = re.compile(r"[A-Z_]+_THREAD(?:_PREFIX)?")
-# Napisy równe nazwie wątku, które nie nazywają wątku, z funkcją (``<moduł>`` poza funkcją) i powodem.
 NOT_THREADS = {
     "test_instrukcja_taty.py::<moduł>::aktualizacja-narzedzia": "funkcja Instrukcji taty o tej samej nazwie co wątek",
     "test_centrum_przygotowanie.py::test_dziennik_centrum_ma_poczatek_i_koniec_uruchomienia_z_wynikiem_bez_danych_klientow"
@@ -809,9 +944,6 @@ NOT_THREADS = {
 
 
 def _thread_names(tree: ast.Module) -> set[str]:
-    """Nazwy wątków modułu ``src/``: wartości stałych modułu ``*_THREAD`` i ``*_THREAD_PREFIX`` oraz napisy ``name=`` w
-    wywołaniu ``…Thread(...)`` i ``within(...)`` (``centrum/deadline.py``, który nazwą wątku nazywa swoją pracę)."""
-
     names = set()
     for statement in tree.body:
         if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
@@ -833,9 +965,6 @@ def _thread_names(tree: ast.Module) -> set[str]:
 
 
 def _texts(tree: ast.Module) -> Iterator[tuple[str, int, str]]:
-    """Napisy modułu z nazwą funkcji, w której stoją, poza docstringami (napis jako całe wyrażenie-instrukcja) i
-    kawałkami f-stringów."""
-
     parents = {child: node for node in wezly(tree) for child in ast.iter_child_nodes(node)}
     for node in wezly(tree):
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
@@ -854,8 +983,6 @@ def _thread_names_in(src: Path) -> set[str]:
 
 
 def _thread_name_copies(names: set[str]) -> list[str]:
-    """Napisy testów i atrap równe nazwie wątku z ``names`` spoza ``NOT_THREADS`` i wpisy ``NOT_THREADS`` bez napisu."""
-
     found, excepted = [], set()
     for path, name in _scanned():
         for text, line, function in _texts(drzewo(path)):
@@ -870,10 +997,6 @@ def _thread_name_copies(names: set[str]) -> list[str]:
 
 
 def test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy() -> None:
-    """Łapie napis równy całej nazwie wątku albo jej początkowi (``*_THREAD_PREFIX``) poza docstringami, a postacie,
-    których nie łapie, są próbkami w ``ZNANE_LUKI_NAZW_WATKOW``. Napis, który nie nazywa wątku, trafia do
-    ``NOT_THREADS`` pod kluczem z nawiasu."""
-
     names = _thread_names_in(SRC)
     found = _thread_name_copies(names)
 
@@ -899,9 +1022,6 @@ def test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy() 
 def test_straznik_nazw_watkow_zglasza_kopie_nazwy_z_kazdej_czytanej_postaci_w_testach_i_atrapach(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, src: str, copy: str
 ) -> None:
-    """Nazwa wątku w każdej postaci, którą strażnik czyta w ``src/``, skopiowana w atrapie albo teście obok pustej
-    reszty: strażnik ją zgłasza (przegląd #1175 r1, Drobne 1 i 2)."""
-
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "watek.py").write_text(src, encoding="utf-8")
     atrapy = tmp_path / "tools" / "lib" / "atrapy"
@@ -917,8 +1037,29 @@ def test_straznik_nazw_watkow_zglasza_kopie_nazwy_z_kazdej_czytanej_postaci_w_te
     assert [line.split(" (")[0] for line in found] == [f"{'tests/' if copy.startswith('test_') else ''}{copy}:1: 'watek-proby' to kopia nazwy wątku z src/"]
 
 
-# Znane luki strażnika nazw wątków (tests/fixtures/znane_luki.py): opis postaci → moduł testu, który kopiuje nazwę
-# wątku z src/ (QUEUE_THREAD, RUN_THREAD_PREFIX), a mimo to przechodzi przez _thread_name_copies.
+@pytest.mark.parametrize(
+    ("not_threads", "found"),
+    [
+        ({}, []),
+        (
+            {"test_kopia.py::<moduł>::watek-proby": "napis bez kopii"},
+            ["NOT_THREADS: test_kopia.py::<moduł>::watek-proby nie ma już tego napisu, usuń wpis"],
+        ),
+    ],
+    ids=["docstring-rowny-nazwie-watku-to-nie-kopia", "wpis-not-threads-bez-napisu"],
+)
+def test_straznik_nazw_watkow_przepuszcza_docstring_i_zglasza_wpis_not_threads_bez_napisu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, not_threads: dict[str, str], found: list[str]
+) -> None:
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_kopia.py").write_text('"""watek-proby"""\n\n\ndef test_a() -> None:\n    """watek-proby"""\n', encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "TESTS", tmp_path / "tests")
+    monkeypatch.setattr(sys.modules[__name__], "ATRAPY", tmp_path / "atrapy")
+    monkeypatch.setattr(sys.modules[__name__], "NOT_THREADS", not_threads)
+
+    assert _thread_name_copies({"watek-proby"}) == found
+
+
 ZNANE_LUKI_NAZW_WATKOW = {
     "nazwa złożona z kawałków w trakcie działania": 'CZEKA_NA = "skrzynka-" + "kolejka"\n',
     "początek nazwy w f-stringu": 'def watek_uruchomienia(numer: int) -> str:\n    return f"uruchomienie-{numer}"\n',
@@ -944,20 +1085,11 @@ def test_znane_luki_strazy_nazw_watkow_przechodza_przez_niego(tmp_path: Path, mo
     assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_NAZW_WATKOW)")
 
 
-# Zapadka, której bieg pustego drzewa nie uruchamia: dzisiejsze repozytorium ma wystąpienia form, których reguły ast-grep
-# zakazują tylko w nowych liniach (ADR 0034), a zadania pytest na Windows instalują tylko ``requirements.txt``, bez ast-grep.
 _ZAPADKA_AST_GREP = "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo"
-# Workery xdist biegu pustego drzewa: cały plik zapadek (485 testów, ~45 s w jednym procesie) trwa z nimi ~12 s na Macu.
 WORKERY_DOWODU = 4
 
 
 def _empty_tree_problems(root: Path) -> list[str]:
-    """Problemy biegu ``tests/test_zapadki.py`` repozytorium ``root`` z bazą w pustym drzewie gita, w którym każda linia
-    ``tests/`` i ``src/`` jest dodana, na ``WORKERY_DOWODU`` workerach: porażka biegu albo ``--deselect`` zapadki reguł
-    ast-grep, który nie pomija dokładnie jednego testu. ``--deselect`` wybiera po prefiksie node id, więc test zapadek
-    o nazwie z tym prefiksem zniknąłby z dowodu po cichu, a xdist liczby pominiętych nie drukuje, więc liczy ją kolekcja
-    tego samego wyboru w jednym procesie (``--collect-only``, poniżej sekundy)."""
-
     empty_tree = subprocess.run(
         ["git", "hash-object", "-t", "tree", "--stdin"], cwd=root, input="", capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -989,18 +1121,9 @@ def _empty_tree_problems(root: Path) -> list[str]:
 
 
 def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
-    """Dowód braku fałszywych alarmów każdej formy każdej zapadki: z bazą w pustym drzewie gita każda linia ``tests/``
-    i ``src/`` jest dodana, a zapadki przechodzą, więc żadna forma nie trafia w dzisiejszy, poprawny test ani kod.
-
-    Biegnie tu, a nie w ``tests/test_zapadki.py``, bo pomiar zapadek kładzie tamten plik na starych commitach, których
-    ``tests/`` miało jeszcze własne wyrocznie, a moduł testu niczego nie eksportuje, więc zapadki biegną osobnym pytest.
-    Reguły ast-grep biegną bez tego dowodu (``_ZAPADKA_AST_GREP``).
-    """
-
     assert _empty_tree_problems(TESTS.parent) == []
 
 
-# Reguła-fikstura z wystąpieniem w ``src/`` kopii repozytorium i fragment jej komunikatu dla ``AST_GREP_INSTRUCTIONS``.
 _REGULA_FIKSTURA = """\
 id: zakazane-wywolanie
 language: python
@@ -1012,15 +1135,11 @@ rule:
   pattern: zakazane()
 """
 _AST_GREP_ANCHOR = 'AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))'
-# Zadanie bez dodatku dev w ``tests/test_zapadki.py``: bieg bez ast-grep udaje zadanie pytest na Windows, także poza nim.
 _BEZ_DODATKU_DEV_ANCHOR = 'BEZ_DODATKU_DEV = sys.platform == "win32"'
 _AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 
 
 def _repo_copy(root: Path) -> Path:
-    """Kopia plików śledzonych i nieśledzonych, a nieignorowanych, checkoutu w ``root`` (to, co widzi bieg pustego
-    drzewa), w nowym repozytorium gita bez commitu."""
-
     listed = subprocess.run(
         ["git", "-c", "core.quotepath=false", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=TESTS.parent,
@@ -1043,11 +1162,6 @@ def _repo_copy(root: Path) -> Path:
     ids=["z ast-grep", "bez ast-grep"],
 )
 def test_bieg_pustego_drzewa_przechodzi_z_regula_ast_grep_i_jej_starym_wystapieniem_w_src(tmp_path: Path, ast_grep: bool) -> None:
-    """Pierwsza reguła w ``reguly-ast-grep/`` nie czerwieni dowodu braku fałszywych alarmów, choć dzisiejsze ``src/`` ma
-    wystąpienia jej formy, z ast-grep (Mac, Linux z dodatkiem dev) i bez niego (zadania pytest na Windows z
-    ``requirements.txt``): kopia repozytorium z regułą-fiksturą, jej wpisem w ``AST_GREP_INSTRUCTIONS`` i plikiem
-    ``src/`` z jej formą przechodzi przez ``_empty_tree_problems``."""
-
     root = _repo_copy(tmp_path)
     (root / "reguly-ast-grep").mkdir(exist_ok=True)
     (root / "reguly-ast-grep" / "zakazane-wywolanie.yml").write_text(_REGULA_FIKSTURA, encoding="utf-8")

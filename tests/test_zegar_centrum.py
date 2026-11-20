@@ -1,9 +1,3 @@
-"""Zegar Centrum u taty (``SYSTEM_CLOCK``), wątki w tle, na które zamknięcie Centrum nie czeka, i zegar ścienny
-(``rozliczenia.wall_clock``) w strefie komputera.
-
-Testy Centrum podstawiają ``ManualClock``, więc prawdziwy budzik i wątek sprawdzenia klucza sprawdza tylko ten plik.
-"""
-
 from __future__ import annotations
 
 import os
@@ -21,9 +15,8 @@ from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.wall_clock import dad_today, local_now, utc_now
 
 ROOT = Path(__file__).resolve().parents[1]
+UTC_PLUS_14, UTC_MINUS_12 = "Etc/GMT-14", "Etc/GMT+12"
 
-# Budzik za godzinę i sprawdzenie klucza w Skrzynce, która nie odpowiada; potem koniec programu. Moduł ``KeyedBox``
-# z importu tego pliku: mutacje zmiany (``tools/mutacje_zmiany.py``) wybierają testy pliku po grafie importów.
 EXIT_WITH_BACKGROUND_THREADS = f"""
 import threading
 
@@ -68,10 +61,9 @@ def test_zamkniecie_centrum_nie_czeka_na_budzik_ani_na_skrzynke_bez_odpowiedzi()
 def test_dzien_taty_jest_dniem_strefy_komputera_a_nie_dniem_utc(monkeypatch: pytest.MonkeyPatch) -> None:
     if sys.platform == "win32":
         pytest.skip("time.tzset jest tylko w systemach POSIX")
-    # UTC+14 i UTC−12 dzieli 26 h, więc w każdej chwili mają inną datę, a dzień UTC byłby w obu strefach ten sam.
     seen: dict[str, tuple[date, timedelta | None, timedelta | None]] = {}
     try:
-        for zone in ("Etc/GMT-14", "Etc/GMT+12"):
+        for zone in (UTC_PLUS_14, UTC_MINUS_12):
             monkeypatch.setenv("TZ", zone)
             time.tzset()
             seen[zone] = (dad_today(), local_now().utcoffset(), utc_now().utcoffset())
@@ -79,7 +71,7 @@ def test_dzien_taty_jest_dniem_strefy_komputera_a_nie_dniem_utc(monkeypatch: pyt
         monkeypatch.undo()
         time.tzset()
 
-    east, west = seen["Etc/GMT-14"], seen["Etc/GMT+12"]
-    assert east[0] > west[0]
+    east, west = seen[UTC_PLUS_14], seen[UTC_MINUS_12]
+    assert east[0] > west[0], "strefy dzieli 26 h, więc mają inny dzień w każdej chwili, a dzień UTC byłby w obu ten sam"
     assert (east[1], west[1]) == (timedelta(hours=14), timedelta(hours=-12))
     assert east[2] == west[2] == timedelta(0)

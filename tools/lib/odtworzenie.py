@@ -9,7 +9,7 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   jako maile w postaci kanonicznej (``WindowMails.canonical``) od adresów ``@odtworzenie.invalid``, z Listą
   Wykonawców z loginów Wpisów oraz z pamięcią wpisów i decyzjami „Zostaw moją” sprzed kliknięcia z Logów.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
-  pusta Kopia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu wyników szukania, wiersz Kopii albo
+  pusta Kopia, komórka typu, którego Kopia nie zapisała, wiersz Kopii albo
   zlecenie śladu efenix, które strażnik reguły danych pominął) kończy odtworzenie bez uruchomienia procesu: wynik
   takiego odtworzenia nic by nie znaczył; to samo numer Wpisu raportu z maską strażnika i numer pamięci wpisów, którego
   nie ma w jednym Wpisie. Zastrzeżenie (maski strażnika w Kopii i w czynnościach Wpisów, wiersz Rejestru zleceń albo
@@ -933,13 +933,12 @@ def _efenix_limits(record: RunLog) -> list[Limit]:
     limits = _collective_limits(record)
     if limits:
         return limits
-    limits = [Limit(text, blocking=True) for text in atrapa_z_logow.unread(record.efenix_orders or [])]
-    limits.append(
+    limits = [
         Limit(
             "efenix to Atrapa efenix z odczytów stron w Logach, a nie efenix taty: budowa stron, odpowiedzi na zapis i "
             "ceny pozycji, których Logi nie wyznaczają, są Atrapy"
         )
-    )
+    ]
     if record.efenix_stop is not None:
         limits.append(
             Limit(

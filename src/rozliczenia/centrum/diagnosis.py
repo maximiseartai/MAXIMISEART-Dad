@@ -1,30 +1,3 @@
-"""Diagnoza Zatrzymania: sprawdzenia komputera taty tylko do odczytu i wyjaśnienie w trzech częściach.
-
-Diagnozę tata uruchamia przy Zatrzymaniu „do Maksa” albo przy powtórce
-(``stops``). Każde sprawdzenie używa istniejącej reguły procesu albo
-Konfiguracji (odczyt Rejestru zleceń, Sprawdzanie wzorców, Lista
-Wykonawców z Ustawień Centrum, odszukanie Folderu okresu, plik blokady Excela) i
-gotowego Komunikatu z katalogu procesu; tylko przyczyny bez Komunikatu procesu
-mają własny katalog (``diagnosis_messages``). Plik Folderów, którego system nie daje teraz czytać, nie jest
-Rejestrem zleceń i folderem okresów niewskazanymi: każde sprawdzenie, które z niego bierze, jest „nie sprawdzono” ze
-zdaniem o tym pliku (``_FoldersUnread``), a reszta sprawdzeń idzie dalej. Wyjaśnienie to Komunikat
-pierwszego sprawdzenia, które nie przeszło, a gdy przeszły wszystkie:
-„Nie znalazłem przyczyny na tym komputerze”. Rodzaj wyjaśnienia (tata usuwa
-przyczynę sam albo nie) liczy ta sama reguła co rodzaj Zatrzymania. Aktualność
-narzędzia sprawdza się po plikach taty: nowsza wersja jest wyjaśnieniem tylko
-bez innej przyczyny, a obok innej przyczyny Diagnoza ją tylko proponuje (ADR 0009).
-
-Proces pyta się swojego wpisu w katalogu procesów (``catalog``): jego Ustawienia,
-Wzorce i kroki Diagnozy w kolejności wyjaśniania. Nowe sprawdzenie to funkcja
-``(_Computer, label) -> list[CheckResult]`` z nazwą w ``@_check(label)``, nowy
-krok w ``process_kind.CheckStep`` i jego gałąź w ``_check_of``. Sprawdzenie, które samo się nie uda (nieoczekiwany
-wyjątek), jest „nie sprawdzono” na swoim miejscu, a typ wyjątku trafia do
-dziennika Centrum, nigdy jego treść; reszta sprawdzeń idzie dalej, więc
-Diagnoza zawsze kończy się wyjaśnieniem i podglądem Zgłoszenia. Diagnoza
-niczego nie zapisuje ani nie naprawia; jej wynik i ostatnie wpisy dziennika
-zostają w ``Diagnosis`` po stronie serwera, dla Zgłoszenia i Logów Uruchomienia.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -66,8 +39,6 @@ LOG_ENTRIES: Final = 20
 
 
 class _FoldersUnread(Exception):
-    """Sprawdzenie bierze Foldery z migawki, w której plik Folderów ``file`` był bez odczytu (``_ProcessFiles.folders``)."""
-
     def __init__(self, file: str) -> None:
         super().__init__(file)
         self.file = file
@@ -75,11 +46,6 @@ class _FoldersUnread(Exception):
 
 @dataclass(frozen=True)
 class CheckResult:
-    """Wynik jednego sprawdzenia; ``message`` tylko przy ``failed`` przyczyny, ``detail`` to krótki bezpieczny fakt.
-
-    ``fixed_by_update``: przyczynę usuwa Aktualizacja narzędzia, bo na GitHubie jest nowsza wersja.
-    """
-
     label: str
     state: diagnosis_contract.CheckState
     detail: str
@@ -100,8 +66,6 @@ class CheckResult:
 
     @classmethod
     def aside(cls, label: str, detail: str) -> CheckResult:
-        """Nie przeszło, ale to nie przyczyna Zatrzymania: bez ``message``, więc nigdy nie jest wyjaśnieniem."""
-
         return cls(label, "failed", detail)
 
     @classmethod
@@ -112,8 +76,6 @@ class CheckResult:
 
 @dataclass(frozen=True)
 class Diagnosis:
-    """Wynik Diagnozy: sprawdzenia po kolei i ostatnie wpisy dziennika Centrum od jego startu."""
-
     checks: tuple[CheckResult, ...]
     log_entries: tuple[str, ...]
 
@@ -132,16 +94,12 @@ class Diagnosis:
 
     @property
     def proposes_update(self) -> bool:
-        """Jest nowsza wersja narzędzia, ale wyjaśnieniem jest inna przyczyna."""
-
         explaining = self._explaining
         newer = any(check.fixed_by_update for check in self.checks)
         return newer and explaining is not None and not explaining.fixed_by_update
 
     @property
     def next_action(self) -> diagnosis_contract.DiagnosisNextAction:
-        """Co tata robi po wyjaśnieniu: aktualizuje narzędzie, sam usuwa przyczynę i uruchamia ponownie albo wysyła do Maksa."""
-
         explaining = self._explaining
         if explaining is not None and explaining.fixed_by_update:
             return "update"
@@ -162,9 +120,6 @@ class Diagnosis:
 
 @dataclass(frozen=True)
 class Surroundings:
-    """Granice komputera taty poza jego plikami: najnowsze Wydanie na GitHubie, atrybuty plików OneDrive i stan klucza
-    do Zgłoszeń według Skrzynki (``KeyedBox.judge``, czekający najwyżej tyle, co pytanie o otwarte Zgłoszenie)."""
-
     tool_freshness: ToolFreshness
     cloud_files: CloudFiles
     report_key: Callable[[], KeyJudgement]
@@ -172,8 +127,6 @@ class Surroundings:
 
 @dataclass(frozen=True)
 class _ProcessFiles:
-    """Pliki taty, które czyta i zapisuje proces ``declaration`` w okresie ``period``, wyliczone z Ustawień i Konfiguracji."""
-
     declaration: ProcessKind[Any, Any]
     period: SettlementPeriod
     settings: FolderSettings | Unreadable
@@ -181,18 +134,12 @@ class _ProcessFiles:
 
     @property
     def folders(self) -> FolderSettings:
-        """Foldery z migawki; przy pliku Folderów bez odczytu ``_FoldersUnread``, bo jego Rejestru zleceń i folderu
-        okresów nikt nie zna."""
-
         if isinstance(self.settings, Unreadable):
             raise _FoldersUnread(self.settings.name)
         return self.settings
 
     @cached_property
     def period_folder(self) -> PeriodFolder | PeriodFolderLookupError | None:
-        """Folder okresu odszukany jak w procesie; ``None`` bez folderu okresów, a ``PeriodFolderInaccessible``, gdy
-        folderu okresów nie da się odczytać."""
-
         periods_directory = self.folders.periods_directory_to_read
         if periods_directory is None:
             return None
@@ -214,9 +161,6 @@ class _ProcessFiles:
 
     @property
     def files(self) -> list[Path]:
-        """Rejestr zleceń, gdy proces go czyta, Wzorce procesu i pliki Folderu okresu, gdy proces należy do okresu;
-        ścieżki mogą nie istnieć."""
-
         register = self.folders.register_to_read
         files = [register] if self.declaration.reads_register and register is not None else []
         files += [template.path for template in self.templates]
@@ -230,12 +174,6 @@ def files_of_process(
     settings: FolderSettings | Unreadable,
     configuration: ConfigurationFiles,
 ) -> list[Path] | Unreadable:
-    """Pliki taty Uruchomienia procesu ``process`` dla tokenu okresu ``period``, ta sama lista co w sprawdzeniu OneDrive;
-    przy pliku Folderów bez odczytu ten plik, bo bez niego listy nie da się wyliczyć.
-
-    ``PeriodFolderInaccessible``, gdy folderu okresów albo Folderu okresu nie da się odczytać.
-    """
-
     if isinstance(settings, Unreadable):
         return settings
     return _ProcessFiles(declaration_of(process), parse_period_token(period), settings, configuration).files
@@ -243,8 +181,6 @@ def files_of_process(
 
 @dataclass(frozen=True)
 class _Computer(_ProcessFiles):
-    """Komputer taty w chwili Diagnozy."""
-
     log: CentrumLog
     surroundings: Surroundings
     template_check: TemplateCheck
@@ -262,20 +198,10 @@ _NOT_CHECKED_UNEXPECTED: Final = "Nie udało się sprawdzić: nieoczekiwany bł�
 
 @dataclass(frozen=True)
 class _Check:
-    """Sprawdzenie pod stałą nazwą ``label``, którą ``run`` dostaje dla swoich wyników."""
-
     label: str
     run: _CheckRun
 
     def results(self, computer: _Computer) -> list[CheckResult]:
-        """Folder, którego nie da się odczytać, nie jest porażką sprawdzenia, tylko przyczyną: oba procesy
-        wyjaśniają ją Komunikatem Przygotowania, jak odszukanie Folderu okresu. Sprawdzenie, które bierze Foldery z
-        pliku bez odczytu, nie sprawdza nic i mówi, którego pliku nie dało się przeczytać.
-
-        Typ wyjątku trafia do dziennika Centrum od razu, więc ostatnie wpisy dziennika w Diagnozie i
-        Zgłoszeniu już go mają.
-        """
-
         try:
             return self.run(computer, self.label)
         except PeriodFolderInaccessible as inaccessible:
@@ -296,9 +222,6 @@ def _check(label: str) -> Callable[[_CheckRun], _Check]:
 
 @_check("Aktualność narzędzia")
 def _tool_freshness(computer: _Computer, label: str) -> list[CheckResult]:
-    """Aktualność narzędzia. Przy odmowie z powodu limitu GitHuba połączenie jest, tylko GitHub odmawia do odnowienia
-    limitu, więc wynik mówi o chwili ponownego sprawdzenia, a nie o braku połączenia, który wprowadzałby tatę w błąd."""
-
     freshness = computer.surroundings.tool_freshness
     judgement, answer = freshness.assess()
     if offers_update(judgement):
@@ -325,11 +248,6 @@ _NOT_CHECKED_FRESHNESS: Final = {
 
 @_check("Ustawienia Centrum")
 def _tata_settings(computer: _Computer, label: str) -> list[CheckResult]:
-    """Ustawienia Centrum z wpisu procesu po kolei: pierwsze brakujące wyjaśnia Komunikatem procesu.
-
-    Niedostępnego nie wyjaśnia: Komunikat o nim daje odczyt w sprawdzeniu, które go czyta.
-    """
-
     settings = computer.folders
     needed: Sequence[NeededSetting] = computer.declaration.settings
     for setting in needed:
@@ -364,17 +282,11 @@ def _intermax(computer: _Computer, label: str) -> list[CheckResult]:
     problem = intermax_ordering.register_problem(register, computer.dad_files)
     if problem is not None:
         return [CheckResult.failed(label, problem)]
-    return [CheckResult.passed(label, "Nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")]
+    return [CheckResult.passed(label, "Obok nie leży kopia konfliktu OneDrive, nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")]
 
 
 @_check("Wzorce")
 def _templates(computer: _Computer, label: str) -> list[CheckResult]:
-    """Każdy Wzorzec procesu jako osobne sprawdzenie pod jego etykietą.
-
-    Wyjątek przy jednym Wzorcu nie ukrywa wyniku drugiego. ``label`` nazywa całość, tylko gdy nie da się
-    nawet wyliczyć Wzorców procesu.
-    """
-
     return [
         result
         for template in computer.templates
@@ -394,8 +306,6 @@ def _template_check(template: Template) -> _CheckRun:
 
 @_check("Lista Wykonawców")
 def _worker_list(computer: _Computer, label: str) -> list[CheckResult]:
-    """Lista Wykonawców z Ustawień Centrum tym samym Komunikatem co w Konfiguracji."""
-
     workers = computer.workers
     problem = workers.problem()
     if problem is None:
@@ -406,12 +316,6 @@ def _worker_list(computer: _Computer, label: str) -> list[CheckResult]:
 def _period_folder(
     computer: _Computer, label: str, collective_file_missing: Callable[[Path], Message] | None
 ) -> list[CheckResult]:
-    """Folder okresu; z ``collective_file_missing`` brak Pliku zbiorczego okresu jest przyczyną tym Komunikatem.
-
-    Przebieg rozliczeń nie ma Komunikatu o odszukaniu Folderu okresu (w Centrum start wymaga Folderu okresu), więc oba
-    procesy wyjaśniają porażkę odszukania Komunikatem Przygotowania: założyć albo zostawić jeden Folder okresu.
-    """
-
     folder = computer.period_folder
     if folder is None:
         return [CheckResult.not_checked(label, "Folderu okresów nie ma na miejscu.")]
@@ -457,8 +361,6 @@ def _files_in_onedrive(computer: _Computer, label: str) -> list[CheckResult]:
 
 @_check("Token do Zgłoszeń")
 def _report_key(computer: _Computer, label: str) -> list[CheckResult]:
-    """Stan tokenu idzie do Zgłoszenia, ale nie jest przyczyną Zatrzymania: odrzucony albo brakujący token to ``aside``."""
-
     match computer.surroundings.report_key():
         case "accepted":
             return [CheckResult.passed(label, "Skrzynka Zgłoszeń przyjmuje Token do Zgłoszeń.")]
@@ -472,9 +374,6 @@ def _report_key(computer: _Computer, label: str) -> list[CheckResult]:
 
 @_check("Dziennik Centrum rozliczeń")
 def _centrum_log(computer: _Computer, label: str) -> list[CheckResult]:
-    """Dziennik Centrum tylko informuje: zawsze przechodzi, bo jego wpisy idą do Zgłoszenia, a wyjątek w nim nie jest
-    przyczyną na komputerze taty."""
-
     entries = computer.log_entries
     unexpected = ", w tym nieoczekiwany wyjątek" if any(event_of(entry) == UNEXPECTED_FAILURE_EVENT for entry in entries) else ""
     return [CheckResult.passed(label, f"Ostatnie wpisy od startu Centrum: {len(entries)}{unexpected}.")]
@@ -518,13 +417,6 @@ def diagnose(
     files: DadFiles,
     workers: WorkerListRead,
 ) -> Diagnosis:
-    """Wszystkie sprawdzenia procesu ``process``, tylko do odczytu.
-
-    Pliki taty czyta uchwyt ``files``, którego pamięć poznaje komórki zakazanych kolumn przeczytanego Rejestru zleceń
-    (reguła danych, ADR 0025). ``settings`` i ``workers``: Foldery i Lista Wykonawców z migawki Ustawień Centrum ze startu
-    Uruchomienia (bez niej z chwili Diagnozy).
-    """
-
     declaration = declaration_of(process)
     computer = _Computer(
         declaration, parse_period_token(period), settings, configuration, log, surroundings, template_check, files, workers

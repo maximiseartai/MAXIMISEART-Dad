@@ -41,8 +41,8 @@ A change whose model nobody brought in line is not verified, whatever CI says.
 
 ## The promises
 
-Each promise is an invariant of `model/UrwaneUruchomienie.tla`, and `Zbieganie` its liveness property; the docstring
-of `logs_disk.py` promises them. Each with what it states and its harm when it breaks:
+Each promise is an invariant of `model/UrwaneUruchomienie.tla`, and `Zbieganie` its liveness property. Each with
+what it states and its harm when it breaks:
 
 - **DziennikPoKolejce**: a journal of an Urwane Uruchomienie (with its first line, without a result) disappears only
   once its Logi are the newest version the queue accepted; with Zbieganie, a send at least once. Harm: Maks never learns that a Wycena stopped half-way and which order was in progress in efenix
@@ -297,9 +297,9 @@ When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
 2. Change the model so each action is again one indivisible step of the code, and write the code's names in its row of
-   the table above, not in a comment: the model has none, and a new action, branch, definition, constant or variable
-   gets its own row or its place in one. TLA+ strings must be ASCII. Never weaken a promise or narrow a configuration to
-   make the check pass.
+   the table above, not in a comment: the model has none, and a new action of `Next`, constant or variable gets its own
+   row or its place in one, and a new branch or definition gets one when it models code. TLA+ strings must be ASCII.
+   Never weaken a promise or narrow a configuration to make the check pass.
 3. A new way to fail gets a constant with its row, a branch guarded by it, and a value in `stale` of every configuration in
    `model/konfiguracje.json`. A new action of `Next` gets its words in `_STEPS` of the script.
 4. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break

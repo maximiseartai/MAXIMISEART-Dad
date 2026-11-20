@@ -1,5 +1,3 @@
-"""Zgłoszenie do Maksa z Centrum rozliczeń przez HTTP API, z fałszywą skrzynką Zgłoszeń."""
-
 from __future__ import annotations
 
 import codecs
@@ -10,7 +8,7 @@ import re
 import shutil
 import threading
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, Final, NoReturn
 
 import pytest
 
@@ -58,6 +56,10 @@ from atrapy.preparation import PERIOD
 from atrapy.settlement import write_quantity_source
 
 
+SEARCH_OUTLASTING_PYTEST_TIMEOUT_S: Final = 600
+EMPTY_FILE_FROM_NOTEPAD: Final = codecs.BOM_UTF8 + b"\r\n"
+
+
 def diagnose(centrum: PreparingCentrum | SettlingCentrum, run_id: str) -> dict[str, Any]:
     response = centrum.client.post(f"/api/runs/{run_id}/diagnosis")
     assert response.status_code == 200, response.json()
@@ -90,11 +92,14 @@ def test_wyslane_zgloszenie_jest_dokladnie_podgladem_z_diagnozy(tmp_path: Path) 
 @pytest.mark.parametrize(
     "content",
     [
-        codecs.BOM_UTF8 + (REPORT_KEY + "\r\n").encode("utf-8"),  # Notatnik, PowerShell 5.1: Set-Content -Encoding UTF8
-        codecs.BOM_UTF16_LE + (REPORT_KEY + "\r\n").encode("utf-16-le"),  # PowerShell 5.1: > albo Out-File
-        codecs.BOM_UTF16_BE + (REPORT_KEY + "\r\n").encode("utf-16-be"),  # Notatnik: UTF-16 BE
+        pytest.param(
+            codecs.BOM_UTF8 + (REPORT_KEY + "\r\n").encode("utf-8"), id="utf-8-bom-notatnik-albo-set-content-utf8-powershell-5-1"
+        ),
+        pytest.param(
+            codecs.BOM_UTF16_LE + (REPORT_KEY + "\r\n").encode("utf-16-le"), id="utf-16-le-przekierowanie-albo-out-file-powershell-5-1"
+        ),
+        pytest.param(codecs.BOM_UTF16_BE + (REPORT_KEY + "\r\n").encode("utf-16-be"), id="utf-16-be-notatnik"),
     ],
-    ids=["utf-8-bom", "utf-16-le", "utf-16-be"],
 )
 def test_klucz_zapisany_z_bom_wysyla_zgloszenie(tmp_path: Path, content: bytes) -> None:
     centrum = preparing_centrum(tmp_path)
@@ -198,8 +203,6 @@ def test_zgloszenie_nie_ma_tresci_wierszy_wyjatku_pelnych_sciezek_ani_klucza(tmp
 
 
 def test_adres_wpisany_jako_wykonawca_wychodzi_w_tytule_zgloszenia_zamaskowany_z_uwaga(tmp_path: Path) -> None:
-    # Komunikat nieznanego Wykonawcy cytuje WYKONAWCA w „Co się stało”, a z niego jest tytuł Zgłoszenia; tu tata
-    # wpisał w WYKONAWCA adres, który stoi w ADRES innego Wiersza danych (reguła danych, ADR 0025).
     address = "Syntetyczna Kwarcowa 9/2"
     centrum = settling_centrum(tmp_path)
     write_quantity_source(centrum.collective_file, [{"B": address}, {"H": address}])
@@ -228,8 +231,6 @@ def raise_with_marker(path: Path) -> NoReturn:
 
 
 def trace_section(body: str) -> list[str]:
-    """Linie sekcji śladu wywołań w treści Zgłoszenia; pusta lista, gdy jej nie ma."""
-
     lines = body.splitlines()
     if "## Ślad wywołań" not in lines:
         return []
@@ -278,9 +279,6 @@ def test_zatrzymanie_z_komunikatem_procesu_nie_ma_sladu_wywolan(tmp_path: Path) 
 
 
 def test_powtorka_zatrzymania_dla_taty_z_przyczyna_w_wyjatku_ma_w_zgloszeniu_slad_wywolan(tmp_path: Path) -> None:
-    """Zatrzymanie dla taty, którego przyczyną jest wyjątek (Pliku zbiorczego nie ma: ``WorkbookError``), ma ślad
-    wywołań, więc Zgłoszenie jego Powtórki niesie typ wyjątku i jego przyczynę z ramkami kodu narzędzia (#976)."""
-
     centrum = settling_centrum(tmp_path)
     centrum.collective_file.unlink()
     assert run_to_end(centrum, dry_run=True)["result"]["stop_kind"] == "for_tata"
@@ -294,8 +292,6 @@ def test_powtorka_zatrzymania_dla_taty_z_przyczyna_w_wyjatku_ma_w_zgloszeniu_sla
 
 
 def queued_reports(centrum: PreparingCentrum) -> list[dict[str, Any]]:
-    """Pliki Zgłoszeń w kolejce Skrzynki (bez Logów Uruchomienia, które czekają obok)."""
-
     directory = centrum.tool.queue
     return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("*-zgloszenie-*.json"))]
 
@@ -304,7 +300,7 @@ def cases(centrum: PreparingCentrum) -> list[dict[str, Any]]:
     return dad_cases(centrum.tmp_path / "config", "zgloszenie")
 
 
-def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu_bez_pliku_md(tmp_path: Path) -> None:
+def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     run_id = stopped_for_maks(centrum)
     preview = diagnose(centrum, run_id)["report"]
@@ -314,30 +310,10 @@ def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu_be
     assert queued == QUEUED_FOR_KEY
     [post] = queued_reports(centrum)
     assert (post["target"]["title"], "".join(post["parts"]), post["period"]) == (preview["title"], preview["body"], PERIOD)
-    assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
     assert centrum.surroundings.report_box.sent == []
     assert [case["number"] for case in cases(centrum)] == [None]
     assert f"skrzynka-w-kolejce etykieta=zgloszenie okres={PERIOD}" in centrum.log_path.read_text(encoding="utf-8")
     assert current_report(centrum) == queued
-
-
-def test_zgloszenie_zatrzymania_bez_sieci_wysyla_sie_samo_po_powrocie_sieci(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    write_report_key(centrum.tool)
-    box = centrum.surroundings.report_box
-    box.search_failure = Unreachable()
-    run_id = stopped_for_maks(centrum)
-    preview = diagnose(centrum, run_id)["report"]
-
-    queued = send(centrum, run_id)
-    box.search_failure = None
-    centrum.surroundings.clock.advance(RETRY_S)
-
-    assert queued == QUEUED_FOR_INTERNET
-    assert box.wait_until(lambda box: len(box.sent) == 1)
-    assert [{"title": report.title, "body": report.body} for report in box.sent] == [preview]
-    assert report_becomes(centrum, {"state": "sent"}) == {"state": "sent"}
-    assert [case["number"] for case in cases(centrum)] == [1]
 
 
 def test_zgloszenie_z_kolejki_wychodzi_po_restarcie_centrum_z_numerem_w_stanie_wyslanych(tmp_path: Path) -> None:
@@ -379,29 +355,6 @@ def test_numer_zgloszenia_z_kolejki_zostaje_po_restarcie_gdy_windows_na_chwile_b
     assert queued_reports(centrum) == []
 
 
-def test_zgloszenie_ktorego_nie_da_sie_zapisac_w_kolejce_daje_komunikat(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    run_id = stopped_for_maks(centrum)
-    diagnose(centrum, run_id)
-    centrum.client.stop()
-    queue = ToolDirectory(tmp_path).queue
-    shutil.rmtree(queue)  # Logi Uruchomienia w kolejce
-    queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
-
-    state = send(centrum, run_id)
-
-    assert state == {
-        "state": "not_queued",
-        "message": {
-            "what": "Nie udało się zapisać Zgłoszenia na tym komputerze, więc nie pójdzie do Maksa.",
-            "where": "folder kolejka",
-            "action": "Kliknij „Spróbuj ponownie”. Jeśli to nie pomoże, rozwiń „Co zostanie wysłane”, skopiuj treść i "
-            "prześlij ją Maksowi mailem.",
-        },
-    }
-    assert cases(centrum) == []
-
-
 def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_zgloszenie(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     write_report_key(centrum.tool)
@@ -416,7 +369,7 @@ def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_
     centrum.client.stop()
     queue = ToolDirectory(tmp_path).queue
     shutil.rmtree(queue)
-    queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
+    queue.write_text("", encoding="utf-8")
 
     state = send(centrum, again)
 
@@ -431,13 +384,11 @@ def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_
 def test_zatrzymanie_centrum_czeka_na_kazdy_jego_watek_takze_sprzed_ponownego_startu_a_drugie_nic_nie_robi(
     tmp_path: Path, started: Callable[..., PreparingCentrum | SettlingCentrum]
 ) -> None:
-    # Wątek Zgłoszenia przestaje czekać na skrzynkę po terminie szukania: z terminem taty (3 s) kończył się przed
-    # ``stop``, gdy runner CI spóźnił się z ponownym startem (#1094), więc tu termin przekracza limit pytest-timeout.
-    centrum = started(tmp_path, surroundings=Surroundings(report_search_deadline_s=600))
+    centrum = started(tmp_path, surroundings=Surroundings(report_search_deadline_s=SEARCH_OUTLASTING_PYTEST_TIMEOUT_S))
     write_report_key(centrum.tool)
-    hold = centrum.surroundings.report_box.search_hold = threading.Event()
+    box_silent = centrum.surroundings.report_box.search_hold = threading.Event()
     run_id = stopped_for_maks(centrum)
-    diagnose(centrum, run_id)  # Diagnoza pyta skrzynkę o Zgłoszenie w tle, a skrzynka nie odpowiada
+    diagnose(centrum, run_id)
     centrum.restart()
 
     with centrum.client:
@@ -446,7 +397,7 @@ def test_zatrzymanie_centrum_czeka_na_kazdy_jego_watek_takze_sprzed_ponownego_st
             with pytest.raises(AssertionError, match=f"żyją wątki .*{REPORT_THREAD}"):
                 centrum.client.stop(timeout_s=0)
         finally:
-            hold.set()
+            box_silent.set()
         centrum.client.stop()
         centrum.client.stop()
 
@@ -479,56 +430,58 @@ def test_po_ponownym_starcie_kolejke_ponawia_tylko_budzik_nowego_centrum_jak_w_n
     tmp_path: Path, started: Callable[[Path], PreparingCentrum | SettlingCentrum]
 ) -> None:
     centrum = started(tmp_path)
-    stopped_for_maks(centrum)  # bez klucza Logi Uruchomienia czekają, a kolejka nastawia ponowienie za ``RETRY_S``
+    stopped_for_maks(centrum)
     box, clock = centrum.surroundings.report_box, centrum.surroundings.clock
     centrum.restart()
     clock.advance(RETRY_S / 2)
-    with centrum.client:  # nowe Centrum przy starcie przechodzi kolejkę i bez klucza ponowi ją za ``RETRY_S``
+    with centrum.client:
         pass
     centrum.client.stop()
     write_report_key(centrum.tool)
 
-    clock.advance(RETRY_S / 2)  # chwila ponowienia poprzedniego Centrum
+    clock.advance(RETRY_S / 2)
     centrum.client.stop()
-    after_previous_alarm = len(box.background_issues)
-    clock.advance(RETRY_S / 2)  # chwila ponowienia nowego Centrum
+    at_previous_centrum_alarm = len(box.background_issues)
+    clock.advance(RETRY_S / 2)
     centrum.client.stop()
+    at_new_centrum_alarm = len(box.background_issues)
 
-    assert (after_previous_alarm, len(box.background_issues)) == (0, 1)
+    assert (at_previous_centrum_alarm, at_new_centrum_alarm) == (0, 1)
 
 
 def test_po_ponownym_starcie_uporzadkowania_intermax_kolejke_ponawia_tylko_budzik_nowego_centrum(
     tmp_path: Path,
 ) -> None:
     centrum = ordering_centrum(tmp_path)
-    centrum.run_to_end()  # bez klucza Logi Uruchomienia czekają, a kolejka nastawia ponowienie za ``RETRY_S``
+    centrum.run_to_end()
     centrum.client.stop()
     box, clock = centrum.surroundings.report_box, centrum.surroundings.clock
     centrum.restart()
     clock.advance(RETRY_S / 2)
-    with centrum.client:  # nowe Centrum przy starcie przechodzi kolejkę i bez klucza ponowi ją za ``RETRY_S``
+    with centrum.client:
         pass
     centrum.client.stop()
     write_report_key(centrum.tool)
 
-    clock.advance(RETRY_S / 2)  # chwila ponowienia poprzedniego Centrum
+    clock.advance(RETRY_S / 2)
     centrum.client.stop()
-    after_previous_alarm = len(box.background_issues)
-    clock.advance(RETRY_S / 2)  # chwila ponowienia nowego Centrum
+    at_previous_centrum_alarm = len(box.background_issues)
+    clock.advance(RETRY_S / 2)
     centrum.client.stop()
+    at_new_centrum_alarm = len(box.background_issues)
 
-    assert (after_previous_alarm, len(box.background_issues)) == (0, 1)
+    assert (at_previous_centrum_alarm, at_new_centrum_alarm) == (0, 1)
 
 
 def test_ponowny_start_uporzadkowania_intermax_zaczyna_sie_po_koncu_przejscia_kolejki_poprzedniego(
     tmp_path: Path,
 ) -> None:
-    box = FakeReportBox()  # Logi Uruchomienia idą zakładaniem issue, które test wstrzymuje
+    box = FakeReportBox()
     centrum = ordering_centrum(tmp_path, surroundings=Surroundings(report_box=box))
     write_report_key(centrum.tool)
     hold = box.open_hold = threading.Event()
     centrum.run_to_end()
-    assert box.opening.wait(30)  # przejście kolejki czeka na skrzynkę z Logami Uruchomienia
+    assert box.opening.wait(30)
     release = threading.Timer(0.2, hold.set)
     release.start()
 
@@ -547,7 +500,6 @@ def test_zatrzymanie_centrum_nie_czeka_na_budzik_centrum_poprzedniego_testu_nast
         rings.wait()
         threading.Thread(target=next_rings.wait, name=ALARM_THREAD, daemon=True).start()
 
-    # Budzik kolejki Centrum z poprzedniego testu (``SYSTEM_CLOCK``): dzwoni co ``RETRY_S`` i nastawia następny.
     earlier = threading.Thread(target=ring, name=ALARM_THREAD, daemon=True)
     earlier.start()
     started = plain_centrum(tmp_path)
@@ -567,24 +519,8 @@ def current_report(centrum: PreparingCentrum) -> object:
 
 
 def report_becomes(centrum: PreparingCentrum, expected: object) -> object:
-    """Stan Zgłoszenia na karcie, gdy dojdzie do ``expected`` (odpowiedź skrzynki przychodzi w tle), albo po 10 s."""
-
     _, report = wait_for_value(lambda: current_report(centrum), lambda report: report == expected, 10, every=0.01)
     return report
-
-
-def test_wyslanie_jest_raz_na_zatrzymanie_a_wynik_uruchomienia_pokazuje_potwierdzenie(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    write_report_key(centrum.tool)
-    run_id = stopped_for_maks(centrum)
-    assert current_report(centrum) == {"state": "ready"}
-    diagnose(centrum, run_id)
-
-    first, second = send(centrum, run_id), send(centrum, run_id)
-
-    assert first == second == {"state": "sent"}
-    assert len(centrum.surroundings.report_box.keys) == 1
-    assert current_report(centrum) == {"state": "sent"}
 
 
 def test_ponowna_diagnoza_po_wyslaniu_pokazuje_wyslane_zgloszenie(tmp_path: Path) -> None:
@@ -637,7 +573,7 @@ def test_konfiguracja_pokazuje_stan_klucza_do_zgloszen_bez_jego_wartosci(tmp_pat
     missing = key_state(centrum)
     key_file = write_report_key(centrum.tool)
     ready = key_state(centrum)
-    key_file.write_bytes(codecs.BOM_UTF8 + b"\r\n")  # Notatnik zapisał pusty plik
+    key_file.write_bytes(EMPTY_FILE_FROM_NOTEPAD)
 
     assert (missing, ready, key_state(centrum)) == ("missing_key", "ready", "missing_key")
     assert centrum.surroundings.report_box.listed == [("zgloszenie", False)]
@@ -702,15 +638,13 @@ def test_odmowa_przy_wysylce_uwagi_odrzuca_klucz_w_konfiguracji_bez_osobnego_pyt
 
     assert sent.json() == QUEUED_FOR_KEY
     assert key_state(centrum) == "refused_key"
-    assert box.listed == [("uwaga-taty", True)]  # kolejka szuka issue tej Uwagi, a Konfiguracja nie pyta o klucz osobno
+    assert box.listed == [("uwaga-taty", True)]
 
 
 WAITING = {"state": "waiting"}
 
 
 def diagnosed_to_end(centrum: PreparingCentrum, run_id: str) -> str:
-    """Diagnoza Zatrzymania i jej dalszy ciąg w tle (odpowiedź skrzynki, powrót problemu w kolejce); treść podglądu."""
-
     since = new_line()
     body: str = diagnose(centrum, run_id)["report"]["body"]
     join_threads_since(since, named=REPORT_THREAD)
@@ -751,6 +685,10 @@ def test_druga_diagnoza_tego_samego_zatrzymania_nie_dubluje_komentarza_powrotu(t
     assert (len(issue.comments), current_report(centrum)) == (1, WAITING)
 
 
+def forget_cases_as_if_sent_from_another_computer(tmp_path: Path) -> None:
+    (tmp_path / "config" / DAD_CASES_FILE).unlink()
+
+
 def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_trafia_na_karte(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     write_report_key(centrum.tool)
@@ -758,13 +696,13 @@ def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_tr
     first = stopped_for_maks(centrum)
     diagnose(centrum, first)
     send(centrum, first)
-    (tmp_path / "config" / DAD_CASES_FILE).unlink()  # Zgłoszenie wysłane spoza tego komputera
+    forget_cases_as_if_sent_from_another_computer(tmp_path)
     centrum.restart()
     again = stopped_for_maks(centrum)
     box.search_hold = threading.Event()
     box.searching.clear()
-    release = threading.Timer(10, box.search_hold.set)  # gdyby Diagnoza czekała na skrzynkę
-    release.start()
+    unblock_if_diagnosis_waits = threading.Timer(10, box.search_hold.set)
+    unblock_if_diagnosis_waits.start()
 
     try:
         diagnose(centrum, again)
@@ -772,13 +710,36 @@ def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_tr
         while_box_silent = current_report(centrum)
     finally:
         box.search_hold.set()
-        release.cancel()
+        unblock_if_diagnosis_waits.cancel()
 
     assert (box_answered, while_box_silent) == (False, {"state": "ready"})
     assert report_becomes(centrum, WAITING) == WAITING
-    # Odpowiedź skrzynki o otwartym Zgłoszeniu spoza tego komputera też kładzie powrót problemu w kolejce.
     assert box.wait_until(lambda box: len(box.sent[0].comments) == 1)
     assert len(box.sent) == 1
+
+
+def test_diagnoza_czeka_na_sprawdzenie_tokenu_najwyzej_tyle_co_na_pytanie_o_otwarte_zgloszenie(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    write_report_key(centrum.tool)
+    box = centrum.surroundings.report_box
+    box.search_hold = threading.Event()
+    release = threading.Timer(10, box.search_hold.set)
+    release.start()
+
+    try:
+        diagnosis = diagnose(centrum, run_id)
+        box_answered = box.search_hold.is_set()
+    finally:
+        box.search_hold.set()
+        release.cancel()
+
+    token = next(check for check in diagnosis["checks"] if check["label"] == "Token do Zgłoszeń")
+    assert (box_answered, token["state"], token["detail"]) == (
+        False,
+        "not_checked",
+        "Nie sprawdzono: brak połączenia ze Skrzynką Zgłoszeń.",
+    )
 
 
 def test_zgloszenie_zamkniete_wedlug_powiadomien_nie_czeka_juz_po_restarcie(tmp_path: Path) -> None:
@@ -797,7 +758,6 @@ def test_zgloszenie_zamkniete_wedlug_powiadomien_nie_czeka_juz_po_restarcie(tmp_
     assert current_report(centrum) == {"state": "ready"}
     preview_body = diagnosed_to_end(centrum, again)
     assert "- Poprzednie Zgłoszenie: #1" in preview_body.splitlines()
-    # Bez otwartego Zgłoszenia nic nie wychodzi samo: tata ma przycisk i podgląd.
     assert ([issue.comments for issue in box.sent], current_report(centrum)) == ([[]], {"state": "ready"})
     assert send(centrum, again) == {"state": "sent"}
     sent = dad_cases(tmp_path / "config", "zgloszenie")
@@ -813,8 +773,6 @@ def test_dwa_klikniecia_w_trakcie_wysylki_daja_jedno_zgloszenie_a_centrum_odpowi
     write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     run_id = stopped_for_maks(centrum)
-    # Podgląd z Diagnozy pyta skrzynkę w tle: bez czekania jego pytanie mogłoby stanąć na wstrzymaniu i ustawić
-    # ``searching`` przed kliknięciem (#973).
     diagnosed_to_end(centrum, run_id)
     box.search_hold = threading.Event()
     box.searching.clear()

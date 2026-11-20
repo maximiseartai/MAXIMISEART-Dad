@@ -13,8 +13,8 @@ bieżący `main`). Zmienia trzy zdania
 - „Bez treści wierszy”: Logi Uruchomienia nie niosą treści wierszy, ale ich
   Komunikaty i podsumowanie tak jak na karcie Uruchomienia (wyjątki niżej);
 - własne pliki Centrum: dochodzą Logi Uruchomienia w `logs/uruchomienia/` oraz
-  w `config/` stan wysłanych Uwag (`uwagi-taty.json`, od #431 razem ze
-  Zgłoszeniami w pliku Spraw taty `sprawy-taty.json`), przeczytanych
+  w `config/` stan wysłanych Uwag razem ze Zgłoszeniami w pliku Spraw taty
+  (`sprawy-taty.json`), przeczytanych
   Powiadomień (`powiadomienia.json`) i adresy dostarczonych Logów
   (`skrzynka-adresy.jsonl`), wszystko poza Gitem.
 
@@ -122,6 +122,28 @@ postępu ani Logów z dziennika. Zdanie „Centrum przerwane
 w trakcie zostawia tylko `uruchomienie-start`” w decyzji niżej Wycena w efenix
 zmienia dalej tylko o dziennik z dopisku #845: krótkie procesy nie wysyłają
 nic w trakcie.
+
+**Dopisek (#2236, 2026-11-20).** Dopóki w `config/` nie ma pliku Spraw taty
+(`sprawy-taty.json`), Sprawy taty czytają pliki sprzed niego, które mogą leżeć
+u taty: `zgloszenia-wyslane.json` i `uwagi-taty.json` (`dad_cases.OLD_REPORTS_FILE`,
+`dad_cases.OLD_NOTES_FILE`). Pierwszy zapis przenosi ich wpisy do pliku Spraw
+taty, a stare pliki zostają nietknięte. Każde Wydanie z plikiem Spraw taty pisze
+już tylko jego, więc ten odczyt znika dopiero wtedy, gdy Maks sprawdzi, że u
+taty jest `config/sprawy-taty.json` albo nie ma żadnego ze starych plików.
+
+**Dopisek (#2236, 2026-11-20).** Gdy `logs/dzialania-taty.jsonl` nie da się
+opróżnić po Logach Uruchomienia (podmiana pliku pada), jego wpisy idą też do
+Logów następnego Uruchomienia: lepiej, żeby działanie taty stało w dwóch
+Logach, niż żeby nie stało w żadnych
+(`tests/test_centrum_logi_uruchomienia.py::test_dziennik_dzialan_taty_ktorego_nie_da_sie_oproznic_oddaje_te_same_wpisy_takze_nastepnym_logom`).
+
+**Dopisek (#2227, 2026-11-20).** Kolejka wysyłki czyta też pliki, które
+zostawiły w niej starsze Wydania (bez Tokenu do Zgłoszeń, bez sieci albo z
+treścią odrzuconą przez Skrzynkę): schemat 1 z celem w kluczu `thread`, schemat
+2 bez pliku do Archiwum Logów okresu i pliki bez stopnia wersji, stanu albo
+nagłówka ponowienia, bo każde nowsze Wydanie wysyła to, co starsze zostawiło.
+Ten odczyt znika dopiero wtedy, gdy Maks sprawdzi, że w kolejce taty nie ma
+pliku sprzed Wydania, które tata ma.
 
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zastępuje stary plik
 Wykonawców (`worker_mapping.yaml`) Listą Wykonawców.
@@ -250,7 +272,9 @@ co stało się z tym, co wysłał.
   brak powodu to rozwiązana, `not_planned` albo `duplicate` to przeczytana).
   Zgłoszenie, które czeka w kolejce, ma stan „czeka na internet” jak Uwaga i
   przy dostarczeniu staje się wysłanym, bez kropki (#426). Powiadomienie o nowej wersji ma notkę Wydania (GitHub Release w
-  formacie `release_notes`), rozwiązane sprawy taty wysłane z tego komputera i
+  formacie `release_notes`; notka jest publiczna, a Skrzynka Zgłoszeń prywatna, więc
+  rozwiązana sprawa taty stoi w notce tylko numerem issue i tytułem, nigdy treścią),
+  rozwiązane sprawy taty wysłane z tego komputera i
   przycisk Aktualizacji narzędzia, ten sam co w Konfiguracji i Diagnozie
   (`offers_update`). Z Wydań kropkę zapala tylko najnowsze Wydanie na `main` i
   tylko wtedy, gdy jest nowsze od wersji taty; starsze stoją na liście jako

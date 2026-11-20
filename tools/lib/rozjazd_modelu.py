@@ -27,7 +27,7 @@ import json
 from pathlib import Path
 import re
 
-__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "TABELA", "bez_klucza", "definicje", "przesun", "rozjazd", "scal", "skille", "skroty"]
+__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "TABELA", "bez_klucza", "definicje", "przesun", "rozjazd", "scal", "skille", "skroty", "wiersze_tabeli"]
 
 DEFINICJE = "model/definicje.json"
 CALY_PLIK = "cały plik"
@@ -240,7 +240,7 @@ def _classes(tree: ast.Module | None) -> list[str]:
     return [] if tree is None else list(dict.fromkeys(node.name for node in _statements(tree) if isinstance(node, ast.ClassDef)))
 
 
-def _table_spans(text: str) -> list[str]:
+def wiersze_tabeli(text: str) -> list[str]:
     lines = text.splitlines()
     if TABELA not in lines:
         raise ValueError(f"SKILL.md nie ma sekcji „{TABELA}”")
@@ -250,7 +250,11 @@ def _table_spans(text: str) -> list[str]:
             break
         if line.startswith("|"):
             rows.append(line)
-    return [span for row in rows for span in row.split("`")[1::2]]
+    return rows
+
+
+def _table_spans(text: str) -> list[str]:
+    return [span for row in wiersze_tabeli(text) for span in row.split("`")[1::2]]
 
 
 def _in_module(path: str, name: str) -> list[str]:

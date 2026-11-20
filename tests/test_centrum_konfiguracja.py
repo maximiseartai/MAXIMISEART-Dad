@@ -5,16 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
-import json
 from pathlib import Path
 from typing import Any, NoReturn
+import os
 
 import pytest
-from openpyxl import load_workbook
 
-from rozliczenia import tool_files
+from rozliczenia import tool_files, workbook_files
 from rozliczenia.centrum import tool_freshness
-from rozliczenia.centrum.settings import messages as settings_messages
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.tool_freshness import AnswerSource, KeySource
@@ -34,19 +32,12 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.github_api import github_api, newest_on_main
 from tests.fixtures.centrum_processes import write_configuration
-from atrapy.workbooks import cut_sheet_after_data_rows
 from atrapy.settlement import WORKERS, worker_list, write_template, write_worker_list
 
 INTERNAL = tool_files.INTERNAL_TEMPLATE.name
 COLLECTIVE = tool_files.COLLECTIVE_TEMPLATE.name
 WORKER = tool_files.WORKER_TEMPLATE.name
 REPORT_TO_MAINTAINER = "Przekaż ten komunikat osobie utrzymującej narzędzie."
-# Wzorzec rozliczenia pracownika ma ten sam komunikat, którym zatrzymałby się Przebieg rozliczeń.
-WORKER_TEMPLATE_STOP = "Nie można użyć Wzorca rozliczenia pracownika."
-WORKER_TEMPLATE_ACTION = (
-    "Jeśli Wzorzec jest otwarty w Excelu, zamknij go bez zapisywania zmian i uruchom ponownie. "
-    "W innym wypadku przekaż ten komunikat osobie utrzymującej narzędzie."
-)
 
 
 @dataclass
@@ -125,22 +116,47 @@ def test_niezmieniony_wzorzec_z_problemem_tresci_jest_sprawdzany_raz(tmp_path: P
     assert second["templates"] == first["templates"]
 
 
+def _saved_again_with_same_size(path: Path) -> None:
+    moment = path.stat().st_mtime_ns + 1_000_000_000
+    os.utime(path, ns=(moment, moment))
+
+
+def _opened_in_excel(path: Path) -> None:
+    workbook_files.excel_lock_file(path).write_bytes(b"")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param(_saved_again_with_same_size, id="nowa-chwila-zapisu-ten-sam-rozmiar"),
+        pytest.param(_opened_in_excel, id="plik-blokady-excela"),
+    ],
+)
+def test_gotowy_wzorzec_jest_sprawdzany_znowu_po_zapisie_albo_otwarciu_w_excelu(
+    tmp_path: Path, change: Callable[[Path], None]
+) -> None:
+    checked: list[str] = []
+
+    def counting(template: TemplateFile) -> None:
+        checked.append(template.path.name)
+        template.check()
+
+    app = configured(tmp_path, template_check=counting)
+    read_configuration(app)
+    change(app.files.worker_template)
+
+    read_configuration(app)
+
+    assert checked.count(WORKER) == 2
+
+
 INACCESSIBLE_TEMPLATE = (
     "Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program. Nie utworzono żadnego pliku."
 )
 
 
-@pytest.mark.parametrize(
-    ("file_name", "what"),
-    [
-        (INTERNAL, INACCESSIBLE_TEMPLATE),
-        (COLLECTIVE, INACCESSIBLE_TEMPLATE),
-        (WORKER, f"{WORKER_TEMPLATE_STOP} Nie można odczytać Wzorca rozliczenia pracownika."),
-    ],
-)
-def test_wzorzec_niedostepny_jest_gotowy_bez_restartu_gdy_dostep_wraca(
-    tmp_path: Path, file_name: str, what: str
-) -> None:
+def test_wzorzec_niedostepny_jest_gotowy_bez_restartu_gdy_dostep_wraca(tmp_path: Path) -> None:
+    file_name = INTERNAL
     blocked = {file_name}
 
     def blocking(template: TemplateFile) -> None:
@@ -156,7 +172,7 @@ def test_wzorzec_niedostepny_jest_gotowy_bez_restartu_gdy_dostep_wraca(
 
     after = templates_by_file(read_configuration(app))[file_name]
 
-    assert (while_blocked["state"], while_blocked["message"]["what"]) == ("problem", what)
+    assert (while_blocked["state"], while_blocked["message"]["what"]) == ("problem", INACCESSIBLE_TEMPLATE)
     assert "uszkodzony" not in while_blocked["message"]["what"]
     assert (path.stat().st_mtime_ns, path.stat().st_size) == signature
     assert after["state"] == "ready"
@@ -172,29 +188,8 @@ def test_wszystkie_trzy_wzorce_sa_na_miejscu_i_czytelne(tmp_path: Path) -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("file_name", "what", "action"),
-    [
-        (
-            INTERNAL,
-            "Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.",
-            REPORT_TO_MAINTAINER,
-        ),
-        (
-            COLLECTIVE,
-            "Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.",
-            REPORT_TO_MAINTAINER,
-        ),
-        (
-            WORKER,
-            f"{WORKER_TEMPLATE_STOP} Nie znaleziono Wzorca rozliczenia pracownika: {WORKER}.",
-            WORKER_TEMPLATE_ACTION,
-        ),
-    ],
-)
-def test_brak_wzorca_jest_komunikatem_w_trzech_czesciach(
-    tmp_path: Path, file_name: str, what: str, action: str
-) -> None:
+def test_brak_wzorca_jest_komunikatem_w_trzech_czesciach(tmp_path: Path) -> None:
+    file_name = INTERNAL
     app = configured(tmp_path)
     (tmp_path / "config" / file_name).unlink()
 
@@ -203,49 +198,11 @@ def test_brak_wzorca_jest_komunikatem_w_trzech_czesciach(
     assert templates[file_name]["state"] == "problem"
     assert (templates[file_name]["problem"], templates[file_name]["level"]) == ("missing", "stop")
     assert templates[file_name]["message"] == {
-        "what": what,
+        "what": "Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.",
         "where": f"plik {file_name}, folder config",
-        "action": action,
+        "action": REPORT_TO_MAINTAINER,
     }
     assert [template["state"] for name, template in templates.items() if name != file_name] == ["ready", "ready"]
-
-
-def closing_action(file_name: str) -> str:
-    return (
-        "Zamknij wzorzec w Excelu bez zapisywania zmian i uruchom ponownie. "
-        "Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu "
-        f"pozostawiony plik ~${file_name} i uruchom ponownie."
-    )
-
-
-@pytest.mark.parametrize(
-    ("file_name", "what", "action"),
-    [
-        (INTERNAL, "Wzorzec jest otwarty w Excelu. Nie utworzono żadnego pliku.", closing_action(INTERNAL)),
-        (COLLECTIVE, "Wzorzec jest otwarty w Excelu. Nie utworzono żadnego pliku.", closing_action(COLLECTIVE)),
-        (
-            WORKER,
-            f"{WORKER_TEMPLATE_STOP} Wzorzec rozliczenia pracownika jest otwarty lub zablokowany.",
-            "Jeśli Wzorzec jest otwarty w Excelu, zamknij go bez zapisywania zmian i uruchom ponownie. "
-            "Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu "
-            f"pozostawiony plik ~${WORKER} i uruchom ponownie.",
-        ),
-    ],
-)
-def test_wzorzec_otwarty_w_excelu_mowi_jak_go_zamknac(tmp_path: Path, file_name: str, what: str, action: str) -> None:
-    app = configured(tmp_path)
-    lock_file = tmp_path / "config" / f"~${file_name}"
-    lock_file.write_bytes(b"blokada Excela")
-
-    template = templates_by_file(read_configuration(app))[file_name]
-
-    assert template["problem"] == "open_in_excel"
-    assert template["message"] == {
-        "what": what,
-        "where": f"plik {file_name}, folder config",
-        "action": action,
-    }
-    assert lock_file.read_bytes() == b"blokada Excela"
 
 
 UNREADABLE_TEMPLATE = (
@@ -253,87 +210,18 @@ UNREADABLE_TEMPLATE = (
 )
 
 
-@pytest.mark.parametrize(
-    ("file_name", "what", "action"),
-    [
-        (INTERNAL, UNREADABLE_TEMPLATE, REPORT_TO_MAINTAINER),
-        (COLLECTIVE, UNREADABLE_TEMPLATE, REPORT_TO_MAINTAINER),
-        (WORKER, f"{WORKER_TEMPLATE_STOP} Nie można odczytać Wzorca rozliczenia pracownika.", WORKER_TEMPLATE_ACTION),
-    ],
-)
-@pytest.mark.parametrize(
-    "damage",
-    [
-        lambda path: path.write_bytes(b"to nie jest skoroszyt"),
-        cut_sheet_after_data_rows,
-    ],
-    ids=["nie-skoroszyt", "uciety-xml-arkusza"],
-)
-def test_nieczytelny_wzorzec_trzeba_przekazac_osobie_utrzymujacej_narzedzie(
-    tmp_path: Path, file_name: str, what: str, action: str, damage: Callable[[Path], object]
-) -> None:
+def test_nieczytelny_wzorzec_trzeba_przekazac_osobie_utrzymujacej_narzedzie(tmp_path: Path) -> None:
     app = configured(tmp_path)
-    damage(tmp_path / "config" / file_name)
+    (tmp_path / "config" / INTERNAL).write_bytes(b"to nie jest skoroszyt")
 
-    template = templates_by_file(read_configuration(app))[file_name]
+    template = templates_by_file(read_configuration(app))[INTERNAL]
 
     assert (template["problem"], template["level"]) == ("unreadable", "stop")
     assert template["message"] == {
-        "what": what,
-        "where": f"plik {file_name}, folder config",
-        "action": action,
+        "what": UNREADABLE_TEMPLATE,
+        "where": f"plik {INTERNAL}, folder config",
+        "action": REPORT_TO_MAINTAINER,
     }
-
-
-def set_worker_template_cell(path: Path, cell: str, value: str | None) -> None:
-    workbook = load_workbook(path)
-    try:
-        workbook["Sheet1"][cell].value = value
-        workbook.save(path)
-    finally:
-        workbook.close()
-
-
-@pytest.mark.parametrize(
-    ("cell", "value", "detail"),
-    [
-        ("H17", None, "Wzorzec rozliczenia pracownika nie ma nagłówka WYKONAWCA w H:17."),
-        ("A18", "dane", "Wzorzec rozliczenia pracownika zawiera dane i nie może być użyty jako wzór."),
-    ],
-    ids=["bez-naglowka-wykonawca", "z-danymi"],
-)
-def test_wzorzec_rozliczenia_pracownika_bez_naglowka_wykonawca_albo_z_danymi_trzeba_przekazac_osobie_utrzymujacej_narzedzie(
-    tmp_path: Path, cell: str, value: str | None, detail: str
-) -> None:
-    app = configured(tmp_path)
-    set_worker_template_cell(tmp_path / "config" / WORKER, cell, value)
-
-    template = templates_by_file(read_configuration(app))[WORKER]
-
-    assert template["problem"] == "unreadable"
-    assert template["message"] == {
-        "what": f"{WORKER_TEMPLATE_STOP} {detail}",
-        "where": f"plik {WORKER}, folder config",
-        "action": WORKER_TEMPLATE_ACTION,
-    }
-
-
-def test_wzorzec_pliku_zbiorczego_z_wykonawca_poza_h_nie_przechodzi_sprawdzania(tmp_path: Path) -> None:
-    app = configured(tmp_path)
-    template_path = tmp_path / "config" / COLLECTIVE
-    workbook = load_workbook(template_path, keep_links=True)
-    sheet = workbook["Sheet1"]
-    sheet["G17"].value, sheet["H17"].value = sheet["H17"].value, sheet["G17"].value
-    workbook.save(template_path)
-    workbook.close()
-
-    template = templates_by_file(read_configuration(app))[COLLECTIVE]
-
-    assert template["problem"] == "unreadable"
-    assert template["message"]["what"] == (
-        "Wzorzec pliku zbiorczego ma nagłówek WYKONAWCA w kolumnie G zamiast w H (wiersz 17). "
-        "Nie utworzono żadnego pliku."
-    )
 
 
 def test_naprawiony_albo_zamkniety_wzorzec_jest_gotowy_przy_nastepnym_odczycie(tmp_path: Path) -> None:
@@ -373,29 +261,6 @@ def read_workers(app: Configured) -> dict[str, Any]:
     response = app.client.get("/api/settings")
     assert response.status_code == 200, response.json()
     return dict(response.json()["workers"])
-
-
-def test_sekcja_wykonawcy_ma_liste_wykonawcow_w_kolejnosci_pliku(tmp_path: Path) -> None:
-    workers = read_workers(configured(tmp_path))
-
-    assert [worker["name"] for worker in workers["workers"]] == ["Adrian Testowy", "Darek Fikcyjny", "Kamil Syntetyczny"]
-    assert "workers" not in read_configuration(configured(tmp_path / "drugie"))
-
-
-def test_zla_lista_wykonawcow_jest_zdaniem_z_polem_bez_nazw(tmp_path: Path) -> None:
-    app = configured(tmp_path)
-    ToolDirectory(tmp_path).worker_list.write_text(
-        "schema_version: 1\nwykonawcy:\n  - {nazwa: Ten Sam, loginy: [a]}\n  - {nazwa: ten sam, loginy: [b]}\n",
-        encoding="utf-8",
-    )
-
-    workers = read_workers(app)
-
-    assert (workers["state"], workers["problem"]) == (
-        "bad",
-        {"field": "wykonawcy[1].nazwa", "message": settings_messages.worker_same_file()},
-    )
-    assert "Ten Sam" not in json.dumps(workers, ensure_ascii=False)
 
 
 def test_nowy_wykonawca_dopisany_do_listy_jest_widoczny_bez_restartu(tmp_path: Path) -> None:

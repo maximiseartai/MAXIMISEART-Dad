@@ -1,29 +1,19 @@
-"""Uszkodzony plik taty, który czyta Centrum rozliczeń, nie kończy się ogólnym Komunikatem.
-
-Macierz: uszkodzenie × plik × wejście Centrum, które ten plik czyta (``READS``). Świat taty (Rejestr zleceń, trzy Wzorce, Plik
-zbiorczy, Konfiguracja wykonawców, Ustawienia, metryki, dziennik, Logi Uruchomienia i pliki
-Zgłoszeń) powstaje raz, a każdy przypadek dostaje jego kopię z jednym uszkodzonym plikiem albo folderem.
-Ogólny Komunikat to 500 „nieoczekiwany błąd”, Uruchomienie zakończone nieoczekiwanym wyjątkiem
-albo sprawdzenie Diagnozy „nieoczekiwany błąd”. Odmowa 500 z własnym tekstem jest zamierzona.
-Plik albo folder bez dostępu jest niedostępny: żaden Komunikat nie nazywa go uszkodzonym ani niepoprawnym.
-Wejścia to operacje kontraktu Centrum; operacja spoza macierzy ma w ``NOT_SWEPT`` powód.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import cache, cached_property
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 import os
 from pathlib import Path, PurePath
 import random
 import shutil
 import sys
+import threading
 import zipfile
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 import pytest
 from fastapi import FastAPI
@@ -34,11 +24,11 @@ from rozliczenia.centrum import refusal
 from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.log import FOR_LOGS_FILE
-from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_REPORTS_FILE
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.github import HttpRequest, HttpResponse
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
-from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_THREAD
+from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_THREAD, Outbox
 from rozliczenia.centrum.keyed_box import OPENING_FILE
 from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
@@ -51,6 +41,7 @@ from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
 from tests.fixtures.centrum import (
     QUEUED_FOR_INTERNET,
+    STOP_S,
     CentrumClient,
     FakePlatform,
     ToolDirectory,
@@ -68,24 +59,18 @@ from atrapy.settlement import CellValue, worker_list, write_quantity_source, wri
 TODAY = date(2026, 9, 16)
 NOW = datetime(2026, 9, 16, 8, 30)
 SETTLEMENT_PERIOD = "01_07_09_2026"
-# Wiersze danych Pliku zbiorczego Przebiegu rozliczeń: znane URZĄDZENIA, nieznane (wiersz bez reguły) i prewencja.
-HEALTHY_COLLECTIVE_ROWS: tuple[dict[str, CellValue], ...] = (
-    {"D": "nokia zte", "G": datetime(2026, 9, 2, 10, 0), "N": 1},
-    {"D": "przeniesienie", "G": datetime(2026, 9, 3, 10, 0), "H": "dariusz.fikcyjny2", "N": 2},
-    {"D": "prewencja", "G": datetime(2026, 9, 4, 10, 0), "N": 3},
-)
-# Słowa Komunikatu o zepsutym pliku; plik bez dostępu jest cały i tata nie ma go naprawiać w Excelu.
-# Spacja odróżnia je od ścieżek tmp_path, które zawierają nazwę testu.
-DAMAGED = (" uszkodzon", " niepoprawn")
+HEALTHY_COLLECTIVE_ROWS: dict[str, dict[str, CellValue]] = {
+    "znane-urzadzenia": {"D": "nokia zte", "G": datetime(2026, 9, 2, 10, 0), "N": 1},
+    "wiersz-bez-reguly": {"D": "przeniesienie", "G": datetime(2026, 9, 3, 10, 0), "H": "dariusz.fikcyjny2", "N": 2},
+    "wiersz-z-opisu": {"D": "prewencja", "G": datetime(2026, 9, 4, 10, 0), "N": 3},
+}
+DAMAGED_WORDS = (" uszkodzon", " niepoprawn")
 GENERIC_500 = "W Centrum rozliczeń wystąpił nieoczekiwany błąd. Odśwież kartę i spróbuj ponownie."
 DIAGNOSIS_UNEXPECTED = "Nie udało się sprawdzić: nieoczekiwany błąd."
 
 TEXT, LINES, XLSX, FOLDER = "tekst", "wiersze", "xlsx", "folder"
-# Kopia INTERMAX, którą Konfiguracja wymienia i przywraca: Rejestr zleceń świata sprzed dnia świata.
-INTERMAX_COPY = "INTERMAX przed uporządkowaniem 2026-09-15 08-00-00.xlsx"
-# Układ folderów taty: Foldery okresu obu procesów w folderze INEA miesiąca.
+INTERMAX_COPY = f"INTERMAX przed uporządkowaniem {TODAY - timedelta(days=1)} 08-00-00.xlsx"
 MONTH = "Załączniki/Rozliczenia 2026/09_Wrzesien_2026"
-# Miejsca plików w katalogu narzędzia, względem niego; przypina je test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca.
 TOOL = ToolDirectory(Path())
 FILES: dict[str, tuple[str, str]] = {
     "ustawienia": (TOOL.settings.as_posix(), TEXT),
@@ -93,7 +78,6 @@ FILES: dict[str, tuple[str, str]] = {
     "klucz_zgloszen": (TOOL.report_key.as_posix(), TEXT),
     "sprawy_taty": ((TOOL.config / DAD_CASES_FILE).as_posix(), TEXT),
     "wyslane_zgloszenia": ((TOOL.config / OLD_REPORTS_FILE).as_posix(), TEXT),
-    "uwagi_taty": ((TOOL.config / OLD_NOTES_FILE).as_posix(), TEXT),
     "przeczytane_powiadomienia": ((TOOL.config / NOTIFICATIONS_FILE).as_posix(), TEXT),
     "uruchomienia_centrum": ((TOOL.config / CENTRUM_RUNS_FILE).as_posix(), LINES),
     "adresy_skrzynki": ((TOOL.config / ADDRESSES_FILE).as_posix(), LINES),
@@ -118,10 +102,7 @@ FILES: dict[str, tuple[str, str]] = {
     "folder_okresu_przygotowania": (f"{MONTH}/INEA/{PERIOD}", FOLDER),
     "folder_zgloszen": (TOOL.queue.parent.as_posix(), FOLDER),
 }
-# Pliki sprzed Spraw taty: Centrum czyta je tylko przy starcie bez pliku Spraw taty, czyli przy pierwszym starcie
-# u taty po aktualizacji.
-OLD_DAD_CASES = ("wyslane_zgloszenia", "uwagi_taty")
-# Pliki, które Centrum czyta raz, przy starcie: przypadek psuje je przed startem Centrum, a nie po nim.
+OLD_DAD_CASES = ("wyslane_zgloszenia",)
 READ_AT_START = ("sprawy_taty", *OLD_DAD_CASES, "przeczytane_powiadomienia", "adresy_skrzynki")
 
 
@@ -182,8 +163,6 @@ def _file_instead_of_folder(path: Path) -> None:
 
 
 def _open_in_excel(path: Path) -> None:
-    """Skoroszyt otwarty w Excelu: plik blokady ``~$…`` obok, jak zostawia go Excel taty."""
-
     path.with_name(f"~${path.name}").write_bytes(b"\x00" * 165)
 
 
@@ -215,7 +194,6 @@ class World:
         return Engines(ToolDirectory(self.root).metrics)
 
     def app(self) -> FastAPI:
-        # Drugie wskazanie dostaje wejście chooseRegister albo choosePeriodsDirectory po _remembering_choices.
         platform = FakePlatform(
             chosen_files=[self.path("rejestr")] * 2, chosen_folders=[self.path("folder_okresow")] * 2
         )
@@ -233,17 +211,20 @@ class World:
 
 
 def _remembering_choices(world: World) -> CentrumClient:
-    """Centrum, w którym tata wskazał Rejestr zleceń i folder okresów tej kopii świata."""
-
     client = world.client()
     assert client.post("/api/settings/register/choose").status_code == 200
     assert client.post("/api/settings/periods-directory/choose").status_code == 200
     return client
 
 
+def _without_dad_cases_file(world: World) -> None:
+    world.path("sprawy_taty").unlink()
+
+
 def _offline_like_urllib(request: HttpRequest) -> HttpResponse:
     for name, value in request.headers.items():
-        f"{name}: {value}".encode("latin-1")  # http.client.putheader koduje nagłówki w latin-1
+        # ZEWNĘTRZNE: http.client.HTTPConnection.putheader koduje wartości nagłówków w latin-1 (CPython Lib/http/client.py)
+        f"{name}: {value}".encode("latin-1")
     raise OSError("brak sieci u taty")
 
 
@@ -258,15 +239,10 @@ def _build(root: Path) -> None:
     write_internal_template(world.path("wzorzec_wewnetrzny"))
     write_collective_template(world.path("wzorzec_zbiorczy"))
     write_template(world.path("wzorzec_pracownika"))
-    # Plik zbiorczy z nagłówkami Wzorca, więc wejście getQuantitiesToFill przy innym zepsutym pliku czyta zdrowy plik.
-    write_quantity_source(world.path("plik_zbiorczy"), HEALTHY_COLLECTIVE_ROWS)
+    write_quantity_source(world.path("plik_zbiorczy"), tuple(HEALTHY_COLLECTIVE_ROWS.values()))
     write_worker_list(world.path("lista_wykonawcow"), worker_list(addresses={"adrian.testowy": ["adrian@przyklad.invalid"]}))
     world.path("klucz_zgloszen").write_text("github_pat_SYNTETYCZNY123\n", encoding="utf-8")
-    # „Wyślij” Uwagi poniżej przenosi sprawy z obu starych plików do pliku Spraw taty.
     world.path("wyslane_zgloszenia").write_text(json.dumps([SENT_REPORT], ensure_ascii=False) + "\n", encoding="utf-8")
-    world.path("uwagi_taty").write_text(
-        json.dumps({"schema_version": 1, "uwagi": [SENT_DAD_NOTE]}, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
     world.path("przeczytane_powiadomienia").write_text(
         json.dumps({"schema_version": 1, "przeczytane": [READ_NOTIFICATION]}) + "\n", encoding="utf-8"
     )
@@ -277,8 +253,6 @@ def _build(root: Path) -> None:
         started = client.post("/api/runs", json={"process": process, "period": period, "mode": "DRY-RUN"})
         assert started.status_code == 200, started.json()
         assert finished_view(client)["result"]["ending"] == "finished"
-    # Wiersze Rejestru zleceń świata to zlecenia kilku dni bez wyglądu INTERMAX, więc Uporządkowanie INTERMAX zatrzymuje
-    # się dla taty bez zapisu; jego Logi i metryki powstają jak po każdym Uruchomieniu.
     assert client.post("/api/intermax/run").status_code == 200
     ordering = finished_view(client)["result"]
     assert (ordering["ending"], ordering["stop_kind"]) == ("stop", "for_tata"), ordering["stops"]
@@ -300,14 +274,23 @@ def _build(root: Path) -> None:
     ):
         assert world.path(name).stat().st_size > 0, name
     assert len(list(world.path("logi_uruchomien").iterdir())) == 3, "Logi Uruchomienia obu podglądów i Uporządkowania"
+    moved = json.loads(world.path("sprawy_taty").read_text(encoding="utf-8"))["sprawy"]
+    assert {SENT_REPORT["number"]} <= {case["number"] for case in moved}, "Sprawy taty bez sprawy ze starego pliku"
 
 
 Problems = list[str]
-Seen = list[tuple[str, str]]  # (wejście, tekst odpowiedzi): to, co tata zobaczyłby w Centrum
+
+
+class Answer(NamedTuple):
+    entry: str
+    text_seen_by_dad: str
+
+
+Seen = list[Answer]
 
 
 def _http(response: Any, where: str, seen: Seen) -> Problems:
-    seen.append((where, response.text))
+    seen.append(Answer(where, response.text))
     if response.status_code < 500:
         return []
     body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
@@ -316,7 +299,6 @@ def _http(response: Any, where: str, seen: Seen) -> Problems:
     return []
 
 
-# Reguła z edytora Reguł ilości: przy składniku „nokia” wpisz 1 w Z.
 EDITOR_RULE: Final[dict[str, object]] = {
     "scope": "known",
     "conditions": [{"kind": "component", "component": "nokia", "negated": False}],
@@ -326,7 +308,7 @@ EDITOR_RULE: Final[dict[str, object]] = {
 
 @dataclass(frozen=True)
 class Entry:
-    operations: tuple[str, ...]  # operationId kontraktu Centrum, które wejście wywołuje
+    operation_ids: tuple[str, ...]
     call: Callable[[TestClient, Seen], Problems]
 
 
@@ -338,9 +320,6 @@ def _route(operation: str, method: str, path: str, body: object = None) -> Entry
 
 
 def _start(client: TestClient, process: str, period: str, *, dry_run: bool) -> Any:
-    """Start Uruchomienia: proces z okresem przez ``startRun``, Uporządkowanie INTERMAX przez ``startIntermax``, a
-    Wpisanie raportów przez ``startReportEntering``."""
-
     if process == "intermax":
         return client.post("/api/intermax/run")
     if process == "report_entering":
@@ -353,11 +332,6 @@ def _start_operation(process: str) -> str:
 
 
 def _process_run(process: str, period: str, *, saving: bool = False) -> Entry:
-    """Uruchomienie procesu do wyniku: Podgląd bez zapisu albo Uruchomienie z zapisem.
-
-    Po Uruchomieniu z zapisem Przebieg rozliczeń zapisuje też Kontrolę ilości w kolejce.
-    """
-
     where = "Uruchomienie z zapisem" if saving else "Podgląd bez zapisu"
 
     def call(client: TestClient, seen: Seen) -> Problems:
@@ -366,7 +340,7 @@ def _process_run(process: str, period: str, *, saving: bool = False) -> Entry:
         if started.status_code != 200:
             return problems
         result = finished_view(client)["result"]
-        seen.append((where, json.dumps(result, ensure_ascii=False)))
+        seen.append(Answer(where, json.dumps(result, ensure_ascii=False)))
         if result["ending"] in ("unexpected", "after_engine"):
             problems.append(f"{where}: ogólny Komunikat ({result['ending']})")
         return problems + _http(client.get("/api/runs/current"), "getCurrentRun", seen)
@@ -391,9 +365,6 @@ def _diagnosis(process: str, period: str, *, report: bool) -> Entry:
 
 
 def _worker_removal() -> Entry:
-    """Usunięcie Wykonawcy dodanego przez pomyłkę: jego loginu nie ma nigdzie, więc sprawdzenie okresów czyta Rejestr
-    zleceń i Plik zbiorczy każdego Folderu okresu do końca."""
-
     def call(client: TestClient, seen: Seen) -> Problems:
         form = {"logins": ["pomylka.login"], "name": "Pomyłka Testowa", "addresses": []}
         added = client.post("/api/settings/workers", json=form)
@@ -418,7 +389,7 @@ def _pinned_dad_note() -> Entry:
 
 
 def _run_with_diagnosis(client: TestClient, process: str, period: str) -> str | None:
-    for _ in range(2):  # drugi raz to Powtórka, gdy pierwsze Zatrzymanie jest „dla taty”
+    for _start_then_repeat_after_stop_for_dad in range(2):
         started = _start(client, process, period, dry_run=True)
         if started.status_code != 200:
             return None
@@ -436,15 +407,6 @@ SENT_REPORT = {
     "what": "Nie znaleziono Wzorca pliku zbiorczego.",
     "sent_at": "2026-09-15T08:00:00+00:00",
     "closure": {"reason": "completed", "at": "2026-09-16T08:00:00+00:00"},
-}
-SENT_DAD_NOTE = {
-    "id": "5e1f0c2d3b4a49e8b7c6d5e4f3a2b1c0",
-    "title": "Brakuje ilości przy montażu",
-    "commit": None,
-    "written_at": "2026-09-15T09:00:00+00:00",
-    "number": 8,
-    "closure": None,
-    "run_id": None,
 }
 READ_NOTIFICATION = "zgloszenie-7-rozwiazana"
 LOGS_COMMENTS = [
@@ -469,8 +431,6 @@ ENTRIES: dict[str, Entry] = {
     ),
     "getWithoutQuantity": _route("getWithoutQuantity", "GET", f"/api/periods/{SETTLEMENT_PERIOD}/without-quantity"),
     "getKindTable": _route("getKindTable", "GET", f"/api/periods/{SETTLEMENT_PERIOD}/quantities-to-fill/without_rule"),
-    # Rozliczenia pracownika w świecie nie ma, bo zatrzymałoby Przebieg rozliczeń; operacja go nie czyta, a ścieżkę
-    # wylicza z tych samych Ustawień, Folderu okresów i Folderu okresu, które macierz psuje.
     "openWorkerSettlement": _route(
         "openWorkerSettlement",
         "POST",
@@ -540,7 +500,6 @@ ENTRIES: dict[str, Entry] = {
     "diagnoza[uporzadkowanie]": _diagnosis("intermax", "", report=True),
 }
 DIAGNOSIS_ENTRIES = ("diagnoza[przygotowanie]", "diagnoza[przebieg]", "diagnoza[uporzadkowanie]")
-# Operacja kontraktu poza macierzą i powód; nowa operacja trafia do ENTRIES albo tutaj.
 NOT_SWEPT: dict[str, str] = {
     "getHealth": "tożsamość Centrum, nie czyta plików taty",
     "decideRun": "Decyzja taty tylko wznawia Uruchomienie, którego odczyty sprawdzają podglądy",
@@ -584,22 +543,16 @@ NOT_SWEPT: dict[str, str] = {
     "cofnięcie: test_centrum_wpisanie_raportow",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
-# Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
 _OWNER = {"ustawienia", "lista_wykonawcow"}
-# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów, parę Reguł ilości i Legendę czynności (CentrumSettings), a
-# nie całą migawkę.
 _WINDOW = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
 _BOARD = _WINDOW | _OWNER
-_SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}  # miesiąc: korzeń układu (#1472)
+_SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}
 _METRICS = {"metryki_przygotowania", "metryki_przebiegu", "metryki_uporzadkowania"}
-_NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "uwagi_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
+_NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
 _RUN = _OWNER | {"rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}
 _PREPARATION = _RUN | _FOLDERS | {"metryki_przygotowania", "wzorzec_wewnetrzny", "wzorzec_zbiorczy"}
 _SETTLEMENT = _RUN | _FOLDERS | {"metryki_przebiegu", "plik_zbiorczy", "wzorzec_pracownika"}
-_ORDERING = _RUN | {"metryki_uporzadkowania"}
-# Pliki, które wejście czyta: macierz psuje plik tylko w wejściach, które po niego sięgają, bo w pozostałych wynik jest
-# wynikiem zdrowego świata. Pilnuje tego test_wejscie_siega_tylko_po_pliki_z_tabeli_odczytow; plik z READ_AT_START stoi
-# przy wejściach, w których widać jego odczyt przy starcie.
+_ORDERING = _RUN | _METRICS | {"folder_okresow", "folder_kopii_intermax"}
 READS: dict[str, set[str]] = {
     "getSettings": _SETTINGS,
     "chooseRegister": _SETTINGS,
@@ -673,14 +626,14 @@ def _cases() -> list[Any]:
     ]
 
 
-Trace = list[tuple[str, str]]  # (zdarzenie, ścieżka)
-# Ślady, które zbiera trwające śledzenie (_tracing).
-_TRACES: list[Trace] = []
+class Reach(NamedTuple):
+    event: str
+    path: str
+
+
+Trace = list[Reach]
+_ACTIVE_TRACES: list[Trace] = []
 _LISTING = ("os.listdir", "os.scandir")
-
-
-# Zdarzenia audytu, których argumenty to ścieżki; inne niosą też bajty (np. ``.pyc`` przy imporcie), a ich
-# ``os.fsdecode`` na Windows rzuca błąd z samego importu (#1417 r1).
 _PATH_EVENTS = frozenset({"open", "os.listdir", "os.scandir", "os.rename", "os.remove", "os.rmdir", "os.mkdir",
                           "shutil.copyfile", "stat", "lstat"})
 
@@ -688,13 +641,13 @@ _PATH_EVENTS = frozenset({"open", "os.listdir", "os.scandir", "os.rename", "os.r
 def _record(event: str, args: tuple[object, ...]) -> None:
     if event not in _PATH_EVENTS:
         return
-    for trace in _TRACES:
-        trace.extend((event, os.fsdecode(arg)) for arg in args if isinstance(arg, str | bytes | os.PathLike))
+    for trace in _ACTIVE_TRACES:
+        trace.extend(Reach(event, os.fsdecode(arg)) for arg in args if isinstance(arg, str | bytes | os.PathLike))
 
 
 @cache
 def _audit_hook() -> None:
-    # Hooka audytu nie da się zdjąć, więc zostaje w workerze do końca sesji i poza śledzeniem nic nie robi.
+    # ZEWNĘTRZNE: hooka audytu nie da się zdjąć, więc zostaje w workerze do końca sesji (PEP 578)
     sys.addaudithook(_record)
 
 
@@ -708,25 +661,19 @@ def _recorded(stat: Callable[..., os.stat_result]) -> Callable[..., os.stat_resu
 
 @contextmanager
 def _tracing() -> Iterator[Trace]:
-    """Ścieżki, po które sięga proces: otwarcie, listowanie, zmiana nazwy (zdarzenia audytu) i stan pliku (``os.stat``,
-    ``os.lstat``, przez które pyta ``file_state``)."""
-
     _audit_hook()
     trace: Trace = []
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(os, "stat", _recorded(os.stat))
         patch.setattr(os, "lstat", _recorded(os.lstat))
-        _TRACES.append(trace)
+        _ACTIVE_TRACES.append(trace)
         try:
             yield trace
         finally:
-            _TRACES.remove(trace)
+            _ACTIVE_TRACES.remove(trace)
 
 
 def _files_reached(world: World, trace: Trace) -> set[str]:
-    """Pliki ``FILES``, po które sięga ``trace``: sam plik, coś w folderze, listowanie folderu, w którym leży (rodzaj
-    wpisu z listowania), albo plik blokady Excela skoroszytu."""
-
     roots = {world.root, world.root.resolve()}
     reached = {
         (event, PurePath(path).relative_to(root))
@@ -759,7 +706,7 @@ def test_uszkodzony_plik_nie_konczy_sie_ogolnym_komunikatem(
     world = World(tmp_path / "swiat")
     shutil.copytree(world_template, world.root)
     if name in OLD_DAD_CASES:
-        world.path("sprawy_taty").unlink()
+        _without_dad_cases_file(world)
     client = None if name in READ_AT_START else _remembering_choices(world)
     target = world.path(name)
     if damage == "ansi" and target.read_text(encoding="utf-8").isascii():
@@ -777,29 +724,55 @@ def test_uszkodzony_plik_nie_konczy_sie_ogolnym_komunikatem(
         problems += [
             f"{where}: niedostępny nazwany uszkodzonym albo niepoprawnym"
             for where, text in seen
-            if any(word in text for word in DAMAGED)
+            if any(word in text for word in DAMAGED_WORDS)
         ]
 
     assert problems == []
 
 
+def _queue_passes_done(client: CentrumClient) -> None:
+    join_threads_since(client.since, named=QUEUE_THREAD)
+
+
+def test_czekanie_na_kolejke_wraca_dopiero_po_przejsciu_kolejki_ze_startu_centrum(
+    world_template: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = World(tmp_path / "swiat")
+    shutil.copytree(world_template, world.root)
+    started, released = threading.Event(), threading.Event()
+    drain = Outbox._drain
+
+    def held(outbox: Outbox) -> None:
+        started.set()
+        released.wait(STOP_S)
+        drain(outbox)
+
+    monkeypatch.setattr(Outbox, "_drain", held)
+    client = world.client()
+    client.start()
+    assert started.wait(STOP_S)
+    waiting = threading.Thread(target=_queue_passes_done, args=(client,))
+    waiting.start()
+    waiting.join(0.5)
+    waits_while_held = waiting.is_alive()
+    released.set()
+    waiting.join(STOP_S)
+
+    assert waits_while_held
+    assert not waiting.is_alive()
+
+
 @pytest.mark.parametrize("entry", ENTRIES)
 def test_wejscie_siega_tylko_po_pliki_z_tabeli_odczytow(world_template: Path, tmp_path: Path, entry: str) -> None:
-    """Wywołanie wejścia sięga tylko po pliki z ``READS``, a po każdy z nich, który macierz psuje po starcie Centrum.
-
-    Plik spoza ``READS`` macierz w tym wejściu nie psuje, więc kruchego czytnika, który wejście po niego wyśle, nic by
-    nie złapało; plik z ``READS``, po który wejście nie sięga, daje przypadki z wynikiem zdrowego świata.
-    """
-
     world = World(tmp_path / "swiat")
     shutil.copytree(world_template, world.root)
     client = _remembering_choices(world)
-    join_threads_since(client.since, named=QUEUE_THREAD)  # przejście kolejki Skrzynki po starcie, nie w wejściu
+    _queue_passes_done(client)
     if entry in DIAGNOSIS_ENTRIES:
         world.engines.fail_summary = True
     with _tracing() as trace:
         problems = ENTRIES[entry].call(client, [])
-        join_threads_since(client.since, named=QUEUE_THREAD)
+        _queue_passes_done(client)
     reached = _files_reached(world, trace)
 
     assert problems == []
@@ -808,26 +781,31 @@ def test_wejscie_siega_tylko_po_pliki_z_tabeli_odczytow(world_template: Path, tm
 
 
 def test_plik_czytany_tylko_przy_starcie_centrum_czyta_start(world_template: Path, tmp_path: Path) -> None:
-    """Macierz psuje plik z ``READ_AT_START`` przed startem Centrum, więc start musi po niego sięgać."""
-
     world = World(tmp_path / "swiat")
     shutil.copytree(world_template, world.root)
-    world.path("sprawy_taty").unlink()  # pliki sprzed Spraw taty Centrum czyta tylko bez pliku Spraw taty
+    _without_dad_cases_file(world)
     with _tracing() as trace:
         _remembering_choices(world)
 
     assert set(READ_AT_START) - _files_reached(world, trace) == set()
 
 
+def test_slad_sciezek_pomija_zdarzenie_audytu_z_bajtami_ktorych_fsdecode_na_windows_nie_dekoduje() -> None:
+    def fsdecode_like_windows(value: str | bytes | os.PathLike[str]) -> str:
+        return value.decode("utf-8") if isinstance(value, bytes) else os.fspath(value)
+
+    with _tracing() as trace, pytest.MonkeyPatch.context() as patch:
+        patch.setattr(os, "fsdecode", fsdecode_like_windows)
+        _record("marshal.loads", (b"\xe3\x00\xff",))
+        _record("open", ("plik-taty.xlsx", "r", 524288))
+
+    assert Reach("open", "plik-taty.xlsx") in trace
+    assert "marshal.loads" not in {reach.event for reach in trace}
+
+
 def test_centrum_swiata_bez_sieci_nie_zostawia_po_tescie_wysylki_ani_budzika_skrzynki(
     world_template: Path, tmp_path: Path
 ) -> None:
-    """Uwaga taty czeka w kolejce Skrzynki na internet, a po teście nie żyje żaden wątek Skrzynki tego Centrum.
-
-    Wątki Centrum to wątki z linii, które wątek testu zaczął od ``since``: budzik Centrum innego testu w tym samym
-    workerze do nich nie należy, nawet gdy dzwoni w trakcie tego testu.
-    """
-
     since = new_line()
     world = World(tmp_path / "swiat")
     shutil.copytree(world_template, world.root)
@@ -840,16 +818,12 @@ def test_centrum_swiata_bez_sieci_nie_zostawia_po_tescie_wysylki_ani_budzika_skr
 
 
 def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
-    # Cofnięcie Aktualizacji startuje starą wersję na plikach, które zostawiła nowa (ADR 0009), a kolejkę Skrzynki
-    # wysyła następna wersja, więc miejsca przypina literał, a nie stałe z src, które zmieniłyby się razem z nimi.
-    # Nazwy plików narzędzia (Wzorce, Ustawienia, dziennik, metryki) przypina test_opiekun_ponownego_startu.py.
     state = {
         name: FILES[name][0]
         for name in (
             "klucz_zgloszen",
             "sprawy_taty",
             "wyslane_zgloszenia",
-            "uwagi_taty",
             "przeczytane_powiadomienia",
             "uruchomienia_centrum",
             "adresy_skrzynki",
@@ -876,7 +850,6 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "klucz_zgloszen": "config/zgloszenia-klucz.txt",
         "sprawy_taty": "config/sprawy-taty.json",
         "wyslane_zgloszenia": "config/zgloszenia-wyslane.json",
-        "uwagi_taty": "config/uwagi-taty.json",
         "przeczytane_powiadomienia": "config/powiadomienia.json",
         "uruchomienia_centrum": "config/centrum-uruchomienia.jsonl",
         "adresy_skrzynki": "config/skrzynka-adresy.jsonl",
@@ -899,7 +872,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
 def test_macierz_obejmuje_kazda_operacje_kontraktu_centrum(tmp_path: Path) -> None:
     contract = World(tmp_path).app().openapi()
     operations = {operation["operationId"] for methods in contract["paths"].values() for operation in methods.values()}
-    swept = {operation for entry in ENTRIES.values() for operation in entry.operations}
+    swept = {operation for entry in ENTRIES.values() for operation in entry.operation_ids}
 
     assert operations - swept - NOT_SWEPT.keys() == set(), "dodaj wejście do ENTRIES albo powód do NOT_SWEPT"
     assert (swept | NOT_SWEPT.keys()) - operations == set(), "ENTRIES albo NOT_SWEPT ma operację spoza kontraktu"
@@ -939,7 +912,22 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
     assert diagnosis["explanation"] == stopped["stops"][0]
 
 
-@pytest.mark.parametrize(("process", "period"), [("preparation", PERIOD), ("settlement", SETTLEMENT_PERIOD)])
+def test_diagnoza_macierzy_po_zatrzymaniu_dla_taty_bierze_powtorke(world_template: Path, tmp_path: Path) -> None:
+    world = World(tmp_path / "swiat")
+    shutil.copytree(world_template, world.root)
+    client = _remembering_choices(world)
+    periods = world.path("folder_okresow")
+    deny_reading(periods)
+    try:
+        world.engines.fail_summary = True
+        run_id = _run_with_diagnosis(client, "preparation", PERIOD)
+    finally:
+        allow_reading(periods)
+
+    assert run_id is not None
+
+
+@pytest.mark.parametrize(("process", "period"), [("preparation", PERIOD)])
 def test_lista_wykonawcow_bez_odczytu_wstrzymuje_start_i_jest_niedostepna_w_sekcji_wykonawcy(
     world_template: Path, tmp_path: Path, process: str, period: str
 ) -> None:
@@ -970,13 +958,36 @@ def test_folder_miesiaca_znikajacy_w_trakcie_listowania_jest_pominiety(tmp_path:
     (kept / SETTLEMENT_PERIOD).mkdir(parents=True)
     scandir = os.scandir
 
-    def vanishing(path: Any) -> Any:
-        if Path(path) == gone:  # OneDrive zabrał folder miesiąca między listowaniem roku a listowaniem miesiąca
+    def onedrive_takes_month_folder_between_year_and_month_listing(path: Any) -> Any:
+        if Path(path) == gone:
             raise FileNotFoundError(path)
         return scandir(path)
 
-    monkeypatch.setattr(os, "scandir", vanishing)
+    monkeypatch.setattr(os, "scandir", onedrive_takes_month_folder_between_year_and_month_listing)
 
     scanned = period_folder.scan_period_folders(periods)
 
     assert [path for paths in scanned.locations.values() for path in paths] == [kept]
+
+
+def _legend_columns(client: CentrumClient) -> dict[str, str | None]:
+    legend = client.get("/api/settings/activity-legend").json()
+    return {column["letter"]: column["name"] for column in [legend["amount_column"], *legend["columns"], *legend["fill_columns"]]}
+
+
+def test_legenda_przy_wzorcu_pliku_zbiorczego_bez_odczytu_ma_kolumny_same_litery_a_kwota_swoja_nazwe(
+    world_template: Path, tmp_path: Path
+) -> None:
+    world = World(tmp_path / "swiat")
+    shutil.copytree(world_template, world.root)
+    client = world.client()
+    named = _legend_columns(client)
+    template = world.path("wzorzec_zbiorczy")
+    deny_reading(template)
+    try:
+        unread = _legend_columns(client)
+    finally:
+        allow_reading(template)
+
+    assert [letter for letter, name in named.items() if letter != "AS" and name is not None], "Wzorzec świata nie ma nazw pozycji cennika"
+    assert unread == {letter: named["AS"] if letter == "AS" else None for letter in named}

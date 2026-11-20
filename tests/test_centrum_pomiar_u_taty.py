@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import PeriodFolder
 from tests.fixtures.centrum import Centrum, centrum, view_timing
@@ -15,8 +15,16 @@ from tests.fixtures.centrum import Centrum, centrum, view_timing
 SERVER_TIMING = re.compile(r"centrum;dur=\d+(\.\d+)?")
 
 
-def test_kazda_odpowiedz_api_podaje_sam_czas_obslugi_w_server_timing(tmp_path: Path) -> None:
-    client = centrum(tmp_path).client
+def test_kazda_odpowiedz_api_takze_odmowa_i_nieoczekiwany_wyjatek_podaje_sam_czas_obslugi_w_server_timing(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    client = app.client
+    register = tmp_path / "ZLECENIA INTERMAX.xlsx"
+    register.touch()
+    app.platform.chosen_files.append(register)
+    assert client.post("/api/settings/register/choose").status_code == 200
+    app.platform.failure = RuntimeError("system nie otworzył pliku")
 
     responses = [
         client.get("/api/health"),
@@ -26,9 +34,10 @@ def test_kazda_odpowiedz_api_podaje_sam_czas_obslugi_w_server_timing(tmp_path: P
         client.put("/api/settings/theme", json={"theme": "light"}, headers={"Origin": "http://zly.example"}),
         client.get("/api/health", headers={"Host": "zly.example:47811"}),
         client.post("/api/periods/22_28_09_2026/open", json={"target": "period_folder"}),
+        client.post("/api/settings/register/open"),
     ]
 
-    assert [response.status_code for response in responses] == [200, 200, 200, 200, 403, 403, 409]
+    assert [response.status_code for response in responses] == [200, 200, 200, 200, 403, 403, 409, 500]
     timings = [response.headers.get("server-timing", "") for response in responses]
     assert [timing for timing in timings if not SERVER_TIMING.fullmatch(timing)] == []
 
@@ -62,7 +71,7 @@ def test_pomiary_widokow_z_przegladarki_trafiaja_do_dziennika_centrum(tmp_path: 
     ]
 
 
-def test_okno_ustawien_mierzy_sie_jak_widok_a_widoku_konfiguracja_juz_nie_ma(tmp_path: Path) -> None:
+def test_okno_ustawien_mierzy_sie_jak_widok(tmp_path: Path) -> None:
     app = centrum(tmp_path)
     settings = view_timing(
         kind="navigation",
@@ -73,43 +82,23 @@ def test_okno_ustawien_mierzy_sie_jak_widok_a_widoku_konfiguracja_juz_nie_ma(tmp
         requests=[{"operation": "getConfiguration", "browser_ms": 290, "server_ms": 270}],
     )
 
-    responses = [app.client.post("/api/view-timings", json=timing) for timing in (settings, view_timing(page="konfiguracja"))]
+    response = app.client.post("/api/view-timings", json=settings)
 
-    assert [response.status_code for response in responses] == [204, 422]
+    assert response.status_code == 204
     assert log_entries(app) == [
         "pomiar widok=przejscie-w-menu strona=ustawienia gotowe_ms=310 szkielet_ms=150 zapytania=getConfiguration:290/270",
     ]
 
 
-def test_dziennik_przyjmuje_ograniczona_liczbe_pomiarow_na_jedno_uruchomienie_centrum(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    limit = 3
-    monkeypatch.setattr("rozliczenia.centrum.log.MAX_VIEW_TIMINGS", limit)
+def test_dziennik_przyjmuje_najwyzej_200_pomiarow_na_jedno_uruchomienie_centrum(tmp_path: Path) -> None:
     app = centrum(tmp_path)
 
-    responses = [app.client.post("/api/view-timings", json=view_timing()) for _ in range(limit + 1)]
+    responses = [app.client.post("/api/view-timings", json=view_timing()) for _ in range(201)]
     after_restart = centrum(tmp_path).client.post("/api/view-timings", json=view_timing(page="okresy"))
 
     assert {response.status_code for response in responses} == {204}
     assert after_restart.status_code == 204
     entries = [entry for entry in log_entries(app) if entry.startswith("pomiar ")]
-    assert len(entries) == limit + 1
-    assert entries[-1].startswith("pomiar widok=zimny-start strona=okresy ")
-
-
-def test_dziennik_przyjmuje_najwyzej_200_pomiarow_na_jedno_uruchomienie_centrum() -> None:
-    lines: list[str] = []
-
-    def measure(log: CentrumLog, page: str) -> None:
-        log.view_timed(view="zimny-start", page=page, ready_ms=415, fcp_ms=210, skeleton_ms=120, requests=())
-
-    first_run = CentrumLog(Path("nieuzywany.log"), append=lines.append)
-    for _ in range(201):
-        measure(first_run, "metryki")
-    measure(CentrumLog(Path("nieuzywany.log"), append=lines.append), "okresy")
-
-    entries = [line.split(" ", 1)[1] for line in lines]
     assert len(entries) == 201
     assert entries[-1].startswith("pomiar widok=zimny-start strona=okresy ")
 
@@ -135,7 +124,7 @@ def test_dziennik_przyjmuje_najwyzej_200_pomiarow_na_jedno_uruchomienie_centrum(
         ),
     ],
 )
-def test_pomiar_z_nieznana_nazwa_albo_wartoscia_poza_zakresem_jest_odrzucony(
+def test_pomiar_z_nieznana_nazwa_albo_wartoscia_poza_zakresem_jest_odrzucony_bez_wpisu_w_dzienniku_dzialan_taty(
     tmp_path: Path, changes: dict[str, object]
 ) -> None:
     app = centrum(tmp_path)
@@ -144,6 +133,7 @@ def test_pomiar_z_nieznana_nazwa_albo_wartoscia_poza_zakresem_jest_odrzucony(
 
     assert response.status_code == 422
     assert log_entries(app) == []
+    assert not (app.log_path.parent / DAD_ACTIONS_FILE).exists()
 
 
 def test_token_okresu_ani_sciezka_przyslane_przez_przegladarke_nie_trafiaja_do_dziennika(tmp_path: Path) -> None:

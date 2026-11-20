@@ -89,9 +89,8 @@ EMPTY_REPOSITORY_TEST: Final = "test_odmowa_archiwum_zatrzymuje_tylko_plik_logow
 # Kolejka wysyłki na atrapie GitHuba w pamięci (``GitHubOnTransport``): zakłada Archiwum, wysyła plik, po Diagnozie usuwa
 # go i wysyła nowszy.
 QUEUE_ARCHIVE_TEST: Final = "test_skrzynka_githuba_zaklada_archiwum_okresu_wysyla_plik_a_po_diagnozie_podmienia_go_bez_drugiego_pliku"
-SAME_TAG_TEST: Final = "test_archiwum_z_tagiem_ktory_juz_ma_release_to_odmowa_tresci_a_archiwum_zostaje_jedno"
-SAME_NAME_TEST: Final = "test_plik_o_nazwie_ktora_jest_juz_w_archiwum_to_odmowa_tresci_a_pierwszy_plik_zostaje"
 ARCHIVE_TEST: Final = "test_archiwum_okresu_to_release_z_tagiem_z_listy_wydan_repozytorium_z_jego_plikami"
+REFUSAL_TEST: Final = "test_odmowa_autoryzacji_bez_limitu_zapytan_to_odmowa_klucza_kazdej_operacji"
 
 
 def _box(name: str) -> str:
@@ -131,7 +130,7 @@ MAPPING: Final = (
         "skrzynka",
         "komentarz-brak-issue",
         "komentarz",
-        (_box("test_odmowa_przy_komentarzu_to_odmowa_skrzynki[404]"),),
+        (_box(f"{REFUSAL_TEST}[comment-404]"),),
     ),
     Row(
         "skrzynka",
@@ -143,7 +142,7 @@ MAPPING: Final = (
         "skrzynka",
         "poprawka-brak-komentarza",
         "poprawka",
-        (_box("test_odmowa_przy_poprawce_komentarza_to_odmowa_skrzynki[404]"),),
+        (_box(f"{REFUSAL_TEST}[edit_comment-404]"),),
     ),
     Row(
         "skrzynka",
@@ -155,7 +154,7 @@ MAPPING: Final = (
         "skrzynka",
         "komentarze-strony",
         "komentarze",
-        (_box("test_komentarze_issue_sa_zbierane_ze_wszystkich_stron"),),
+        (_box("test_komentarze_issue_to_ich_identyfikatory_adresy_i_tresci_po_kolei"),),
     ),
     Row(
         "skrzynka",
@@ -195,32 +194,32 @@ MAPPING: Final = (
         "skrzynka",
         "zly-klucz",
         "zalozenie",
-        (_box("test_odmowa_autoryzacji_to_odmowa_skrzynki[401]"),),
+        (_box(f"{REFUSAL_TEST}[open_issue-401]"),),
     ),
     Row(
         "skrzynka",
         "zly-klucz",
         "lista",
-        (_box("test_odmowa_autoryzacji_przy_szukaniu_to_odmowa_skrzynki[401]"),),
+        (_box(f"{REFUSAL_TEST}[labelled_issues-401]"),),
     ),
     Row(
         "skrzynka",
         "zly-klucz",
         "komentarz",
-        (_box("test_odmowa_przy_komentarzu_to_odmowa_skrzynki[401]"),),
+        (_box(f"{REFUSAL_TEST}[comment-401]"),),
     ),
     Row(
         "skrzynka",
         "zly-klucz",
         "poprawka",
-        (_box("test_odmowa_przy_poprawce_komentarza_to_odmowa_skrzynki[401]"),),
+        (_box(f"{REFUSAL_TEST}[edit_comment-401]"),),
     ),
     # ADR 0007 i keyed_box (#402): usunięte issue to 404, więc atrapa usuniętego issue odpowiada 404.
     Row(
         "skrzynka",
         "usuniete-issue",
         "komentarz",
-        (_box("test_odmowa_przy_komentarzu_to_odmowa_skrzynki[404]"),),
+        (_box(f"{REFUSAL_TEST}[comment-404]"),),
     ),
     Row(
         "skrzynka",
@@ -232,7 +231,7 @@ MAPPING: Final = (
         "skrzynka",
         "usuniete-issue",
         "poprawka",
-        (_box("test_odmowa_przy_poprawce_komentarza_to_odmowa_skrzynki[404]"),),
+        (_box(f"{REFUSAL_TEST}[edit_comment-404]"),),
     ),
     Row(
         "archiwum",
@@ -248,12 +247,6 @@ MAPPING: Final = (
             _box("test_zalozone_archiwum_to_release_z_tagiem_ktory_nie_jest_najnowszym_wydaniem"),
             _box(QUEUE_ARCHIVE_TEST),
         ),
-    ),
-    Row(
-        "archiwum",
-        "zalozenie-tego-samego-tagu",
-        "zalozenie-archiwum",
-        (_box(SAME_TAG_TEST),),
     ),
     Row(
         "archiwum",
@@ -278,15 +271,9 @@ MAPPING: Final = (
     ),
     Row(
         "archiwum",
-        "plik-tej-samej-nazwy",
-        "wysylka-pliku",
-        (_box(SAME_NAME_TEST),),
-    ),
-    Row(
-        "archiwum",
         "pliki-strony",
         "pliki-archiwum",
-        (_box("test_pliki_archiwum_sa_zbierane_ze_wszystkich_stron"),),
+        (_box(ARCHIVE_TEST),),
     ),
     Row(
         "archiwum",
@@ -306,14 +293,12 @@ MAPPING: Final = (
         "pliki-archiwum",
         (_box(QUEUE_ARCHIVE_TEST),),
     ),
-    # Zły klucz w każdym kroku Archiwum: atrapa 401 ``Bad credentials``, jak GitHub; lista Archiwów po nim idzie kluczem
-    # klienta (200).
     *(
         Row(
             "archiwum",
             "zly-klucz",
             kind,
-            (_box(f"test_odmowa_autoryzacji_przy_archiwum_to_odmowa_skrzynki[{operation}]"), *also),
+            (_box(f"{REFUSAL_TEST}[{operation}-401]"), *also),
         )
         for kind, operation, also in (
             ("archiwa", "archive", (_box(ARCHIVE_TEST),)),

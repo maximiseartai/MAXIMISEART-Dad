@@ -94,6 +94,15 @@ def worker_list_changed() -> str:
     return "Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz."
 
 
+def worker_undo_breaks_list(rule: str, colliding: tuple[str, ...]) -> str:
+    refused = f"Tej zmiany nie da się cofnąć: Wykonawca sprzed zmiany nie pasuje do Listy Wykonawców. {rule}"
+    if not colliding:
+        return refused
+    names = [f"„{name}”" for name in colliding]
+    who = f"Wykonawcę {names[0]}" if len(names) == 1 else f"Wykonawców {', '.join(names[:-1])} i {names[-1]}"
+    return f"{refused} Najpierw zmień albo usuń na liście {who}, potem cofnij jeszcze raz."
+
+
 def worker_rename_old_files(periods: tuple[str, ...]) -> str:
     count = len(periods)
     where = f"w okresie {periods[0]}" if count == 1 else f"w {count} okresach, ostatnio {periods[0]}"

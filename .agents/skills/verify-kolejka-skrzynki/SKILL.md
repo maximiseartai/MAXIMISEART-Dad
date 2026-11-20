@@ -44,8 +44,7 @@ A change that adds a new way to the Skrzynka (a new `Target`, a second writer of
 
 ## The promise
 
-The checker's rules are stated in the docstring of `scripts/explore_outbox.py`. Their harm, which the docstring does
-not state:
+The checker's rules live in `scripts/explore_outbox.py`. Their harm:
 
 - **DOKLADNIE_RAZ**: a missing part means Maks never sees the rest of Logi Uruchomienia, a Kontrola ilości or a
   Zgłoszenie, and nobody knows it is missing, because the queue file is gone; a part twice fills the issue okresu with
@@ -119,7 +118,7 @@ What the model leaves out of this:
 ## Does the change touch it?
 
 The checker runs the real `Outbox` and `KeyedBox`. Each row is one indivisible step of this code that the checker can
-fail, lose or kill; the docstrings of `explore_outbox.py`, `MemoryBox`, `Bounds` and `Scope` say what it may do at each.
+fail, lose or kill; `MemoryBox`, `Bounds` and `Scope` in `explore_outbox.py` decide what it may do at each.
 
 | Step in the checker | Code |
 | --- | --- |
@@ -146,10 +145,11 @@ below): a change to the rest of those five files is no drift. `RunComments.send_
 have no digest here: `verify-urwane-uruchomienie` and `verify-sprawy-taty` hold them.
 Each action of `model/KolejkaSkrzynki.tla` is one step of the code: one request to the Skrzynka, one write of a
 temporary file, one replace of a file, one removal, one decision under a lock (`src/rozliczenia/centrum/` unless named
-otherwise). `Watek(q)` is any step of the thread `skrzynka-kolejka` of queue `q`:
+otherwise):
 
 | Model action | Code |
 | --- | --- |
+| `Watek(q)` | any step of the thread `skrzynka-kolejka` of queue `q` while its process lives: one of the actions from `Petla(q)` to `Decyzja(q)` below |
 | `Petla(q)` | `Outbox._drain`: the start of the `while` loop, `_claimed`, then `_folder_lock`. A queue that finds a pass of another queue of this folder in its process only asks for the next one (`_PASSES` true) and sends nothing. A claiming queue takes the folder lock without waiting (`_locked`); when a queue of another process holds it, `_locked_out` and the pass ends without `_send_all`. With the lock it clears `_read_failed` and takes the files by name (`PlikiPrzejscia`). `_claimed` and `_locked` are two code steps in one action: only this process sees `_PASSES`, and only a queue of another process can take the lock between them, which gives the same state as its lock taken before `_claimed` |
 | `Plik(q)` | `Outbox._send_all`, one file: `_undeleted` (`_remove`), `_rejected` (skipped), `_queued` (the read: a file that cannot be read or that another process removed is skipped, and an `OSError` sets `_read_failed`), `delivered` (`_remove`), a file whose newer version the pass read, before or after it (`_superseded`: `_mark_delivered` without a send; when the newer one after it cannot be read, this one goes as usual and the newer one waits for the wake), `commented` (`_deliver_archive`, only the file to the Archiwum), then `_deliver`, which for every target first asks the Skrzynka for the issue with the label (`Szukaj`). The end of the list is `self._stopped_on = None`. A file whose read at the start of the pass (`_read`) gave `None` supersedes no older version; when the read of a newer version further on the list failed, the newer one does not supersede this file, and when the pass reaches it `_skip_unreadable` skips it to the `RETRY_S` wake (`_read_failed`), so the model takes it off the list at once; a newer version before this file on the list already has its read behind it (`czytane`) |
 | `Szukaj(q)` | `keyed_box.py` `KeyedBox.labelled_issues` (with `report_box.py` `newest_with_line`), called by `outbox.py` `_deliver_to_period`, `_deliver_open_issue`, `_deliver_to_known` and `_deliver_new_issue`; the read changes nothing in the Skrzynka, a found issue gets the parts through `_settle` (`Czytaj`), a new one through `open_issue` (`Zaloz`). The list sets `_listed_at`, the moment of this list against a write in the file (`_held` at an opening); without a read of the file it is `None`, so `_held` holds openings until a list at which the file reads (#909). By target: `_deliver_to_period` without an issue okresu takes the step of the Archiwum, then a new issue, and in a found one `_settle` with each part (the step of the Archiwum after the comments are read, in `Czytaj`); `_deliver_open_issue` without an open Zgłoszenie with the fingerprint opens a new issue with the only part, and in a found one `_settle` with that part as a comment with the header „again”, while a Zgłoszenie whose body has the mark of this part was opened by an interrupted try of this wysyłka, so `_settle` takes it over without a comment; `_deliver_to_known` (`KeyedBox.known_issue`) with the issue on the list (also from the file of writes) takes `_settle` with each part, and without it a list at which a write with the label would be held (`_held`: the file could not be read or holds a write without an answer, #915) is `Unreachable` without a decision, and any other list is `Gone`: `box_post_dropped` and `_remove` without a send (nobody removes the issue of an Uwaga in the model, so `Gone` breaks DokladnieRaz); `_deliver_new_issue` sends the rest of the parts through `_settle` to the issue whose body has the mark of this Uwaga (the newest, also closed), and opens a new issue without one |
@@ -286,6 +286,13 @@ same 19 874 schedules (#911). A Wzorzec before the file of the Logi in `archiwum
 okresu”) gives 29 677 schedules in 62 s (2026-11-18); the other scopes of the Archiwum carry no Wzorzec, because each
 box call doubles the schedules of a scope, and the model's `Wzorzec` runs in `archiwum` and `archiwum-lista`.
 
+At a pass boundary the checker takes from the queue only `Outbox.state` (`QueueState`), because the rest of the queue's
+memory reaches nothing a scope runs: no scope has a `Listener`, which reads `delivered` and `rejected` (`_first_comments`,
+`_rejected_posts`), or content the Skrzynka rejects (`_rejected`); every pass sets `_read_failed` and `_locked_out`
+anew, and the wake they arm is `retry_armed`; `_unreadable` and `_archive_logged` only spare the log lines; and
+`_sequence` and `_last_moment` only give the name of the next wysyłka, whose version the checker counts as its place
+among the scope's wysyłki (`versions`).
+
 Not covered: a key that is missing or refused (`NoKey`, `Refused`: the pass stops, nothing is sent, and `KeyedBox`
 keeps a refusal for `REFUSED_KEPT_S`), a step of the Archiwum `Rejected` for its content (it is `ArchiveWaits` like a
 refusal, which the scopes of the Archiwum check), the Archiwum of another period, Maks deleting the Archiwum or a file
@@ -369,9 +376,10 @@ Kontrola ilości or an Uwaga taty in several parts that does not read in order:
 
 1. Read the diff of the covered files since their digests (the `git diff` above; the drift line names each changed
    file and definition) and find each hunk's step in the checker's table and in the tables of the model.
-2. Change the matching action so that one action stays one indivisible step of the code, and write the code's names
-   in its row of the model's table, not in a comment: the model has none, and a new action, branch, definition,
-   constant or variable gets its own row or its place in one. TLA+ strings must be ASCII.
+2. Change the matching action so that one action stays one indivisible step of the code, and write the code's names in
+   its row of the model's table, not in a comment: the model has none, and a new action of `Next`, constant or variable
+   gets its own row or its place in one, and a new branch or definition gets one when it models code. TLA+ strings must
+   be ASCII.
 3. A new way to fail gets a constant with its row, a branch guarded by it, and a value in `stale` of every configuration in
    `model/konfiguracje.json`.
 4. Before you trust a pass on a new path, break that path in the model and see the check fail; add the break to

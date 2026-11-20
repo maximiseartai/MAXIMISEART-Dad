@@ -170,28 +170,20 @@ def test_wpis_nazywa_jednostki_po_ktorych_wystepuje_albo_jest_flaky() -> None:
         _wpis("oba", flaky=True)
 
 
-def test_naruszenie_wybacza_tylko_wpis_jego_reguly_w_jego_ksztalcie_a_przyjete_ryzyko_przed_znanym() -> None:
-    known, risk = _wpis("znane"), _wpis("ryzyko")
-
-    assert excused("REGULA", "zapis", known=(known,), accepted=(risk,)) == ("accepted", risk)
-    assert excused("REGULA", "zapis", known=(known,)) == ("known", known)
-    assert excused("INNA", "zapis", known=(known,), accepted=(risk,)) is None
-    assert excused("REGULA", "odczyt", known=(known,), accepted=(risk,)) is None
-    assert excused("REGULA", None, known=(known,), accepted=(risk,)) is None
-
-
 @dataclass(frozen=True)
 class _KazdaObserwacja:
     def holds(self, observed: object) -> bool:
         return True
 
 
-def test_naruszenie_bez_obserwacji_jest_nowe_takze_dla_ksztaltu_ktory_przyjmuje_kazda_obserwacje() -> None:
-    """Docstring ``excused``: naruszenie bez obserwacji (``None``) nie ma historii, którą wpis mógłby rozpoznać, więc
-    żaden wpis go nie wybacza, nawet taki, którego kształt przyjąłby wszystko."""
-
+def test_naruszenie_wybacza_tylko_wpis_jego_reguly_w_jego_ksztalcie_a_przyjete_ryzyko_przed_znanym() -> None:
+    known, risk = _wpis("znane"), _wpis("ryzyko")
     wszystko = Excuse("wszystko", "REGULA", "historia wszystko", _KazdaObserwacja(), after=("zakres",))
 
+    assert excused("REGULA", "zapis", known=(known,), accepted=(risk,)) == ("accepted", risk)
+    assert excused("REGULA", "zapis", known=(known,)) == ("known", known)
+    assert excused("INNA", "zapis", known=(known,), accepted=(risk,)) is None
+    assert excused("REGULA", "odczyt", known=(known,), accepted=(risk,)) is None
     assert excused("REGULA", "zapis", known=(wszystko,)) == ("known", wszystko)
     assert excused("REGULA", None, known=(wszystko,), accepted=(wszystko,)) is None
 

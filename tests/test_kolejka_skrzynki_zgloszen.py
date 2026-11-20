@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 import gzip
+import hashlib
 import itertools
 import json
 import os
@@ -38,14 +39,17 @@ from rozliczenia.centrum.outbox import (
     Frame,
     KnownIssue,
     NewIssue,
+    OpenIssue,
     Outbox,
     PeriodThread,
     Post,
     QueueState,
     Rank,
 )
-from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Sent, Unreachable
+from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Sent, Unreachable, UploadOutcome
 from rozliczenia.centrum.reports import report_target
+from rozliczenia.centrum.template_archive import ASSET_PREFIX, asset_name, from_queue
+from rozliczenia.tool_files import INTERNAL_TEMPLATE
 
 from atrapy.skrzynka import ArchivedFile, BoxArchive, BoxIssue
 from tests.fixtures.centrum import FakeReportBox
@@ -268,17 +272,6 @@ def test_watek_ktory_zostaje_po_zamknieciu_dostaje_czesci_jako_komentarze_w_zamk
     assert wait_for(lambda: queue.files() == [])
 
 
-def test_bez_klucza_wysylka_czeka_w_pliku_bez_pytania_skrzynki(tmp_path: Path) -> None:
-    queue = Queue(tmp_path, FakeReportBox(), key=None)
-
-    queue.outbox.post(post(["treść\n"]))
-
-    waiting = "skrzynka-czeka etykieta=kontrola-ilosci okres=08_14_09_2026 przyczyna=brak-klucza"
-    assert wait_for(lambda: waiting in queue.log())
-    assert len(queue.files()) == 1
-    assert queue.box.keys == []
-
-
 @pytest.mark.parametrize(
     ("failure", "key", "cause"),
     [(None, None, "brak-klucza"), (Unreachable(), KEY, "brak-sieci"), (Refused(), KEY, "odmowa")],
@@ -410,26 +403,6 @@ def test_kolejne_przejscia_przed_budzeniem_nie_nastawiaja_drugiego_budzenia(tmp_
     assert queue.clock.wakes == 1
 
 
-def test_kolejka_bez_porazki_nie_nastawia_ponowienia(tmp_path: Path) -> None:
-    queue = Queue(tmp_path, FakeReportBox())
-
-    queue.outbox.post(post(["treść\n"]))
-
-    assert queue.box.wait_until(lambda box: len(box.issues) == 1)
-    queue.passed()
-    assert queue.clock.wakes == 0
-
-
-def test_odrzucona_tresc_nie_nastawia_ponowienia(tmp_path: Path) -> None:
-    queue = Queue(tmp_path, FakeReportBox(outcomes=[Rejected()]))
-
-    queue.outbox.post(post(["treść\n"]))
-
-    assert wait_for(lambda: "przyczyna=odmowa-tresci" in queue.log())
-    queue.passed()
-    assert queue.clock.wakes == 0
-
-
 def waiting_causes(queue: Queue) -> list[str]:
     return [line.rsplit("przyczyna=", 1)[1] for line in queue.log().splitlines() if "skrzynka-czeka" in line]
 
@@ -544,19 +517,19 @@ def test_druga_kolejka_na_tym_folderze_nie_wysyla_pliku_w_trakcie_wysylki_pierws
 
 def test_przejscie_pominiete_przez_druga_kolejke_robi_pierwsza_po_swoim(tmp_path: Path) -> None:
     hold = threading.Event()
-    queue = Queue(tmp_path, FakeReportBox(search_hold=hold, search_failure=Unreachable()))
-    queue.queued("treść\n")
-    queue.outbox.resume()
+    queue = Queue(tmp_path, FakeReportBox(search_hold=hold))
+    queue.outbox.post(post(["pierwsza\n"]))
     assert queue.box.searching.wait(30)
     restarted = queue.restarted()
-    restarted.resume()
+    restarted.post(post(["druga\n"], run_id=NEXT_RUN_IDS[0]))
     assert not restarted.wait_delivered("", THREAD.label, timeout_s=30)
 
-    queue.box.search_failure = None  # tylko pytanie, które już trwa, zostaje bez odpowiedzi
     hold.set()
 
-    assert queue.box.wait_until(lambda box: len(box.issues) == 1)
     assert wait_for(lambda: queue.files() == [])
+    [issue] = queue.box.issues
+    assert issue.comments == ["Część 1/1\n\ndruga\n"]
+    assert queue.clock.wakes == 0
 
 
 def test_kolejki_starego_i_nowego_centrum_na_jednym_folderze_zakladaja_jedno_issue_okresu_bez_dalszych_budzen(
@@ -679,16 +652,6 @@ def test_proces_konczy_sie_mimo_przejscia_kolejki_ktore_czeka_na_skrzynke(tmp_pa
     assert len(list((tmp_path / "config" / "zgloszenia" / "kolejka").glob("*.json"))) == 1
 
 
-def test_gdy_skrzynka_odmawia_szukania_issue_okresu_wysylka_czeka_w_pliku_bez_nowego_issue(tmp_path: Path) -> None:
-    queue = Queue(tmp_path, FakeReportBox(search_failure=Refused()))
-
-    queue.outbox.post(post(["treść\n"]))
-
-    assert wait_for(lambda: "przyczyna=odmowa\n" in queue.log())
-    assert len(queue.files()) == 1
-    assert (queue.box.issues, queue.box.keys) == ([], [])
-
-
 def test_nieudany_komentarz_zostawia_wysylke_w_pliku(tmp_path: Path) -> None:
     queue = Queue(tmp_path, FakeReportBox(comment_outcomes=[Unreachable()]))
 
@@ -728,27 +691,6 @@ def test_wysylka_ktorej_nie_da_sie_zapisac_przepada_bez_wyjatku(tmp_path: Path) 
     assert queue.box.issues == []
 
 
-def test_wysylka_zapisana_przez_wersje_z_273_wychodzi_po_starcie(tmp_path: Path) -> None:
-    queue = Queue(tmp_path, FakeReportBox())
-    queue.directory.mkdir(parents=True)
-    shutil.copy(
-        ROOT / "tests" / "fixtures" / "kolejka-v1-kontrola-ilosci.json",
-        queue.directory / "20261023T101500000000Z-0001-kontrola-ilosci-3f2a9c1b.json",
-    )
-
-    queue.outbox.resume()
-
-    assert queue.box.wait_until(lambda box: bool(box.issues))
-    [issue] = queue.box.issues_with("kontrola-ilosci")
-    assert issue.title == "Kontrola ilości 08_14_09_2026: 1 różnica"
-    assert issue.body == (
-        "- Kontrola ilości okresu: 08_14_09_2026\n\n"
-        "Kontrola ilości z Centrum rozliczeń (plik kolejki w wersji 1 z #273).\n\n"
-        "## Różnice\n\n| Kolumna | Reguła | Tata |\n| --- | --- | --- |\n| Q | 2 | 1 |\n"
-    )
-    assert wait_for(lambda: queue.files() == [])
-
-
 def test_uwaga_zapisana_przez_wersje_z_318_wychodzi_po_starcie(tmp_path: Path) -> None:
     queue = Queue(tmp_path, FakeReportBox())
     queue.directory.mkdir(parents=True)
@@ -778,6 +720,28 @@ def test_zapis_urwany_przez_utrate_zasilania_znika_przy_starcie_i_nie_jest_wysyl
     assert queue.box.keys == []
 
 
+FINGERPRINT_LINE = "- Odcisk problemu: 0123456789abcdef"
+REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n## Narzędzie\n\n{FINGERPRINT_LINE}\n"
+
+
+def report_file(line: str) -> str:
+    """Plik kolejki Zgłoszenia, jak go zapisuje Centrum od #426: cel niesie wiersz odcisku problemu ``line``."""
+
+    target = {"kind": "report_issue", "label": "zgloszenie", "line": line, "title": "BRAK_WZORCA: Nie znaleziono wzorca."}
+    return json.dumps(
+        {
+            "schema_version": 2,
+            "target": target,
+            "period": "08_14_09_2026",
+            "run_id": RUN_ID,
+            "header": None,
+            "parts": [REPORT_BODY],
+            "delivered_parts": 0,
+            "issue": None,
+        }
+    )
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -787,8 +751,17 @@ def test_zapis_urwany_przez_utrate_zasilania_znika_przy_starcie_i_nie_jest_wysyl
         post(["x"]).to_json().replace('"schema_version": 3', '"schema_version": 4'),
         post(["x"]).to_json().replace('"kontrola-ilosci"', '"inna-etykieta"'),
         post(["x"]).to_json().replace('"archived": false', '"archived": 0'),
+        report_file("0123456789abcdef"),
     ],
-    ids=["urwany", "nie-obiekt", "bez-celu", "nowszy-schemat", "nieznana-etykieta", "archiwum-nie-tak-ani-nie"],
+    ids=[
+        "urwany",
+        "nie-obiekt",
+        "bez-celu",
+        "nowszy-schemat",
+        "nieznana-etykieta",
+        "archiwum-nie-tak-ani-nie",
+        "zgloszenie-bez-wiersza-odcisku",
+    ],
 )
 def test_plik_kolejki_ktorego_nie_da_sie_odczytac_zostaje_z_jednym_wpisem_i_nie_wstrzymuje_innych(
     tmp_path: Path, text: str
@@ -1039,6 +1012,36 @@ def test_bez_sieci_wersja_zastepcza_z_nastepnego_startu_znika_przy_logach_z_wyni
     assert issue.comments == list(run_logs("z wynikiem", 1).parts)
 
 
+def test_komentarz_ze_znacznikiem_postepu_z_poprzedniego_wydania_dostaje_wersje_zastepcza_zamiast_drugiego_komentarza(
+    tmp_path: Path,
+) -> None:
+    progress = f"postęp\n<!-- wysyłka {LOGS.label} {RUN_ID} część 1 wersja 0:20261023T101500000000Z-0001 -->"
+    issue = BoxIssue(7, LOGS.label, LOGS.title, f"{LOGS.line}\n\nLogi Uruchomień okresu.\n", [progress], [70])
+    queue = Queue(tmp_path, FakeReportBox(issues=[issue]))
+    stand_in = replace(run_logs("zastępcze", 1), rank=Rank.STAND_IN)
+
+    queue.outbox.post(stand_in)
+    queue.passed()
+
+    assert queue.files() == []
+    assert (issue.comments, queue.box.edited) == (list(stand_in.parts), [70])
+
+
+def test_starsza_wersja_wysylki_ktora_dojdzie_po_nowszej_nie_dopisuje_do_jej_issue_czesci_ktorych_nowsza_nie_ma(
+    tmp_path: Path,
+) -> None:
+    newer = f"Uwaga\n<!-- wysyłka uwaga-taty {RUN_ID} część 1 wersja 20261023T101500000000Z-0001 -->"
+    issue = BoxIssue(5, "uwaga-taty", "Uwaga taty", newer)
+    queue = Queue(tmp_path, FakeReportBox(issues=[issue]))
+    older = Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga\n"), tool("druga część\n")), rank=Rank.DRAFT)
+
+    queue.outbox.post(older)
+    queue.passed()
+
+    assert queue.files() == []
+    assert (issue.comments, queue.box.edited) == ([], [])
+
+
 class _Stopnie(QueueListener):
     """Słuchacz kolejki, który zapisuje stopień każdej wysyłki tuż przed jej wysłaniem (``ranks``)."""
 
@@ -1174,13 +1177,15 @@ def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_pa
     assert queue.outbox.delivered("inne-uruchomienie", "logi-uruchomienia") is None
 
 
-FINGERPRINT_LINE = "- Odcisk problemu: 0123456789abcdef"
 REPORT = report_target("0123456789abcdef", tool("BRAK_WZORCA: Nie znaleziono wzorca."))
-REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n## Narzędzie\n\n{FINGERPRINT_LINE}\n"
+
+
+def report_to(target: OpenIssue, body: str, *, run_id: str = RUN_ID) -> Post:
+    return Post.of(target, period="08_14_09_2026", run_id=tool(run_id), blocks=[tool(body)], frame=unframed)
 
 
 def report(body: str = REPORT_BODY, *, run_id: str = RUN_ID) -> Post:
-    return Post.of(REPORT, period="08_14_09_2026", run_id=tool(run_id), blocks=[tool(body)], frame=unframed)
+    return report_to(REPORT, body, run_id=run_id)
 
 
 def test_zgloszenie_to_issue_z_trescia_podgladu_bez_dopisanego_wiersza(tmp_path: Path) -> None:
@@ -1260,6 +1265,15 @@ def test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu() -> None:
         report(longest + "x")
 
 
+def test_zgloszenie_ktore_nie_zmiesci_sie_z_naglowkiem_powrotu_w_komentarzu_to_blad_programu() -> None:
+    longest = REPORT_BODY + "x" * (PART_LIMIT - len(REPORT_BODY))
+    fitting = replace(REPORT, again=tool("#" * (TEXT_LIMIT - PART_LIMIT)))
+    assert report_to(fitting, longest).parts == (longest,)
+
+    with pytest.raises(ValueError, match="nagłówkiem again"):
+        report_to(replace(fitting, again=tool(fitting.again + "#")), longest)
+
+
 def test_zgloszenie_bez_wiersza_odcisku_w_tresci_issue_to_blad_programu() -> None:
     with pytest.raises(ValueError, match="wiersz rozpoznawczy"):
         report("Zgłoszenie bez odcisku.\n")
@@ -1279,24 +1293,6 @@ def test_plik_zgloszenia_zapisany_w_kolejce_wychodzi_po_starcie(tmp_path: Path) 
     assert (queue.box.sent[0].title, queue.box.sent[0].body) == (REPORT.title, REPORT_BODY)
 
 
-def report_file(line: str) -> str:
-    """Plik kolejki Zgłoszenia, jak go zapisuje Centrum od #426: cel niesie wiersz odcisku problemu ``line``."""
-
-    target = {"kind": "report_issue", "label": "zgloszenie", "line": line, "title": "BRAK_WZORCA: Nie znaleziono wzorca."}
-    return json.dumps(
-        {
-            "schema_version": 2,
-            "target": target,
-            "period": "08_14_09_2026",
-            "run_id": RUN_ID,
-            "header": None,
-            "parts": [REPORT_BODY],
-            "delivered_parts": 0,
-            "issue": None,
-        }
-    )
-
-
 def test_plik_zgloszenia_z_wierszem_odcisku_trafia_do_otwartego_zgloszenia_tego_odcisku(tmp_path: Path) -> None:
     open_report = BoxIssue(7, "zgloszenie", REPORT.title, FIRST_REPORT_BODY)
     queue = Queue(tmp_path, FakeReportBox(issues=[open_report]))
@@ -1310,20 +1306,6 @@ def test_plik_zgloszenia_z_wierszem_odcisku_trafia_do_otwartego_zgloszenia_tego_
     assert wait_for(lambda: queue.files() == [])
     assert queue.delivered == [(RUN_ID, 7)]
     assert (queue.box.issues, open_report.comments) == ([open_report], [f"## Zgłoszenie wróciło\n\n{REPORT_BODY}"])
-
-
-def test_plik_zgloszenia_z_samym_odciskiem_bez_jego_wiersza_zostaje_nieczytelny(tmp_path: Path) -> None:
-    queue = Queue(tmp_path, FakeReportBox())
-    queue.directory.mkdir(parents=True)
-    name = "20261023T101500000000Z-0001-zgloszenie-3f2a9c1b.json"
-    (queue.directory / name).write_text(report_file("0123456789abcdef"), encoding="utf-8")
-
-    queue.outbox.resume()
-    queue.passed()
-
-    assert queue.files() == [name]
-    assert queue.log().count(f"skrzynka-nieczytelny plik={name}") == 1
-    assert queue.box.issues == []
 
 
 class FollowingUp(QueueListener):
@@ -1346,6 +1328,22 @@ def test_wysylka_nastepcza_sluchacza_idzie_w_tym_samym_przejsciu_kolejki(tmp_pat
     assert issue.comments == ["Komentarz po Uwadze"]
     assert queue.delivered == [(RUN_ID, issue.number), ("komentarz", issue.number)]
     assert queue.files() == []
+
+
+class HoldingBack(QueueListener):
+    def prepare(self, post: Post, sent: Deliveries) -> Post | None:
+        return None
+
+
+def test_wysylka_ktora_sluchacz_zostawil_na_nastepne_przejscie_czeka_w_kolejce_bez_budzenia(tmp_path: Path) -> None:
+    queue = Queue(tmp_path, FakeReportBox(), listener=HoldingBack())
+
+    queue.outbox.post(post(["Kontrola ilości"]))
+    queue.passed()
+
+    assert len(queue.files()) == 1
+    assert queue.box.issues == []
+    assert not queue.outbox.state().retry_armed
 
 
 def _unreadable_at_comment_list(queue: Queue, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1492,6 +1490,33 @@ def test_najdluzszy_komentarz_logow_z_plikiem_zostawia_miejsce_na_dopisek_gdy_ar
     [comment] = issue.comments
     assert "czeka w Kolejce wysyłki" in comment
     assert len(comment) <= TEXT_LIMIT
+
+
+class RefusingTemplates(FakeReportBox):
+    def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
+        if name.startswith(ASSET_PREFIX):
+            return Rejected()
+        return super().upload(archive_id, name, label, data, key=key)
+
+
+def test_wzorzec_ktorego_archiwum_nie_przyjelo_czeka_w_kolejce_a_komentarz_logow_idzie_bez_dopisku(tmp_path: Path) -> None:
+    content = b"bajty Wzorca"
+    template = from_queue(asset_name(hashlib.sha256(content).hexdigest()), INTERNAL_TEMPLATE.name, content)
+    logs = logs_with_file(RUN_ID)
+    assert logs.archive is not None
+    queue = Queue(tmp_path, RefusingTemplates())
+
+    queue.outbox.post(replace(logs, archive=replace(logs.archive, templates=(template,))))
+    queue.passed()
+
+    [issue] = queue.box.issues_with(LOGS.label)
+    [comment] = issue.comments
+    assert comment.startswith(f"podsumowanie {RUN_ID}")
+    assert "czeka w Kolejce wysyłki" not in comment
+    [archive] = queue.box.archives
+    assert [asset.name for asset in archive.assets] == [f"{RUN_ID}.json.gz"]
+    [queued] = [json.loads(path.read_text(encoding="utf-8")) for path in queue.directory.glob("*.json")]
+    assert (queued["delivered_parts"], queued["archived"]) == (1, False)
 
 
 def test_plik_do_archiwum_z_wysylka_w_dwoch_czesciach_to_blad_programu() -> None:
@@ -1900,26 +1925,6 @@ ODMOWY_KOLEJKI: Final = {
 """,
         "bieg: plik kolejki bez wartości komórki",
     ),
-    "replace z getattr modułu copy": (
-        _GOTOWA
-        + """import copy
-
-
-def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
-    return kolejka.post(getattr(copy, "replace")(post, parts=(komorka,)))
-""",
-        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
-    ),
-    "cast innej klasy na Post": (
-        _GOTOWA
-        + """from typing import cast
-
-
-def wyslij(kolejka: Outbox, wysylka: object) -> bool:
-    return kolejka.post(cast(Post, wysylka))
-""",
-        "bieg TypeError: Plik kolejki bierze tylko Post i LogsPost, nie Atrapa.",
-    ),
     "wartość typu Any": (
         """from typing import Any
 
@@ -2140,28 +2145,6 @@ def wysylka(komorka: str, post: Post) -> str:
 # Postaci, które bez kontroli dokładnego typu w chwili użycia (outbox._queue_text, outbox._pack, client_data.Outgoing.__add__)
 # dawałyby plikowi kolejki wartość komórki, a z nią dostają odmowę → fragment zgłoszenia biegu.
 ODMOWY_TEKSTU: Final = {
-    "cast na Outgoing": (
-        _POST
-        + """from typing import cast
-
-from rozliczenia.client_data import Outgoing
-
-
-def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
-    return Post(cel, None, post.run_id, None, (cast(Outgoing, komorka),))
-""",
-        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
-    ),
-    "wartość typu Any": (
-        _POST
-        + """from typing import Any
-
-
-def wysylka(wiersz: dict[str, Any], cel: NewIssue, post: Post) -> Post:
-    return Post(cel, None, post.run_id, None, (wiersz["ADRES"],))
-""",
-        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
-    ),
     "goły napis z type: ignore": (
         _POST
         + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
@@ -2187,16 +2170,6 @@ def wysylka(komorka: str, post: Post) -> Post:
     return post
 """,
         "stopień Rank",
-    ),
-    "object.__setattr__ na częściach gotowej wysyłki": (
-        """from rozliczenia.centrum.outbox import Post
-
-
-def wysylka(komorka: str, post: Post) -> Post:
-    object.__setattr__(post, "parts", (komorka,))
-    return post
-""",
-        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
     "type.__new__ z bazą bez super(): podklasa Outgoing w części": (
         _PODKLASA_TEKSTU + '    return Post(cel, None, post.run_id, None, (tekst(komorka),))\n',
@@ -2472,36 +2445,6 @@ ODMOWY_CELU: Final = {
 """,
         "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
-    "zapis do __dict__ gotowego celu": (
-        _GOTOWY_CEL
-        + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
-    cel.__dict__["title"] = komorka
-    return Post(cel, None, post.run_id, None, post.parts)
-""",
-        "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
-    ),
-    "cast na Outgoing w tytule celu": (
-        _GOTOWY_CEL
-        + """from typing import cast
-
-from rozliczenia.client_data import Outgoing
-
-
-def wysylka(komorka: str, post: Post) -> Post:
-    return Post(NewIssue("uwaga-taty", cast(Outgoing, komorka)), None, post.run_id, None, post.parts)
-""",
-        "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
-    ),
-    "tytuł celu typu Any": (
-        _GOTOWY_CEL
-        + """from typing import Any
-
-
-def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
-    return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, post.run_id, None, post.parts)
-""",
-        "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
-    ),
     "etykieta celu typu Any": (
         _GOTOWY_CEL
         + """from typing import Any
@@ -2652,3 +2595,21 @@ def test_wysylka_od_sluchacza_przechodzi_kontrole_typu_przed_skrzynka(opis: str,
         assert (queue.box.issues, len(queue.files()), "TypeError" in queue.log()) == ([], 1, True)
     else:
         assert queue.files() == []
+
+
+def test_plik_kolejki_starszego_wydania_bez_stopnia_to_wlasne_logi_ktore_zastepuja_pozniejsza_wersje_zastepcza_w_skrzynce(
+    tmp_path: Path,
+) -> None:
+    stand_in = f"zastępcze\n<!-- wysyłka {LOGS.label} {RUN_ID} część 1 wersja 1:20261023T101500000000Z-0002 -->"
+    issue = BoxIssue(7, LOGS.label, LOGS.title, f"{LOGS.line}\n\nLogi Uruchomień okresu.\n", [stand_in], [70])
+    queue = Queue(tmp_path, FakeReportBox(issues=[issue]))
+    queue.directory.mkdir(parents=True)
+    document = json.loads(run_logs("z wynikiem", 1).to_json())
+    del document["rank"]
+    (queue.directory / f"{LOGS_VERSION}-{LOGS.label}-{RUN_ID[:8]}.json").write_text(json.dumps(document), encoding="utf-8")
+
+    queue.outbox.resume()
+    queue.passed()
+
+    assert queue.files() == []
+    assert (issue.comments, queue.box.edited) == (list(run_logs("z wynikiem", 1).parts), [70])

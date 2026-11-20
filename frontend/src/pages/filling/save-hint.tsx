@@ -1,7 +1,6 @@
 import type { CollectiveFileRead } from "@/api/generated"
 import { hourMinute } from "@/lib/format"
 
-/** Wskazówka pod treścią stron Uzupełnienia. */
 export function SaveHint({ read }: { read: CollectiveFileRead }) {
   return (
     <p className="px-1 text-sm text-muted-foreground">

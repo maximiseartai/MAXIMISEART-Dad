@@ -1,14 +1,3 @@
-"""Interfejs HTTP sekcji Wykonawcy w Ustawieniach Centrum (ADR 0032): tata dodaje Wykonawcę, zmienia go formularzem,
-przełącza Nieaktywnego i Przypomnienia o raporcie, usuwa Wykonawcę, którego login nie występuje w żadnym okresie,
-przypisuje Wykonawcy adres nieznanego nadawcy z widoku Raporty i widzi podpowiedzi loginów z ostatnich zleceń Rejestru
-zleceń (``worker_suggestions``).
-
-Listę Wykonawców i jej reguły ma właściciel Ustawień (``settings``), także sprawdzenie okresów przy każdym usunięciu
-loginu, a zmiany wpisu ``settings.workers``; tu są tylko żądania przeglądarki i odmowy. Zła wartość formularza to 422 z
-polem formularza (``nazwa``, ``adresy[1]``), a Wykonawca albo login, który występuje w okresie albo którego nie da się
-sprawdzić, to 409 z propozycją Nieaktywnego.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -31,15 +20,10 @@ from rozliczenia.worker_list import Worker, WorkerList
 from rozliczenia.worker_periods import old_name_periods
 
 _REFUSED: dict[int | str, dict[str, object]] = {422: {"model": common_contract.Problem}}
-"""Odmowa w OpenAPI: zła wartość formularza (422) jako ``Problem``."""
 _KEPT: dict[int | str, dict[str, object]] = {409: {"model": common_contract.Problem}, **_REFUSED}
-"""Odmowy w OpenAPI: zła wartość formularza (422) i Wykonawca albo login, który zostaje (409), obie jako ``Problem``."""
 
 
 def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[], date]) -> APIRouter:
-    """``files``: uchwyt plików taty pracy Centrum, którym podpowiedzi czytają Rejestr zleceń; ``today``: dzień taty,
-    od którego liczą się ostatnie okresy podpowiedzi."""
-
     router = APIRouter(prefix="/api/settings/workers", tags=["ustawienia"])
 
     @router.post("", operation_id="addWorker", responses=_REFUSED)

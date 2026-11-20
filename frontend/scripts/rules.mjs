@@ -8,19 +8,16 @@ const source = join(root, "src")
 
 const generated = join(source, "api", "generated")
 
-// Schematy kontraktu spoza UI; każdy z uzasadnieniem.
 const SCHEMAS_OUTSIDE_UI = new Map([
   ["HTTPValidationError", "domyślny błąd walidacji FastAPI; przeglądarka pokazuje własny Komunikat błędu"],
   ["ValidationError", "domyślny błąd walidacji FastAPI, część HTTPValidationError"],
 ])
 
-// Pola kontraktu, których UI nie pokazuje; każde z uzasadnieniem. Pole użyte w src trzeba stąd usunąć.
 const FIELDS_OUTSIDE_UI = new Map([
   ["Health.service", "czyta je launcher Centrum (launcher.py), nie przeglądarka"],
   ["RunEvent.sequence", "numer zdarzenia strumienia SSE, nie treść dla taty"],
 ])
 
-// Pliki, które wolno rozgałęziać po nazwie procesu; każdy z uzasadnieniem.
 const PROCESS_COMPARISON_FILES = new Map([
   [
     "src/lib/runs.tsx",
@@ -28,13 +25,11 @@ const PROCESS_COMPARISON_FILES = new Map([
   ],
 ])
 
-// Pliki, które wolno łączyć z serwerem; każdy z uzasadnieniem. Plik bez połączenia trzeba stąd usunąć.
 const NETWORK_FILES = new Map([
   ["src/api/client.ts", "`call`: droga każdego zapytania, odpowiedź parsowana schematem z kontraktu"],
   ["src/api/centrum.ts", "strumień Uruchomień (każde zdarzenie parsowane zRunEvent) i pomiar widoku (204 bez treści)"],
 ])
 
-// Droga naprawy dla każdego rodzaju połączenia: komunikat porażki prowadzi do wzorca z src/api/centrum.ts.
 const REPAIRS = {
   request:
     "Dodaj w src/api/centrum.ts funkcję, która woła serwer przez `call` z src/api/client.ts " +
@@ -90,7 +85,6 @@ function timedOperations(contract) {
   return new Set(contract.components.schemas.ApiTiming.properties.operation.enum)
 }
 
-// `call("operacja", …)`: nazwa operacji albo `null`, gdy pierwszy argument nie jest literałem.
 function calledOperation(node) {
   if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== "call") {
     return undefined
@@ -157,7 +151,6 @@ function isGlobalObject(node) {
   return ts.isIdentifier(expression) && GLOBAL_OBJECTS.has(expression.text)
 }
 
-// `JSON`, `window.JSON`, `(window).JSON`: nazwa globalna wprost albo przez obiekt globalny.
 function globalName(node) {
   const expression = unwrap(node)
 
@@ -211,7 +204,6 @@ function isBusyOutsideSkeleton(node) {
   )
 }
 
-// Nazwy użyte w kodzie: identyfikatory (także dostęp do właściwości i destrukturyzacja) i teksty literałów.
 function inspect(path, names, used, comparisons, network, calls, busy) {
   const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)
 
@@ -276,7 +268,6 @@ for (const path of sourceFiles(source)) {
   }
 }
 
-// Schematy odpowiedzi: `$ref`, każdy wariant unii (`oneOf`, `anyOf`) i element tablicy (`items`).
 function responseSchemas(schema) {
   if (schema === undefined) {
     return []
@@ -289,7 +280,6 @@ function responseSchemas(schema) {
   return [...(schema.oneOf ?? []), ...(schema.anyOf ?? []), ...(schema.items ? [schema.items] : [])].flatMap(responseSchemas)
 }
 
-// Pola pierwszego poziomu schematów odpowiedzi 200 operacji GET (każdego wariantu unii): "Schemat.pole".
 function responseFields(api) {
   const schemas = new Set(
     Object.values(api.paths).flatMap((methods) =>
@@ -341,7 +331,6 @@ function declaredFields(files, wanted) {
   return fields
 }
 
-// Węzeł pliku, w którym zaczyna się odniesienie findReferences (najgłębszy węzeł zawierający pozycję).
 function nodeAt(file, node, position) {
   const child = node.getChildren(file).find((part) => part.getStart(file) <= position && position < part.getEnd())
 
@@ -434,7 +423,6 @@ function readBySymbol(fields) {
     fields,
   )
 
-  // Odniesienia w src, które findReferences wiąże z deklaracją `name`, bez samej deklaracji: węzeł nazwy i `isWriteAccess`.
   function references(name) {
     const file = name.getSourceFile()
 
@@ -467,7 +455,6 @@ function readBySymbol(fields) {
 
   const waiting = new Map([...declared].filter(([, key]) => !read.has(key)))
 
-  // Pola z `waiting`, które niesie typ: jego właściwość (każdego wariantu unii) prowadzi do ich deklaracji.
   function carried(type) {
     return variants(type).flatMap((variant) =>
       variant.getProperties().flatMap((property) =>
@@ -476,15 +463,12 @@ function readBySymbol(fields) {
     )
   }
 
-  // Deklaracja funkcji albo komponentu, który wywołuje `call` (wywołanie, `new`, element JSX), gdy leży w src.
   function calledDeclaration(call) {
     const declaration = checker.getResolvedSignature(call)?.getDeclaration()
 
     return declaration !== undefined && isOwn(declaration.getSourceFile().fileName) ? declaration : undefined
   }
 
-  // Wiązania, do których wchodzi wartość wyrażenia `node` z drogą `path`: prop komponentu z atrybutu JSX, parametr
-  // wywołanej funkcji z argumentu, zmienna z inicjalizatora.
   function receivers(node, path) {
     const parent = node.parent
 
@@ -511,7 +495,6 @@ function readBySymbol(fields) {
       return false
     }
 
-    // Wzorzec czyta pole, gdy je wymienia; bez tego `...rest` niesie je dalej pod swoją nazwą.
     if (!ts.isIdentifier(target.name)) {
       const element = binding(target.name, [field])
 
@@ -550,8 +533,6 @@ function readBySymbol(fields) {
     return receivers(value, path).some((target) => bindingReads(target, field, depth - 1))
   }
 
-  // Warianty typu, który według deklaracji wywołanej funkcji przyjmuje wynik funkcji podanej jako argument `node`
-  // (po `Promise`; za parametrem typu jego ograniczenie).
   function resultConstraint(node) {
     const call = node.parent
     const parameter = calledDeclaration(call)?.parameters[call.arguments.indexOf(node)]

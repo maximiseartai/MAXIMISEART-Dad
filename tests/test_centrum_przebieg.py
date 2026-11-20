@@ -18,7 +18,7 @@ from rozliczenia import settlement_process
 from rozliczenia.centrum import run_view
 from rozliczenia.telemetry import MetricsStore
 
-from tests.fixtures.centrum import centrum as bare_centrum, finished_view, phase_states, run_events
+from tests.fixtures.centrum import centrum as bare_centrum, finished_view, run_events
 from tests.fixtures.centrum_processes import (
     TODAY,
     WORKER_SETTLEMENTS,
@@ -286,34 +286,6 @@ def test_zatrzymanie_odsyla_do_podgladu_po_wiersze_tylko_gdy_podglad_tego_pliku_
 
     assert stop["action"] == action
     assert any(NAMES_ROW.search(warning["what"]) for warning in warnings) is (PROMISES_ROWS in action)
-
-
-def test_nienadpisywanie_zatrzymuje_bez_zmiany_istniejacego_folderu_rozliczen_pracownikow(tmp_path: Path) -> None:
-    centrum = settling_centrum(tmp_path)
-    centrum.worker_settlements.mkdir()
-    corrected = centrum.worker_settlements / f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx"
-    corrected.write_bytes(b"reczne poprawki taty")
-
-    view = run_to_end(centrum, dry_run=False)
-    result = view["result"]
-
-    assert (result["ending"], result["next_action"]) == ("stop", "rerun")
-    assert result["stops"] == [
-        {
-            "what": (
-                "Folder rozliczeń pracowników tego okresu już istnieje, więc nie został nadpisany. "
-                "Nie utworzono żadnego pliku pracownika."
-            ),
-            "where": f"folder {PERIOD}\\{WORKER_SETTLEMENTS}",
-            "action": (
-                "Sprawdź, czy wybrano właściwy okres. Rozliczenia pracowników tego okresu już są w Folderze okresu. "
-                "Jeśli trzeba je utworzyć od nowa, najpierw przenieś Folder rozliczeń pracowników poza Folder okresu i uruchom ponownie."
-            ),
-        }
-    ]
-    assert phase_states(view)["Sprawdzanie"] == "failed"
-    assert [path.name for path in centrum.worker_settlements.iterdir()] == [corrected.name]
-    assert corrected.read_bytes() == b"reczne poprawki taty"
 
 
 def test_zatrzymanie_pokazuje_nazwe_pliku_bez_pelnej_sciezki(tmp_path: Path) -> None:

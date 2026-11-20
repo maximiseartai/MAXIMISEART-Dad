@@ -4,16 +4,13 @@ import type { ViewTiming } from "@/api/generated"
 
 type PageId = ViewTiming["page"]
 
-/** Adres strony Centrum: `#/<id>`, a za nim człony strony, np. `#/uzupelnienie/<okres>`. */
 export type Href = `#/${PageId}` | `#/${PageId}/${string}`
 
-/** Okno Ustawień ma adres `#/ustawienia/<sekcja>` i otwiera się nad stroną, na której tata był (ADR 0032). */
 const SETTINGS = "ustawienia" satisfies PageId
 
 /** Dawny widok Konfiguracja: jego adres z zakładki w przeglądarce otwiera okno Ustawień. */
 const OLD_CONFIGURATION = "konfiguracja"
 
-/** Adres strony `id` z członami `path` (np. tokenem okresu); każdy człon jest kodowany osobno. */
 export function href(id: PageId, ...path: ReadonlyArray<string>): Href {
   return path.length === 0 ? `#/${id}` : `#/${id}/${path.map(encodeURIComponent).join("/")}`
 }
@@ -27,7 +24,6 @@ function decoded(part: string): string {
   }
 }
 
-/** `#/uzupelnienie/06_12_10_2026` → `["uzupelnienie", "06_12_10_2026"]` */
 export function hashParts(hash: string): ReadonlyArray<string> {
   return hash.replace(/^#\/?/, "").split("/").map(decoded)
 }
@@ -36,11 +32,6 @@ function isSettings(hash: string): boolean {
   return hashParts(hash)[0] === SETTINGS
 }
 
-/**
- * Adres karty rozdzielony na stronę i okno Ustawień nad nią. `page` to adres ostatniej strony tej karty (pusty przy
- * zimnym starcie na `#/ustawienia/…`: wtedy pod oknem jest strona startowa), `settings` człon sekcji albo `null`, gdy
- * okno jest zamknięte, a `fromPage` mówi, czy okno otworzyło się przejściem z tej karty (wtedy zamyka je „Wstecz”).
- */
 type Address = { page: string; settings: string | null; fromPage: boolean }
 
 function read(previous: Address | null): Address {
@@ -91,30 +82,20 @@ function subscribe(onChange: () => void) {
   return () => window.removeEventListener("hashchange", onChange)
 }
 
-/**
- * Adres strony pod spodem (`location.hash` bez okna Ustawień); zmienia się z każdym przejściem między stronami, także
- * Wstecz w przeglądarce, a otwarcie i zamknięcie okna Ustawień go nie zmienia, więc strona pod oknem zostaje.
- */
 export function useHash(): string {
   return React.useSyncExternalStore(subscribe, () => current().page)
 }
 
-/** Człony adresu za identyfikatorem strony: `#/uzupelnienie/06_12_10_2026` → `["06_12_10_2026"]`. */
 export function usePagePath(): ReadonlyArray<string> {
   const hash = useHash()
 
   return React.useMemo(() => hashParts(hash).slice(1), [hash])
 }
 
-/** Człon sekcji z adresu okna Ustawień (`""`, gdy adres jej nie ma) albo `null`, gdy okno jest zamknięte. */
 export function useSettingsAddress(): string | null {
   return React.useSyncExternalStore(subscribe, () => current().settings)
 }
 
-/**
- * Adres okna Ustawień na sekcji `section` z członami sekcji `path` (np. adres nadawcy do przypisania Wykonawcy); bez
- * sekcji okno otwiera się na pierwszej sekcji.
- */
 export function settingsHref(section?: string, ...path: ReadonlyArray<string>): Href {
   return section === undefined ? href(SETTINGS) : href(SETTINGS, section, ...path)
 }
@@ -123,7 +104,6 @@ function settingsHash(): string {
   return isSettings(window.location.hash) ? window.location.hash : ""
 }
 
-/** Człony adresu okna Ustawień za sekcją: `#/ustawienia/wykonawcy/przypisz/<adres>` → `["przypisz", "<adres>"]`. */
 export function useSettingsPath(): ReadonlyArray<string> {
   const hash = React.useSyncExternalStore(subscribe, settingsHash)
 
@@ -135,7 +115,6 @@ export function showSection(section: string) {
   window.location.replace(settingsHref(section))
 }
 
-/** Zamyka okno Ustawień i zostawia stronę pod spodem: „Wstecz”, gdy okno otwarto z tej karty, inaczej adres tej strony. */
 export function closeSettings() {
   const { page, fromPage } = current()
 

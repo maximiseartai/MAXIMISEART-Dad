@@ -10,7 +10,7 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia import tool_files
+from rozliczenia import tool_files, workbook_files
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
@@ -370,7 +370,7 @@ def test_brak_naglowka_urzadzen_nazywa_naglowek(tmp_path: Path) -> None:
 
     assert message["what"] == "Brakuje nagłówka w Pliku zbiorczym: UMOWA i URZĄDZENIA w wierszu 17."
     [line] = centrum.log_lines(LOG_EVENT)
-    assert "przyczyna=BRAK_NAGLOWKA_PLIKU_ZBIORCZEGO" in line
+    assert "przyczyna=BRAK_NAGLOWKA_PLIKU_ZBIORCZEGO excel=nie typ=-" in line
 
 
 def test_brak_naglowka_wykonawca_nazywa_komorke(tmp_path: Path) -> None:
@@ -395,7 +395,13 @@ def test_okres_bez_folderu_okresu_daje_komunikat_o_braku_pliku_zbiorczego(tmp_pa
 def test_plik_regul_ilosci_listy_urzadzen_albo_legendy_bez_odczytu_to_odmowa_uzupelnienia_a_nie_plik_z_wydania(
     tmp_path: Path, unreadable: str
 ) -> None:
-    centrum = _prepared(tmp_path)
+    opened: list[Path] = []
+
+    def counted(path: Path) -> bytes:
+        opened.append(path)
+        return workbook_files.file_bytes(path)
+
+    centrum = _prepared(tmp_path, surroundings=Surroundings(source=counted))
     write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "  - {id: fut, zapisy: [fut], grupa: tv}\n", "  - {id: przeniesienie, zapisy: [przeniesienie]}\n")
     write_dad_quantity_rules(
         centrum.tool,
@@ -407,6 +413,7 @@ def test_plik_regul_ilosci_listy_urzadzen_albo_legendy_bez_odczytu_to_odmowa_uzu
     window_url = f"/api/periods/{PERIOD}/without-quantity"
     assert (centrum.view(URL)["state"], centrum.view(window_url)["state"]) == ("ready", "read")
     sentence = {"message": f"Pliku {unreadable} w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i spróbuj ponownie."}
+    opened.clear()
 
     with without_reading(tool_files.config_dir(tmp_path) / unreadable):
         summary = centrum.client.get(URL)
@@ -415,6 +422,7 @@ def test_plik_regul_ilosci_listy_urzadzen_albo_legendy_bez_odczytu_to_odmowa_uzu
 
     assert (summary.status_code, summary.json(), table.status_code, table.json()) == (409, sentence, 409, sentence)
     assert window.json() == {"state": "unread"}
+    assert opened == []
 
 
 def test_zly_token_okresu_i_brak_folderu_okresow_sa_odmowa(tmp_path: Path) -> None:

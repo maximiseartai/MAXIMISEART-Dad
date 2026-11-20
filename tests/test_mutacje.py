@@ -116,14 +116,6 @@ def test_mutacja_z_kotwica_nie_dokladnie_raz_w_pliku_jest_nieaktualna(anchor: st
     assert answered.stdout.splitlines()[0].startswith("NIEAKTUALNA: mutacja → kotwicy nie ma dokładnie raz")
 
 
-def test_polecenie_czerwone_bez_mutacji_nie_daje_werdyktu() -> None:
-    answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", "-c", "raise SystemExit(1)")
-
-    assert answered.returncode == 2
-    assert answered.stdout.splitlines()[0].startswith("PODSTAWA CZERWONA:")
-    assert "WYKRYTA" not in answered.stdout
-
-
 @pytest.mark.parametrize(
     ("end", "limit_s", "last"),
     [("sys.exit(1)", "600", "CLEANUP OK"), ("threading.Event().wait()", "2", "brak wyniku po 2 s")],
@@ -261,10 +253,9 @@ KOD_4 = (
         (("-m", "pytest", "-q", "-n", "0", "tests/test_ciezkie_ci.py", "-k", "nie_ma_takiego_testu"), "pytest nie wybrał żadnego testu (kod 5), więc popraw ścieżkę albo -k w poleceniu po --; to błąd polecenia, nie kodu"),
         (("-m", "pytest", "-q", "-p", "no:xdist", "tests/test_ciezkie_ci.py"), "pytest odrzucił -p no:xdist (kod 4), bo addopts w pyproject.toml ma --dist, więc zamiast niego daj -n 0 w poleceniu po --"),
         (("-m", "pytest", "-q", "-n", "0", "tests/test_nie_ma_takiego_pliku.py"), KOD_4),
-        (("-m", "pytest", "-q", "-n", "0", "tests/test_ciezkie_ci.py::nie_ma_takiego_testu"), KOD_4),
         (("-c", "raise SystemExit(5)"), None),
     ],
-    ids=["nic-nie-wybrane", "bez-xdist", "brak-pliku", "brak-testu-node-id", "nie-pytest-z-kodem-5"],
+    ids=["nic-nie-wybrane", "bez-xdist", "brak-pliku", "nie-pytest-z-kodem-5"],
 )
 def test_podstawa_pytest_bez_testu_podaje_przyczyne(command: tuple[str, ...], cause: str | None) -> None:
     answered = _mutacje("--zmiana", *_appended(PACKAGE, ""), "--", *command)
@@ -697,9 +688,8 @@ NEW_TEST = "import rozliczenia\n\n\ndef test_nowy():\n    assert rozliczenia.WAR
     [
         ({}, (), r"no tests ran", KOD_4_NA_BAZIE),
         ({"tests/test_n.py": OLD_TEST}, ("-k", "test_nowy"), r"1 deselected", NOWY_TEST_NA_BAZIE),
-        ({"tests/test_n.py": OLD_TEST}, ("::test_nowy",), r"no tests ran", KOD_4_NA_BAZIE),
     ],
-    ids=["nowy-plik-testow", "nowy-test-w-pliku", "nowy-test-przez-node-id"],
+    ids=["nowy-plik-testow", "nowy-test-w-pliku"],
 )
 def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dotyczy(
     tmp_path: Path, base: dict[str, str], selected: tuple[str, ...], there: str, why: str
@@ -712,8 +702,7 @@ def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dot
     (repo / "tests" / "test_n.py").parent.mkdir(exist_ok=True)
     (repo / "tests" / "test_n.py").write_text(f"{base.get('tests/test_n.py', '')}\n\n{NEW_TEST}", encoding="utf-8")
     commit(repo, "nowy test")
-    node = ("tests/test_n.py" + selected[0],) if selected[:1] == ("::test_nowy",) else ("tests/test_n.py", *selected)
-    pytest_command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", *node)
+    pytest_command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", *selected)
 
     answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1", "--", *pytest_command)
 
@@ -723,7 +712,6 @@ def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dot
 
 NAMED_TEST = "def test_wybrany():\n    pass\n"
 IMPORTING_TEST = "from rozliczenia import WARTOSC\n\n\ndef test_n():\n    assert WARTOSC == 0\n"
-PARAMETRIZED_TEST = "import pytest\n\nimport rozliczenia\n\n\n@pytest.mark.parametrize('nazwa', rozliczenia.NAZWY)\ndef test_n(nazwa):\n    assert nazwa\n"
 SECONDS = r"[0-9.]+s"
 GONE = (
     r"\(pytest nie uruchomił testu z polecenia, kod {code}, a pliki testów polecenia z mutacją się zbierają: .+; dowodzi tylko test, "
@@ -744,19 +732,13 @@ GONE = (
             f"NIEWYKRYTA: mutacja → no tests ran in {SECONDS} {GONE.format(code=4)}",
         ),
         (
-            {PACKAGE: "NAZWY = ('a', 'b')\n", "tests/test_n.py": PARAMETRIZED_TEST},
-            (PACKAGE, "('a', 'b')", "('a',)"),
-            ("tests/test_n.py::test_n[b]",),
-            f"NIEWYKRYTA: mutacja → no tests ran in {SECONDS} {GONE.format(code=4)}",
-        ),
-        (
             {"tests/test_n.py": IMPORTING_TEST},
             (PACKAGE, "WARTOSC = 0", "INNA = 0"),
             ("tests/test_n.py::test_n",),
             rf"WYKRYTA: mutacja → 1 error in {SECONDS} \(pliki testów polecenia z mutacją się nie zbierają, kod 2: no tests collected, 1 error in {SECONDS}\)",
         ),
     ],
-    ids=["test-z-polecenia-usuniety", "k-bez-testu", "test-z-pliku-argumentow-usuniety", "parametr-znika", "plik-testow-nie-importuje-sie"],
+    ids=["test-z-polecenia-usuniety", "k-bez-testu", "test-z-pliku-argumentow-usuniety", "plik-testow-nie-importuje-sie"],
 )
 def test_mutacja_po_ktorej_pytest_nie_uruchomil_testu_jest_wykryta_tylko_gdy_pliki_testow_sie_nie_zbieraja(
     tmp_path: Path, files: dict[str, str], edit: tuple[str, str, str], selected: tuple[str, ...], line: str

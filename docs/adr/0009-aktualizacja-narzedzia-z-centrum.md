@@ -54,15 +54,26 @@ rozliczeń. Centrum robi to samo, co Maks zrobiłby ręcznie, i niczego więcej:
 
 - **Git for Windows.** Centrum szuka `git.exe` w `PATH` i w znanych miejscach
   instalacji Git for Windows. Pobiera `main` z publicznego repozytorium bez
-  logowania i przesuwa klon tylko do przodu (fast-forward). Lokalne commity,
+  logowania i przesuwa klon tylko do przodu (fast-forward). Adres repozytorium
+  jest stały, więc każda porażka pobrania poza prośbą o logowanie to brak
+  połączenia z GitHubem. Lokalne commity,
   inna gałąź albo zmienione śledzone pliki zatrzymują Aktualizację narzędzia z
   Komunikatem „przekaż Maksowi” i niczego nie zmieniają.
 - **Pliki taty zostają.** Plik w `config/`, który nowa wersja przestaje śledzić
   albo usuwa, a który tata ma u siebie (dziś `worker_mapping.yaml`), Centrum
   zachowuje i przywraca po przesunięciu klonu. Wzorce, Ustawienia taty, klucz
   do Zgłoszeń, dziennik, metryki i pliki okresów nie są dotykane.
+  Pliki stanu Centrum mają w każdej wersji to samo miejsce w katalogu narzędzia,
+  bo cofnięcie startuje starą wersję na plikach, które zostawiła nowa, a kolejkę
+  Skrzynki wysyła następna wersja; miejsca przypina literałem
+  `tests/test_uszkodzone_wejscia.py::test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca`.
 - **Biblioteki.** Gdy nowa wersja zmienia `requirements.txt`, Centrum instaluje
-  je tym samym Pythonem, w którym działa.
+  je tym samym Pythonem, w którym działa, najwyżej przez 15 minut, bo pip na
+  wolnym łączu taty pobiera i rozpakowuje biblioteki przez kilka minut.
+  Cofnięcie Aktualizacji narzędzia bibliotek nie cofa: stara wersja startuje z
+  nowszymi, bo biblioteki, które Centrum importuje, mają w wymaganiach dolne
+  granice, a jedynej górnej granicy (Playwright) Centrum przy starcie nie
+  sprawdza.
 - **Wszystko albo nic.** Porażka po przesunięciu klonu (instalacja bibliotek,
   przywracanie plików taty) cofa klon do commitu sprzed Aktualizacji
   narzędzia. Tata zostaje z wersją, która działała.

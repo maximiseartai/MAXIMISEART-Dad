@@ -14,7 +14,6 @@ import { HistoryRunCard } from "@/pages/runs/run-card"
 
 const OPEN = "Karta Uruchomienia"
 
-/** Przycisk wiersza Historii: karta tego Uruchomienia z jego Logów Uruchomienia w panelu z boku. */
 export function RunCardButton({ run }: { run: ProcessRun }) {
   return (
     <CardSheet title={run.process_label} period={run.period}>
@@ -23,7 +22,6 @@ export function RunCardButton({ run }: { run: ProcessRun }) {
   )
 }
 
-/** Przycisk z napisem w Powiadomieniu: karta Uruchomienia `runId` z jego Logów w tym samym panelu z boku. */
 export function RunCardLink({ runId, title, period }: { runId: string; title: string; period: string }) {
   return (
     <CardSheet title={title} period={period} labelled>
@@ -32,7 +30,6 @@ export function RunCardLink({ runId, title, period }: { runId: string; title: st
   )
 }
 
-/** Karta Uruchomienia, którą serwer już przysłał (np. ostatnie Uporządkowanie INTERMAX), w tym samym panelu z boku. */
 export function RestoredCardButton({ card }: { card: RunRestored }) {
   return (
     <CardSheet title={card.run.title} period={card.run.period}>
@@ -114,7 +111,6 @@ function RunCardBody({ runId }: { runId: string }) {
   }
 }
 
-/** Wiersz bez identyfikatora Uruchomienia (`.cmd`) karty nie ma, więc panel nie pyta serwera. */
 function ShownCard({ runId }: { runId: string | null }) {
   return runId === null ? <MissingCard /> : <RunCardBody runId={runId} />
 }

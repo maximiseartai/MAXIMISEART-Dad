@@ -1,12 +1,3 @@
-"""Interfejs HTTP otwarcia Rejestru zleceń z Ustawień Centrum i z Zatrzymania: Rejestr wskazany w Ustawieniach otwiera
-się programem systemu. Rejestr niewybrany to 409, niedostępny (system nie odpowiada o pliku, np. OneDrive nie działa)
-to 409, a brakujący to 404. Plik Folderów, którego system nie daje teraz czytać, to 409 o tym pliku, nie „najpierw
-wybierz”.
-
-Trasa tylko czyta Ustawienia (``CentrumSettings.folders``) i niczego w nich nie zapisuje, więc jej odmowy
-dotyczą pliku taty, nie zmiany Ustawień.
-"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter

@@ -1,17 +1,3 @@
-"""Przeniesienie starego pliku Wykonawców (``worker_mapping.yaml``) i adresów Wykonawców (``adresy-wykonawcow.yaml``) do
-Listy Wykonawców (``wykonawcy.yaml``): zmiana z Wydania ``2026-11-lista-wykonawcow`` (ADR 0032).
-
-Czego nie da się pewnie przenieść, nie znika po cichu: adresy przy loginie spoza Konfiguracji i stary plik adresów,
-którego nie da się użyć, trafiają do ``do_rozstrzygniecia`` dla taty, a Konfiguracja, której nie da się użyć, to zmiana
-odrzucona z powodem w Historii Ustawień. Plik, którego system nie daje teraz czytać (np. trzyma go antywirus), to
-``Later``: treść jest nieznana, a nie zła, więc zmiana wraca przy następnym starcie. Stare pliki zostają w ``config``.
-
-Bez żadnego starego pliku edycja daje pustą listę, czyli tę samą wartość co brak pliku, więc właściciel nie pisze pliku
-ani wiersza Historii. Reguły odczytu starych plików są tu, bo to ich jedyny czytelnik: ``schema_version: 1``, mapa ``workers`` login → nazwa
-i mapa ``wykonawcy`` login → lista adresów, login po ``normalize_text``, adres po ``casefold``. Reguły nazwy i adresu
-sprawdza potem ``WorkerList.of``, ta sama budowa co przy każdym zapisie listy.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,7 +18,7 @@ OLD_ADDRESSES_FILE: Final = "adresy-wykonawcow.yaml"
 
 
 class _Unreadable(Exception):
-    """Starego pliku nie dało się teraz przeczytać, choć jest."""
+    pass
 
 
 def propose(inputs: ReleaseInputs[WorkerList]) -> Proposal[WorkerList]:
@@ -61,16 +47,10 @@ def propose(inputs: ReleaseInputs[WorkerList]) -> Proposal[WorkerList]:
 
 
 def _old_files(config: Path) -> bool:
-    """Czy w ``config`` jest któryś stary plik Wykonawców, także taki, którego system nie daje teraz czytać; bez Historii
-    Ustawień i bez pamięci zmian z Wydań."""
-
     return any(file_state(config / name) != "missing" for name in (OLD_MAPPING_FILE, OLD_ADDRESSES_FILE))
 
 
 def _document(path: Path) -> object | None:
-    """Treść YAML starego pliku; ``None``: pliku nie ma. ``_Unreadable``, gdy system go nie oddaje, a ``ValueError`` ze
-    zdaniem, gdy to nie jest tekst YAML."""
-
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as error:
@@ -87,9 +67,6 @@ def _document(path: Path) -> object | None:
 
 
 def _mapping(path: Path) -> dict[Login, str] | str:
-    """Login → nazwa ze starego pliku Wykonawców (pusta, gdy pliku nie ma) albo powód, dla którego nie da się jej
-    użyć, bez nazwy i loginu."""
-
     try:
         document = _document(path)
     except ValueError as error:
@@ -112,9 +89,6 @@ def _mapping(path: Path) -> dict[Login, str] | str:
 
 
 def _addresses(path: Path) -> dict[Login, tuple[SenderAddress, ...]] | str:
-    """Login → adresy ze starego pliku adresów (pusty, gdy pliku nie ma) albo powód, dla którego nie da się go użyć, bez
-    adresu i loginu; login nie musi być w starym pliku Wykonawców."""
-
     try:
         document = _document(path)
     except ValueError as error:
@@ -149,7 +123,3 @@ CHANGE: Final = ReleaseChange(
     refused_absent=messages.worker_list_not_created(),
     waiting=Waiting(messages.worker_list_waiting(), _old_files),
 )
-"""Lista Wykonawców ze starych plików, bez „Cofnij”: cofnięcie zostawiłoby Centrum bez Wykonawców (D8). Po odmowie i
-gdy przeniesienie przy tym starcie nie doszło do skutku, a stare pliki są (stary plik bez prawa odczytu, Historia
-Ustawień albo pamięć zmian z Wydań nieczytelna), dopóki pliku nie ma, sekcja Wykonawcy i procesy widzą złe ustawienie,
-a nie pustą dobrą listę."""
