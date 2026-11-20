@@ -3,7 +3,7 @@
 ## Status
 
 Przyjęta na decyzje Maksa z 20.11.2026 w sesji pytań do specyfikacji [#2448](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2448), cytowane niżej jego słowami; odwracalna przez revert.
-Zmienia [ADR 0042](0042-straznik-przy-pierwszym-waznym.md) w decyzjach „Strażnik przy każdym Ważnym”, „Kod usunięty z PR” i „Pole `Idiom:`” oraz w aneksie „Lekka runda przeglądu PR samych narzędzi”, punkt „Lekka runda”, a [ADR 0036](0036-chwast-to-regula.md) w decyzji „Pole werdyktu” (lista w sekcjach „Zmienia te zdania” niżej).
+Zmienia [ADR 0042](0042-straznik-przy-pierwszym-waznym.md) w decyzjach „Strażnik przy każdym Ważnym”, „Kod usunięty z PR” i „Pole `Idiom:`” oraz w aneksie „Lekka runda przeglądu PR samych narzędzi”, punkt „Lekka runda”, [ADR 0036](0036-chwast-to-regula.md) w decyzji „Pole werdyktu”, a [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzji o miejscu szczebla (d) w „Szczebel i dowód” (lista w sekcjach „Zmienia te zdania” niżej).
 Wchodzi razem z polem `Mechanizm:` szablonu werdyktu, a ten plik wyznacza chwilę jego wdrożenia (`szablon_werdyktu.MECHANISM_ADR`).
 Resztę decyzji wdrażają tickety specyfikacji z sekcji „Wdrożenie”, a do merge'a każdego obowiązuje dotychczasowe zdanie ADR 0042, skilla [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i `tools/scal_pr.py`.
 
@@ -62,6 +62,10 @@ Decyzje autora tego PR:
 - „Kod usunięty z PR”: `brak - usunięte` nie wystarcza przy szczeblach `architektura`, `refaktor` i `lint`, gdzie strażnikiem jest zakaz usuniętej postaci.
 - „Pole `Idiom:`”: pole znika z szablonu dla nowych wątków, a raport przestaje liczyć z niego powroty.
 - Aneks „Lekka runda przeglądu PR samych narzędzi”, punkt „Lekka runda”: Ważne ze szczeblem `lint` w takim PR potrzebuje bloku w `## Korzeń` i strażnika.
+
+## Zmienia te zdania ADR 0031
+
+- „Szczebel i dowód”, zdanie „Zapadka (d) stoi między (c) a (e) […]: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają”: pierwszeństwo szczebli daje piramida pola `Mechanizm:`, w której reguła ast-grep (szczebel `lint`) stoi przed testem, więc działająca reguła (d) idzie przed testem (c); (e) zostaje dozwolone tylko wtedy, gdy (a)–(d) nie działają. Litery (a)–(e) pola `Szczebel:` i linie „Wyżej nie, bo:” zostają, jak dziś.
 
 ## Zmienia te zdania ADR 0036
 

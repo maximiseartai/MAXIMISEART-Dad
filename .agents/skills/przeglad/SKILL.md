@@ -73,6 +73,6 @@ Gdzie: <plik:linia>
 ```
 
 `Mechanizm:` wybierasz według sekcji „Mechanizm” w [`korzen.md`](korzen.md), a wątek z pierwszym werdyktem sprzed ADR 0046 kończy bez niego.
-Postać bloku `### Mutacja W<n> r<k>` i punktu `## Sprawdzone` zaczętego od `Korzeń ` podaje [`korzen.md`](korzen.md).
+Kiedy piszesz blok `### Mutacja W<n> r<k>` i punkt `## Sprawdzone` zaczęty od `Korzeń `, podaje [`korzen.md`](korzen.md).
 `PASS` bez znalezisk ma tylko linie `WERDYKT: PASS <pełny SHA HEAD>`, `Znaleziska: 0 (Ważne 0, Drobne 0)`, bloki `### Mutacja` i `## Sprawdzone`.
 Merge liczy `PASS` jako zgodę tylko w postaci, którą sprawdza `tools/scal_pr.py <PR> --werdykt <plik>`, także gdy ktoś opublikował go inaczej, więc werdykt publikuj tylko tym poleceniem.

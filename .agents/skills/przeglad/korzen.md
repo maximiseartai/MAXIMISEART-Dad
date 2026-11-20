@@ -15,7 +15,7 @@ Ta sama reguła obowiązuje przy poprawce operatora.
   - (d) reguła deklaratywna gotowego narzędzia, czyli reguła ast-grep w `reguly-ast-grep/` na liniach dodanych albo na całym drzewie (warunki w [`CODING_STANDARDS.md`](../../../CODING_STANDARDS.md));
   - (e) nowy punkt z linkiem do PR, który go dopisuje, w sekcji „Co jest porażką” pliku [`SKILL.md`](SKILL.md), a punkt o ADR, specyfikacji albo issue `decyzja-maksa` w tej sekcji pliku [`porazka-adr.md`](porazka-adr.md).
 
-  Reguła (d) stoi między (c) a (e), bo jest deterministyczna, a (e) to proza: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają, a (e) tylko wtedy, gdy (a)–(d) nie działają.
+  Pierwszeństwo daje piramida sekcji „Mechanizm” niżej, więc działająca reguła (d) idzie przed testem (c), a (e) tylko wtedy, gdy (a)–(d) nie działają.
   Reguła struktury, której nie wyraża typ, zakaz ruff, kontrakt import-linter ani reguła ast-grep, dostaje test zachowania (c) albo punkt w „Co jest porażką” (e), a nie nowy matcher w Pythonie.
 
   Zakaz ruff albo mypy z (b) nie zastępuje testu, który szuka nazwy w kodzie, dopóki dla tej reguły wolno `noqa` albo `type: ignore`, więc test usuń dopiero, gdy zamiennik łapie każdą formę, którą test łapał (#1371).
