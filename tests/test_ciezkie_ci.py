@@ -61,8 +61,6 @@ def _tool(repo: Path, *arguments: str, env: dict[str, str] = OUTSIDE_CI) -> subp
 
 
 def _with_fake_gh(tmp_path: Path, run: dict[str, object]) -> dict[str, str]:
-    """Środowisko poza CI z atrapą ``gh`` na ``PATH``, która na ``gh run view`` podaje ``run``."""
-
     bin = tmp_path / "bin"
     fake_cli(bin, "gh", f"import pathlib, sys\nsys.stdout.buffer.write(pathlib.Path({str(bin / 'run.json')!r}).read_bytes())\n")
     (bin / "run.json").write_text(json.dumps(run), encoding="utf-8")
@@ -161,8 +159,6 @@ def test_odtworzenie_runu_innej_galezi_na_odlaczonym_head_odmawia(tmp_path: Path
 
 
 def test_odtworzenie_runu_commitu_z_main_odmawia(tmp_path: Path) -> None:
-    """Czerwony run scalonego PR-u ma commit w historii HEAD, ale nie jest porażką tej gałęzi."""
-
     repo = _repo(tmp_path)
     merged = git(repo, "rev-parse", "HEAD")
     git(repo, "update-ref", "refs/remotes/origin/main", merged)
@@ -186,8 +182,6 @@ def test_odtworzenie_czerwonej_czesci_nocnej_biegnie_na_jej_commicie_z_main(tmp_
 
 
 def test_odtworzenie_czesci_nocnej_poza_jej_commitem_odmawia_i_podaje_checkout(tmp_path: Path) -> None:
-    """Stary czerwony run nocny nie otwiera mutacji gałęzi, która tylko ma jego commit w historii."""
-
     repo = _repo(tmp_path)
     night = git(repo, "rev-parse", "HEAD")
     (repo / "plik.txt").write_text("dalej\n", encoding="utf-8")
@@ -247,7 +241,6 @@ RED_BASELINE_LINE = "PODSTAWA CZERWONA: -c raise SystemExit(1) → kod wyjścia 
 
 def _mutation_list(tmp_path: Path, count: int) -> Path:
     path = tmp_path / "mutacje.json"
-    # Dwie zmiany w każdej mutacji: limit liczy mutacje, nie zmiany.
     edits = [["src/rozliczenia/__init__.py", "", "X = 1\n"], ["src/rozliczenia/inny.py", "", "Y = 1\n"]]
     entries = [{"nazwa": f"m{number}", "zmiany": edits} for number in range(count)]
     path.write_text(json.dumps(entries), encoding="utf-8")
@@ -354,7 +347,6 @@ def test_nazwy_ciezkich_zadan_zgadzaja_sie_z_ci() -> None:
         **yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"],
         **yaml.safe_load((ROOT / ".github" / "workflows" / "mutacje-nocne.yml").read_text(encoding="utf-8"))["jobs"],
     }
-    # Zadanie, którego macierz układa plan, nazywa się jak jego tor w planie.
     planned = {lane.szablon: lane.zadanie for lane in (*TORY, MUTACJE)}
     names = {job: planned[job] if jobs[job]["name"] == "${{ matrix.nazwa }}" else jobs[job]["name"] for job in HEAVY}
 

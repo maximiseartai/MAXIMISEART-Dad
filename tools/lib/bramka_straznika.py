@@ -22,7 +22,8 @@ z kodu bazy PR, tym samym Pythonem, jedno wywołanie na selektor ze wszystkimi j
 z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``, a w jakim środowisku, ``srodowisko_ci``.
 
 Selektor wybiera autor tylko spośród tych, które przyjmuje szczebel z pola ``Mechanizm:`` Ważnego
-(``szczebel_straznika``, ADR 0046); selektor, którego szczebel nie przyjmuje, to odmowa bez dowodu.
+(``szczebel_straznika``, ADR 0046); selektor, którego szczebel nie przyjmuje, to odmowa bez dowodu, a ``pytest
+<węzeł>`` przy szczeblu ``test`` dostaje dowód z ``--chroniony-wlasciciel``.
 
 Warunek obowiązuje od własnego wdrożenia (``MARKER``: ADR 0042, jak szablon werdyktu od ADR 0031;
 ``werdykt_pr.rule_applies``, decyzja Q20 ADR 0031), więc wątek z werdyktem sprzed niego kończy po staremu, z polem
@@ -70,9 +71,9 @@ def problems(pull: Pull) -> list[str]:
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to oczekiwanie z przyczyną
         return [Waiting(f"strażnik: GitHub nie wyrenderował werdyktów albo opisu PR ({error}), uruchom ponownie")]
     blocks = {block.heading: block for block in section.blocks} if section else {}
-    ruled = szczebel_straznika.applies(pull)
+    ruled, owned = szczebel_straznika.applies(pull), szczebel_straznika.owner_applies(pull)
     refused: list[str] = []
-    wanted: dict[straznik.Guard, list[str]] = {}
+    wanted: dict[tuple[straznik.Guard, bool], list[str]] = {}
     for heading, major in majors.items():
         guard = blocks[heading].selector() if heading in blocks else None
         if guard is None:
@@ -80,16 +81,20 @@ def problems(pull: Pull) -> list[str]:
         label, round_ = heading.split(" r")
         case = f"{pull.number}/{label}/r{round_}"
         if ruled and (reason := szczebel_straznika.refusal(major.mechanism, guard)):
-            refused.append(f"strażnik: Ważne {case}: {reason}; wpisz w jego bloku sekcji ## Korzeń przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}")
+            refused.append(
+                f"strażnik: Ważne {case}: {reason}; wpisz w jego bloku sekcji ## Korzeń przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}, "
+                f"a gdy ten szczebel nie działa (ADR 0046), recenzent następnej rundy zmienia go punktem „{szablon_werdyktu.MECHANISM_START}{label} r{round_}: <szczebel> - zdanie” w ## {szablon_werdyktu.CHECKED}"
+            )
         else:
-            wanted.setdefault(guard, []).append(case)
+            wanted.setdefault((guard, owned and szczebel_straznika.needs_owner(major.mechanism, guard)), []).append(case)
     deadline = time.monotonic() + PROOF_TIMEOUT_S
-    return [*refused, *(reason for guard, cases in wanted.items() for reason in _proved(pull, guard, cases, deadline - time.monotonic()))]
+    return [*refused, *(reason for (guard, owner), cases in wanted.items() for reason in _proved(pull, guard, cases, deadline - time.monotonic(), owner=owner))]
 
 
-def _proved(pull: Pull, guard: straznik.Guard, cases: list[str], left: float) -> list[str]:
+def _proved(pull: Pull, guard: straznik.Guard, cases: list[str], left: float, *, owner: bool) -> list[str]:
     before = guard.kind is straznik.Kind.TESTS and not werdykt_pr.rule_applies(pull, werdykt_pr.deployment(pull.base, TEST_MARKER))
-    arguments = ["--straznik", str(guard), "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case)), *(["--przed-dowodem-testu"] if before else [])]
+    flags = [*(["--przed-dowodem-testu"] if before else []), *(["--chroniony-wlasciciel"] if owner else [])]
+    arguments = ["--straznik", str(guard), "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case)), *flags]
     late = f"strażnik: {guard}: dowody strażników tego PR nie skończyły się w {PROOF_TIMEOUT_S} s, uruchom ponownie"
     if left <= 0:
         return [late]

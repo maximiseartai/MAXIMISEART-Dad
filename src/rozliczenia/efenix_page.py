@@ -96,23 +96,17 @@ LOAD_EMMETT: Final = "action_load_emmett.php"
 SAVE_QUANTITY: Final = "action_save_index.php"
 CHANGE_STATUS: Final = "action_change_status.php"
 STATUS_PARAM: Final = "xstatus"
-"""Pole żądania zmiany statusu z nowym statusem zlecenia."""
 ORDER_PARAM: Final = "order_id"
-"""Pole żądania zmiany statusu z identyfikatorem zlecenia; strażnik okna przepuszcza tylko ``id`` z linku otwartego
-zlecenia (``page_order_edit.php?id=``)."""
 ORDER_ID_FIELD: Final = "#main_id"
 """Ukryte pole strony zlecenia z identyfikatorem zlecenia, który skrypt strony wysyła jako ``order_id`` w żądaniu zmiany
 statusu (skrypt efenix z rekonesansu 1.11.2026). Okno go nie czyta: narzędzie zgodności sprawdza, że jest równy ``id``
 z linku listy, bo inaczej strażnik okna zatrzyma Przekazanie."""
 NUMBER_PARAM: Final = "numer"
-"""Pole szukania z numerem, który okno wpisało w pole ``Numer``."""
 PRICE_ALL: Final = "price_all"
-"""Pole odpowiedzi zapisu ilości z kwotą końcową."""
 EXECUTION_DATE: Final = "#data_install"
 AMOUNT: Final = "#cena_all2"
 QUANTITY: Final = "input.wycena-ilosc"
 _HEADERS: Final = {"number": "numer dokumentu", "status": "status", "realizator": "wykonawca", "address": "dane adresowe"}
-"""Początek nagłówka kolumny tabeli wyników (bez wielkości liter), z której okno czyta pole ``ListedOrder``."""
 
 _NUMBER_FIELD: Final = "#field_numer"
 _DATE_DIALOG: Final = "#dialog_select_date"
@@ -157,8 +151,6 @@ _READ_RESULTS: Final = """(html) => {
         })),
     };
 }"""
-"""Tabela z odpowiedzi szukania przeczytana parserem HTML przeglądarki w ``<template>``, w którym skrypty i obsługa
-zdarzeń odpowiedzi nie biegną."""
 
 _ANSWER_TEXT: Final = """(html) => {
     const template = document.createElement('template');
@@ -176,8 +168,6 @@ _ONLY_ONE_SHOWS: Final = f"(found) => found.length === 1 && ({SHOWS_ANYTHING})(f
 
 
 class PageKind(enum.Enum):
-    """Strona efenix, na której okno używa elementu."""
-
     LIST = "lista zleceń"
     ORDER = "strona zlecenia"
 
@@ -237,8 +227,6 @@ class Element(enum.Enum):
 
 @dataclass(frozen=True)
 class ScriptUse:
-    """Działanie skryptu strony efenix, na którym polega okno, i nazwy (pól, klas, odpowiedzi), które skrypt zawiera."""
-
     what: str
     names: tuple[str, ...]
 
@@ -275,8 +263,6 @@ SCRIPT_USES: Final[Mapping[PageKind, tuple[ScriptUse, ...]]] = {
         ),
     ),
 }
-"""Nazwy, które muszą być w skryptach stron efenix, bo okno polega na ich działaniu; budowane z selektorów elementów i
-adresów działań, których używa okno."""
 
 
 class SearchWarning(enum.Enum):
@@ -285,9 +271,7 @@ class SearchWarning(enum.Enum):
     rozpoznaje."""
 
     NOT_FOUND = "Ostrzeżenie: Nie znaleziono pasujących wyników !"
-    """Szukanie nie znalazło żadnego zlecenia: efenix nie zna numeru."""
     SESSION_EXPIRED = "Ostrzeżenie: Twoja sesja wygasła - zaloguj się ponownie !"
-    """Szukanie bez ważnej sesji: efenix wylogował."""
 
 
 @dataclass(frozen=True)
@@ -301,8 +285,6 @@ class EmmettWindow:
 
 
 def emmett_window(page: Page) -> EmmettWindow:
-    """Okno Emmetta na stronie ``page`` teraz, bez czekania. Tylko czyta."""
-
     proposals = page.locator(Element.PROPOSAL.selector)
     return EmmettWindow(
         dialogs=page.locator(Element.EMMETT_DIALOG.selector).count(),
@@ -335,8 +317,6 @@ class Cell:
 
 @dataclass(frozen=True)
 class ResultsTable:
-    """Tabela wyników z odpowiedzi szukania."""
-
     headers: tuple[str, ...]
     rows: tuple[tuple[Cell, ...], ...]
 
@@ -354,9 +334,6 @@ class _Results(TypedDict):
 
 
 def results_table(page: Page, html: str) -> ResultsTable | SearchWarning | None:
-    """Tabela wyników z odpowiedzi szukania ``html`` przeczytana parserem HTML przeglądarki strony ``page``, a bez tabeli
-    ostrzeżenie efenix, którym jest cała odpowiedź (``search_warning``); ``None``: odpowiedź bez tabeli z innym tekstem."""
-
     results: _Results | None = page.evaluate(_READ_RESULTS, html)
     if results is None:
         return search_warning(page, html)
@@ -367,9 +344,6 @@ def results_table(page: Page, html: str) -> ResultsTable | SearchWarning | None:
 
 
 def search_warning(page: Page, html: str) -> SearchWarning | None:
-    """Ostrzeżenie efenix, którym jest cała odpowiedź szukania ``html`` bez tabeli, przeczytana parserem HTML przeglądarki
-    strony ``page``; ``None``: odpowiedź z tabelą albo z innym tekstem."""
-
     try:
         return SearchWarning(page.evaluate(_ANSWER_TEXT, html))
     except ValueError:
@@ -377,13 +351,6 @@ def search_warning(page: Page, html: str) -> SearchWarning | None:
 
 
 def read_results(page: Page, html: str) -> tuple[ListedOrder, ...]:
-    """Wiersze tabeli wyników z odpowiedzi szukania ``html``, przeczytane parserem HTML przeglądarki strony ``page``.
-
-    Odpowiedź bez tabeli, która jest samym ostrzeżeniem efenix (``search_warning``), to brak wierszy
-    (``SearchWarning.NOT_FOUND``) albo ``LoggedOut`` (``SearchWarning.SESSION_EXPIRED``), a każda inna odpowiedź bez
-    tabeli to ``UnexpectedPage``.
-    """
-
     match results_table(page, html):
         case ResultsTable() as table:
             return listed(table)
@@ -406,17 +373,12 @@ class RowFault(enum.Enum):
 
 @dataclass(frozen=True)
 class ColumnFault:
-    """Nagłówek kolumny tabeli wyników (początek, bez wielkości liter), od którego zaczyna się ``found`` nagłówków
-    tabeli zamiast dokładnie jednego."""
-
     header: str
     found: int
 
 
 @dataclass(frozen=True)
 class RowsFault:
-    """Różnica wiersza ``fault`` w ``rows`` wierszach tabeli wyników."""
-
     fault: RowFault
     rows: int
 
@@ -425,10 +387,6 @@ TableFault = ColumnFault | RowsFault
 
 
 def listed(table: ResultsTable) -> tuple[ListedOrder, ...]:
-    """Zlecenia z wierszy tabeli wyników po kolei; pierwszy wiersz w innej budowie to ``UnexpectedPage`` tabeli wyników z
-    pierwszą jego różnicą: kolumna nie raz (``Shape.COLUMNS``), inna liczba komórek albo nie jeden link
-    (``Shape.ROW_CELLS``), pusty numer albo id (``Shape.ROW_EMPTY``). Tabela bez wierszy nie ma różnicy."""
-
     return tuple(_listed_order(table.headers, row) for row in table.rows)
 
 
@@ -524,8 +482,6 @@ def login_form(page: Page) -> bool:
 
 
 def single(page: Page, selector: str, part: PagePart) -> Locator:
-    """Element strony, który jest na niej dokładnie raz; inaczej efenix ma inną budowę."""
-
     located = page.locator(selector)
     if (count := located.count()) != 1:
         raise WindowStop.of(part, ElementCount(selector, count))

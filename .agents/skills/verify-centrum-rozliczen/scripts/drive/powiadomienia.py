@@ -1,5 +1,3 @@
-"""Drive features/powiadomienia.md."""
-
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence

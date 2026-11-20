@@ -49,14 +49,25 @@ export function ScopeProvider({ children }: { children: React.ReactNode }) {
   }
 }
 
-export function useInScope<Entry extends Declared>(entries: ReadonlyArray<Entry>): ReadonlyArray<Entry> {
+function useFunctions(): ReadonlySet<CentrumFunction> {
   const functions = React.useContext(Functions)
 
-  return React.useMemo(() => {
-    if (functions === null) {
-      throw new Error("useInScope działa tylko pod ScopeProvider.")
-    }
+  if (functions === null) {
+    throw new Error("Zakres działa tylko pod ScopeProvider.")
+  }
 
-    return entries.filter((entry) => entry.function === null || functions.has(entry.function))
-  }, [entries, functions])
+  return functions
+}
+
+export function useInScope<Entry extends Declared>(entries: ReadonlyArray<Entry>): ReadonlyArray<Entry> {
+  const functions = useFunctions()
+
+  return React.useMemo(
+    () => entries.filter((entry) => entry.function === null || functions.has(entry.function)),
+    [entries, functions]
+  )
+}
+
+export function useCovers(declared: CentrumFunction): boolean {
+  return useFunctions().has(declared)
 }

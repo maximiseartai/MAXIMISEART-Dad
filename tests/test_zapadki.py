@@ -733,12 +733,19 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "historia-w-docstringu": "historię zmiany zostaw w opisie PR,",
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
+    "komunikat-boxa-podlancuchem": "bierz własność box_boat.WLASNOSC z junit",
+    "dyrektywa-mypy-recznie": "użyj mypy.util.get_mypy_comments",
+    "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
+    "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
+    "krok-mypy-ruff-poza-krokami": "weź krok z kroki_lokalne.static_steps",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
+    "pytest-current-test-poza-testami": "sesję pytest rozpoznaje PYTEST_VERSION",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "stosunek-czasow-sciany": "licz kroki budżetu (węzły, wywołania), nie zegar",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
     "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
 }
@@ -791,19 +798,27 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     base = _base()
     if base is None:
         pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert syntax_rule_findings(ROOT, base) == []
+    found = syntax_rules(ROOT, base)
+    assert not found, odpalenia_ast_grep.refusal(found)
 
 
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
 # linie dodane przez zmianę, i folder, od którego liczy je ``whole_tree_rules``.
 REGULY_CALEGO_DRZEWA: Final = (
+    "dyrektywa-mypy-recznie",
+    "follow-symlinks-tylko-posix",
     "historia-w-docstringu",
+    "komentarz-przez-startswith",
     "komentarz-w-src",
+    "komunikat-boxa-podlancuchem",
     "kotwica-konca-linii",
+    "krok-mypy-ruff-poza-krokami",
     "lokator-tytulu-okna",
     "odczyt-docstringu",
+    "pytest-current-test-poza-testami",
     "regula-w-trasie",
     "stan-pliku-poza-file-state",
+    "stosunek-czasow-sciany",
     "watki-workera",
     "wlasna-wyrocznia-numeru",
 )
@@ -824,7 +839,8 @@ def whole_tree_rules(
 
 @windows_without_ast_grep
 def test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii() -> None:
-    assert [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in whole_tree_rules(ROOT)] == []
+    found = whole_tree_rules(ROOT)
+    assert not found, odpalenia_ast_grep.refusal(found)
 
 
 def test_kazda_regula_calego_drzewa_jest_w_katalogu_regul() -> None:
@@ -2350,7 +2366,20 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 # konfigurację.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
+    "krok-mypy-ruff-poza-krokami": (("tools",), ".py"),
+    "komunikat-boxa-podlancuchem": (("tools",), ".py"),
+    "stosunek-czasow-sciany": (("tests",), ".py"),
+    "dyrektywa-mypy-recznie": (("tests",), ".py"),
+    "follow-symlinks-tylko-posix": (("tests",), ".py"),
+    "komentarz-przez-startswith": (("tools",), ".py"),
+    "pytest-current-test-poza-testami": (("tools",), ".py"),
 }
+_SYS = "import sys\n\n"
+_BOX = "import box_boat\n\n\ndef infra(wyjscie: str) -> bool:\n    return "
+_ZEGAR = "import time\n\n\ndef test_stosunek() -> None:\n    start = time.perf_counter()\n    srodek = time.perf_counter()\n"
+_DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
+_OS = "import os\n\n"
+_LINIA = "def komentarz(linia: str) -> bool:\n    return "
 _PATTERN = "import re\n\nLINE = "
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
 # (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
@@ -2365,6 +2394,49 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\n$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
+    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--no-incremental"]\n', [3]),
+    ("krok-mypy-ruff-poza-krokami", f"{_SYS}POLECENIE = (sys.executable, '-m', 'ruff', 'check')\n", [3]),
+    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "pytest", "-q"]\n', []),
+    ("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', []),
+    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--strict", "format"]\n', [3]),
+    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "ruff", "format", "--check"]\n', []),
+    ("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT in wyjscie\n", [5]),
+    ("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT not in wyjscie\n", [5]),
+    ("komunikat-boxa-podlancuchem", "from box_boat import KOMUNIKAT\n\n\ndef infra(wyjscie: str) -> bool:\n    return KOMUNIKAT in wyjscie\n", [5]),
+    ("komunikat-boxa-podlancuchem", "import box_boat\n\n\ndef komunikat() -> str:\n    return box_boat.KOMUNIKAT\n", []),
+    ("komunikat-boxa-podlancuchem", f'{_BOX}"OK" in wyjscie\n', []),
+    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / (srodek - start) < 2\n", [7]),
+    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.monotonic() - start) / (time.monotonic() - srodek) < 2\n", [7]),
+    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert time.perf_counter() - srodek < start\n", []),
+    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / 2 < start\n", []),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# mypy:")\n', [5]),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}re.match(r"#\\s*mypy:", linia) is not None\n', [5]),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia[:7] == "# mypy:"\n', [5]),
+    ("dyrektywa-mypy-recznie", 'PROBKI = {"w kolumnie 0": "# mypy: ignore-errors\\n"}\n', []),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith(("# mypy:", "#mypy:"))\n', [5, 5]),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# noqa:")\n', []),
+    ("dyrektywa-mypy-recznie", 'def test_probka(tekst: str) -> None:\n    assert "# mypy: ignore-errors" in tekst\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.chown("plik", 0, 0, follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.link("a", "b", follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.access("plik", os.R_OK, follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1))\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=True)\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.chmod("plik", 0o644, follow_symlinks=False)\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.stat("plik", follow_symlinks=False)\n', []),
+    ("follow-symlinks-tylko-posix", 'import shutil\n\nshutil.copy2("a", "b", follow_symlinks=False)\n', []),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("#")\n', [2]),
+    ("komentarz-przez-startswith", f"{_LINIA}linia.lstrip().startswith('#')\n", [2]),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.startswith("#")\n', []),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("##")\n', []),
+    (
+        "komentarz-przez-startswith",
+        "import tokenize\n\n\ndef komentarz(token: tokenize.TokenInfo) -> bool:\n    return token.type == tokenize.COMMENT\n",
+        [],
+    ),
+    ("pytest-current-test-poza-testami", f'{_OS}W_TESCIE = "PYTEST_CURRENT_TEST" in os.environ\n', [3]),
+    ("pytest-current-test-poza-testami", f"{_OS}W_TESCIE = os.environ.get('PYTEST_CURRENT_TEST') is not None\n", [3]),
+    ("pytest-current-test-poza-testami", f'{_OS}W_SESJI = "PYTEST_VERSION" in os.environ\n', []),
 ]
 
 
@@ -2401,6 +2473,35 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+    },
+    "krok-mypy-ruff-poza-krokami": {
+        "program bez -m": 'POLECENIE = ["mypy", "--no-incremental"]\n',
+        "narzędzie w zmiennej": f'{_SYS}NARZEDZIE = "mypy"\nPOLECENIE = [sys.executable, "-m", NARZEDZIE]\n',
+        "polecenie w jednym napisie": 'POLECENIE = "python -m mypy --no-incremental"\n',
+    },
+    "komunikat-boxa-podlancuchem": {
+        "tekst komunikatu w literale": 'def infra(wyjscie: str) -> bool:\n    return "BOX: boat przeniósł katalog repo" in wyjscie\n',
+        "szukanie przez find": f"{_BOX}wyjscie.find(box_boat.KOMUNIKAT) >= 0\n",
+    },
+    "stosunek-czasow-sciany": {
+        "stosunek zapisany mnożeniem": f"{_ZEGAR}    assert time.perf_counter() - srodek < 2 * (srodek - start)\n",
+        "czasy w nazwanych zmiennych": f"{_ZEGAR}    pierwszy = srodek - start\n    drugi = time.perf_counter() - srodek\n    assert drugi / pierwszy < 2\n",
+    },
+    "dyrektywa-mypy-recznie": {
+        "wzorzec w stałej poza wywołaniem": 'DYREKTYWA = "# mypy:"\n\n\ndef dyrektywa(linia: str) -> bool:\n    return linia.startswith(DYREKTYWA)\n',
+        "dyrektywa bez #": 'def dyrektywa(linia: str) -> bool:\n    return "mypy:" in linia\n',
+    },
+    "follow-symlinks-tylko-posix": {
+        "funkcja pod samą nazwą z from-importu": 'from os import utime\n\nutime("plik", (1, 1), follow_symlinks=False)\n',
+        "os pod inną nazwą": 'import os as system\n\nsystem.utime("plik", (1, 1), follow_symlinks=False)\n',
+        "argument ze słownika": f'{_OS}os.utime("plik", (1, 1), **{{"follow_symlinks": False}})\n',
+    },
+    "komentarz-przez-startswith": {
+        "linia po strip w zmiennej": 'def komentarz(linia: str) -> bool:\n    tekst = linia.strip()\n    return tekst.startswith("#")\n',
+        "znak w krotce": f'{_LINIA}linia.strip().startswith(("#", "!"))\n',
+    },
+    "pytest-current-test-poza-testami": {
+        "nazwa zmiennej sklejona z części": f'{_OS}W_TESCIE = "PYTEST_" + "CURRENT_TEST" in os.environ\n',
     },
 }
 

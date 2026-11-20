@@ -119,6 +119,11 @@ OPISY = {
     "straznik-i-linia-po": body(C_BLOCK.replace(EVIDENCE, f"{GUARD}\nlinia 2")),
     "wyrwany-ze-straznikiem": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{ROOT_PR}", GUARD)),
     **{f"straznik-{name}": body(C_BLOCK.replace(EVIDENCE, f"Strażnik: {selector}")) for name, selector in STRAZNICY.items()},
+    "dwa-ze-straznikiem-ruff": body(*(C_BLOCK.replace(EVIDENCE, "Strażnik: ruff").replace("W1 r1", f"W{number} r1") for number in (1, 2))),
+    "dwa-ze-straznikiem-ruff-nowy-kod-w2": body(
+        C_BLOCK.replace(EVIDENCE, "Strażnik: ruff"), C_BLOCK.replace(EVIDENCE, "Strażnik: ruff").replace("W1 r1: R-BEZ-TESTU", "W2 r1: R-NOWY-KOD")
+    ),
+    "straznik-ruff-nowy-kod": body(C_BLOCK.replace(EVIDENCE, "Strażnik: ruff").replace("R-BEZ-TESTU", "R-NOWY-KOD")),
     "dwa-z-tym-samym-straznikiem": body(*(_lines(f"### W{number} r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", GUARD) for number in (1, 2))),
 }
 PR_KORZENIA = {
@@ -141,13 +146,14 @@ SKILL = {
         "# Przegląd", "", "## Co jest porażką", "", "- Nowy punkt z przykładem #1457.", "- Punkt bez przykładu.", f"- Nowy punkt z przykładem #{FEATURE}.", "", "## Dowody", "", "Tekst.", ""
     ),
 }
-# Treści werdyktów pod dwiema pierwszymi liniami: punkt rozstrzygnięcia kodu w „## Sprawdzone” (decyzja Q25).
 WERDYKTY = {
     "rozstrzyga-w1-r1": _lines("## Sprawdzone", "- Korzeń W1 r1: R-DRUGA-DROGA - druga droga, nie brak testu.", "- diff"),
     "rozstrzyga-nowym-kodem": _lines("## Sprawdzone", "- Korzeń W1 r1: NOWY R-NOWY-KOD - opis kodu spoza listy.", "- diff"),
     "rozstrzyga-kodem-spoza-listy": _lines("## Sprawdzone", "- Korzeń W1 r1: R-NIE-MA - kod spoza listy.", "- diff"),
     "rozstrzygniecie-bez-rundy": _lines("## Sprawdzone", "- Korzeń W1: R-DRUGA-DROGA - bez rundy.", "- diff"),
     "wazne-bez-korzenia": "- Ważne: brak testu, opisane prozą.",
+    "szczebel-w1-r1-test": _lines("## Sprawdzone", "- Mechanizm W1 r1: test - reguła ast-grep alarmuje w ponad 10% PR-ów.", "- diff"),
+    "szczebel-w1-r1-lint": _lines("## Sprawdzone", "- Mechanizm W1 r1: lint - zakaz nazwy łapie każdą kopię.", "- diff"),
 }
 
 

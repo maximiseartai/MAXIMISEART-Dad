@@ -3,6 +3,7 @@ from __future__ import annotations
 import enum
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import Final
 
@@ -34,6 +35,7 @@ Part = CentrumFunction | Always
 
 class Workstation(enum.StrEnum):
     DAD = "tata"
+    ANDRZEJ = "andrzej"
 
 
 @dataclass(frozen=True)
@@ -49,5 +51,38 @@ class Scope:
 
 
 SCOPES: Final[Mapping[Workstation, Scope]] = MappingProxyType(
-    {Workstation.DAD: Scope(Workstation.DAD, frozenset(CentrumFunction))}
+    {
+        Workstation.DAD: Scope(Workstation.DAD, frozenset(CentrumFunction)),
+        Workstation.ANDRZEJ: Scope(
+            Workstation.ANDRZEJ, frozenset({CentrumFunction.INTERMAX, CentrumFunction.INTERMAX_COPIES})
+        ),
+    }
 )
+
+WORKSTATION_FILE: Final = "stanowisko.txt"
+
+
+@dataclass(frozen=True)
+class UnknownWorkstation:
+    file: Path
+
+
+def workstation_scope(config: Path) -> Scope | UnknownWorkstation:
+    file = config / WORKSTATION_FILE
+    try:
+        written = file.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return SCOPES[Workstation.DAD]
+    except (OSError, UnicodeDecodeError):
+        return UnknownWorkstation(file)
+    try:
+        return SCOPES[Workstation(written.strip())]
+    except ValueError:
+        return UnknownWorkstation(file)
+
+
+def write_workstation(config: Path, workstation: Workstation) -> Path:
+    file = config / WORKSTATION_FILE
+    config.mkdir(parents=True, exist_ok=True)
+    file.write_text(f"{workstation.value}\n", encoding="utf-8")
+    return file

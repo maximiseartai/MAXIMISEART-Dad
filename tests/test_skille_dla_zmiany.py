@@ -42,7 +42,6 @@ REPO = {
 }
 
 
-# Narzędzie i silnik mutacji, który importują tabele mutacji skilli repozytorium testu.
 TOOLS_FOR_CHANGE = ("tools/skille_dla_zmiany.py", "tools/lib/silnik_mutacji.py")
 
 
@@ -412,8 +411,6 @@ def test_skill_z_poleceniami_w_ci_mowi_co_liczy_ci_a_co_zostaje_lokalnie() -> No
 
 
 def test_agents_md_nie_wymienia_skilli_verify() -> None:
-    """``AGENTS.md`` i pliki ``docs/agents/``, do których odsyła, nie wymieniają skilli ``verify-*``."""
-
     documents = (ROOT / "AGENTS.md", ROOT / "docs" / "agents" / "pr-i-ci.md", ROOT / "docs" / "agents" / "skille.md")
     agents = "\n".join(path.read_text(encoding="utf-8") for path in documents)
 

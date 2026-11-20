@@ -1,0 +1,33 @@
+id: komentarz-przez-startswith
+language: python
+severity: error
+message: >-
+  linia zaczynająca się od # po strip() nie musi być komentarzem (linia napisu wielowierszowego); komentarz w źródle
+  Pythona rozpoznaje tokenize (tokenize.COMMENT), a linię pliku innego formatu jego parser
+files:
+  - tools/**/*.py
+  - .agents/skills/*/scripts/**/*.py
+  - src/**/*.py
+metadata:
+  przypadki:
+    - 1975/W1/r4
+rule:
+  kind: call
+  all:
+    - has:
+        field: function
+        kind: attribute
+        all:
+          - has: {field: attribute, regex: '^startswith$'}
+          - has:
+              field: object
+              kind: call
+              has:
+                field: function
+                kind: attribute
+                has: {field: attribute, regex: '^(strip|lstrip)$'}
+    - has:
+        field: arguments
+        has:
+          kind: string
+          regex: '^["'']#["'']$'

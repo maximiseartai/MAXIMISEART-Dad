@@ -982,6 +982,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_mails.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
+    "tools/lib/stawka_przegladu.py": frozenset({"wplyw_zmiany.light_review"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),

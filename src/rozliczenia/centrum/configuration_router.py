@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final, assert_never
 
 from fastapi import APIRouter
 
 from rozliczenia import workbook_files
-from rozliczenia.centrum.configuration import ConfigurationFiles, Template
+from rozliczenia.centrum.configuration import Template
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import configuration as configuration_contract
 from rozliczenia.centrum.keyed_box import KeyJudgement
@@ -34,7 +34,7 @@ def _kind(problem: Problem) -> configuration_contract.TemplateProblemKind:
 
 
 def configuration_router(
-    files: ConfigurationFiles,
+    templates: Callable[[], Sequence[Template]],
     freshness: ToolFreshness,
     release: ReleaseSource,
     key_judgement: Callable[[], KeyJudgement],
@@ -51,7 +51,7 @@ def configuration_router(
             version=None if commit is None else configuration_contract.ToolVersion(commit=short_commit(commit), since=freshness.since()),
             freshness=_STATE[judgement],
             update_offered=offers_update(judgement),
-            templates=[checked.status(template) for template in files.templates()],
+            templates=[checked.status(template) for template in templates()],
             reports=_KEY_STATE[key_judgement()],
         )
 
