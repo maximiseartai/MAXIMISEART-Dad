@@ -24,7 +24,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Any, Final, Protocol
+from typing import Any, Final, Literal, Protocol
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -59,6 +59,7 @@ from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.report_entering_logs import (
     EnteringReplay,
     LoggedMail,
+    LoggedOrderProblem,
     LoggedReports,
     ReplayedOrderless,
     Unreplayable,
@@ -72,9 +73,11 @@ from rozliczenia.domain import RunMode
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts, Orderless
 from rozliczenia.worker_reports import (
+    AddBar,
     Kept,
     Login,
     MailId,
+    MoveBar,
     OrderKey,
     OrderNumber,
     OwnEntries,
@@ -2859,6 +2862,19 @@ def test_odczyty_maili_wracaja_z_logow_z_tym_samym_zapisem_w_logach() -> None:
 
     assert again == logged
     assert [mail.model_dump_json() for mail in again] == [mail.model_dump_json() for mail in logged]
+
+
+@pytest.mark.parametrize(
+    ("kind", "bar"),
+    [("unknown_number", AddBar.NOT_ORDERED), ("refused_move", MoveBar.NOT_ORDERED)],
+    ids=["nieznany-numer", "odmowa-przeniesienia"],
+)
+def test_slowo_powodu_wspolne_dopisaniu_i_przeniesieniu_wraca_z_logow_jako_powod_rodzaju_problemu(
+    kind: Literal["unknown_number", "refused_move"], bar: AddBar | MoveBar
+) -> None:
+    logged = LoggedOrderProblem(kind=kind, worker="jan.testowy", day=CLICK_DAY, number="40000001", bar=bar)
+
+    assert LoggedOrderProblem.model_validate_json(logged.model_dump_json()).bar is bar
 
 
 def _second_form(entering: dict[str, Any]) -> None:

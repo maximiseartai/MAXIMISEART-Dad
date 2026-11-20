@@ -54,6 +54,10 @@ BY_CHANGE_ONLY = {
         "puszcza próbki przez nakładkę Run.refusing_text_settings_writes w procesie testu; graf wybiera jego plik przy "
         "zmianie skryptów napędu verify-centrum-rozliczen, które ładuje ścieżką"
     ),
+    "tests/test_straznik.py::test_slad_biegu_w_srodowisku_biegu_znika_z_nim_a_zapis_poza_nim_to_odmowa_systemu": (
+        "sprawdza piaskownicę dowodu strażnika na repozytorium testu, a nie całe repozytorium; graf wybiera jego plik przy "
+        "zmianie tools/lib/straznik.py, piaskownica.py, srodowisko_ci.py i silnik_mutacji.py, które importuje"
+    ),
     "tests/test_stan_procesu.py": (
         "sprawdza plugin na sesjach próbek w katalogu tymczasowym, a nie całe repozytorium: sam plugin conftest stawia "
         "przy każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/stan_procesu.py, który importuje"
@@ -107,6 +111,14 @@ BY_CHANGE_ONLY = {
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_nazwy_komputera_w_src_przechodza_przez_ruff": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
         "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
+    ),
+    "tests/test_wydanie.py::test_plan_odmawia_wydania_w_ktorym_zmiana_z_wydania_ktore_wyszlo_zniknela_albo_ma_inny_plik_lub_kod": (
+        "graf wybiera jego plik przy zmianie tools/wydanie.py i tools/lib/zmiany_z_wydania.py, które plik importuje, a każdy "
+        "przypadek buduje repozytorium z tagami i czyta wpisy osobnym procesem na tag, więc w STRUCTURE kosztowałby każdy PR"
+    ),
+    "tests/test_zmiany_z_wydania_ktore_wyszly.py": (
+        "graf wybiera go przy zmianie release_changes.py, modułów Zmian z Wydania, które importuje przez RELEASE_CHANGES, "
+        "i tools/lib/zmiany_z_wydania.py, które liczy odcisk, a tylko ich zmiana zmienia wynik"
     ),
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
@@ -1017,6 +1029,51 @@ def test_skroty_przeliczone_po_zmianie_kodu_opisanego_modelem_nie_sa_rozjazdem_d
     answered = _szybko(repo)
 
     assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
+
+
+def test_napraw_przelicza_skroty_skilla_bez_zmian_modelu_gdy_rozjazd_to_jedyna_porazka(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _model_skill(repo)
+    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
+
+    answered = _szybko(repo, "--napraw")
+
+    assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
+    assert "NAPRAWA | verify-model | przeliczone skróty: src/pakiet/b.py inna" in answered.stdout.splitlines()
+    assert rozjazd_modelu.rozjazd(repo / MODEL_SKILL, repo) is None
+
+
+@pytest.mark.parametrize(
+    ("changed", "verdict", "line"),
+    [
+        pytest.param(
+            {f"{MODEL_SKILL}/model/kolejka.tla": "---- MODULE kolejka ----\n====\n"},
+            "SZYBKO FAIL | rozjazd modelu",
+            f"Model zmieniony w tej zmianie ({MODEL_SKILL}/model/kolejka.tla), więc skróty przelicz sam.",
+            id="model-skilla-zmieniony",
+        ),
+        pytest.param(
+            {"src/pakiet/a.py": "import os\n\n\ndef wartosc() -> int:\n    return 1\n"},
+            "SZYBKO FAIL | rozjazd modelu, ruff",
+            "NAPRAWA POMINIĘTA | rozjazd modelu to nie jedyna porażka: ruff",
+            id="padl-inny-krok",
+        ),
+    ],
+)
+def test_napraw_nie_przelicza_skrotow_gdy_zmiana_dotyka_modelu_albo_pada_inny_krok(
+    tmp_path: Path, changed: dict[str, str], verdict: str, line: str
+) -> None:
+    repo = _repo(tmp_path)
+    _model_skill(repo)
+    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
+    for name, text in changed.items():
+        _write(repo, name, text)
+
+    answered = _szybko(repo, "--napraw")
+
+    assert (answered.returncode, _verdict(answered)) == (1, verdict), answered.stdout
+    assert line in answered.stdout
+    assert rozjazd_modelu.rozjazd(repo / MODEL_SKILL, repo) is not None
 
 
 def test_rozjazd_modelu_skilla_ktorego_zmiana_nie_dotyka_zostaje_poza_szybkim_sprawdzeniem(tmp_path: Path) -> None:

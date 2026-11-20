@@ -133,7 +133,7 @@ Concrete evidence that the change works, as a before and an after.
 - Every number and every result in the body comes from a run you name (the command, or the CI run and its job), copied from its output, never counted again by hand.
   A result of a local run says it is local when CI decides differently (a warning locally, red in CI).
 - Every promise in the body has its proof here.
-  A behaviour the body claims has a test that fails when the behaviour breaks, shown with a mutation from `tools/mutacje.py` (`WYKRYTA`), and a sentence with no proof comes out of the body.
+  A behaviour the body claims has a test that fails when the behaviour breaks, shown with its mutation's `WYKRYTA` from the one `tools/mutacje.py --plik` run of the change on the pushed HEAD, and a sentence with no proof comes out of the body.
 - A PR that adds or changes a check (a structure test, a lint rule, a CI job, a checking tool) shows its result on real history from `tools/na_scalonych_pr.py`: on the PRs whose review found the mistake it finds it, and on `--ostatnie` (its count is `CHECK_PRS` of that tool) it raises no false alarm (`CODING_STANDARDS.md`).
   A check that promises a whole class also shows its table of cases here (`CODING_STANDARDS.md`, introduction).
 - A measured speedup or regression gives one number with its unit, `before → after`, and links the rest.

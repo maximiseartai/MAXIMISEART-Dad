@@ -321,14 +321,16 @@ def _run(
     concurrent: bool = False,
     python: str | None = None,
     env: Mapping[str, str] | None = None,
+    sandbox: Sequence[str] = (),
 ) -> _Ran:
     """Przebieg polecenia w kopii Pythonem ``python`` (bez niego: tym, który uruchomił narzędzie) ze zmiennymi ``env``
-    (bez nich: ``kroki_lokalne.environment`` kopii), także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
+    (bez nich: ``kroki_lokalne.environment`` kopii) za przedrostkiem ``sandbox`` (``piaskownica.prefix``), także
+    polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
 
     started = time.monotonic()
     try:
         env = environment(copy, concurrent=concurrent) if env is None else env
-        done = potomne.run([python or sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
+        done = potomne.run([*sandbox, python or sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
     except potomne.TimeoutExpired as expired:
         return _Ran(None, f"brak wyniku po {limit_s:g} s", None, time.monotonic() - started, _tail(*expired.printed))
     seconds = time.monotonic() - started
@@ -397,11 +399,12 @@ def judged(
     concurrent: bool = False,
     python: str | None = None,
     env: Mapping[str, str] | None = None,
+    sandbox: Sequence[str] = (),
 ) -> tuple[Verdict, str, float | None]:
     """Werdykt mutacji na kopii ``copy``, której pliki zmienia, jak ``_verdict``: NIEAKTUALNA bez biegu, gdy kotwica nie
     stoi dokładnie raz, a inaczej werdykt polecenia z Pythonem ``python`` i zmiennymi ``env`` (``_run``) w limicie
-    ``min(limit_s, left)``, według zasad werdyktów z ``ZASADY``, także polecenia pytest, w którym z mutacją nie
-    biegł żaden test (``_collecting``). Bieg bez zmian (podstawa dowodu strażnika, ``tools/mutacje.py --juz-lapie``)
+    ``min(limit_s, left)`` za przedrostkiem ``sandbox`` (dowód strażnika: piaskownica biegu), według zasad werdyktów
+    z ``ZASADY``, także polecenia pytest, w którym z mutacją nie biegł żaden test (``_collecting``). Bieg bez zmian (podstawa dowodu strażnika, ``tools/mutacje.py --juz-lapie``)
     tej reguły nie ma: pytest, który nie uruchomił testu bez mutacji, pada, jak podstawa ``_baseline``. Jedyne źródło
     werdyktu mutacji: woła ją ``verdicts`` (``tools/mutacje.py``, noc, skrypty skilli) na kopii checkoutu i dowód
     strażnika ``pytest`` (``straznik``) na kopii środowiska Required CI."""
@@ -409,7 +412,7 @@ def judged(
     left = limit_s if left is None else left
     if stale := _apply(copy, mutation.edits):
         return Verdict.STALE, stale, None
-    ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
+    ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env, sandbox=sandbox)
     if ran.code is None:
         # Koniec czasu wywołującego, a nie limit polecenia, nie mówi, czy mutacja zawiesza polecenie.
         found = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
@@ -420,7 +423,7 @@ def judged(
     elif mutation.edits and _without_test(mutation.command, ran):
         # Zbieranie dostaje czas, który biegowi z mutacją został, więc razem nie przekraczają końca czasu wywołującego.
         budget = max(min(limit_s, left - ran.seconds), 0.0)
-        gathered = _run(copy, _collecting(mutation.command), budget, stop, concurrent=concurrent, python=python, env=env)
+        gathered = _run(copy, _collecting(mutation.command), budget, stop, concurrent=concurrent, python=python, env=env, sandbox=sandbox)
         gone = f"{ran.last} (pytest nie uruchomił testu z polecenia, kod {ran.code}, a"
         if gathered.code is None:
             found = Verdict.NO_VERDICT, f"{gone} zbieranie jego plików testów z mutacją nie dało wyniku: {gathered.last})"

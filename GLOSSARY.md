@@ -524,6 +524,7 @@ _Avoid_: kolor pracownika, zielona komórka
 
 Zasady taty, które z treści zlecenia (`UMOWA`, `URZĄDZENIA`, `CZYNNOŚCI`, `DATA`) wyznaczają Ilości usług.
 Są Ustawieniem Centrum: tata tworzy je i zmienia sam, każdą jako „jeśli … to …”.
+Nie mają danych osobowych, tak jak Lista Urządzeń: nazywają urządzenia, czynności i kolumny, nie ludzi ani adresy, więc Zgłoszenie podaje zmianę obu wprost, wpisem przed i po.
 Ilości wynikające z opisu technika (`CZYNNOŚCI ZREALIZOWANE`) nie są Regułami ilości: wyznacza je Legenda czynności albo wpisuje tata.
 _Avoid_: scenariusze rozliczeń, instrukcja
 
@@ -538,6 +539,7 @@ _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu obok zwykłego opisu albo bez niego, np. `inst20m` albo `spawpg`, w jednym z jego zapisów, bez względu na wielkość liter.
 Wyznacza w Pliku zbiorczym Ilość usług w kolumnie, kwotę w `AS` (Uwagi - kwota), Wyróżnienie albo kilka z nich naraz; kwoty kilku kodów w zleceniu się sumują.
 Liczba w kodzie albo nie ma znaczenia (`inst20m` i `inst35m` to ten sam kod), albo przedziałem wybiera kolumnę (`instutp12m` daje `AL`, `instutp20m` daje `AJ`).
+Kod, który w usterce się nie liczy (z Wydania `rt2`, bo tata: „przy usterkach nie liczy się rt2”), jest w usterce (ilość w `AI`) Kodem czynności, ale niczego w niej nie wyznacza ([ADR 0044](docs/adr/0044-rt2-w-usterce-sie-nie-liczy.md)).
 _Avoid_: skrót, kod (bez dopowiedzenia)
 
 ## Błąd opisu

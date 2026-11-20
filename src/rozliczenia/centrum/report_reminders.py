@@ -1,64 +1,3 @@
-"""Przypomnienia o raporcie z Centrum rozliczeń (ADR 0030): wewnętrzna praca co minutę, poza Uruchomieniami procesu.
-
-Rytm (``ReminderRhythm``, u taty ``MinuteRhythm``) woła ``ReportReminders.check`` co minutę od startu Centrum do jego
-zamknięcia. Sprawdzenie bierze chwilę z zegara Centrum (``now``) i na początku migawkę Ustawień Centrum, więc zmiana
-pór, treści albo stopki działa od następnego sprawdzenia, bez ponownego startu Centrum (ADR 0032). Przy wyłączonych
-przypomnieniach i poza porą przypomnień z Ustawień (``reminder_pora``) nic więcej nie robi. W porze bierze z migawki
-INTERMAX i folder okresów, dzień wdrożenia przypomnień, Legendę czynności, Listę Wykonawców, treść i stopkę taty,
-potem czyta pamięć Wpisania raportów tą samą drogą co Wpisanie (``EnteringMemory`` z ``ReportState``, ten sam
-``FileReportState`` pracy Centrum), Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii wejścia, tym
-samym odczytem co Wpisanie raportów (``register_window``), potem Skrzynkę raportów i jej „Wysłane”, pyta pamięć
-Wpisania o przypomnienia (``EnteringMemory.reminders``, ten sam odczyt okna co Wpisanie) i wysyła przypomnienia po
-kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
-której sprawdzenie ruszyło (minęła 17:00 albo 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
-czeka na następną porę, która zna wysłane z „Wysłanych” i z pamięci tej pracy Centrum. Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z
-niego bierze przypomnienia praca Centrum i próba Przypomnień przed Wydaniem (``tools/proba_przypomnien.py``).
-
-Pora tego dnia jest załatwiona, gdy sprawdzenie skończy się bez porażki, którą naprawia czas: wtedy do końca pory nie
-czyta już niczego poza Ustawieniami. Załatwiona jest pora przy tych porach z Ustawień: zmiana pór otwiera porę na jedno
-nowe sprawdzenie, a przed drugim mailem tej samej nazwanej pory chronią „Wysłane” i pamięć tej pracy Centrum. Nazwaną porę przypomnienia z
-„Wysłanych” liczą pory z chwili jego wysyłki, nie bieżące (decyzja Maksa): poranne wysłane o 8:05 zamyka
-poranną porę tego dnia także po jej przesunięciu na 9:00–17:00. Dlatego każdy czytelny odczyt z włączonymi
-przypomnieniami, w porze przed wysyłką i poza porą, zapisuje pory, gdy różnią się od ostatnio zapisanych
-(``REMINDERS_SCHEDULES``, ``SchedulesInEffect``).
-Bez tego pliku wysyłała tylko wersja sprzed Ustawień Centrum, więc liczą pory z ADR 0030 (dzień Aktualizacji), a z
-plikiem nieczytelnym pory z ADR 0030 razem z bieżącymi, zapisane w pliku na następne starty. Dopóki zapis pór się nie
-uda (``zapis-por``), sprawdzenie nie wysyła, a pora zostaje otwarta. Brak sieci
-(``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje znowu, a przypomnienia, które
-już poszły, zna z „Wysłanych” i z pamięci tej pracy Centrum: Gmail kładzie mail w „Wysłanych” z opóźnieniem, więc
-przypomnienia wysłane w tej pracy praca pamięta też w pamięci procesu (``sent_in_work`` w ``due_reminders``), jak
-Wysyłka rozliczeń (``settlement_mailing``). Jeden zbiór wysłanych, które zna praca (``_known_sent``: „Wysłane” i
-pamięć bez maili, które Gmail już tam położył), dostaje i rdzeń, i widok Raporty. Granicą jest ponowny start Centrum tuż po wysyłce: nowa praca zna wysłane
-tylko z „Wysłanych”, więc przypomnienie, którego Gmail jeszcze tam nie położył, może pójść drugi raz. Pamięć jest
-własna, a nie wspólna z Wysyłką rozliczeń za jednym modułem „wysłane przez Centrum”, bo obie liczą z wysłanych co
-innego: przypomnienie porę z chwili wysyłki i Wykonawcę z adresów Listy, Mail z rozliczeniem stan pliku po jego
-nazwie i chwili zmiany, z ostatnim mailem pliku w miejscu poprzedniego, a dostęp do skrzynki sprawdzają w innym
-miejscu odczytu i z innym skutkiem. Odrzucone hasło aplikacji zakłada Zgłoszenie do Maksa
-(``ReminderReport``) i zamyka porę, żeby Gmail nie dostawał złego hasła co minutę. Brak pliku, Ustawienia albo
-nieczytelny INTERMAX zostawia porę otwartą: naprawa Maksa albo taty działa od następnej minuty. Tak samo pamięć
-Wpisania raportów albo decyzje „Zostaw moją”, których nie da się odczytać (``pamiec-wpisania``): pusta pamięć
-zmieniłaby dzień raportu, więc sprawdzenie nie wysyła, tak jak Wpisanie raportów zatrzymuje wtedy kliknięcie.
-
-Plik Przypomnień, Folderów, Legendy czynności albo Listy Wykonawców, którego system nie daje teraz czytać (np. trzyma go
-OneDrive), to nie wyłączone przypomnienia, niewskazany INTERMAX ani Wykonawcy bez adresów: pora zostaje otwarta, więc następna minuta tej samej pory próbuje znowu, a gdy
-plik nie wróci do końca pory, dziennik Centrum dostaje jeden wpis z nazwą pliku (``plik-bez-odczytu``), przy pierwszym
-sprawdzeniu po tej porze. Bez pliku Przypomnień porę liczą pory z ostatniego przeczytanego pliku w tej pracy Centrum, a
-przed nim ostatnie pory z ``REMINDERS_SCHEDULES`` (``_unread_schedule``); wyniku dla widoku Raporty
-takie sprawdzenie nie pisze, bo nie wie, czy przypomnienia mają dzień wdrożenia.
-
-Praca nie jest Uruchomieniem procesu: nie przechodzi przez ``RunHost``, więc nie blokuje innych Uruchomień i ich nie
-czeka, nie bierze INTERMAX na wyłączność i nie pisze Kopii wejścia ani Logów Uruchomienia. Każda wysyłka i każda
-porażka trafia do dziennika Centrum, bez adresów, Wykonawców i treści maili (ADR 0028); tę samą porażkę dziennik
-dostaje raz, aż przyczyna się zmieni. Wyjątkiem są przypomnienia wyłączone w Ustawieniach (``bez-wdrozenia``): są
-wtedy wyłączone, a nie zepsute, więc sprawdzenie nie zostawia śladu ani w dzienniku, ani w ``config``, a pora zostaje
-otwarta. Wynik ostatniego sprawdzenia w porze z dniem wdrożenia leży w ``REMINDERS_RESULT`` dla widoku Raporty:
-``{schema_version: 1, checked_at, pora, failure, footer, sent: [{worker, day, sent_at}]}``, gdzie ``sent`` to wysłane przypomnienia, które zna praca, i te z tego sprawdzenia, przypisane Wykonawcom z listy adresów (pusta lista, gdy sprawdzenie
-nie doszło do „Wysłanych”), a ``footer`` to ``present``, ``missing`` (stopka w Ustawieniach pusta) albo ``null``, gdy
-sprawdzenie nie doszło do przypomnień. Widok Raporty
-czyta go przez ``ReportReminders.shown`` tym samym kształtem (``_Result``): chwile wysłania po Wykonawcy i dniu i to, czy
-ostatnie sprawdzenie nie znalazło stopki.
-"""
-
 from __future__ import annotations
 
 import json
@@ -121,17 +60,13 @@ _RESULT_VERSION: Final = 1
 
 class ReminderRhythm(Protocol):
     def start(self, check: Callable[[], None]) -> None:
-        """Woła ``check`` od teraz co ``CHECK_EVERY_S``, w innym wątku albo na żądanie testu."""
         ...
 
     def stop(self) -> None:
-        """Kończy wołanie ``check``; trwające sprawdzenie kończy się samo."""
         ...
 
 
 class MinuteRhythm:
-    """Wątek demona ``REMINDERS_THREAD``, który woła ``check`` zaraz po starcie i potem co ``CHECK_EVERY_S``."""
-
     def __init__(self) -> None:
         self._stopped = threading.Event()
 
@@ -157,8 +92,6 @@ class _Failed:
 
 @dataclass(frozen=True)
 class _Unread:
-    """Plik Ustawień ``file`` bez odczytu w porze ``pora`` dnia ``day``: wpis w dzienniku Centrum czeka do końca pory."""
-
     day: date
     pora: Pora
     file: str
@@ -166,8 +99,6 @@ class _Unread:
 
 @dataclass
 class _Check:
-    """Wynik jednego sprawdzenia: porażka, stopka i przypomnienia (Wykonawca, dzień, chwila) dla widoku Raporty."""
-
     failed: _Failed | None = None
     footer: Literal["present", "missing"] | None = None
     sent: list[tuple[str, date, datetime]] = field(default_factory=list)
@@ -180,8 +111,6 @@ class _Sent(BaseModel):
 
 
 class _Result(BaseModel):
-    """Kształt pliku ``REMINDERS_RESULT``, który pisze ``ReportReminders._write``, w polach, które czyta widok Raporty."""
-
     schema_version: Literal[1]
     footer: Literal["present", "missing"] | None
     sent: list[_Sent]
@@ -189,17 +118,11 @@ class _Result(BaseModel):
 
 @dataclass(frozen=True)
 class ShownReminders:
-    """Wynik ostatniego sprawdzenia przypomnień dla widoku Raporty: chwile wysłania (UTC, rosnąco, jak w pliku po
-    ``_write``) po Wykonawcy i dniu przypomnienia i to, czy sprawdzenie nie znalazło pliku stopki. Bez adresów, tematów
-    i treści maili (ADR 0030)."""
-
     sent: Mapping[tuple[str, date], tuple[datetime, ...]] = field(default_factory=dict)
     without_footer: bool = False
 
 
 class ReportReminders:
-    """Praca Przypomnień o raporcie jednej pracy Centrum; ``check`` woła rytm, ``now`` to chwila ze strefą taty."""
-
     def __init__(
         self,
         work: CentrumWork,
@@ -232,8 +155,6 @@ class ReportReminders:
         self._sent_in_work: list[SentReminder] = []
 
     def check(self) -> None:
-        """Jedno sprawdzenie; nieoczekiwany wyjątek trafia do dziennika Centrum, a następna minuta próbuje znowu."""
-
         if not self._lock.acquire(blocking=False):
             return
         try:
@@ -244,9 +165,6 @@ class ReportReminders:
             self._lock.release()
 
     def shown(self) -> ShownReminders:
-        """Wynik ostatniego sprawdzenia z ``REMINDERS_RESULT``; bez pliku albo z plikiem nieczytelnym pusty, bo widok
-        Raporty pokazuje Wpisanie raportów także wtedy, gdy przypomnień nie ma albo ich wynik się zepsuł."""
-
         try:
             result = _Result.model_validate_json(self._result.path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, ValidationError):
@@ -257,10 +175,6 @@ class ReportReminders:
         return ShownReminders(sent, without_footer=result.footer == "missing")
 
     def _check(self) -> None:
-        """Sprawdzenie pory teraz. Wyłączone przypomnienia są wyłączone, a nie zepsute: tak stoi każde Centrum bez pliku
-        przypomnień i każdy klon bez ``config`` taty, więc praca nie zostawia wtedy śladu ani w dzienniku, ani
-        w ``config``."""
-
         now = self._now()
         snapshot = self._settings.snapshot()
         reminders = snapshot.reminders_or_unreadable
@@ -296,34 +210,18 @@ class ReportReminders:
         self._write(now, pora, found)
 
     def _unread_schedule(self) -> ReminderSchedule:
-        """Pory przy pliku Przypomnień bez odczytu: z ostatniego pliku przeczytanego w tej pracy Centrum, a przed nim
-        z ostatnich pór w ``REMINDERS_SCHEDULES``, bo plik zablokowany od startu Centrum nie mówi o porach taty nic
-        innego. ``_checked`` zapisuje tam pory z każdego czytelnego odczytu przy włączonych przypomnieniach, także poza
-        porą, więc zmiana pór, po której tata zamknął Centrum przed następną porą, też tam jest. Bez wpisu w tym pliku
-        praca nie przeczytała pliku Przypomnień z włączonymi przypomnieniami ani razu (włączenie bez minuty pracy
-        Centrum przed blokadą), więc żadne pory taty nie są znane i zostają pory z ADR 0030: to granica, nie stan."""
-
         if self._schedule is not None:
             return self._schedule
         in_effect = schedules_in_effect(self._schedules.path, DEFAULT_REMINDERS.schedule)
         return in_effect.changes[-1].schedule if in_effect.changes else DEFAULT_REMINDERS.schedule
 
     def _close_unread(self, day: date, pora: Pora | None) -> None:
-        """Wpis w dzienniku Centrum o pliku Ustawień, który do końca swojej pory nie dał się przeczytać: pierwsze
-        sprawdzenie poza tą porą go zapisuje."""
-
         unread = self._unread
         if unread is not None and (unread.day, unread.pora) != (day, pora):
             self._log.reminders_failed(cause="plik-bez-odczytu", file=unread.file)
             self._unread = None
 
     def _checked(self, now: datetime, schedule: ReminderSchedule) -> SchedulesInEffect:
-        """Pory, przy których sprawdzała praca, z porami tego odczytu; nowe zapisuje przy każdym czytelnym odczycie
-        z włączonymi przypomnieniami, w porze przed wysyłką i poza porą, a zapis, który czeka w ``StateFile``, ponawia.
-        Odczyt poza porą nie zmienia przypisania „Wysłanych”: między ostatnim sprawdzeniem przy starych porach a pierwszym
-        przy nowych nie idzie żaden mail. Dopóki zapis czeka, sprawdzenie nie wysyła: po ponownym starcie Centrum bez
-        pliku pór wysłane liczyłyby pory z ADR 0030, a nie pory z chwili wysyłki."""
-
         before = self._in_effect if self._in_effect is not None else schedules_in_effect(self._schedules.path, schedule)
         self._in_effect = before.checked(now, schedule)
         if self._in_effect is not before:
@@ -394,14 +292,10 @@ class ReportReminders:
 NotReadCause = Literal[
     "bez-wdrozenia", "plik-bez-odczytu", "bez-ustawien", "bez-dostepu", "bez-adresow", "pamiec-wpisania", "okresy", "intermax"
 ]
-"""Przyczyny ``ReminderFailure``, przy których sprawdzenie nie doszło do skrzynki albo do rdzenia."""
 
 
 @dataclass(frozen=True)
 class DueReminders:
-    """Odczyt sprawdzenia, które doszło do przypomnień: przypomnienia, które należą się teraz, wysłane przypomnienia,
-    które zna praca (``_known_sent``), adresy Wykonawców i stopka taty z Ustawień (``None``: stopka pusta)."""
-
     due: tuple[Reminder, ...]
     sent: tuple[SentReminder, ...]
     addresses: WorkerAddresses
@@ -410,9 +304,6 @@ class DueReminders:
 
 @dataclass(frozen=True)
 class NotRead:
-    """Sprawdzenie nie doszło do przypomnień przez plik, Ustawienia, pamięć Wpisania albo INTERMAX: przyczyna, nazwa typu wyjątku i nazwa
-    pliku Ustawień bez odczytu (``plik-bez-odczytu``)."""
-
     cause: NotReadCause
     failure: str | None = None
     file: str | None = None
@@ -427,18 +318,6 @@ def due_reminders(
     sent_in_work: tuple[SentReminder, ...],
     entering: ReportState,
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
-    """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: Przypomnienia o
-    raporcie, Ustawienia Centrum z Legendą czynności i Listą Wykonawców z migawki ``snapshot``, pamięć Wpisania raportów, Pliki zbiorcze okresów okna,
-    INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``, z porami „Wysłanych” z ``in_effect``
-    (``schedules_in_effect``). Przypomnienia wysłane w tej pracy Centrum (``sent_in_work``) liczą się jak te z
-    „Wysłanych”: zamykają porę i są w ``DueReminders.sent`` dla widoku Raporty. Pamięć Wpisania raportów z
-    ``entering`` czyta ``EnteringMemory`` tą samą drogą co Wpisanie, a okno (``EnteringMemory.window`` z dniem
-    wdrożenia przypomnień) i przypomnienia (``EnteringMemory.reminders``) liczy ta pamięć jak we Wpisaniu,
-    więc dzień raportu jest ten sam co w kafelku Wpisania; pamięci, której nie da się odczytać, nie
-    zastępuje pustą (``pamiec-wpisania``), bo pusta zmieniłaby dzień raportu. Niczego nie wysyła i nie zapisuje: wysyła
-    praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
-    Wykonawców."""
-
     reminders = snapshot.reminders_or_unreadable
     if isinstance(reminders, Unreadable):
         return NotRead("plik-bez-odczytu", file=reminders.name)
@@ -521,20 +400,12 @@ class _Since(_Schedule):
 
 
 class _Schedules(BaseModel):
-    """Kształt pliku ``REMINDERS_SCHEDULES``, który pisze ``_schedules_document``: pory sprzed pierwszego wpisu
-    (``przed``) i wpisy pór od chwili ich pierwszego sprawdzenia (``pory``)."""
-
     schema_version: Literal[1]
     przed: list[_Schedule] = Field(min_length=1)
     pory: list[_Since]
 
 
 def schedules_in_effect(path: Path, current: ReminderSchedule) -> SchedulesInEffect:
-    """Pory, przy których sprawdzała praca przypomnień, z pliku ``REMINDERS_SCHEDULES``. Bez pliku praca tej wersji
-    jeszcze nie sprawdzała w porze, więc przypomnienia z „Wysłanych” wysłała wersja sprzed Ustawień Centrum przy porach
-    z ADR 0030. Z plikiem nieczytelnym albo z chwilą bez strefy nie wiadomo, przy jakich porach sprawdzała, więc
-    wysłane liczą pory z ADR 0030 i bieżące ``current``: więcej zamkniętych pór, a nie drugi mail tej samej pory."""
-
     try:
         found = _Schedules.model_validate_json(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -571,15 +442,10 @@ def _pora(now: datetime, schedule: ReminderSchedule) -> str:
 
 
 def _known_sent(filed: tuple[SentReminder, ...], in_work: tuple[SentReminder, ...]) -> tuple[SentReminder, ...]:
-    """Wysłane przypomnienia, które zna praca: te z „Wysłanych” i te z pamięci tej pracy, których Gmail jeszcze tam nie
-    położył (``SentReminder.same_mail``), więc mail położony już przez Gmaila liczy się raz."""
-
     return (*filed, *(mine for mine in in_work if not any(mine.same_mail(found) for found in filed)))
 
 
 def _by_worker(sent: tuple[SentReminder, ...], addresses: WorkerAddresses) -> list[tuple[str, date, datetime]]:
-    """Wysłane przypomnienia przypisane Wykonawcom z listy adresów, raz na Wykonawcę w przypomnieniu."""
-
     found: list[tuple[str, date, datetime]] = []
     for reminder in sent:
         reached = {addresses.logins[address] for address in reminder.recipients if address in addresses.logins}

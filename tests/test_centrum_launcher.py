@@ -24,7 +24,6 @@ import pytest
 from rozliczenia.centrum import launcher, restart_guardian, shortcut
 from rozliczenia.centrum.platform import ConsoleRun
 from rozliczenia.centrum.platform import run_console_program
-from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.shortcut import (
     SHORTCUT_FILE,
     Folder,
@@ -37,7 +36,7 @@ from rozliczenia.centrum.shortcut import (
 )
 
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.centrum import CentrumClient, ToolDirectory, centrum_app
+from tests.fixtures.centrum import FIRST_START_RELEASE_ENTRIES, CentrumClient, ToolDirectory, centrum_app
 from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, copy_centrum_runtime, free_port, centrum_health
 
@@ -255,10 +254,6 @@ def test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wer
     assert "kod=INNA_WERSJA_CENTRUM" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
-_RELEASE_ENTRIES = ["ustawienia-wydanie"] * len(RELEASE_CHANGES)
-"""Wpisy pierwszego startu: jeden na każdą zmianę Ustawień z Wydania."""
-
-
 def _log_events(runtime: Path) -> list[str]:
     """Nazwy zdarzeń z dziennika Centrum w kolejności wpisów."""
 
@@ -396,9 +391,7 @@ def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) ->
     assert second.returncode == 0
     assert addresses == [f"http://127.0.0.1:{port}/"] * 2
     assert exit_code == 0
-    # Pierwszy start stosuje zmiany Ustawień z Wydania (każda swoim wpisem; bez starych plików i bez folderu okresów
-    # bez zmian), a ich wpisy czekają na ``start``, więc dziennik startu zaczyna się od niego.
-    assert _log_events(runtime) == ["start", *_RELEASE_ENTRIES, "juz-dziala", "zamkniecie", "stop"]
+    assert _log_events(runtime) == ["start", *FIRST_START_RELEASE_ENTRIES, "juz-dziala", "zamkniecie", "stop"]
     assert "konsola=nie" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
@@ -439,7 +432,7 @@ def test_centrum_z_autostartu_startuje_bez_karty_a_skrot_z_pulpitu_otwiera_karte
     assert (startup_again.returncode, desktop_click.returncode, exit_code) == (0, 0, 0)
     assert not opened_before_desktop, "Skrót z Autostartu otworzył kartę."
     assert addresses == opened.read_text(encoding="utf-8").split() == [f"http://127.0.0.1:{port}/"]
-    assert _log_events(runtime) == ["start", *_RELEASE_ENTRIES, "juz-dziala", "juz-dziala", "zamkniecie", "stop"]
+    assert _log_events(runtime) == ["start", *FIRST_START_RELEASE_ENTRIES, "juz-dziala", "juz-dziala", "zamkniecie", "stop"]
 
 _CONSOLE, _NO_CONSOLE = 10, 20
 _CONSOLE_PROBE = (

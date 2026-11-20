@@ -4,7 +4,7 @@ Zdanie ma postać „zapis (też inne zapisy): co wyznacza.”, np. „spawpg: 1
 (AS), AS na czerwono.”. Miejsce na liczbę w zapisie (``{n}``) to ``#``. Kolumna Ilości usług to osobna część zdania z
 literą i nazwą pozycji cennika z wiersza 17 Wzorca pliku zbiorczego, którą pokazuje okno; kwota stoi zawsze w ``AS``
 nazwanej „Uwagi - kwota” (nie jest pozycją cennika), a kolumna wypełnienia to sama litera. Kod z przedziałami mówi każdy
-przedział: „# od 1 do 15 → 1 w … (AL)”.
+przedział: „# od 1 do 15 → 1 w … (AL)”. Kod, który w usterce się nie liczy, kończy zdanie „; w usterce się nie liczy.”.
 """
 
 from __future__ import annotations
@@ -61,6 +61,8 @@ def code_effects(code: ActivityCode, names: Mapping[str, str]) -> list[SentenceP
         if index:
             parts.append(_text(", "))
         parts.extend(effect)
+    if not code.counts_in_fault:
+        parts.append(_text("; w usterce się nie liczy"))
     parts.append(_text("."))
     return _merged(parts)
 

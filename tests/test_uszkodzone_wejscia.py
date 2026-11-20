@@ -507,13 +507,13 @@ ENTRIES: dict[str, Entry] = {
         "addActivityCode",
         "POST",
         "/api/settings/activity-legend",
-        {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": []},
+        {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": [], "counts_in_fault": True},
     ),
     "changeActivityCode": _route(
         "changeActivityCode",
         "PUT",
         "/api/settings/activity-legend/spawez",
-        {"spellings": ["spawez"], "column": {"kind": "fixed", "column": "AC"}, "value": 1, "amount": None, "fills": []},
+        {"spellings": ["spawez"], "column": {"kind": "fixed", "column": "AC"}, "value": 1, "amount": None, "fills": [], "counts_in_fault": True},
     ),
     "removeActivityCode": _route("removeActivityCode", "DELETE", "/api/settings/activity-legend/spawez"),
     "previewActivityLegend": _route(

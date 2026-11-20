@@ -65,6 +65,8 @@ CI_PYTHON = "3.14"
 CI_EXTRAS = ("dev",)
 CI_INSTALL = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[' + ",".join(CI_EXTRAS) + ']"'
 BUILD_TIMEOUT_S = 300
+# ZEWNĘTRZNE: multiprocessing kładzie gniazdo serwera forkserver w TMPDIR/pymp-XXXXXXXX/sock-XXXXXXXXXXXX, a bind pada, gdy ta ścieżka ma 104 bajty sun_path macOS albo więcej, czyli przy TMPDIR wołającego na macOS (/var/folders/…), ale nie w /tmp (Lib/multiprocessing/connection.py, arbitrary_address)
+_SYSTEM_TEMP = Path("/tmp")
 _JOB_KEYS = {"name", "runs-on", "steps"}
 _INSTALL_ID = "deps"  # ``id`` kroku ``CI_INSTALL``, którego wynik czyta ``_CI_IF``
 _CI_IF = "${{ !cancelled() && steps." + _INSTALL_ID + ".outcome == 'success' }}"
@@ -125,9 +127,10 @@ def variables() -> dict[str, str]:
 @contextmanager
 def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterator[Environment]:
     """Środowisko Required CI dla HEAD PR ``head`` scalonego z ``target`` (baza PR; dla PR już scalonego ``main`` sprzed
-    jego merge'a), w repozytorium ``root``; znika z końcem bloku. Z ``tests`` to środowisko toru Linux zadania
-    ``PYTEST_JOB``: odmawia też drzewa z różnicą ``pytest_mismatch``, a narzędzia dostają zmienne ``PYTEST_VARIABLES``
-    i ``TMPDIR`` tego środowiska, więc bieg testów w nowym środowisku nie widzi śladów poprzedniego."""
+    jego merge'a), w repozytorium ``root``; znika z końcem bloku. Narzędzia dostają ``HOME`` i ``TMPDIR`` tego
+    środowiska, jedyne miejsca obok kopii, w których piaskownica dowodu (``straznik``) pozwala biegowi pisać. Z ``tests``
+    to środowisko toru Linux zadania ``PYTEST_JOB``: odmawia też drzewa z różnicą ``pytest_mismatch``, a narzędzia
+    dostają zmienne ``PYTEST_VARIABLES``."""
 
     if sys.platform == "win32":
         raise Refused("środowisko Required CI: dowód strażnika biegnie na Linuksie i macOS, uruchom go tam")
@@ -143,7 +146,7 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
             f"środowisko Required CI: drzewo ma ścieżki różne tylko wielkością liter albo normalizacją Unicode ({', '.join(twins[:3])}), a system plików macOS "
             "trzyma jedną z nich, Linux runnera obie: dowód policzy job dowod statusu „Werdykt i bramka”, a przy merge'u uruchom go na Linuksie"
         )
-    with tempfile.TemporaryDirectory(prefix="srodowisko-ci-") as folder:
+    with run_folder("srodowisko-ci-") as folder:
         home, copy = Path(folder) / "dom", Path(folder) / "drzewo"
         home.mkdir()
         _checkout(root, tree, copy)
@@ -157,9 +160,19 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
         tools = {name: value for name, value in variables().items() if not name.startswith("XDG_")}
         tools.setdefault("UV_PYTHON_INSTALL_DIR", _built(copy, "uv python dir", (uv, "--no-config", "python", "dir")).strip())
         if tests:
-            (temporary := Path(folder) / "tmp").mkdir()
-            tools |= {**PYTEST_VARIABLES, "TMPDIR": str(temporary)}
-        yield Environment(tree, copy, python, {**tools, "HOME": str(home)})
+            tools |= PYTEST_VARIABLES
+        (temporary := Path(folder) / "tmp").mkdir()
+        yield Environment(tree, copy, python, {**tools, "HOME": str(home), "TMPDIR": str(temporary)})
+
+
+@contextmanager
+def run_folder(prefix: str) -> Iterator[Path]:
+    try:
+        folder = tempfile.TemporaryDirectory(prefix=prefix, dir=_SYSTEM_TEMP)
+    except OSError:
+        folder = tempfile.TemporaryDirectory(prefix=prefix)
+    with folder as path:
+        yield Path(path)
 
 
 def _checkout(root: Path, commit: str, copy: Path) -> None:

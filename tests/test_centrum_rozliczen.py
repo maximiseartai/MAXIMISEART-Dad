@@ -1890,6 +1890,86 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
     list_holds()
 
 
+def _dad_spellings(app: Centrum, spellings: Mapping[str, list[str]]) -> None:
+    known = {device["id"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]}
+    for device, (name, *others) in spellings.items():
+        if device in known:
+            response = app.client.put(f"{DEVICES_URL}/{device}", json={**device_form(app, device), "name": name, "other_spellings": others})
+        else:
+            response = app.client.post(DEVICES_URL, json={"name": name, "other_spellings": others, "group": None})
+        assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize(
+    ("spellings", "owner", "how"),
+    [
+        pytest.param(
+            {"nokia": ["nokia", "instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]},
+            "nokia",
+            "zapis",
+            id="zapis-obok-innych-zapisow-skladnika",
+        ),
+        pytest.param(
+            {"fut": ["instalacja ręczna"], "nokia": ["nokia", "wizja"]}, "instalacja ręczna", "skladnik", id="jedyny-zapis-skladnika-bez-reguly"
+        ),
+        pytest.param(
+            {"nokia": ["instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]},
+            "instalacja ręczna",
+            "nazwa",
+            id="jedyny-zapis-skladnika-potrzebnego-regule",
+        ),
+        pytest.param({"nowy": ["instalacja ręczna", "wizja"]}, "instalacja ręczna", "nazwa", id="pierwszy-z-kilku-zapisow-skladnika"),
+    ],
+)
+def test_zdanie_o_zajetym_zapisie_skladnika_wydania_kaze_usunac_zapis_obok_innych_skladnik_bez_reguly_a_inaczej_zmienic_nazwe(
+    tmp_path: Path,
+    release_without_manual_installation: Callable[[], None],
+    spellings: dict[str, list[str]],
+    owner: str,
+    how: settings_messages.TakenAction,
+) -> None:
+    app = centrum(tmp_path)
+    _dad_spellings(app, spellings)
+
+    release_without_manual_installation()
+    problem = app.client.get(QUANTITY_RULES_URL).json()["devices_problem"]
+
+    assert problem == {"field": None, "message": settings_messages.release_component_taken("instalacja ręczna", owner, how)}
+
+
+def test_odmowa_zmiany_regul_ktora_zdejmuje_regule_skladnika_z_zajetym_zapisem_mowi_jak_zwolnic_zapis_tym_samym_zdaniem_co_sekcja(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    app = centrum(tmp_path)
+    _dad_spellings(app, {"technicolor": ["instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]})
+    release_without_manual_installation()
+    waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "nazwa")
+
+    shown = app.client.get(QUANTITY_RULES_URL).json()
+    removed = app.client.delete(f"{QUANTITY_RULES_URL}/technicolor")
+
+    assert shown["rules_problem"] == {"field": None, "message": waiting}
+    assert (removed.status_code, removed.json()["message"]) == (422, waiting)
+    assert settings_bytes(app.tool.config / RULES_FILE) is None
+
+
+def test_usuniecie_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_mu_ten_zapis_na_liscie_taty(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    app = centrum(tmp_path)
+    added = app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": [], "group": None})
+    own = added.json()["quantity_rules"]["devices"][-1]["id"]
+    release_without_manual_installation()
+    assert device_form(app, "instalacja-reczna")["name"] == "wizja"
+
+    removed = app.client.delete(f"{DEVICES_URL}/{own}")
+
+    assert removed.status_code == 200, removed.text
+    dad_list = _dad_list(app)
+    assert dad_list is not None
+    assert [component.spellings for component in dad_list if component.id == "instalacja-reczna"] == [("instalacja ręczna", "wizja")]
+
+
 def _rule_with(component: str) -> dict[str, Any]:
     """Formularz reguły „Jeśli URZĄDZENIA zawierają składnik, to wpisz 3 × jego liczbę w Z” dla składnika ``component``."""
 
@@ -1954,6 +2034,52 @@ def test_cofniecie_usuniecia_reguly_ze_skladnikiem_usunietym_potem_odmawia_zdani
     assert (undone.status_code, undone.json()) == (422, {"message": sentence})
     assert (again.status_code, again.json()) == (422, {"message": sentence, "field": "jesli[0].skladnik"})
     assert (settings_bytes(app.tool.config / DEVICES_FILE), settings_bytes(app.tool.config / RULES_FILE)) == files
+
+
+def _renamed_then_removed(app: Centrum) -> str:
+    added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
+    own = str(added.json()["quantity_rules"]["devices"][-1]["id"])
+    assert app.client.put(f"{DEVICES_URL}/{own}", json={"name": "ont z", "other_spellings": [], "group": None}).status_code == 200
+    assert app.client.delete(f"{DEVICES_URL}/{own}").status_code == 200
+    return own
+
+
+def _removed_from_list_older_than_history(app: Centrum) -> str:
+    app.tool.config.mkdir(parents=True, exist_ok=True)
+    (app.tool.config / DEVICES_FILE).write_bytes(DEVICES.dump((*DEFAULT_QUANTITY_RULES.devices.components, Component("ont-y", ("ont y",)))))
+    assert app.client.get(QUANTITY_RULES_URL).status_code == 200
+    assert app.client.delete(f"{DEVICES_URL}/ont-y").status_code == 200
+    assert [row["changes"][0]["after"] for row in history_rows(app) if row["file"] == DEVICES_FILE] == [None]
+    return "ont-y"
+
+
+def _release_component_off_dad_list(app: Centrum) -> str:
+    app.tool.config.mkdir(parents=True, exist_ok=True)
+    (app.tool.config / RULES_FILE).write_bytes(RULES.dump(tuple(rule for rule in DEFAULT_QUANTITY_RULES.rules if rule.id != "zmiana-instalacji")))
+    devices = tuple(component for component in DEFAULT_QUANTITY_RULES.devices.components if component.id != "zmiana-instalacji")
+    (app.tool.config / DEVICES_FILE).write_bytes(DEVICES.dump(devices))
+    return "zmiana-instalacji"
+
+
+@pytest.mark.parametrize(
+    ("world", "name"),
+    [
+        pytest.param(_renamed_then_removed, "ont z", id="nazwa-z-najnowszego-wiersza-historii"),
+        pytest.param(_removed_from_list_older_than_history, "ont y", id="nazwa-sprzed-usuniecia-bez-wczesniejszego-wiersza"),
+        pytest.param(_release_component_off_dad_list, "zmiana instalacji w lokalu abonenta", id="nazwa-z-listy-urzadzen-z-wydania"),
+    ],
+)
+def test_odmowa_reguly_ze_skladnikiem_spoza_listy_urzadzen_nazywa_go_tak_jak_tata_ostatnio_go_widzial(
+    tmp_path: Path, world: Callable[[Centrum], str], name: str
+) -> None:
+    app = centrum(tmp_path)
+    component = world(app)
+
+    refused = app.client.post(QUANTITY_RULES_URL, json=_rule_with(component))
+
+    rule = f"Jeśli URZĄDZENIA zawierają „{name}”, to wpisz 3 × liczbę „{name}” w Z."
+    sentence = f"Reguła potrzebuje składnika „{name}”, którego nie ma na Liście Urządzeń: {rule} Najpierw dodaj ten składnik w sekcji Urządzenia."
+    assert (refused.status_code, refused.json()) == (422, {"message": sentence, "field": "jesli[0].skladnik"})
 
 
 # Formularze składnika w teście równoważności: „ont z” bierze zapis „ont x”, a „ont w” zapis „ont y”.
@@ -2821,7 +2947,7 @@ def test_wydanie_bez_jawnej_zmiany_legendy_nie_rusza_legendy_taty(tmp_path: Path
     own = with_own(own_code("rt2", column=FixedColumn("AK")))
     (tool.config / LEGEND_FILE).write_bytes(own)
 
-    client = started(tool, RELEASE_CHANGES)
+    client = started(tool, tuple(change for change in RELEASE_CHANGES if change.file is not LEGEND))
     sentences, _ = legend_sentences(client)
     rows = legend_history(client)
     client.stop()
@@ -2829,6 +2955,70 @@ def test_wydanie_bez_jawnej_zmiany_legendy_nie_rusza_legendy_taty(tmp_path: Path
     assert sentences["rt2"] == "rt2: 1 w AK, AM na czerwono, AF na zielono."
     assert (tool.config / LEGEND_FILE).read_bytes() == own
     assert rows == []
+
+
+RT2_OUTSIDE_FAULTS = next(change for change in RELEASE_CHANGES if change.id == "2026-11-rt2-bez-usterek")
+
+
+@pytest.mark.parametrize(
+    ("own", "sentence"),
+    [
+        (None, "rt2: 1 w AM, AM na czerwono, AF na zielono; w usterce się nie liczy."),
+        (own_code("rt2", column=FixedColumn("AK")), "rt2: 1 w AK, AM na czerwono, AF na zielono; w usterce się nie liczy."),
+    ],
+    ids=["legenda-z-wydania", "rt2-taty-w-ak"],
+)
+def test_zmiana_z_wydania_ustawia_rt2_taty_ze_w_usterce_sie_nie_liczy_raz_z_cofnij(
+    tmp_path: Path, own: ActivityCode | None, sentence: str
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    if own is not None:
+        (tool.config / LEGEND_FILE).write_bytes(with_own(own))
+    first = started(tool, (RT2_OUTSIDE_FAULTS,))
+    sentences, _ = legend_sentences(first)
+    rows = legend_history(first)
+    first.stop()
+    applied = (tool.config / LEGEND_FILE).read_bytes()
+    (tool.config / MEMORY_DIRECTORY / APPLIED_FILE).unlink()
+    (tool.config / HISTORY_FILE).unlink()
+    again = started(tool, (RT2_OUTSIDE_FAULTS,))
+    rows_again = legend_history(again)
+    again.stop()
+
+    assert sentences["rt2"] == sentence
+    assert [sentence for code, sentence in sentences.items() if code != "rt2"] == [
+        sentence for sentence in MAIL_SENTENCES if not sentence.startswith("rt2:")
+    ]
+    assert [(row["source"], row["undoable"]) for row in rows] == [("release", True)]
+    assert ((tool.config / LEGEND_FILE).read_bytes(), rows_again) == (applied, [])
+
+
+def test_zmiana_z_wydania_rt2_nie_rusza_legendy_taty_bez_rt2(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    own = LEGEND.dump(tuple(code for code in DEFAULT_ACTIVITY_LEGEND.codes if code.id != "rt2"))
+    (tool.config / LEGEND_FILE).write_bytes(own)
+
+    client = started(tool, (RT2_OUTSIDE_FAULTS,))
+    sentences, _ = legend_sentences(client)
+    rows = legend_history(client)
+    client.stop()
+
+    assert "rt2" not in sentences
+    assert ((tool.config / LEGEND_FILE).read_bytes(), rows) == (own, [])
+
+
+def test_zmiana_kodu_z_formularza_zostawia_ze_w_usterce_sie_nie_liczy(tmp_path: Path) -> None:
+    client = started(ToolDirectory(tmp_path), (RT2_OUTSIDE_FAULTS,))
+    shown = shown_form(client, "rt2")
+    changed = client.put(code_url("rt2"), json=shown | {"amount": 5})
+    sentences, _ = legend_sentences(client)
+    client.stop()
+
+    assert shown["counts_in_fault"] is False
+    assert changed.status_code == 200, changed.text
+    assert sentences["rt2"] == "rt2: 1 w AM, 5 w Uwagi - kwota (AS), AM na czerwono, AF na zielono; w usterce się nie liczy."
 
 
 RELEASE_LEGEND_SHA256 = "a89bfa2741cf95ba917a5931afdf351f2af3036605d6e6c5017cd39b7ada6e44"
@@ -2846,10 +3036,17 @@ def test_legenda_z_wydania_zmienia_sie_tylko_jawna_zmiana_w_wydaniu() -> None:
     )
 
 
-def code_form(*spellings: str, column: dict[str, Any] | None = None, value: int = 1, amount: int | None = None, fills: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def code_form(
+    *spellings: str,
+    column: dict[str, Any] | None = None,
+    value: int = 1,
+    amount: int | None = None,
+    fills: list[dict[str, str]] | None = None,
+    counts_in_fault: bool = True,
+) -> dict[str, Any]:
     """Formularz Kodu czynności w sekcji Legenda czynności (``#`` w miejscu liczby)."""
 
-    return {"spellings": list(spellings), "column": column, "value": value, "amount": amount, "fills": fills or []}
+    return {"spellings": list(spellings), "column": column, "value": value, "amount": amount, "fills": fills or [], "counts_in_fault": counts_in_fault}
 
 
 def fixed(column: str) -> dict[str, Any]:
@@ -2915,6 +3112,16 @@ LEGEND_EDITS: dict[str, tuple[LegendEdit, str | None, str | None]] = {
         ),
         "instwewrg6#m: # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
         "instwewrg6#m (też instrg6#m): # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
+    ),
+    "kod przestaje się liczyć w usterce": (
+        lambda client: client.put(code_url("rt2"), json=shown_form(client, "rt2") | {"counts_in_fault": False}),
+        "rt2: 1 w AM, AM na czerwono, AF na zielono.",
+        "rt2: 1 w AM, AM na czerwono, AF na zielono; w usterce się nie liczy.",
+    ),
+    "dodanie kodu, który w usterce się nie liczy": (
+        lambda client: client.post(LEGEND_URL, json=code_form("rt3", column=fixed("AK"), counts_in_fault=False)),
+        None,
+        "rt3: 1 w AK; w usterce się nie liczy.",
     ),
     "zamiana zapisu": (
         lambda client: client.put(code_url("instmdik"), json=shown_form(client, "instmdik") | {"spellings": ["mdik"]}),
@@ -3836,7 +4043,7 @@ class SettingsWorld:
     difference: str = ""
 
 
-WORLD_CODE: Final = {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": []}
+WORLD_CODE: Final = {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": [], "counts_in_fault": True}
 """Kod czynności, który tata w świecie próbek dodał i usunął: nowy kod z tym formularzem nie może dostać jego id."""
 
 EXCEPTION_OF_WORLD = QuantityException(PERIOD, 21, "N", 45, "0123456789abcdef")
@@ -4359,10 +4566,15 @@ def _old_reminder_files(tool: ToolDirectory) -> None:
     (tool.config / OLD_FOOTER_FILE).write_text("Pozdrawiam\n", encoding="utf-8")
 
 
+def _own_rt2_in_ak(tool: ToolDirectory) -> None:
+    (tool.config / LEGEND_FILE).write_bytes(with_own(own_code("rt2", column=FixedColumn("AK"))))
+
+
 RELEASE_CHANGE_WORLDS: dict[str, Callable[[ToolDirectory], None]] = {
     "2026-11-lista-wykonawcow": _old_worker_files,
     "2026-11-folder-okresow-od-zalacznikow": _periods_folder_in_week,
     "2026-11-przypomnienia": _old_reminder_files,
+    "2026-11-rt2-bez-usterek": _own_rt2_in_ak,
 }
 """Świat każdej zmiany z Wydania, w którym zmiana wchodzi (``Edit`` z różnicą): stare pliki albo plik do poprawy."""
 
@@ -4723,7 +4935,7 @@ def migrated(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]
 
     client = started(tool, RELEASE_CHANGES)
     workers = client.get("/api/settings").json()["workers"]
-    rows = client.get("/api/settings/history").json()["rows"]
+    rows = [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
     client.stop()
     return workers, rows
 
@@ -7320,6 +7532,10 @@ def write_folder_settings(tool: ToolDirectory, folders: FolderSettings) -> None:
 PERIODS_FROM_ATTACHMENTS = "2026-11-folder-okresow-od-zalacznikow"
 
 
+def folder_history(client: CentrumClient) -> list[dict[str, Any]]:
+    return [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == FOLDERS.name]
+
+
 @pytest.mark.parametrize("inside", [*INSIDE_DAD_LAYOUT[:3], pytest.param(None, id="tydzien-przeniesiony")])
 def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_jako_zmiana_z_wydania_z_cofnij(
     tmp_path: Path, inside: tuple[str, ...] | None
@@ -7334,7 +7550,7 @@ def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_
     write_folder_settings(tool, FolderSettings(periods_directory=saved))
 
     first = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
-    [applied] = first.get("/api/settings/history").json()["rows"]
+    [applied] = folder_history(first)
     periods = first.get("/api/settings").json()["periods_directory"]
     first.stop()
     after_update = config_bytes(tool.config)
@@ -7346,7 +7562,7 @@ def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_
     third.stop()
     fourth = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
     after_undo = fourth.get("/api/settings").json()["periods_directory"]
-    rows = fourth.get("/api/settings/history").json()["rows"]
+    rows = folder_history(fourth)
     fourth.stop()
 
     assert periods == {"state": "ready", "path": str(root), "name": "Załączniki"}
@@ -7381,7 +7597,7 @@ def test_folder_okresow_od_korzenia_ukladu_zostaje_po_aktualizacji_bez_wiersza_i
 
     started(tool, RELEASE_CHANGES).stop()
     again = started(tool, RELEASE_CHANGES)
-    rows = again.get("/api/settings/history").json()["rows"]
+    rows = folder_history(again)
     again.stop()
 
     assert (tool.settings.read_bytes(), rows) == (before, [])

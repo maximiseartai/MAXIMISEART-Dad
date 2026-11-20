@@ -12,6 +12,7 @@ import pytest
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
 from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.worksheet import Worksheet
 
 from tests.fixtures.porownanie import (
@@ -90,6 +91,11 @@ def test_identyczne_foldery_rozliczen_pracownikow_nie_maja_roznic(tmp_path: Path
             id="szerokosc-kolumny",
         ),
         pytest.param(
+            _change_workbook(lambda _workbook, sheet: setattr(sheet.column_dimensions["B"], "outlineLevel", 1)),
+            _only("wymiary"),
+            id="poziom-konspektu-kolumny",
+        ),
+        pytest.param(
             _change_workbook(
                 lambda workbook, _sheet: workbook.defined_names.__setitem__(
                     "Stawki", DefinedName("Stawki", attr_text="Sheet1!$N$2:$AP$2")
@@ -112,6 +118,42 @@ def test_bramka_wykrywa_kazda_kategorie_roznicy_w_rozliczeniu_pracownika(
     write_settlement(candidate / SETTLEMENT_NAME, change)
 
     assert compare_worker_settlements(reference, candidate) == expected
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        pytest.param(
+            ArrayFormula("AV18", "=SUM(N18:N19*O18:O19)"), ArrayFormula("AV18", "=SUM(N18:N19*P18:P19)"), id="formula-tablicowa"
+        ),
+        pytest.param(
+            DataTableFormula(ref="AV18:AV19", r1="N18"), DataTableFormula(ref="AV18:AV19", r1="O18"), id="tabela-danych"
+        ),
+    ],
+)
+def test_bramka_wykrywa_zmieniona_formule_tablicowa_i_tabele_danych(
+    tmp_path: Path, before: ArrayFormula | DataTableFormula, after: ArrayFormula | DataTableFormula
+) -> None:
+    reference, candidate = settlement_folders(tmp_path)
+    write_settlement(reference / SETTLEMENT_NAME, _set("AV18", "value", before))
+    write_settlement(candidate / SETTLEMENT_NAME, _set("AV18", "value", after))
+
+    assert compare_worker_settlements(reference, candidate) == _only("formuly")
+
+
+def test_liczba_3_i_3_0_to_ta_sama_wartosc_a_prawda_to_nie_1(tmp_path: Path) -> None:
+    reference, candidate = settlement_folders(tmp_path)
+    rewrite_parts(
+        candidate / SETTLEMENT_NAME,
+        lambda name, data: _replaced(data, (b'<v>3</v></c><c r="O18"', b'<v>3.0</v></c><c r="O18"'))
+        if name == "xl/worksheets/sheet1.xml"
+        else data,
+    )
+    assert compare_worker_settlements(reference, candidate) == NO_DIFFERENCES
+
+    write_settlement(reference / SETTLEMENT_NAME, _set("N18", "value", 1))
+    write_settlement(candidate / SETTLEMENT_NAME, _set("N18", "value", True))
+    assert compare_worker_settlements(reference, candidate) == _only("wartosci")
 
 
 def test_bramka_liczy_hiperlacze_komorki_spoza_xml_arkusza(tmp_path: Path) -> None:
@@ -235,20 +277,36 @@ def test_ten_sam_styl_pod_innym_numerem_stylu_jest_zgodny(tmp_path: Path) -> Non
     assert compare_worker_settlements(reference, candidate) == NO_DIFFERENCES
 
 
-def test_komorka_nieobecna_w_xml_ma_styl_kolumny_jak_w_excelu(tmp_path: Path) -> None:
-    def column_style(_workbook: Workbook, sheet: Worksheet) -> None:
-        sheet.column_dimensions["C"].font = Font(italic=True)
+def _column_style(_workbook: Workbook, sheet: Worksheet) -> None:
+    sheet.column_dimensions["C"].font = Font(italic=True)
 
+
+def _row_and_column_style(workbook: Workbook, sheet: Worksheet) -> None:
+    _column_style(workbook, sheet)
+    sheet.row_dimensions[21].font = Font(bold=True)
+
+
+@pytest.mark.parametrize(
+    ("styled", "coordinate", "shown"),
+    [
+        pytest.param(_column_style, "C20", Font(italic=True), id="styl-kolumny-w-wierszu-bez-wymiaru"),
+        pytest.param(_column_style, "C17", Font(italic=True), id="styl-kolumny-w-wierszu-z-sama-wysokoscia"),
+        pytest.param(_row_and_column_style, "C21", Font(bold=True), id="styl-wiersza-przed-stylem-kolumny"),
+    ],
+)
+def test_komorka_nieobecna_w_xml_ma_styl_wiersza_a_bez_niego_styl_kolumny_jak_w_excelu(
+    tmp_path: Path, styled: Callable[[Workbook, Worksheet], None], coordinate: str, shown: Font
+) -> None:
     def explicit_cell(style: Font) -> Callable[[Workbook, Worksheet], None]:
         def change(workbook: Workbook, sheet: Worksheet) -> None:
-            column_style(workbook, sheet)
-            sheet["C20"].font = style
+            styled(workbook, sheet)
+            sheet[coordinate].font = style
 
         return change
 
     reference, candidate = settlement_folders(tmp_path)
-    write_settlement(reference / SETTLEMENT_NAME, column_style)
-    write_settlement(candidate / SETTLEMENT_NAME, explicit_cell(Font(italic=True)))
+    write_settlement(reference / SETTLEMENT_NAME, styled)
+    write_settlement(candidate / SETTLEMENT_NAME, explicit_cell(shown))
     assert compare_worker_settlements(reference, candidate) == NO_DIFFERENCES
 
     write_settlement(candidate / SETTLEMENT_NAME, explicit_cell(Font()))
