@@ -34,27 +34,29 @@ A change whose model nobody brought in line is not verified, whatever CI says.
 (`config/historia-ustawien.jsonl`) and its memory (`config/ustawienia-pamiec/`: `seen` and `good` per file, and
 `zmiany-z-wydan.json`). Every read and write runs under one lock and starts by comparing the file with the memory; a
 different state is a change from outside Centrum with one Historia row. A Zmiana z Wydania runs at the start of
-Centrum, before the first request, through the same `_change` as Dad's save. The docstrings promise, and the model
-checks over every order of steps:
+Centrum, before the first request, through the same `_change` as Dad's save. ADR 0032 and the tests named below
+promise, and the model checks over every order of steps:
 
 - **LiczyZapisanym**: an Uruchomienie computes with the value the Historia shows as current: the „po” of the newest row
-  „zapisano” of the file, or, before any such row, the content from before the Wydanie. Source: the docstring of
-  `owner.py` („Inny stan to zmiana spoza Centrum i dokładnie jeden wiersz Historii”, „zmiany bez wiersza nie daje
-  żadne miejsce”, a bad file has the last good value from memory). Harm: a settlement computed with Reguły ilości, a
+  „zapisano” of the file, or, before any such row, the content from before the Wydanie. Source: ADR 0032 („Historia
+  Ustawień”, „Furtka Maksa”), `test_reczna_zmiana_pliku_ustawien_ma_jeden_wiersz_spoza_centrum_z_wartoscia_przed_i_po`,
+  `test_zmiana_ktorej_wiersza_historii_nie_da_sie_dopisac_zostawia_plik_ustawien_bez_zmiany` and
+  `test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_i_jednym_wierszem_bez_cofniecia`. Harm: a settlement computed with Reguły ilości, a
   Lista Wykonawców or Foldery that the Historia does not show; Maks cannot explain it, and Dad's „Cofnij” restores
   something else.
 - **WydanieNieNadpisuje**: a Zmiana z Wydania never writes its value over a value Dad saved (with the form or
-  „Cofnij”) after that change took effect: it got a result, or a Historia row showed its value in the file. Source: the
-  docstring of `owner.py` („Każda zmiana z wynikiem ... trafia do pamięci i już nie wraca”, „nie puszcza zmiany drugi
-  raz, także po cofnięciu przez tatę”, „Przerwa przed wierszem zostawia zmianę do ponownego zastosowania, a edycja
-  deklaratywna nie daje wtedy drugiej różnicy”). Harm: Dad undoes or corrects a Wydanie's change, and the next start
+  „Cofnij”) after that change took effect: it got a result, or a Historia row showed its value in the file. Source:
+  `test_zmiana_ustawien_z_wydania_bez_niczego_do_zmiany_nie_wraca_i_nie_ma_wiersza`,
+  `test_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca_po_cofnieciu_przez_tate`,
+  `test_zmiana_ustawien_z_wydania_ktorej_nie_da_sie_zapisac_wraca_przy_nastepnym_starcie` and the declarative edit
+  that `release_changes.py` requires. Harm: Dad undoes or corrects a Wydanie's change, and the next start
   of Centrum quietly puts it back.
 - **NieZapisanoZnaczyNie**: when Dad reads „nie zapisano” (`NotSaved`), the file does not hold the value he just typed.
-  Source: the docstring of `NotSaved` („więc nic się nie zmieniło”). Harm: processes compute with a value Dad believes
+  Source: `test_zmiana_ktorej_wiersza_historii_nie_da_sie_dopisac_zostawia_plik_ustawien_bez_zmiany`. Harm: processes compute with a value Dad believes
   was refused.
 - **CofnijPrzywracaBajty**: „Cofnij” of a row writes the bytes from before that change: no file when the change created
-  it (`HistoryRow.created`), otherwise the value from before. Source: the docstring of `_restores_absence` and Maks's
-  decision in #2237. Harm: Dad undoes his first change of a file he did not have, the file stays with the Wydanie's
+  it (`HistoryRow.created`), otherwise the value from before. Source: ADR 0032 („Historia Ustawień”, Maks's decision
+  in #2237) and `test_cofniecie_zmiany_ktora_utworzyla_plik_ustawien_usuwa_plik`. Harm: Dad undoes his first change of a file he did not have, the file stays with the Wydanie's
   content, and the next Wydanie's new defaults never reach him, because an Aktualizacja does not overwrite Ustawienia
   (ADR 0032).
 
@@ -190,7 +192,7 @@ scratch script outside the repository, as „Read a result” says, on `centrum-
 
 1. **`zgasniecie-przed-pamiecia`, LiczyZapisanym (open).** `_change` writes the file and appends the row, and Centrum
    switches off before `_remember`; the memory keeps the old `seen` and `good` (the same after the row of
-   `_compared`). The docstring counts on the next read to see the new file and add a repeated row „spoza”. But when the
+   `_compared`). The owner counts on the next read to see the new file and add a repeated row „spoza”. But when the
    file meanwhile has bad content, `_compared` adds a row „odrzucono” and the last good value it takes from memory is
    the one from before the change; and when the file was meanwhile set back by hand to exactly the old content, there is
    no row at all. Processes compute with the old value while the Historia's newest row shows the new one. The window
@@ -204,7 +206,7 @@ scratch script outside the repository, as „Read a result” says, on `centrum-
    the file goes back before it. `test_reczna_zmiana_przy_historii_ktorej_nie_da_sie_dopisac_dostaje_wiersz_przy_nastepnym_odczycie`
    asserts that the change works at once.
 4. **`pamiec-bez-odczytu`, LiczyZapisanym (by design).** `Memory.read` gives `Unreadable`, so `_compared` does not
-   compare and the process computes with a change from outside Centrum without a row; the docstring says so, and
+   compare and the process computes with a change from outside Centrum without a row;
    `test_reczna_zmiana_przy_nieczytelnej_pamieci_ustawien_dostaje_wiersz_gdy_pamiec_wroci` asserts it.
 5. **`zly-plik-bez-pamieci`, LiczyZapisanym (open).** Bad content while `Memory.read` gives `Unreadable`:
    `_compared` returns `_read(parsed, None)`, so `_value` gives `file.default` instead of Dad's last good value. For
@@ -213,23 +215,24 @@ scratch script outside the repository, as „Read a result” says, on `centrum-
    the Mail z rozliczeniem refuse or show defaults. Replayed on the theme: Dad saves `light`, bad content, `chmod 0` on
    the memory: the snapshot has `dark` (the default); with the memory readable again, `light`.
 6. **`bez-zmian-bez-pamieci`, WydanieNieNadpisuje (by design).** A Zmiana z Wydania with the result „bez-zmian” (no row)
-   and a failed `Memory.remember_applied` comes back at the next start and sets its value over what Dad saved since: the
-   „Granice” paragraph of the docstring of `owner.py`.
+   and a failed `Memory.remember_applied` comes back at the next start and sets its value over what Dad saved since,
+   because only the memory of the Zmiany z Wydań records a result without a row.
 7. **`wiersz-i-przywrocenie-nieudane`, WydanieNieNadpisuje (open).** The write of a Zmiana z Wydania stays in the file
    without its row because `History.append` and `_put_back` both fail; the next read shows it as a change from outside
-   Centrum, Dad undoes it, and the next start applies the change again. The docstring's „Historia czytelna, ale bez
-   wiersza zmiany … puszcza ją jeszcze raz” names the cause, not that Dad's „Cofnij” is lost. Replayed by replacing
+   Centrum, Dad undoes it, and the next start applies the change again: a readable Historia without the change's row
+   lets the change in again, and Dad's „Cofnij” is lost with it. Replayed by replacing
    `History.append` and the second `replace_atomically` of the file: after Dad's „Cofnij” the snapshot has `dark`, after
    the next start `light`.
 8. **`zgasniecie-przed-wierszem-wydania`, WydanieNieNadpisuje (open).** Centrum switches off after the write of a Zmiana
    z Wydania and before its row. The next start gives the change no result (here the Historia cannot be read for that
    one `_release_rows`; a failed `_change` does the same), Dad changes the value the Historia shows as a change from
-   outside Centrum, and the start after that sets the Wydanie's value again. This breaks the docstring's „a edycja
-   deklaratywna nie daje wtedy drugiej różnicy”: it does when Dad changed the value in between. Replayed: `os._exit` in
+   outside Centrum, and the start after that sets the Wydanie's value again. A declarative edit repeated after a break
+   before its row gives no second difference only when the value did not change in between. Replayed: `os._exit` in
    `History.append` of the change, `chmod 0` on the Historia for the next start, Dad saves `dark`, the start after that
    gives `light` and a row „wydanie dark→light”.
 9. **`przywrocenie-nieudane`, NieZapisanoZnaczyNie (by design).** `History.append` and `_put_back` both fail on Dad's
-   save: Dad reads „nie zapisano” and the file has his value; the docstring of `_put_back` leaves it to the next read.
+   save: Dad reads „nie zapisano” and the file has his value; the owner leaves it to the next read, which shows it as a
+   change from outside Centrum.
 
 Decide 1, 2, 5, 7 and 8 with Maks; when the code changes, the finding disappears and the check says
 `ZNALEZISKO ZNIKNĘŁO`.

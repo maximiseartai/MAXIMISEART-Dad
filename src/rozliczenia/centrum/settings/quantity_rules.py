@@ -291,10 +291,7 @@ def quantity_rules(rules: tuple[QuantityRule, ...], devices: tuple[Component, ..
     completion = _completion(devices, rules)
     if completion is None:
         return DEFAULT_QUANTITY_RULES
-    try:
-        return QuantityRules(completion.rules, DeviceList(completion.devices))
-    except QuantityRulesRefused:
-        return DEFAULT_QUANTITY_RULES
+    return QuantityRules(completion.rules, DeviceList(completion.devices))
 
 
 @dataclass(frozen=True)
