@@ -28,18 +28,10 @@ export const NOTIFICATIONS_PAGE = {
   menu: false,
 } as const
 
-/**
- * Strony Centrum. Nowa strona to nowy wpis: menu, adres `#/<id>`, tytuł w `PageHeader` i treść biorą się stąd. Strona z `menu: false`
- * (Powiadomienia, otwierane dzwonkiem; Uzupełnienie, otwierane z Okresów) nie ma pozycji w menu, a `inMenu` to
- * pozycja menu, którą wtedy podświetla. Człony adresu za `#/<id>` (np. okres w `#/uzupelnienie/<okres>`) czyta
- * sama strona przez `usePagePath`. Kolejność wpisów to kolejność w menu; pierwszy wpis jest stroną startową.
- */
 export const PAGES = [
   { id: "okresy", title: "Okresy", icon: CalendarRangeIcon, Content: PeriodsPage, menu: true },
   { id: "uruchomienia", title: "Uruchomienia", icon: PlayIcon, Content: RunsPage, menu: true },
-  // Raporty ma przycisk „Wpisz raporty z maili”; otwiera je też wynik Wpisania raportów w Uruchomieniach.
   { id: "raporty", title: "Raporty", icon: MailCheckIcon, Content: ReportsPage, menu: true },
-  // Wysyłka rozliczeń: Rozliczenia pracowników okresów mailem ze skrzynki raportów (ADR 0040).
   { id: "wysylka", title: "Wysyłka rozliczeń", icon: SendIcon, Content: MailingPage, menu: true },
   { id: "metryki", title: "Metryki", icon: ChartColumnIcon, Content: MetricsPage, menu: true },
   NOTIFICATIONS_PAGE,
@@ -52,7 +44,6 @@ export const PAGES = [
     inMenu: "okresy",
   },
 ] as const satisfies ReadonlyArray<{
-  // Identyfikator strony z kontraktu: pod nim pomiar widoku trafia do dziennika Centrum.
   id: ViewTiming["page"]
   title: string
   icon: LucideIcon

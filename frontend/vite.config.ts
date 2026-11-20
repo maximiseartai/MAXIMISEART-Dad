@@ -5,10 +5,8 @@ import { defineConfig, type Plugin } from "vite"
 
 import { FIRST_PAINT_SCRIPT } from "./src/lib/theme.ts"
 
-// Zbudowany frontend trafia do pakietu Pythona i jest commitowany: u taty nie ma Node.
 const CENTRUM = "http://127.0.0.1:47811"
 
-// Motyw na pierwsze malowanie z tego samego modułu, który zmienia go w Centrum (`src/lib/theme.ts`).
 const firstPaintTheme: Plugin = {
   name: "motyw-pierwszego-malowania",
   // Przed skryptem i stylem Centrum, które Vite dopisuje do `<head>` przy budowie.

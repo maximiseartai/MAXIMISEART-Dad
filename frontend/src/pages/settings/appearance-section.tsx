@@ -8,7 +8,6 @@ const THEMES: ReadonlyArray<FilterOption<Theme>> = [
   { value: "dark", label: "Ciemny" },
 ]
 
-/** Motyw Centrum; zmienia się od razu i zapisuje w Ustawieniach Centrum, a zły motyw w pliku ma zdanie pod polem. */
 export function AppearanceSection() {
   const { settings, theme, chooseTheme } = useSettings()
   const problem = settings.state === "ready" ? settings.data.folders_problem : null

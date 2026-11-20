@@ -11,7 +11,6 @@ import { PATH_FIELDS, THEME_FIELD, useSettings, type PickedPath } from "@/lib/se
 import { openOrderRegisterAndConfirm } from "@/pages/periods/open-period-path"
 import { FieldSentence, SettingRow, SettingsPanel } from "@/pages/settings/setting-row"
 
-/** Pola pliku Ustawień, których zdanie stoi pod własnym wierszem: obie ścieżki tu, motyw w sekcji Wygląd. */
 const ROW_FIELDS = new Set([...Object.values(PATH_FIELDS), THEME_FIELD])
 
 /**
@@ -29,8 +28,6 @@ export function FoldersSection() {
       return <LoadFailure what="ustawień" message={settings.message} reload={reload} />
     case "ready": {
       const problem = settings.data.folders_problem
-      // Złe ustawienie pola tej sekcji stoi pod jego wierszem, a motyw w sekcji Wygląd; reszta pliku (cały plik,
-      // nieznane pole) nad listą.
       const general = problem !== null && !ROW_FIELDS.has(problem.field ?? "") ? problem.message : null
 
       return (
@@ -76,7 +73,6 @@ function PathRow({ path, title, description }: { path: PickedPath; title: string
           <span>{description}</span>
           <span className="text-foreground">
             <PathDescription setting={setting} />
-            {/* Korzeń układu folderów taty: Centrum widzi z niego Foldery okresu wszystkich lat (ADR 0032). */}
             {path === "periods_directory" && setting.state === "ready" && settings.data.periods_all_years ? (
               <span className="text-muted-foreground"> – wszystkie lata</span>
             ) : null}
