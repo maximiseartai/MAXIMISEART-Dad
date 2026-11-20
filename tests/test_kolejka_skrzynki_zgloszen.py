@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 import gzip
+import hashlib
 import itertools
 import json
 import os
@@ -38,14 +39,17 @@ from rozliczenia.centrum.outbox import (
     Frame,
     KnownIssue,
     NewIssue,
+    OpenIssue,
     Outbox,
     PeriodThread,
     Post,
     QueueState,
     Rank,
 )
-from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Sent, Unreachable
+from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Sent, Unreachable, UploadOutcome
 from rozliczenia.centrum.reports import report_target
+from rozliczenia.centrum.template_archive import ASSET_PREFIX, asset_name, from_queue
+from rozliczenia.tool_files import INTERNAL_TEMPLATE
 
 from atrapy.skrzynka import ArchivedFile, BoxArchive, BoxIssue
 from tests.fixtures.centrum import FakeReportBox
@@ -544,19 +548,19 @@ def test_druga_kolejka_na_tym_folderze_nie_wysyla_pliku_w_trakcie_wysylki_pierws
 
 def test_przejscie_pominiete_przez_druga_kolejke_robi_pierwsza_po_swoim(tmp_path: Path) -> None:
     hold = threading.Event()
-    queue = Queue(tmp_path, FakeReportBox(search_hold=hold, search_failure=Unreachable()))
-    queue.queued("treść\n")
-    queue.outbox.resume()
+    queue = Queue(tmp_path, FakeReportBox(search_hold=hold))
+    queue.outbox.post(post(["pierwsza\n"]))
     assert queue.box.searching.wait(30)
     restarted = queue.restarted()
-    restarted.resume()
+    restarted.post(post(["druga\n"], run_id=NEXT_RUN_IDS[0]))
     assert not restarted.wait_delivered("", THREAD.label, timeout_s=30)
 
-    queue.box.search_failure = None  # tylko pytanie, które już trwa, zostaje bez odpowiedzi
     hold.set()
 
-    assert queue.box.wait_until(lambda box: len(box.issues) == 1)
     assert wait_for(lambda: queue.files() == [])
+    [issue] = queue.box.issues
+    assert issue.comments == ["Część 1/1\n\ndruga\n"]
+    assert queue.clock.wakes == 0
 
 
 def test_kolejki_starego_i_nowego_centrum_na_jednym_folderze_zakladaja_jedno_issue_okresu_bez_dalszych_budzen(
@@ -1039,6 +1043,36 @@ def test_bez_sieci_wersja_zastepcza_z_nastepnego_startu_znika_przy_logach_z_wyni
     assert issue.comments == list(run_logs("z wynikiem", 1).parts)
 
 
+def test_komentarz_ze_znacznikiem_postepu_z_poprzedniego_wydania_dostaje_wersje_zastepcza_zamiast_drugiego_komentarza(
+    tmp_path: Path,
+) -> None:
+    progress = f"postęp\n<!-- wysyłka {LOGS.label} {RUN_ID} część 1 wersja 0:20261023T101500000000Z-0001 -->"
+    issue = BoxIssue(7, LOGS.label, LOGS.title, f"{LOGS.line}\n\nLogi Uruchomień okresu.\n", [progress], [70])
+    queue = Queue(tmp_path, FakeReportBox(issues=[issue]))
+    stand_in = replace(run_logs("zastępcze", 1), rank=Rank.STAND_IN)
+
+    queue.outbox.post(stand_in)
+    queue.passed()
+
+    assert queue.files() == []
+    assert (issue.comments, queue.box.edited) == (list(stand_in.parts), [70])
+
+
+def test_starsza_wersja_wysylki_ktora_dojdzie_po_nowszej_nie_dopisuje_do_jej_issue_czesci_ktorych_nowsza_nie_ma(
+    tmp_path: Path,
+) -> None:
+    newer = f"Uwaga\n<!-- wysyłka uwaga-taty {RUN_ID} część 1 wersja 20261023T101500000000Z-0001 -->"
+    issue = BoxIssue(5, "uwaga-taty", "Uwaga taty", newer)
+    queue = Queue(tmp_path, FakeReportBox(issues=[issue]))
+    older = Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga\n"), tool("druga część\n")), rank=Rank.DRAFT)
+
+    queue.outbox.post(older)
+    queue.passed()
+
+    assert queue.files() == []
+    assert (issue.comments, queue.box.edited) == ([], [])
+
+
 class _Stopnie(QueueListener):
     """Słuchacz kolejki, który zapisuje stopień każdej wysyłki tuż przed jej wysłaniem (``ranks``)."""
 
@@ -1179,8 +1213,12 @@ REPORT = report_target("0123456789abcdef", tool("BRAK_WZORCA: Nie znaleziono wzo
 REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n## Narzędzie\n\n{FINGERPRINT_LINE}\n"
 
 
+def report_to(target: OpenIssue, body: str, *, run_id: str = RUN_ID) -> Post:
+    return Post.of(target, period="08_14_09_2026", run_id=tool(run_id), blocks=[tool(body)], frame=unframed)
+
+
 def report(body: str = REPORT_BODY, *, run_id: str = RUN_ID) -> Post:
-    return Post.of(REPORT, period="08_14_09_2026", run_id=tool(run_id), blocks=[tool(body)], frame=unframed)
+    return report_to(REPORT, body, run_id=run_id)
 
 
 def test_zgloszenie_to_issue_z_trescia_podgladu_bez_dopisanego_wiersza(tmp_path: Path) -> None:
@@ -1258,6 +1296,15 @@ def test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu() -> None:
     # Ponowiona wysyłka przejmuje Zgłoszenie, które sama założyła, bez komentarzy, więc część 2 by przepadła (#724).
     with pytest.raises(ValueError, match="jednej części"):
         report(longest + "x")
+
+
+def test_zgloszenie_ktore_nie_zmiesci_sie_z_naglowkiem_powrotu_w_komentarzu_to_blad_programu() -> None:
+    longest = REPORT_BODY + "x" * (PART_LIMIT - len(REPORT_BODY))
+    fitting = replace(REPORT, again=tool("#" * (TEXT_LIMIT - PART_LIMIT)))
+    assert report_to(fitting, longest).parts == (longest,)
+
+    with pytest.raises(ValueError, match="nagłówkiem again"):
+        report_to(replace(fitting, again=tool(fitting.again + "#")), longest)
 
 
 def test_zgloszenie_bez_wiersza_odcisku_w_tresci_issue_to_blad_programu() -> None:
@@ -1346,6 +1393,22 @@ def test_wysylka_nastepcza_sluchacza_idzie_w_tym_samym_przejsciu_kolejki(tmp_pat
     assert issue.comments == ["Komentarz po Uwadze"]
     assert queue.delivered == [(RUN_ID, issue.number), ("komentarz", issue.number)]
     assert queue.files() == []
+
+
+class HoldingBack(QueueListener):
+    def prepare(self, post: Post, sent: Deliveries) -> Post | None:
+        return None
+
+
+def test_wysylka_ktora_sluchacz_zostawil_na_nastepne_przejscie_czeka_w_kolejce_bez_budzenia(tmp_path: Path) -> None:
+    queue = Queue(tmp_path, FakeReportBox(), listener=HoldingBack())
+
+    queue.outbox.post(post(["Kontrola ilości"]))
+    queue.passed()
+
+    assert len(queue.files()) == 1
+    assert queue.box.issues == []
+    assert not queue.outbox.state().retry_armed
 
 
 def _unreadable_at_comment_list(queue: Queue, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1492,6 +1555,33 @@ def test_najdluzszy_komentarz_logow_z_plikiem_zostawia_miejsce_na_dopisek_gdy_ar
     [comment] = issue.comments
     assert "czeka w Kolejce wysyłki" in comment
     assert len(comment) <= TEXT_LIMIT
+
+
+class RefusingTemplates(FakeReportBox):
+    def upload(self, archive_id: int, name: str, label: str, data: bytes, *, key: str) -> UploadOutcome:
+        if name.startswith(ASSET_PREFIX):
+            return Rejected()
+        return super().upload(archive_id, name, label, data, key=key)
+
+
+def test_wzorzec_ktorego_archiwum_nie_przyjelo_czeka_w_kolejce_a_komentarz_logow_idzie_bez_dopisku(tmp_path: Path) -> None:
+    content = b"bajty Wzorca"
+    template = from_queue(asset_name(hashlib.sha256(content).hexdigest()), INTERNAL_TEMPLATE.name, content)
+    logs = logs_with_file(RUN_ID)
+    assert logs.archive is not None
+    queue = Queue(tmp_path, RefusingTemplates())
+
+    queue.outbox.post(replace(logs, archive=replace(logs.archive, templates=(template,))))
+    queue.passed()
+
+    [issue] = queue.box.issues_with(LOGS.label)
+    [comment] = issue.comments
+    assert comment.startswith(f"podsumowanie {RUN_ID}")
+    assert "czeka w Kolejce wysyłki" not in comment
+    [archive] = queue.box.archives
+    assert [asset.name for asset in archive.assets] == [f"{RUN_ID}.json.gz"]
+    [queued] = [json.loads(path.read_text(encoding="utf-8")) for path in queue.directory.glob("*.json")]
+    assert (queued["delivered_parts"], queued["archived"]) == (1, False)
 
 
 def test_plik_do_archiwum_z_wysylka_w_dwoch_czesciach_to_blad_programu() -> None:
