@@ -330,6 +330,9 @@ def due_reminders(
     legend = snapshot.activity_legend_or_unreadable
     if isinstance(legend, Unreadable):
         return NotRead("plik-bez-odczytu", file=legend.name)
+    rules = snapshot.quantity_rules_or_unreadable
+    if isinstance(rules, Unreadable):
+        return NotRead("plik-bez-odczytu", file=rules.name)
     if settings.register is None or settings.periods_directory is None:
         return NotRead("bez-ustawien")
     if mailbox.access() != "ready":
@@ -370,6 +373,7 @@ def due_reminders(
         mails.mails,
         addresses,
         legend,
+        rules,
         sent=sent,
         reminded=workers.reminded(),
         settings=reminders,

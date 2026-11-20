@@ -25,6 +25,7 @@ from rozliczenia.centrum.report_entering_logs import (
 )
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
     ImapInbox,
@@ -213,7 +214,7 @@ def _read(window: Window, mails: Sequence[ReportMail], addresses: WorkerAddresse
     """Wynik rdzenia raportów dla maili ``mails`` w oknie ``window`` bez zleceń INTERMAX i bez pamięci Wpisania."""
 
     memory = EnteringMemory(_WithoutMemory())
-    return memory.enter(window, _WITHOUT_INTERMAX, mails, addresses, DEFAULT_ACTIVITY_LEGEND)
+    return memory.enter(window, _WITHOUT_INTERMAX, mails, addresses, DEFAULT_ACTIVITY_LEGEND, DEFAULT_QUANTITY_RULES)
 
 
 _WHOLE_TIME: Final = Window(date.max, date.min, frozenset())

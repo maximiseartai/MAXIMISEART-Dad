@@ -23,6 +23,7 @@ import pytest
 
 from rozliczenia.activity_legend import ActivityCode, ActivityLegend, DescriptionError, FixedColumn
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.quantity_engine import OrderContent
 from rozliczenia.report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from rozliczenia.centrum.report_entering_logs import LoggedReportMail, LoggedUnreadableMail, logged_mails
 from rozliczenia.settlement_period import period_of
@@ -123,6 +124,7 @@ def _order(
     successful: object = None,
     completed: object = None,
     address: object = "Ulica Testowa 1",
+    devices: object = None,
 ) -> RegisterOrder:
     order = RegisterOrder.of(
         row,
@@ -132,6 +134,9 @@ def _order(
         successful=successful,
         completed=completed,
         address=address,
+        contract=None,
+        devices=devices,
+        activities=None,
     )
     assert order is not None
     return order
@@ -433,6 +438,9 @@ def _after(orders: Sequence[RegisterOrder], outcome: ReportsOutcome) -> list[Reg
             successful=written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
             completed=written.get((order.row, ReportColumn.COMPLETED), order.completed),
             address="Ulica Testowa 1" if order.addressed else None,
+            contract=order.content.contract,
+            devices=order.content.devices,
+            activities=order.content.activities,
         )
         assert changed is not None
         found.append(changed)
@@ -446,6 +454,9 @@ def _after(orders: Sequence[RegisterOrder], outcome: ReportsOutcome) -> list[Reg
             successful=added.successful,
             completed=added.completed,
             address=None,
+            contract=None,
+            devices=None,
+            activities=None,
         )
         assert new is not None
         found.append(new)
@@ -3149,7 +3160,16 @@ def test_wiersz_bez_numeru_dnia_albo_wykonawcy_nie_jest_zleceniem_rdzenia(
 ) -> None:
     assert (
         RegisterOrder.of(
-            ROW, number=number, started=started, worker=worker, successful=None, completed=None, address=None
+            ROW,
+            number=number,
+            started=started,
+            worker=worker,
+            successful=None,
+            completed=None,
+            address=None,
+            contract=None,
+            devices=None,
+            activities=None,
         )
         is None
     )
@@ -3157,10 +3177,19 @@ def test_wiersz_bez_numeru_dnia_albo_wykonawcy_nie_jest_zleceniem_rdzenia(
 
 def test_dzien_zlecenia_z_daty_bez_godziny_i_pusta_komorka_z_samych_spacji() -> None:
     order = RegisterOrder.of(
-        ROW, number=NUMBER, started=DAY, worker="Jan.Testowy", successful="  ", completed="x", address="  "
+        ROW,
+        number=NUMBER,
+        started=DAY,
+        worker="Jan.Testowy",
+        successful="  ",
+        completed="x",
+        address="  ",
+        contract=None,
+        devices=None,
+        activities=None,
     )
 
-    assert order == RegisterOrder(ROW, _key(), None, "x", "Jan.Testowy", addressed=False)
+    assert order == RegisterOrder(ROW, _key(), None, "x", "Jan.Testowy", addressed=False, content=OrderContent("", "", "", None))
 
 
 # Maile Raportów wykonawców z tym, co rdzeń czyta albo pomija: Wpisy z ``tak``/``nie``, literą, słowem albo bez znaku, z
@@ -6018,10 +6047,22 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_wejscia_a_nie_z_wydani
     assert enter_reports(_inputs(mails, [_order()])).problems == (_faulty("montaż ONT inst20m inst30m"),)
 
 
-def test_wpisanie_raportow_czyta_opis_jak_poza_usterka_wiec_kod_ktory_w_usterce_sie_nie_liczy_daje_blad_opisu() -> None:
+@pytest.mark.parametrize(
+    ("devices", "problems"),
+    [
+        pytest.param("usterka", (), id="usterka"),
+        pytest.param("USTERKA WEW", (), id="usterka-wew-wielkimi-literami"),
+        pytest.param("router", (_faulty("rt2 bypas5m"),), id="poza-usterka"),
+        pytest.param("usterka router", (_faulty("rt2 bypas5m"),), id="usterka-bez-ilosci-w-AI-z-regul-ilosci"),
+        pytest.param(None, (_faulty("rt2 bypas5m"),), id="puste-urzadzenia"),
+    ],
+)
+def test_kod_ktory_w_usterce_sie_nie_liczy_nie_daje_bledu_opisu_w_widoku_raporty_tylko_w_usterce_pliku_zbiorczego(
+    devices: str | None, problems: tuple[FaultyDescription, ...]
+) -> None:
     legend = ActivityLegend(
         tuple(replace(code, counts_in_fault=False) if code.id == "rt2" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
     )
     mails = [_mail(JAN, SUBJECT, "40000001 tak rt2 bypas5m")]
 
-    assert enter_reports(_inputs(mails, [_order()], legend=legend)).problems == (_faulty("rt2 bypas5m"),)
+    assert enter_reports(_inputs(mails, [_order(devices=devices)], legend=legend)).problems == problems

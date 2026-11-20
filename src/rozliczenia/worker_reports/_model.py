@@ -16,6 +16,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar, Final, NewType, assert_never
 
 from ..activity_legend import ActivityLegend, DescriptionProblem, problem_text
+from ..quantity_engine import OrderContent, QuantityRules
 from ..report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from ..settlement_period import SettlementPeriod, period_of
 from ..text import normalize_text
@@ -183,6 +184,7 @@ class RegisterOrder:
     completed: str | None
     worker_name: str
     addressed: bool
+    content: OrderContent
 
     @classmethod
     def of(
@@ -195,6 +197,9 @@ class RegisterOrder:
         successful: object,
         completed: object,
         address: object,
+        contract: object,
+        devices: object,
+        activities: object,
     ) -> RegisterOrder | None:
         """Zlecenie z wartości komórek, jak je daje czytnik INTERMAX: numer jako liczba albo tekst (z „#” albo bez),
         ``DATA GODZ. POCZ.`` jako data, Wykonawca po ``normalize_text``, a z ``ADRES`` tylko to, czy ma wartość.
@@ -212,6 +217,7 @@ class RegisterOrder:
             _cell(completed),
             str(worker).strip(),
             _cell(address) is not None,
+            OrderContent.of(contract, devices, activities, started if isinstance(started, datetime) else None),
         )
 
     def cell(self, column: ReportColumn) -> str | None:
@@ -555,9 +561,9 @@ class ReportInputs:
     zleceniami, a okno, do których z nich wolno pisać. Pole nie ma wartości domyślnej, bo bez niego rdzeń
     dopisywałby każdy nowy numer i przenosił zlecenie numeru z kilku wierszy.
 
-    ``legend``: Legenda czynności Ustawień Centrum, ta sama, którą liczy Przygotowanie pliku zbiorczego; z niej rdzeń
-    wie, który wpisany Wpis ``tak`` ma Błąd opisu (``FaultyDescription``). ``requested``: decyzje taty Wpisu na
-    życzenie (``RequestedEntry``).
+    ``legend`` i ``rules``: Legenda czynności i Reguły ilości Ustawień Centrum, te same, którymi liczy Przygotowanie
+    pliku zbiorczego; z nich rdzeń wie, który wpisany Wpis ``tak`` ma Błąd opisu (``FaultyDescription``) w zleceniu,
+    które jest usterką albo nie (ADR 0044). ``requested``: decyzje taty Wpisu na życzenie (``RequestedEntry``).
 
     ``entering_rollout``: dzień wdrożenia Wpisania raportów, gdy okno zaczyna się wcześniej (Przypomnienia o raporcie z
     wcześniejszym dniem wdrożenia przypomnień, ``EnteringMemory.reminders``; ``None``: ``window.rollout``). Dzień
@@ -572,6 +578,7 @@ class ReportInputs:
     kept: frozenset[Kept]
     present: Sequence[ReadNumber]
     legend: ActivityLegend
+    rules: QuantityRules
     ordered_days: frozenset[OrderedDay] = frozenset()
     requested: frozenset[RequestedEntry] = frozenset()
     entering_rollout: date | None = None

@@ -565,6 +565,7 @@ REPORT_CORE_ENGINE: typing.Final = frozenset(
         "rozliczenia.settlement_period",
         "rozliczenia.text",
         "rozliczenia.activity_legend",
+        "rozliczenia.quantity_engine",
     }
 )
 # Kod, który mógłby sięgnąć do modułów prywatnych rdzenia raportów, i po jednym jego pliku z każdej części.
@@ -609,7 +610,7 @@ def _report_core_private(tree: ast.Module, file: str | None) -> list[tuple[int, 
     return sorted(set(found))
 
 
-def test_rdzen_raportow_bierze_spoza_biblioteki_standardowej_tylko_komorki_okres_tekst_i_legende() -> None:
+def test_rdzen_raportow_bierze_spoza_biblioteki_standardowej_tylko_komorki_okres_tekst_legende_i_reguly_ilosci() -> None:
     files = sorted(path.relative_to(SRC).as_posix() for path in (SRC / REPORT_CORE).rglob("*.py"))
     found = {
         str(found)
@@ -623,7 +624,7 @@ def test_rdzen_raportow_bierze_spoza_biblioteki_standardowej_tylko_komorki_okres
         [
             *sorted(found),
             f"Rdzeń raportów ({REPORT_CORE}) przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161), więc bierze "
-            "spoza biblioteki standardowej tylko report_cells, settlement_period, text i activity_legend, także w "
+            "spoza biblioteki standardowej tylko report_cells, settlement_period, text, activity_legend i quantity_engine, także w "
             "funkcji: plik, Excel i IMAP zostają w procesie (report_entering), który podaje rdzeniowi gotowe dane.",
         ]
     )

@@ -8523,14 +8523,14 @@ def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_star
     """Decyzja 2A Maksa: plik Reguł ilości, Listy Urządzeń albo Legendy czynności, którego system nie daje teraz czytać,
     nie znaczy reguł ani legendy z Wydania, którymi Przygotowanie pliku zbiorczego wpisałoby ilości bez ustawień taty.
     Karta i start Przygotowania i Przebiegu rozliczeń mówią tacie, którego pliku nie da się przeczytać; karta Wpisania
-    raportów mówi to samo o pliku Legendy czynności, bo nią czyta opis Wpisu ``tak`` (ADR 0039), a Wycena w efenix i
-    Uporządkowanie INTERMAX nie mają tej blokady."""
+    raportów mówi to samo, bo nimi czyta opis Wpisu ``tak`` w usterce i poza nią (ADR 0039, ADR 0044), a Wycena w efenix
+    i Uporządkowanie INTERMAX nie mają tej blokady."""
 
     app, _periods = _with_folders_and_rules(tmp_path)
     (app.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     sentence = refusal.settings_file_unreadable(unreadable).message
     counted = ("preparation", "settlement")
-    blocked = (*counted, "report_entering") if unreadable == LEGEND_FILE else counted
+    blocked = (*counted, "report_entering")
     readable = _start_blockers(app)
     assert sentence not in readable.values()
     before = _config_files(app.tool.config)

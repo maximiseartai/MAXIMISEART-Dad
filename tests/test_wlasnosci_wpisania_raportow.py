@@ -324,6 +324,9 @@ def _register_order(row: RowFacts, shift: int = 0) -> RegisterOrder | None:
         successful=row.value(SUCCESSFUL_COLUMN - shift),
         completed=row.value(COMPLETED_COLUMN - shift),
         address=None,
+        contract=None,
+        devices=None,
+        activities=None,
     )
 
 

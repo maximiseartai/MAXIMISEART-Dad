@@ -5845,14 +5845,15 @@ def _pamiec_wpisania(importy: str, cialo: str) -> str:
         "from collections.abc import Sequence\nfrom datetime import date\n\n"
         f"{importy}\n"
         "from rozliczenia.activity_legend import ActivityLegend\n"
+        "from rozliczenia.quantity_engine import QuantityRules\n"
         "from rozliczenia.report_entering import ReportState\n"
         "from rozliczenia.worker_reports import EnteringMemory, RegisterWindow, ReportMail, Window, WorkerAddresses\n\n\n"
         "def wejscie(\n"
         "    state: ReportState, today: date, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail],\n"
-        "    addresses: WorkerAddresses, legend: ActivityLegend,\n"
+        "    addresses: WorkerAddresses, legend: ActivityLegend, rules: QuantityRules,\n"
         ") -> object:\n"
         f"{cialo}"
-        "    return memory.enter(window, intermax, mails, addresses, legend)\n"
+        "    return memory.enter(window, intermax, mails, addresses, legend, rules)\n"
     )
 
 
