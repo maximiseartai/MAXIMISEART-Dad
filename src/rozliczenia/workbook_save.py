@@ -54,6 +54,12 @@ class ExternalLinksError(WorkbookSaveError):
 def write_atomically(
     target: Path, write: Callable[[Path], None], *, replace: Callable[[Path, Path], None] | None = None
 ) -> None:
+    """``write`` zapisuje skoroszyt do pliku tymczasowego obok ``target``; dopiero potem ``target`` jest podmieniany.
+
+    Nieudany zapis to ``WorkbookSaveError`` (albo błąd zapisu zgłoszony przez ``write`` albo inny niż ``OSError``
+    błąd ``replace``); plik tymczasowy nigdy nie zostaje, a ``target`` zmienia się tylko po udanym zapisie całości.
+    """
+
     try:
         file_descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{target.stem}.", suffix=".xlsx", dir=target.parent
