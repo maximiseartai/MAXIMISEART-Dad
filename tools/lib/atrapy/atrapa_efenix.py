@@ -110,7 +110,6 @@ SAVE_QUANTITY = "action_save_index.php"
 FILL_EMMETT = "action_fill_emmett.php"
 LOAD_EMMETT = "action_load_emmett.php"
 SET_DATE = "action_set_date_of_instalation.php"
-GET_DATE = "action_get_date_of_instalation.php"
 CHANGE_STATUS = "action_change_status.php"
 LOGIN_ACTION = "action_login.php"
 LOGOUT = "action_logout.php"
@@ -475,10 +474,6 @@ def atrapa_efenix(
                 saved = serwer.set_date(order_id, params.get("date", ""))
                 if self._done(method, path, saved):
                     self._html("ok" if saved else "Nie zapisano daty.")
-            elif path == GET_DATE:
-                day = serwer.date_of(order_id)
-                if self._done(method, path, day):
-                    self._html("0" if day is None else str(day))
             elif path == FILL_EMMETT:
                 self._proposal(method, path, serwer.proposal(order_id))
             elif path == LOAD_EMMETT:
@@ -648,7 +643,6 @@ _ACTION_ROUTES: Mapping[tuple[str, str], str] = {
     ("POST", SEARCH): "",
     ("GET", ORDER_PAGE): "id",
     ("POST", SET_DATE): "id",
-    ("POST", GET_DATE): "id",
     ("POST", FILL_EMMETT): "order_id",
     ("POST", LOAD_EMMETT): "order_id",
     ("POST", SAVE_QUANTITY): "order_id",

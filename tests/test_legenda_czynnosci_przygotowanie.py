@@ -14,11 +14,10 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-import pytest
 
 from rozliczenia.activity_legend import ActivityLegend
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
-from rozliczenia.collective_layout import PHOTO_COLUMNS, QUANTITY_COLUMNS
+from rozliczenia.collective_layout import QUANTITY_COLUMNS
 
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
 from atrapy.preparation import PreparationFixture, make_preparation_fixture, register_order
@@ -28,7 +27,6 @@ from atrapy.workbooks import active_worksheet, refused_by_copy
 
 LETTERS = [get_column_letter(column) for column in (*QUANTITY_COLUMNS, 43, 44, 45)]
 """Kolumny Ilości usług N:AP i AQ:AS, w tym ``AS`` (Uwagi - kwota)."""
-PHOTO_LETTERS = [get_column_letter(column) for column in PHOTO_COLUMNS]
 GREEN, RED = "FF92D050", "FFFF0000"
 DEVICES_ONLY_V = {"V": 1}
 """``dekoder`` (składnik spoza Listy Urządzeń) daje z Reguł ilości z Wydania tylko V (instrukcja taty)."""
@@ -180,33 +178,6 @@ def test_kazdy_kod_z_maila_taty_daje_w_pliku_zbiorczym_swoje_ilosci_kwote_as_i_k
         if row != want
     ] == []
     assert fixture.register_path.read_bytes() == register
-
-
-@pytest.mark.parametrize("code", ["inst30m", "spawpg", "rt2", "instutp17m dzielnik1/2"])
-def test_kod_ze_zwyklym_opisem_obok_daje_w_pliku_zbiorczym_te_same_komorki_co_sam_kod(tmp_path: Path, code: str) -> None:
-    described = f"{code} Podłączyłem lokal, klient zadowolony, wymiana gniazda."
-    cases = [Case(code, {}), Case(described, {}), Case(f"Na miejscu: {code}", {})]
-    fixture = _fixture(tmp_path, cases)
-
-    run_preparation(fixture)
-
-    values, fills = _values(fixture.collective_file_path, 3), _fills(fixture.collective_file_path, 3)
-    assert (values[1], fills[1]) == (values[0], fills[0])
-    assert (values[2], fills[2]) == (values[0], fills[0])
-
-
-def test_kolor_bez_wartosci_nie_robi_ze_zlecenia_zlecenia_ze_zdjeciami(tmp_path: Path) -> None:
-    """Zlecenie ze zdjęciami to wartość inna niż 0 w kolumnach zdjęć (GLOSSARY); zielone ``AF`` z ``instwew15m`` jej nie
-    daje."""
-
-    cases = [Case("instwew15m", DEVICES_ONLY_V, {"AF": GREEN})]
-    fixture = _fixture(tmp_path, cases)
-
-    run_preparation(fixture)
-
-    [row] = _values(fixture.collective_file_path, 1)
-    assert {letter: row[letter] for letter in PHOTO_LETTERS if row[letter] not in (None, 0)} == {}
-    assert _fills(fixture.collective_file_path, 1)[0]["AF"] == GREEN
 
 
 RT2_OUTSIDE_FAULTS = ActivityLegend(

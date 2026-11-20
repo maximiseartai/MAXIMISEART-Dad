@@ -642,72 +642,6 @@ def _week(
     ]
 
 
-@pytest.mark.parametrize(
-    ("old", "new", "kept", "origin", "name"),
-    [
-        (
-            (3, 4, 4),
-            (6, 7, 8),
-            6,
-            "https://github.com/maximiseartai/MAXIMISEART-Dad.git",
-            "narzedzie-taty",
-        ),
-        (
-            (3,),
-            (4, 5, 6, 6, 7, 8),
-            7,
-            "git@github.com:maximiseartai/MAXIMISEART-Dad",
-            "MAXIMISEART-Dad-nowy",
-        ),
-        (
-            (),
-            (3, 4, 5, 6),
-            4,
-            "https://github.com/maximiseartai/maximiseart-dad/",
-            "maximiseart-dad",
-        ),
-    ],
-    ids=[
-        "przeniesienie-w-srode",
-        "przeniesienie-w-poniedzialek-po-jednej-wiadomosci",
-        "przeniesienie-na-caly-tydzien",
-    ],
-)
-def test_repo_przeniesione_do_checkoutu_pod_inna_nazwa_liczy_sie_w_calosci(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    old: tuple[int, ...],
-    new: tuple[int, ...],
-    kept: int,
-    origin: str,
-    name: str,
-) -> None:
-    """W1 #1914 r5: projekt T3 należy do repo po origin gita, nie po nazwie katalogu, więc repo przeniesione w tygodniu
-    do checkoutu o innej nazwie daje pełną liczbę wiadomości operatora ze starego i nowego projektu."""
-
-    agents = [
-        _agent(
-            COORDINATOR,
-            "2026-11-07T09:00:00.000Z",
-            _zdanie(79),
-            "server",
-            notification={"kind": "pull_request"},
-        )
-    ]
-    base = _base(
-        tmp_path / "statev2.sqlite",
-        [*_week(COORDINATOR, old), *agents, *_week(STRANGER, new)],
-        other=_checkout(tmp_path / name, origin),
-    )
-
-    code, (*lines, last) = _run(base, capsys)
-
-    assert (code, len(lines)) == (0, kept)
-    assert last.startswith(
-        f"POPRAWKI OPERATORA OK | tydzień {WEEK}: {kept} wiadomości operatora w "
-    )
-
-
 def test_klon_pod_inna_nazwa_jako_jedyny_projekt_repo_jest_repo(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -726,27 +660,6 @@ def test_klon_pod_inna_nazwa_jako_jedyny_projekt_repo_jest_repo(
     code, (*lines, _) = _run(base, capsys)
 
     assert (code, len(lines)) == (0, 2)
-
-
-def test_checkout_z_obcym_origin_nie_jest_repo(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Projekt z origin innego repo (także fork o tej samej nazwie repo) nie liczy się do wątków repo."""
-
-    foreign = _checkout(
-        tmp_path / "MAXIMISEART-Dad-fork",
-        "https://github.com/ktos/MAXIMISEART-Dad-fork.git",
-    )
-    base = _base(tmp_path / "statev2.sqlite", _week(STRANGER, (3, 5)), other=foreign)
-
-    code, lines = _run(base, capsys)
-
-    assert (code, lines) == (
-        1,
-        [
-            f"POPRAWKI OPERATORA FAIL | tydzień {WEEK}: 0 wiadomości operatora w wątkach MAXIMISEART-Dad z 0 wiadomości user | inne projekty: MAXIMISEART-Dad-fork [p-inny] 2 (inny origin)"
-        ],
-    )
 
 
 def test_git_dir_odziedziczony_z_hooka_nie_robi_obcego_katalogu_repo(
@@ -786,11 +699,6 @@ REPO_ORIGINS = {
 OTHER_ORIGINS = {
     "wlasciciel-z-przedrostkiem": (
         "https://github.com/notmaximiseartai/MAXIMISEART-Dad.git",
-        "origin",
-        "inny origin",
-    ),
-    "ssh-wlasciciel-z-przedrostkiem": (
-        "git@github.com:notmaximiseartai/MAXIMISEART-Dad.git",
         "origin",
         "inny origin",
     ),

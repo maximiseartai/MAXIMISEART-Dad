@@ -76,6 +76,19 @@ def test_token_przyjety_jako_okres_jest_jedynym_tokenem_tego_okresu(token: str) 
         assert parsed == "Token okresu nie opisuje okresu od wtorku do poniedziałku.", token
 
 
+@pytest.mark.parametrize(
+    ("token", "odmowa"),
+    [
+        pytest.param("8_14_09_2026", "Token okresu ma postać dd_dd_mm_rrrr.", id="jednocyfrowy-dzien"),
+        pytest.param("okres", "Token okresu ma postać dd_dd_mm_rrrr.", id="slowo"),
+        pytest.param("../14_09_2026", "Token okresu ma postać dd_dd_mm_rrrr.", id="sciezka"),
+        pytest.param("00_01_01_0001", "Token okresu nie opisuje okresu od wtorku do poniedziałku.", id="wtorek-przed-rokiem-1"),
+    ],
+)
+def test_token_bez_postaci_tokenu_albo_z_wtorkiem_przed_najwczesniejsza_data_nie_jest_okresem(token: str, odmowa: str) -> None:
+    assert _parsed(token) == odmowa
+
+
 @PROPERTY
 @given(DAYS.filter(lambda day: day.weekday() != TUESDAY))
 def test_okres_nie_zaczyna_sie_w_dniu_innym_niz_wtorek(start: date) -> None:

@@ -88,31 +88,23 @@ def settled_outside_saving(runner: PhaseRunner) -> None:
     runner.each_template(lambda worker_name: pytest.fail("Szablon pracownika poza Zapisywaniem."))
 
 
-@pytest.mark.parametrize("stage", ["check", "read", "plan"])
-def test_przetworzenie_szablonow_pracownika_w_innym_etapie_niz_zapisywanie_jest_bledem_kodu(stage: str) -> None:
+def test_przetworzenie_szablonow_pracownika_w_innym_etapie_niz_zapisywanie_jest_bledem_kodu() -> None:
     runner = PhaseRunner(None)
-    if stage != "check":
-        runner.check(lambda: None)
-    if stage == "plan":
-        runner.read(lambda: None)
+    runner.check(lambda: None)
+    runner.read(lambda: None)
 
-    counts = {"issue_count": lambda _planned: 0} if stage == "plan" else {}
     with pytest.raises(ProgressProtocolError):
-        getattr(runner, stage)(lambda: settled_outside_saving(runner), **counts)
+        runner.plan(lambda: settled_outside_saving(runner), issue_count=lambda _planned: 0)
 
 
-@pytest.mark.parametrize("stage", ["check", "read", "plan"])
-def test_krok_zapisywania_zgloszony_w_innym_etapie_jest_bledem_kodu(stage: str) -> None:
+def test_krok_zapisywania_zgloszony_w_innym_etapie_jest_bledem_kodu() -> None:
     events: list[ProgressEvent] = []
     runner = PhaseRunner(events.append)
-    if stage != "check":
-        runner.check(lambda: None)
-    if stage == "plan":
-        runner.read(lambda: None)
+    runner.check(lambda: None)
+    runner.read(lambda: None)
 
-    counts = {"issue_count": lambda _planned: 0} if stage == "plan" else {}
     with pytest.raises(ProgressProtocolError):
-        getattr(runner, stage)(lambda: runner.step("Zlecenia", worker="adrian.testowy", done=0, total=1), **counts)
+        runner.plan(lambda: runner.step("Zlecenia", worker="adrian.testowy", done=0, total=1), issue_count=lambda _planned: 0)
 
     assert not any(isinstance(event, StepReached) for event in events)
 

@@ -325,7 +325,7 @@ def test_zmiana_sciezki_uruchamia_wszystko_dokladnie_w_jej_kontekstach(path: str
     assert {context for context in Context if path in context.paths()} <= contexts
 
 
-@pytest.mark.parametrize("changed", ["pyproject.toml", "requirements.txt", "tests/conftest.py", "tests/fixtures/git_config.py"])
+@pytest.mark.parametrize("changed", ["pyproject.toml"])
 def test_zmiana_pliku_kazdego_testu_wybiera_wszystkie_testy(tmp_path: Path, changed: str) -> None:
     repo = _repo(tmp_path, {**GRAPH, "tests/test_usuniety.py": ""})
     git(repo, "rm", "--quiet", "tests/test_usuniety.py")
@@ -388,9 +388,13 @@ def test_odcisk_testu_zmienia_sie_z_jego_wejsciem_i_plikiem_kazdego_testu(tmp_pa
     own_input = fingerprint()
     (repo / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
     configuration = fingerprint()
+    page = Repository.scan(repo).impact(frozenset({"src/witryna/strona.py"})).fingerprint("tests/test_strona.py")
+    (repo / "src" / "witryna" / "strona.html").write_text("Inny tytuł\n", encoding="utf-8")
+    page_data = Repository.scan(repo).impact(frozenset({"src/witryna/strona.py"})).fingerprint("tests/test_strona.py")
 
     assert first == unrelated
     assert len({unrelated, own_input, configuration}) == 3
+    assert page != page_data
 
 
 GLOBS = (

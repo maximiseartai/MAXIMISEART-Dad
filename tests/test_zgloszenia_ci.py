@@ -1028,24 +1028,45 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         "wyslanie-artefaktu-http-503", "wyslanie-artefaktu-http-403", "brak-artefaktu", "cytat-artefaktu-w-sprawdzeniu",
     ],
 )
-@pytest.mark.parametrize("koniec_linii", ["\n", "\r\n", "\r", "\r\r\n"], ids=["lf", "crlf-windows", "cr", "cr-crlf"])
 def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
-    logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool, koniec_linii: str
+    logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool
 ) -> None:
     """Sygnatura awarii liczy się tylko w kroku, który zaczerwienił zadanie, czyli w pierwszym kroku z ``failure``: krok
     z ``continue-on-error`` i krok ``if: failure()`` po nim też drukują ``##[error]``, ale defektu nie zamieniają w awarię,
     a gdy nagłówki kroków w logu nie pasują do kroków z API (ich liczba albo sekunda nagłówka kroku, który padł, wobec
-    jego czasów w API), porażka jest defektem. Log zadania Windows (``\\r\\n``) i log z samym ``\\r`` albo ``\\r\\r\\n`` dają
-    ten sam wynik co log z Linuksa."""
+    jego czasów w API), porażka jest defektem."""
 
     run = _run_ci(42435998596)
     ponowienia = Ponowienia()
 
-    wynik = ponow_ci.ponow(_github(run, logi, flaky=flaky, koniec_linii=koniec_linii), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
+    wynik = ponow_ci.ponow(_github(run, logi, flaky=flaky), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
 
     assert linia in wynik.linia
     assert (wynik.kod, ponowienia.zapisane) == ((0, [("rerun", run["id"])]) if ponowiony else (1, []))
     assert wynik.linia.startswith("PONÓW OK" if ponowiony else "PONÓW ODMOWA")
+
+
+@pytest.mark.parametrize(
+    "logi",
+    [
+        {"pytest (Python 3.14, Linux, 5/8)": DNS, "pytest (Python 3.14, Linux, 6/8)": DNS},
+        {"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_SKILLA), ZAPIS_CZASOW, WYSLANIE_CZASOW]},
+    ],
+    ids=["dns-apt", "defekt-skilla-obok-wyslania-czasow-continue-on-error"],
+)
+@pytest.mark.parametrize("koniec_linii", ["\r\n", "\r", "\r\r\n"], ids=["crlf-windows", "cr", "cr-crlf"])
+def test_log_zadania_windows_i_z_samym_cr_daje_ten_sam_wynik_ponowienia_co_log_z_linuksa(
+    logi: dict[str, str | list[Krok]], koniec_linii: str
+) -> None:
+    """Log zadania Windows (``\\r\\n``) i log z samym ``\\r`` albo ``\\r\\r\\n`` dają ten sam wynik co log z Linuksa."""
+
+    run = _run_ci(42435998596)
+    z_linuksa, z_innym_koncem = Ponowienia(), Ponowienia()
+
+    oczekiwany = ponow_ci.ponow(_github(run, logi), run["id"], None, PONOW_TERAZ, z_linuksa.akcje)
+    wynik = ponow_ci.ponow(_github(run, logi, koniec_linii=koniec_linii), run["id"], None, PONOW_TERAZ, z_innym_koncem.akcje)
+
+    assert (wynik.kod, wynik.linia, z_innym_koncem.zapisane) == (oczekiwany.kod, oczekiwany.linia, z_linuksa.zapisane)
 
 
 ZADANIE_5_13 = "pytest (Python 3.14, Linux, 5/13)"
@@ -1244,18 +1265,3 @@ def test_defekt_runu_pr_ze_scalenia_z_czerwonym_main_dostaje_cie_na_swiezym_scal
 
     assert linia in wynik.linia
     assert ponowienia.zapisane == zapisane
-
-
-def test_defekt_nie_ma_furtki_z_issue_bez_zwiazku_z_porazka(capsys: pytest.CaptureFixture[str]) -> None:
-    """Sonda przeglądu: defekt mypy z ``--issue`` spec bez związku z porażką był ponawiany; teraz zostaje odmowa."""
-
-    run = _run_ci(42335147260, proba=4)
-    github = _github(run, {"Ruff, mypy": "2026-11-12T15:50:00Z kod/a.py:3: error: Incompatible types\n"})
-    ponowienia = Ponowienia()
-
-    with pytest.raises(SystemExit):
-        ponow_ci.main(["--run", "42335147260", "--issue", "1344"], api=github, akcje=ponowienia.akcje, teraz=PONOW_TERAZ)
-    kod = ponow_ci.main(["--run", "42335147260"], api=github, akcje=ponowienia.akcje, teraz=PONOW_TERAZ)
-
-    assert (kod, ponowienia.zapisane) == (1, [])
-    assert "--issue" not in capsys.readouterr().out

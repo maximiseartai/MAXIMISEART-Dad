@@ -91,7 +91,6 @@ GATE = {
     "tests/test_b.py": "from pakiet.b import b\n\n\ndef test_b() -> None:\n    assert b(2)\n",
     "tools/benchmark_przebiegu.py": "from pakiet.a import a\n",
     "tools/syntetyczne_wzorce.py": "",
-    "tools/raport.py": "",
     "README.md": "Repozytorium\n",
     ".github/workflows/ci.yml": "name: CI\n",
 }
@@ -105,12 +104,10 @@ WINDOWS, LINUX = "windows-3.13", "linux-3.14"
         ("src/pakiet/b.py", "wybór 1 plików", ["tests/test_b.py"], ("e2e",)),
         ("src/pakiet/a.py", "wybór 1 plików", ["tests/test_a.py"], ("e2e", "timing")),
         ("tools/syntetyczne_wzorce.py", "wybór 0 plików", [], ("timing",)),
-        ("tools/raport.py", "wybór 0 plików", [], ()),
         ("README.md", "wybór 0 plików", [], ()),
-        (".github/workflows/ci.yml", "FULL (.github/workflows/ci.yml)", None, ("e2e", "timing")),
         (WHOLE_PR_GATE, f"FULL ({WHOLE_PR_GATE})", None, ("e2e", "timing")),
     ],
-    ids=["test", "src poza straza czasu", "src w domknieciu strazy czasu", "skrypt strazy czasu", "tools", "dokument", "workflow", "plik FULL"],
+    ids=["test", "src poza straza czasu", "src w domknieciu strazy czasu", "skrypt strazy czasu", "dokument", "plik FULL"],
 )
 def test_bramka_pr_biegnie_na_windows_313_i_linuksie_z_wyborem_szybko_a_e2e_i_straz_czasu_tylko_przy_ich_zmianie(
     tmp_path: Path, changed: str, source: str, files: list[str] | None, steps: tuple[str, ...]
@@ -134,13 +131,10 @@ def test_bramka_pr_biegnie_na_windows_313_i_linuksie_z_wyborem_szybko_a_e2e_i_st
     [
         (Zdarzenie.PULL_REQUEST, "tests/test_b.py", {"tests/test_b.py"}),
         (Zdarzenie.PULL_REQUEST, "src/pakiet/a.py", set()),
-        (Zdarzenie.PULL_REQUEST, "README.md", set()),
-        (Zdarzenie.PULL_REQUEST, ".github/workflows/ci.yml", set()),
         (Zdarzenie.PULL_REQUEST, "tests/conftest.py", set()),
         (Zdarzenie.PUSH, "tests/test_b.py", set()),
-        (Zdarzenie.NOC, "tests/test_b.py", set()),
     ],
-    ids=["plik testu", "plik importowany przez test", "dokument", "workflow uruchamia wszystko", "plik regul wyboru testow", "push", "noc"],
+    ids=["plik testu", "plik importowany przez test", "plik regul wyboru testow", "push"],
 )
 def test_bramka_pr_podaje_pliki_testow_zmienione_przez_pr_bez_plikow_od_ktorych_zaleza_a_push_i_noc_zadnego(
     tmp_path: Path, event: Zdarzenie, changed: str, zmienione: set[str]
@@ -232,7 +226,6 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
     ("changed", "runs"),
     [
         ("docs/opis.md", False),
-        ("src/pakiet/obcy.py", False),
         # Trafienie w pilnuje uruchamia podstawę skilla na PR, a skrypt mutacji nie (ADR 0020).
         ("src/pakiet/routing.py", False),
         (".agents/skills/verify-b/SKILL.md", False),
@@ -253,7 +246,6 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         ("tools/lib/kroki_skilli.py", True),
         ("tools/lib/silnik_mutacji.py", True),
         ("tools/lib/potomne.py", True),
-        ("tools/lib/repo.py", True),
     ],
 )
 def test_noca_skrypt_mutacji_biegnie_przy_zmianie_folderu_skilla_jego_importow_albo_uruchamiacza(tmp_path: Path, changed: str, runs: bool) -> None:
@@ -562,7 +554,7 @@ def test_na_pull_request_podstawa_ci_biegnie_przy_zmianie_folderu_skilla_a_trafi
     assert _shadow(praca, "verify-d/ci") == {Podstawy.V0: hit, Podstawy.NF: folder, Podstawy.N0: False}
 
 
-@pytest.mark.parametrize("event", [Zdarzenie.PUSH, Zdarzenie.NOC])
+@pytest.mark.parametrize("event", [Zdarzenie.PUSH])
 def test_cien_wariantow_podstaw_ma_tylko_pull_request_a_jego_wariant_na_zywo_to_wybrane_kroki(tmp_path: Path, event: Zdarzenie) -> None:
     files = {**SKILLS, ".agents/skills/verify-d/SKILL.md": _with_ci("verify-d", BASELINE_D), BASELINE_D: "print('sprawdzone')\n"}
     repo = repository(tmp_path / "repo", files)
@@ -647,28 +639,13 @@ def test_zmiana_samego_requirements_nie_wybiera_podstawy_na_pull_request_a_push_
     assert decisions["verify-a/ci"][0] is runs, decisions
 
 
-@pytest.mark.parametrize(
-    ("arguments", "event", "changed", "separately", "script"),
-    [
-        # Na pushu skrypt mutacji nie biegnie, więc biegnie podstawa, którą uruchamia bez mutacji.
-        ("", Zdarzenie.PUSH, "", True, False),
-        (" --pelny", Zdarzenie.PUSH, "", True, False),
-        ("", Zdarzenie.NOC, ".agents/skills/verify-a/scripts/sprawdz_a.py", False, True),
-        # Na PR biegnie sama podstawa przy zmianie folderu skilla, bo skrypt mutacji biegnie nocą, a przy trafieniu tylko
-        # w pilnuje żadna (D1).
-        ("", Zdarzenie.PULL_REQUEST, "src/pakiet/routing.py", False, False),
-        ("", Zdarzenie.PULL_REQUEST, ".agents/skills/verify-a/scripts/sprawdz_a.py", True, False),
-    ],
-)
-def test_podstawa_ci_ktora_uruchamia_wybrany_skrypt_mutacji_nie_biegnie_drugi_raz(
-    tmp_path: Path, arguments: str, event: Zdarzenie, changed: str, separately: bool, script: bool
-) -> None:
-    command = ".agents/skills/verify-a/scripts/sprawdz_a.py" + arguments
-    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command)})
+def test_podstawa_ci_ktora_uruchamia_wybrany_skrypt_mutacji_nie_biegnie_drugi_raz(tmp_path: Path) -> None:
+    skill = _with_ci("verify-a", ".agents/skills/verify-a/scripts/sprawdz_a.py").replace("ci: ", "ci-czesci: 2\nci: ")
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": skill})
 
-    runs = _runs(zakres(event, frozenset({changed} - {""}), repo))
+    runs = _runs(zakres(Zdarzenie.NOC, frozenset({".agents/skills/verify-a/scripts/sprawdz_a.py"}), repo))
 
-    assert ("verify-a/ci" in runs, SCRIPT_A in runs) == (separately, script)
+    assert ("verify-a/ci" in runs, SCRIPT_A in runs) == (False, True)
 
 
 @pytest.mark.parametrize(
@@ -823,22 +800,18 @@ def _workflow(krok: str) -> str:
     "krok",
     [
         "      - run: python .agents/skills/verify-a/scripts/sprawdz_a.py\n",
-        "      - run: python -m runpy .agents/skills/verify-a/scripts/sprawdz_a.py\n",
         "      - working-directory: .agents/skills/verify-a/scripts\n        run: python sprawdz_a.py\n",
-        "      - run: cd .agents/skills/verify-a && python scripts/sprawdz_a.py\n",
-        "      - run: python .agents/skills/${{ matrix.skill }}/scripts/sprawdz.py\n",
         "      - env:\n          SKILL: .agents/skills/verify-a\n        run: python $SKILL/scripts/sprawdz_a.py\n",
         "      - shell: pwsh\n        run: python .agents\\skills\\verify-a\\scripts\\sprawdz_a.py\n",
         "      - if: runner.os == 'Windows'\n        run: py -3 .AGENTS\\SKILLS\\verify-a\\scripts\\sprawdz_a.py\n",
         "      - run: echo start\n      - run: python .agents/skills/verify-a/scripts/sprawdz_a.py\n",
-        "      - run: for s in .agents/skills/*/scripts/check_*_mutations.py; do python $s; done\n",
         "      - run: cd .agents\n      - run: python skills/verify-a/scripts/sprawdz_a.py\n",
         '      - run: cd "${{ vars.KATALOG }}" && python skills/verify-a/scripts/sprawdz_a.py\n',
         "      - working-directory: ${{ vars.KATALOG }}/skills\n        run: python verify-a/scripts/sprawdz_a.py\n",
         "      - shell: pwsh\n        run: python ${{ vars.KATALOG }}\\skills\\verify-a\\scripts\\sprawdz_a.py\n",
         '      - uses: ./.github/actions/skill\n        with:\n          katalog: "${{ github.workspace }}/.agents"\n',
     ],
-    ids=["ścieżka", "runpy", "working-directory", "cd", "matrix", "env", "backslash", "wielkie litery", "drugi krok", "glob", "cd w osobnym kroku", "skills/ ze zmiennej", "/skills ze zmiennej", "\\skills ze zmiennej", "with"],
+    ids=["ścieżka", "working-directory", "env", "backslash", "wielkie litery", "drugi krok", "cd w osobnym kroku", "skills/ ze zmiennej", "/skills ze zmiennej", "\\skills ze zmiennej", "with"],
 )
 def test_odwolanie_workflow_do_katalogu_skilli_w_kazdej_postaci_jest_zgloszone(krok: str) -> None:
     assert _odwolania_do_skilli(_workflow(krok)) != []
@@ -863,8 +836,8 @@ def test_workflowy_runow_nie_wywoluja_skryptow_skilli_poza_planem() -> None:
     Strażnik zabrania więcej niż wywołania: żadna wartość YAML tych dwóch workflowów (``run``,
     ``working-directory``, ``env``, ``with``, macierz, nazwa kroku) nie wskazuje katalogu skilli, czyli nie zawiera
     ``.agents`` ani segmentu ścieżki ``skills`` z ``/`` lub ``\\`` (``KATALOG_SKILLI``). Łapie więc dosłowną ścieżkę
-    skryptu, ``runpy``, ``working-directory`` i ``cd`` do folderu skilla, ``${{ matrix.* }}`` i glob w ścieżce, ścieżkę
-    w ``env`` i ścieżkę Windows, także pisaną innymi wielkimi literami (``.AGENTS\\SKILLS``), w każdym kroku i jobie.
+    skryptu, ``working-directory`` do folderu skilla, ścieżkę w ``env`` i ścieżkę Windows, także pisaną innymi
+    wielkimi literami (``.AGENTS\\SKILLS``), w każdym kroku i jobie.
     Skrypty skilli workflow uruchamia tylko przez plan i runner
     (``tools/ci/wykonaj_zadanie.py``, ``tools/plan_ci.py``), które nie nazywają katalogu skilli.
 

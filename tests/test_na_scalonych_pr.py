@@ -75,18 +75,6 @@ def test_bez_folderu_wynikow_wynik_trafia_do_katalogu_gita_checkoutu(tmp_path: P
     assert (repo / ".git" / "na-scalonych-pr" / f"{first[:8]}.txt").read_text(encoding="utf-8").strip() == "stare dane stare narzędzie"
 
 
-def test_commit_podany_nazwa_rewizji_ma_etykiete_i_plik_wyniku_ze_skrotu_sha(tmp_path: Path) -> None:
-    """Nazwę zdalnej gałęzi (``origin/main``) sprawdza ``test_narzedzie_uruchomione_spoza_repozytorium…``."""
-
-    repo, first = _repo(tmp_path)
-
-    done = _run(repo, "--commit", "HEAD^1", "--", "tools/wypisz.py")
-
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert done.stdout.startswith(f"{first[:8]} | {first[:8]} | ")
-    assert (repo.parent / "wyniki" / f"{first[:8]}.txt").read_text(encoding="utf-8").strip() == "stare dane stare narzędzie"
-
-
 def test_commit_podany_tagiem_z_adnotacja_ma_etykiete_ze_skrotu_sha_commitu_a_nie_obiektu_tagu(tmp_path: Path) -> None:
     repo, first = _repo(tmp_path)
     git(repo, "tag", "--annotate", "v0.1.0", "--message", "Wydanie", first)

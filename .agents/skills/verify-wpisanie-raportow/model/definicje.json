@@ -28,7 +28,7 @@
   "src/rozliczenia/centrum/report_entering_state.py": {
     "_TextFile": "4f9254c5b427de26",
     "FileReportState.of_work": "f1ce4f0a2f2f9966",
-    "FileReportState.load": "5a3cd6f0816be1aa",
+    "FileReportState.load": "59ca80626b76f762",
     "FileReportState.save_memory": "56b68bb5c2e9236e",
     "FileReportState.save_result": "2ebc70e71f10aa3d",
     "FileReportState.shown": "88bd26657b8a6ed8",

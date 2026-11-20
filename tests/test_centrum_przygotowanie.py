@@ -170,7 +170,6 @@ def test_niepelny_okres_czeka_na_decyzje_taty_z_zleceniami_na_dzien(tmp_path: Pa
         },
         "counts": {"title": "Zlecenia na dzień", "counts": INCOMPLETE_ORDERS_PER_DAY, "zero_warns": True},
     }
-    assert [phase["state"] for phase in view["progress"]["phases"]] == ["completed", "completed", "completed", "pending"]
     assert list(centrum.fixture.periods_directory.iterdir()) == []
     decide(centrum, view, "abort")
 

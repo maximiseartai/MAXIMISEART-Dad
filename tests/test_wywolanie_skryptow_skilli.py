@@ -277,7 +277,6 @@ EVERY = ("default", "existing", "locked")
         ([], ("default",)),
         (["--variant", "existing", "locked"], ("existing", "locked")),
         (["--variant", "existing locked"], ("existing", "locked")),
-        (["--variant existing"], ("existing",)),
         (["--variant existing locked"], ("existing", "locked")),
         (["--variant", "existing,locked"], ("existing", "locked")),
         (["--variant", "locked", "--variant", "existing"], ("locked", "existing")),

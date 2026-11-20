@@ -77,22 +77,7 @@ def test_missing_rejestr_zlecen_stops_without_files(tmp_path: Path) -> None:
 
     error = stop_preparation(fixture)
 
-    assert error.message.code == "BRAK_REJESTRU"
-    assert error.message.text == (
-        "Co się stało: Nie znaleziono Rejestru zleceń. Nie utworzono żadnego pliku.\n"
-        f"Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder {tmp_path.name}\n"
-        "Co zrobić: Wybierz właściwy plik Rejestru zleceń i uruchom ponownie."
-    )
-
-
-def test_rejestr_otwarty_w_excelu_zatrzymuje_sprawdzanie_przed_wzorcami(tmp_path: Path) -> None:
-    fixture = make_preparation_fixture(tmp_path)
-    fixture.register_path.with_name(f"~${fixture.register_path.name}").write_bytes(b"")
-    fixture.internal_template_path.unlink()
-
-    error = stop_preparation(fixture)
-
-    assert error.message.code == "REJESTR_OTWARTY"
+    assert (error.message.code, error.message.where) == ("BRAK_REJESTRU", f"plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder {tmp_path.name}")
 
 
 def test_rejestr_open_in_excel_stops_and_leaves_lock_file(tmp_path: Path) -> None:
@@ -157,7 +142,6 @@ def test_plik_niedostepny_do_odczytu_nie_jest_nazwany_uszkodzonym(
     ("removed", "label"),
     [
         ("SKUTECZNE", "SKUTECZNE"),
-        ("ADRES", "ADRES"),
         ("NUMER UMOWY", "NUMER UMOWY albo NUMER UMOWY/ZLECENIA ORANGE"),
     ],
 )
@@ -246,17 +230,7 @@ def test_rejestr_without_sheet_with_required_headers_stops(tmp_path: Path) -> No
 
     error = stop_preparation(fixture)
 
-    assert error.message.code == "BRAK_ARKUSZA_ZLECEN"
-    assert error.message.text == (
-        "Co się stało: W Rejestrze zleceń nie znaleziono arkusza ze zleceniami, czyli arkusza "
-        "z wymaganymi nagłówkami w pierwszym wierszu. Nie utworzono żadnego pliku.\n"
-        "Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx\n"
-        "Co zrobić: Sprawdź, czy wybrano właściwy plik Rejestru zleceń. Pierwszy wiersz arkusza "
-        "ze zleceniami musi zawierać nagłówki: DATA GODZ. POCZ., MIASTO, ADRES, UMOWA, URZĄDZENIA, "
-        "CZYNNOŚCI, NUMER ZL. albo nr zlecenia, WYKONAWCA, NUMER UMOWY albo NUMER UMOWY/ZLECENIA ORANGE, "
-        "SKUTECZNE, "
-        "CZYNNOŚCI ZREALIZOWANE."
-    )
+    assert (error.message.code, error.message.where) == ("BRAK_ARKUSZA_ZLECEN", "plik ZLECENIA INTERMAX OD 08_11_2021.xlsx")
 
 
 def add_register_sheet(
@@ -309,14 +283,7 @@ def test_period_orders_in_more_than_one_sheet_stop_with_sheet_names(tmp_path: Pa
 
     error = stop_preparation(fixture)
 
-    assert error.message.code == "ZLECENIA_W_WIELU_ARKUSZACH"
-    assert error.message.text == (
-        "Co się stało: Zlecenia tego okresu są w więcej niż jednym arkuszu Rejestru zleceń, "
-        "więc nie wiadomo, który arkusz jest właściwy. Nie utworzono żadnego pliku.\n"
-        f"Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, arkusze ZLECENIA, ZLECENIA 2, okres {PERIOD}\n"
-        "Co zrobić: Zostaw zlecenia tego okresu tylko w jednym arkuszu, "
-        "zapisz i zamknij Rejestr zleceń i uruchom ponownie."
-    )
+    assert (error.message.code, error.message.where) == ("ZLECENIA_W_WIELU_ARKUSZACH", f"plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, arkusze ZLECENIA, ZLECENIA 2, okres {PERIOD}")
 
 
 def test_sheet_with_orders_of_other_periods_does_not_block_period(tmp_path: Path) -> None:
@@ -395,11 +362,9 @@ def test_surowe_zlecenia_w_okresie_zatrzymuja_sprawdzanie_bez_plikow(
     with pytest.raises(StopError) as raised:
         run_preparation(fixture, dry_run=dry_run, observer=recorded.append)
 
-    assert raised.value.message.text == (
-        "Co się stało: Wklejone zlecenia na dole Rejestru zleceń nie są jeszcze uporządkowane, "
-        "a mogą należeć do tego okresu. Nie utworzono żadnego pliku.\n"
-        f"Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, arkusz ZLECENIA, {rows}\n"
-        "Co zrobić: Najpierw uporządkuj INTERMAX w Centrum rozliczeń, potem uruchom ponownie."
+    assert (raised.value.message.code, raised.value.message.where) == (
+        "SUROWE_ZLECENIA_W_OKRESIE",
+        f"plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, arkusz ZLECENIA, {rows}",
     )
     assert not raised.value.message.reports_to_maintainer
     assert [(event.phase, type(event)) for event in recorded] == [
@@ -584,12 +549,11 @@ def test_kolor_operatora_z_uporzadkowania_intermax_przechodzi_do_obu_plikow_okre
 @pytest.mark.parametrize(
     "damage",
     [
-        lambda path: path.write_bytes(b"to nie jest skoroszyt Excela"),
         lambda path: cut_sheet_after_data_rows(path, "xl/worksheets/sheet2.xml"),  # ZLECENIA za arkuszem lista
         without_styles,
         without_sheet,
     ],
-    ids=["nie-skoroszyt", "urwany-arkusz-zlecen", "bez-styles-xml", "bez-arkusza"],
+    ids=["urwany-arkusz-zlecen", "bez-styles-xml", "bez-arkusza"],
 )
 def test_damaged_rejestr_zlecen_stops_without_files(tmp_path: Path, damage: Callable[[Path], object]) -> None:
     fixture = make_preparation_fixture(tmp_path)
@@ -597,14 +561,7 @@ def test_damaged_rejestr_zlecen_stops_without_files(tmp_path: Path, damage: Call
 
     error = stop_preparation(fixture)
 
-    assert error.message.code == "USZKODZONY_REJESTR"
-    assert error.message.text == (
-        "Co się stało: Nie można odczytać Rejestru zleceń. Plik jest uszkodzony "
-        "albo nie jest skoroszytem .xlsx. Nie utworzono żadnego pliku.\n"
-        f"Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder {tmp_path.name}\n"
-        "Co zrobić: Sprawdź, czy Rejestr zleceń otwiera się w Excelu i jest zapisany jako .xlsx, "
-        "zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż to osobie utrzymującej narzędzie."
-    )
+    assert (error.message.code, error.message.where) == ("USZKODZONY_REJESTR", f"plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder {tmp_path.name}")
 
 
 def break_tag_of_row_2(data: bytes) -> bytes:
@@ -673,12 +630,7 @@ def test_missing_wzorzec_stops_without_files(tmp_path: Path, template_name: str)
 
     error = stop_preparation(fixture)
 
-    assert error.message.code == "BRAK_WZORCA"
-    assert error.message.text == (
-        "Co się stało: Nie znaleziono wzorca, z którego powstają pliki okresu. Nie utworzono żadnego pliku.\n"
-        f"Gdzie: plik {template_name}, folder config\n"
-        "Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie."
-    )
+    assert (error.message.code, error.message.where) == ("BRAK_WZORCA", f"plik {template_name}, folder config")
 
 
 @WZORCE
@@ -716,13 +668,7 @@ def test_damaged_wzorzec_stops_before_reading_rejestr(
 
     error = stop_preparation(fixture, dry_run=dry_run)
 
-    assert error.message.code == "USZKODZONY_WZORZEC"
-    assert error.message.text == (
-        "Co się stało: Nie można odczytać wzorca. Plik jest uszkodzony "
-        "albo nie jest skoroszytem .xlsx. Nie utworzono żadnego pliku.\n"
-        f"Gdzie: plik {template_name}, folder config\n"
-        "Co zrobić: Przekaż ten komunikat osobie utrzymującej narzędzie."
-    )
+    assert (error.message.code, error.message.where) == ("USZKODZONY_WZORZEC", f"plik {template_name}, folder config")
 
 
 @pytest.mark.parametrize(

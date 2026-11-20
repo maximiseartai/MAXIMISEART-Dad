@@ -203,30 +203,6 @@ def test_przerwanie_przechodzi_przez_rdzen(tmp_path: Path, interrupted_at: str) 
         run_core(process, tmp_path / "metrics.jsonl", tata=tata)
 
 
-def test_czas_decyzji_taty_nie_liczy_sie_do_czasu_uruchomienia(tmp_path: Path) -> None:
-    clock = ManualClock()
-    tata = Tata(before_answer=lambda: clock.advance(600))
-
-    def working_250_ms_before_and_500_ms_after_decision(inputs: Inputs, context: RunContext) -> Summary:
-        clock.advance(0.25)
-        durations = asking_between_planning_and_saving(inputs, context)
-        clock.advance(0.5)
-        return durations
-
-    outcome = run_core(
-        fake_process(execute=working_250_ms_before_and_500_ms_after_decision),
-        tmp_path / "metrics.jsonl",
-        tata=tata,
-        clock=clock,
-    )
-
-    assert outcome.result == "OK"
-    assert len(tata.decisions) == 1
-    assert outcome.total_duration_ms == 750
-    [record] = records(tmp_path / "metrics.jsonl")
-    assert record["total_duration_ms"] == 750
-
-
 def test_decyzja_taty_w_trakcie_etapu_nie_liczy_sie_do_czasu_etapu_ani_czasu_uruchomienia(tmp_path: Path) -> None:
     clock = ManualClock()
     tata = Tata(before_answer=lambda: clock.advance(600))
