@@ -43,6 +43,13 @@ Decyzje autora tego PR:
 - **Pole `Mechanizm:` stoi po `Szczebel:`**, który zostaje: `Szczebel:` mówi, jak autor wyrwał korzeń, a `Mechanizm:`, jakiego strażnika żąda Ważne.
 - **Przejście.** Wątek, którego pierwszy werdykt powstał przed wejściem tego pliku do bazy PR, kończy po staremu, bez pola `Mechanizm:` i z opcjonalnym `Idiom:` (`werdykt_pr.rule_applies`, jak decyzja Q20 ADR 0031); stare werdykty z `Idiom:` szablon przyjmuje jak dotąd, ale od ticketu #2463 żadne narzędzie pola nie czyta, a raport tygodniowy liczy odpalenia strażników w Required CI i poszerzenia reguł z historii gita.
 
+Decyzje autora PR ticketu #2461:
+
+- **Chroniony właściciel to wpis wprost.** Plik jest właścicielem, gdy konfiguracja reguł drzewa HEAD PR scalonego z bazą nazywa go wprost (`chroniony_wlasciciel.ZASADY`): wpis ze wzorcem (`src/**`) albo katalog to zasięg reguły, a nie jedyność, a zwolnienie z `TID251` liczy się tylko razem z wierszem `OWNERS`, bo dopiero ten wiersz mówi, której nazwy plik jest właścicielem.
+- **Każdy plik z `Gdzie`.** Test przechodzi tylko, gdy każdy plik z `Gdzie` jest chronionym właścicielem, bo Ważne z drugim plikiem poza właścicielem ma drugie miejsce, w którym błąd wróci.
+- **Szczebel w następnej rundzie.** Recenzent następnej rundy zmienia szczebel, który nie działa, punktem `Mechanizm W<n> r<k>: <szczebel> - zdanie` w `## Sprawdzone`, jak kod korzenia punktem `Korzeń W<n> r<k>:` (decyzja Q25 ADR 0031), a bramka bierze szczebel z ostatniego werdyktu, który dotyczy tego Ważnego; inaczej Ważne ze szczeblem, który nie działa, nie miałoby jak się scalić.
+- **Przejście.** Warunek chronionego właściciela ma własną chwilę wdrożenia (`szczebel_straznika.OWNER_MARKER`), więc wątek z pierwszym werdyktem sprzed niej kończy jak po #2460.
+
 ## Wdrożenie
 
 | Decyzja | Ticket |

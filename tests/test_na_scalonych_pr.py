@@ -448,11 +448,13 @@ def _guard_proof(
     dev: tuple[str, ...] = (),
     findings: str = werdykty_szablonu.WERDYKTY["wazne"],
     later: str | None = None,
+    base: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     """Dowód ``arguments`` (``--straznik`` z selektorem) dla Ważnego 5/W1/r1 z werdyktu FAIL z treścią ``findings``,
-    a z ``later`` także z późniejszym werdyktem PASS HEAD z tą treścią; ``dev`` to dodatkowe piny dodatku dev."""
+    a z ``later`` także z późniejszym werdyktem PASS HEAD z tą treścią; ``dev`` to dodatkowe piny dodatku dev, a ``base``
+    dokłada pliki do bazy."""
 
-    files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE, **project(dev=dev, tools='[tool.mypy]\nfiles = ["kod"]\n\n[tool.pytest.ini_options]\n')}
+    files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE, **project(dev=dev, tools='[tool.mypy]\nfiles = ["kod"]\n\n[tool.pytest.ini_options]\n'), **(base or {})}
     files["kod/typy.py"] = "class Obiekt:\n    def dozwolone(self) -> None:\n        pass\n"
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
     fixed = fixed_files or {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST}
@@ -528,6 +530,49 @@ def test_dowod_straznika_pytest_liczy_wezel_z_najnowszym_blokiem_mutacji_w_srodo
     [line, end] = done.stdout.splitlines()
     assert line.startswith(f"#5 W1 r1 | {failed[:8]} | {state}"), done.stdout
     assert end.startswith(f"{last} | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte"), done.stdout
+
+
+GUARD_NODE = "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone"
+FIXED_WITH_TEST = {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST}
+OWNER_RULE = "id: przez-wlasciciela\nlanguage: python\nmessage: wołaj wazne() z kod/inne.py\nfiles:\n  - '**/*.py'\nignores:\n  - {owner}\nrule:\n  pattern: $O.zakazane()\n"
+OUTSIDE_OWNER = f"DOWÓD ODMOWA | {GUARD_NODE} | #5 W1 r1: Mechanizm: test przyjmuje Strażnik: pytest tylko na chronionym właścicielu, a {{named}} nim nie jest w konfiguracji reguł HEAD scalonego z bazą ("
+
+
+def _owner(owner: str) -> dict[str, str]:
+    return {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/przez-wlasciciela.yml": OWNER_RULE.format(owner=owner)}
+
+
+@pytest.mark.parametrize(
+    ("base", "fixed", "where", "named"),
+    [
+        pytest.param({}, FIXED_WITH_TEST, WHERE, "kod/inne.py", id="plik-spoza-konfiguracji-regul"),
+        pytest.param(_owner("kod/inne.py"), {**FIXED_WITH_TEST, **_owner("kod/drugi.py")}, WHERE, "kod/inne.py", id="wlasciciel-z-bazy-usuniety-w-pr"),
+        pytest.param(_owner("kod/inne.py"), FIXED_WITH_TEST, "Gdzie: kod/inne.py:1, kod/typy.py:1", "kod/typy.py", id="drugi-plik-z-gdzie-poza-wlascicielem"),
+        pytest.param({}, FIXED_WITH_TEST, "Gdzie: ~/.zshrc:17 (poza repo)", "Gdzie bez miejsca plik:linia w repo", id="gdzie-poza-repo"),
+    ],
+)
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_straznik_pytest_szczebla_test_poza_chronionym_wlascicielem_to_odmowa_z_droga_do_architektury(
+    tmp_path: Path, base: dict[str, str], fixed: dict[str, str], where: str, named: str
+) -> None:
+    done, _ = _guard_proof(tmp_path, "--straznik", GUARD_NODE, "--chroniony-wlasciciel", base=base, fixed_files=fixed, where=where)
+
+    last = done.stdout.splitlines()[-1]
+    assert done.returncode == 1 and last.startswith(OUTSIDE_OWNER.format(named=named)), done.stdout + done.stderr
+    assert "właściciel bez tej ochrony to szczebel architektura: dopisz w tym PR zakaz TID251 albo regułę ast-grep, która kieruje resztę kodu do właściciela" in last, last
+
+
+@wymaga_uv
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_straznik_pytest_szczebla_test_ma_dowod_na_wlascicielu_dopisanym_w_tym_samym_pr(tmp_path: Path) -> None:
+    fixed = {**FIXED_WITH_TEST, **_owner("kod/inne.py")}
+
+    done, failed = _guard_proof(tmp_path, "--straznik", GUARD_NODE, "--chroniony-wlasciciel", fixed_files=fixed, dev=PYTEST_PINS, later=werdykty_szablonu.WERDYKTY["pass-z-mutacja"])
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    [line, end] = done.stdout.splitlines()
+    assert line.startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed"), done.stdout
+    assert end == f"DOWÓD OK | {GUARD_NODE} | wykryte 1/1", done.stdout
 
 
 @needs_ast_grep
