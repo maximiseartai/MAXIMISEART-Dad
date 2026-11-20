@@ -471,8 +471,7 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
 @pytest.mark.parametrize("zmiana", [dataclasses.replace, copy.replace], ids=["dataclasses.replace", "copy.replace"])
 def test_gotowej_wysylki_logow_nie_przerabia_replace_wartosci_bez_typu(zmiana: Callable[..., object]) -> None:
     """Wysyłkę Logów daje tylko ``post_of``: mypy odrzuca ``replace`` gotowej ``LogsPost``, a wartość bez typu (``Any``,
-    ``type: ignore``) rzuca ``TypeError``, bo ``LogsPost`` nie jest dataclassą i nie ma ``__replace__`` (docstring
-    ``comment_versions._VERSIONS``)."""
+    ``type: ignore``) rzuca ``TypeError``, bo ``LogsPost`` nie jest dataclassą i nie ma ``__replace__``."""
 
     post: Any = _proof_value("wysylka-logow")
 
@@ -672,6 +671,13 @@ DROGI_DO_LOGOW: Final = {
         "def wersja(komorka: str, postep: ProgressVersion) -> ProgressVersion:\n"
         "    return dataclasses.replace(postep, text=komorka)\n",
         'Argument "text" to "replace" of "ProgressVersion" has incompatible type "str"',
+    ),
+    "dataclasses.replace gotowej wysyłki Logów": (
+        "import dataclasses\n\nfrom rozliczenia.centrum.comment_versions import LogsPost\n"
+        "from rozliczenia.centrum.outbox import Rank\n\n\n"
+        "def wysylka(gotowa: LogsPost) -> LogsPost:\n"
+        "    return dataclasses.replace(gotowa, rank=Rank.OWN)\n",
+        'Value of type variable "_DataclassT" of "replace" cannot be "LogsPost"',
     ),
     "dataclasses.replace pliku Archiwum": (
         "import dataclasses\n\n" + _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
@@ -1219,6 +1225,38 @@ def wysylka(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> LogsPost:
     return post_of(wersja)
 """,
         "bieg TypeError: Logi po strażniku daje tylko guard_logs, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ Logów wersji zastępczej po jej przyjęciu, przed post_of": (
+        _PODKLASA
+        + """from rozliczenia.centrum.comment_versions import StandInLogs
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> LogsPost:
+    wersja = StandInLogs(guard_logs(logi, pamiec))
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    object.__setattr__(wersja, "logs", SimpleNamespace(record=zle, text=zle.text))
+    return post_of(wersja)
+""",
+        "bieg TypeError: Logi po strażniku daje tylko guard_logs, nie SimpleNamespace.",
+    ),
+    "metaklasa z == równym każdej klasie: obiekt z __class__ wersji postępu, potem post_of": (
+        _PODKLASA
+        + """class RownaKazdej(type):
+    def __eq__(cls, other: object) -> bool:
+        return True
+
+    def __hash__(cls) -> int:
+        return id(cls)
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    pola = {"__class__": property(lambda self: ProgressVersion), "progress": postep.progress, "text": SimpleNamespace(text=komorka)}
+    klasa: Any = RownaKazdej("Wersja", (), pola)
+    return post_of(klasa())
+""",
+        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
     ),
 }
 
