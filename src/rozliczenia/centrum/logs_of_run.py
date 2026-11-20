@@ -1,11 +1,3 @@
-"""Logi Uruchomienia (``run_logs.RunLog``) z wyniku pracy Centrum: z Uruchomienia, które doszło do działań po wyniku
-(``runs.EndedRun``), i z Diagnozy jego Zatrzymania (``diagnosis.Diagnosis``). Dodatki Logów procesu daje jego wpis w
-katalogu procesów (``ProcessKind.logs``), więc moduł nie rozróżnia procesów.
-
-Tylko ten moduł Logów zna gospodarza Uruchomień i Diagnozę, więc schemat Logów, który czytają karta z Logów, plik i
-odtworzenie, od nich nie zależy.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -41,9 +33,6 @@ def logs_of(
     dad_actions: DadActions,
     centrum_log: CentrumLogLines | None = None,
 ) -> RunLog:
-    """Logi Uruchomienia ``run`` bez Diagnozy; ``centrum_log``: dziennik Centrum od poprzednich Logów (bez niego Logi
-    odtworzenia)."""
-
     info, stopped, snapshot = run.info, run.stopped, run.snapshot
     process_logs = declaration_of(info.process).logs(
         None if run.shown is None else run.shown.engine_summary, None if stopped is None else stopped.stop.facts
@@ -111,9 +100,6 @@ def logged_diagnosis(diagnosis: Diagnosis, *, diagnosed_at: datetime) -> LoggedD
 
 
 def _domain_fact_notes(files: Sequence[CopiedFile]) -> list[str]:
-    """Uwaga o każdym wierszu Kopii ze śladem przesunięcia poza pierwszym wierszem bloku wklejenia
-    (``PasteFacts.traced_rows``): fakt domeny, na którym stoi reguła położenia wiersza, nie zachodzi (ADR 0025)."""
-
     return [
         f"Fakt domeny złamany: wiersz {row} arkusza {sheet.name} w {file.name} ma datę z godziną dwie kolumny na lewo od "
         "DATA GODZ. POCZ., a nie jest pierwszym wierszem bloku wklejenia; pamięć reguły danych zna go w obu położeniach "

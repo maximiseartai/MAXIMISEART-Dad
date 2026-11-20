@@ -753,6 +753,20 @@ def test_format_logow_uruchomienia_nie_wczytuje_gospodarza_uruchomien_ani_diagno
     )
 
 
+def test_kopia_wejscia_w_logach_nie_wczytuje_modulow_centrum() -> None:
+    found = _chains("rozliczenia/centrum/logged_input_copy.py", lambda module: module.startswith("rozliczenia.centrum."))
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Schemat Kopii wejścia w Logach (src/rozliczenia/centrum/logged_input_copy.py) nie wczytuje modułów Centrum "
+            "rozliczeń (reszty schematu Logów, kontraktu Centrum), także przez inne moduły src i importem w funkcji: "
+            "brama Legendy czynności czyta z pliku Logów samą Kopię wejścia, więc jej schemat zależy tylko od typów Kopii "
+            "wejścia silnika (rozliczenia.input_copy). Typ, którego potrzebuje, weź z modułu silnika.",
+        ]
+    )
+
+
 def test_pakiet_ustawien_centrum_nie_wczytuje_przy_imporcie_zadnego_modulu_src() -> None:
     found = _chains("rozliczenia/centrum/settings/__init__.py", lambda module: _file_of(module) is not None)
 
