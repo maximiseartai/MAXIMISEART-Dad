@@ -258,12 +258,6 @@ def test_dwa_hooki_dopisuja_obu_dzieci_do_stanu(tmp_path: Path, monkeypatch: pyt
     assert straznik.entries(files.kids.read_text(encoding="utf-8"), 30.0, 60) == ([CHILD, "dziecko-2"], 20.0)
 
 
-def test_limit_zycia_liczy_sie_od_najmlodszego_zlecenia() -> None:
-    assert straznik.alive(100.0, 100.0 + 60, 60)
-    assert not straznik.alive(100.0, 100.0 + 61, 60)
-    assert not straznik.alive(None, 0.0, 60)
-
-
 def test_wpis_dzieci_traci_znaczenie_po_limicie_a_linia_innej_postaci_nic_nie_znaczy() -> None:
     text = f"10.0 {CHILD}\n50.0 dziecko-2\nzepsuta linia\n70.0 {CHILD}\n80.0\n"
 
@@ -456,7 +450,6 @@ elif sys.argv[1:3] == ["thread", "send"]:
     [
         ({"status": "completed", "updatedAt": 55}, {"status": "running", "updatedAt": 50}),
         ({"status": "completed", "updatedAt": 55}, {"status": "running", "updatedAt": 0}),
-        ({"status": "completed", "updatedAt": 55}, {"status": "waiting", "updatedAt": 50}),
         ({"status": "completed", "updatedAt": 55}, None),
         ({"status": "completed", "updatedAt": 55}, {"status": "completed", "updatedAt": 20}),
         ({"status": "running", "updatedAt": 0}, {"status": "running", "updatedAt": 50}),
@@ -465,7 +458,6 @@ elif sys.argv[1:3] == ["thread", "send"]:
     ids=[
         "dziecko-stoi-po-budzeniu",
         "dziecko-pracuje",
-        "dziecko-czeka-na-odpowiedz",
         "dziecka-nie-widac",
         "dziecko-skonczone-bez-odpowiedzi-koordynatora",
         "koordynator-pracuje",

@@ -67,8 +67,8 @@ Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centru
 Its proof adds `api/raporty-*.json` and `state/` (the Logi of Wpisanie raportów).
 
 The days, holidays and Przypomnienia of `mapa-zakresu` and `przypomnienia` come from a routed window.
-`tests/test_centrum_wpisanie_raportow.py::test_widok_raporty_daje_kazdy_dzien_okna_z_nazwa_swieta` checks the server's
-own window: every day of the window, with 11.11 named a public holiday;
+`tests/test_centrum_wpisanie_raportow.py::test_widok_raporty_na_przelomie_roku_daje_swieta_z_obu_lat` checks the server's
+own window: every day of the window, with each public holiday named, also across the new year;
 `tests/test_centrum_wpisanie_raportow.py::test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stopki_do_sprawdzenia_po_jej_wpisaniu`
 checks that the view shows the moments of the Przypomnienia at each Wykonawca's day, and the missing footer until the
 check after it is filled in.

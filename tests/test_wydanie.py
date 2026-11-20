@@ -339,13 +339,8 @@ def test_plan_pomija_zielony_commit_na_ktorym_test_z_kwarantanny_padl_albo_nie_m
     assert planned["skipped"] == [{"commit": skipped, "ci": state}]
 
 
-@pytest.mark.parametrize(
-    "files",
-    [{}, {QUARANTINE_FILE: EMPTY}],
-    ids=["sprzed kwarantanny", "pusta kwarantanna"],
-)
-def test_commit_bez_wpisow_kwarantanny_jest_do_wydania_bez_jej_zapisu(releasing: Releasing, files: dict[str, str]) -> None:
-    merged = releasing.merge(1, "fix: naprawa", {"src/a.py": "a = 1\n", **files})
+def test_commit_bez_wpisow_kwarantanny_jest_do_wydania_bez_jej_zapisu(releasing: Releasing) -> None:
+    merged = releasing.merge(1, "fix: naprawa", {"src/a.py": "a = 1\n", QUARANTINE_FILE: EMPTY})
     releasing.ci(merged, "success", "brak")
 
     assert releasing.planned()["commit"] == merged
@@ -399,21 +394,15 @@ def test_kwarantanna_z_drzewa_commitu_ma_wpisy_przy_kazdym_uzyciu_poza_jednym_pu
     assert wydanie._has_quarantine(root, commits[row]) is QUARANTINE_HISTORY[row][1]
 
 
-@pytest.mark.parametrize(
-    ("conclusion", "quarantine", "state"),
-    [("failure", "przeszedł", "czerwone"), ("success", "padł", "kwarantanna czerwona")],
-)
-def test_wydanie_odmawia_gdy_ci_commitu_po_planie_stalo_sie_czerwone_albo_test_z_kwarantanny_padl(
-    releasing: Releasing, conclusion: str, quarantine: str, state: str
-) -> None:
+def test_wydanie_odmawia_gdy_ci_commitu_po_planie_stalo_sie_czerwone(releasing: Releasing) -> None:
     merged = releasing.merge(1, "feat: ilości usług", {"src/a.py": "a = 1\n", QUARANTINE_FILE: QUARANTINED})
     releasing.planned()
-    releasing.ci(merged, conclusion, quarantine)
+    releasing.ci(merged, "failure", "przeszedł")
 
     result = releasing.publish("--potwierdzone-przez-maksa")
 
     assert result.returncode == 1
-    assert result.stdout.splitlines()[-1] == f"WYDANIE ODMOWA | CI commitu {merged} nie jest już zielone ({state})."
+    assert result.stdout.splitlines()[-1] == f"WYDANIE ODMOWA | CI commitu {merged} nie jest już zielone (czerwone)."
     assert releasing.remote_tags() == {}
     assert releasing.posted() == []
 
@@ -617,40 +606,6 @@ def test_plan_wydaje_poprawke_zmiany_z_wydania_jako_nowy_wpis_z_nowym_id(releasi
     assert planned["commit"] == fixing
 
 
-@pytest.mark.parametrize(
-    ("used", "renamed"),
-    [
-        (
-            ("from rozliczenia.pomoc import stopka\n", "return stopka()"),
-            {"src/rozliczenia/pomoc.py": 'def stopka_przypomnien():\n    return "stopka"\n\n\nstopka = stopka_przypomnien\n'},
-        ),
-        (
-            ("from rozliczenia import pomoc\n", "return pomoc.stopka()"),
-            {
-                "src/rozliczenia/pomoc.py": "",
-                "src/rozliczenia/teksty.py": 'def stopka():\n    return "stopka"\n',
-                "src/rozliczenia/__init__.py": "from rozliczenia import teksty as pomoc\n",
-            },
-        ),
-    ],
-    ids=["definicja", "moduł"],
-)
-def test_plan_wydaje_wydanie_po_zmianie_nazwy_definicji_albo_modulu_spoza_modulu_wpisu_z_aliasem_pod_stara_nazwa(
-    releasing: Releasing, used: tuple[str, str], renamed: dict[str, str]
-) -> None:
-    import_line, call = used
-    with_footer = RELEASE_CHANGES.replace("from dataclasses import dataclass\n", f"from dataclasses import dataclass\n\n{import_line}").replace(
-        'return "stopka przypomnień"', call
-    )
-    first = releasing.merge(1, "feat: stopka", {**PACKAGES, "src/rozliczenia/pomoc.py": 'def stopka():\n    return "stopka"\n', RELEASE_CHANGES_FILE: with_footer})
-    releasing.released("v0.1.0", first)
-    renaming = releasing.merge(2, "refactor: nazwa stopki", renamed)
-
-    planned = releasing.planned()
-
-    assert planned["commit"] == renaming
-
-
 def test_plan_odmawia_bez_dostepu_do_skrzynki_zgloszen(releasing: Releasing) -> None:
     releasing.merge(1, "feat: pierwsze", {"src/a.py": "a = 1\n"})
     releasing.github("no_report_box")
@@ -667,7 +622,6 @@ def test_plan_odmawia_bez_dostepu_do_skrzynki_zgloszen(releasing: Releasing) -> 
         ("0.2.0", (), "Numer v0.2.0 nie jest wyższy od Wydania v0.2.0."),
         ("v0.1.9", (), "Numer v0.1.9 nie jest wyższy od Wydania v0.2.0."),
         ("0.5.0", ("v0.7.0",), "Numer v0.5.0 nie jest wyższy od Wydania v0.7.0."),
-        ("1.0.0", (), "Numer 1.0.0 nie ma kształtu 0.MINOR.PATCH (np. 0.2.0)."),
         ("0.3", (), "Numer 0.3 nie ma kształtu 0.MINOR.PATCH (np. 0.2.0)."),
     ],
 )

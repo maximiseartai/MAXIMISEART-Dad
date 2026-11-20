@@ -53,7 +53,6 @@ QUEUE_THREAD: Final = "skrzynka-kolejka"
 ADDRESSES_FILE: Final = "skrzynka-adresy.jsonl"
 SCHEMA_VERSION: Final = 3
 _TARGET_SCHEMA: Final = 2
-_PERIOD_THREAD_SCHEMA: Final = 1
 _OPEN_ISSUE: Final = "report_issue"
 _AGAIN_BEFORE_OPEN_ISSUE: Final = RETURNED_HEADING
 _FRAME_RESERVE: Final = 2_000
@@ -416,12 +415,9 @@ def _parse(text: str) -> _Queued | None:
     try:
         document = json.loads(text)
         schema = document["schema_version"]
-        if schema in (SCHEMA_VERSION, _TARGET_SCHEMA):
-            target = _target(document["target"], document["target"]["kind"])
-        elif schema == _PERIOD_THREAD_SCHEMA:
-            target = _target(document["thread"], "period_thread")
-        else:
+        if schema not in (SCHEMA_VERSION, _TARGET_SCHEMA):
             return None
+        target = _target(document["target"], document["target"]["kind"])
         if target is None:
             return None
         archive = _archive_file(document["archive"]) if schema == SCHEMA_VERSION else None
@@ -436,7 +432,7 @@ def _parse(text: str) -> _Queued | None:
             _rank(document.get("rank", Rank.OWN.value)),
             _optional_string(document.get("state")),
         )
-        delivered_parts = document.get("delivered_parts", 0)
+        delivered_parts = document["delivered_parts"]
     except (ValueError, KeyError, TypeError):
         return None
     if type(delivered_parts) is not int or not 0 <= delivered_parts <= len(post.parts) or type(archived) is not bool:

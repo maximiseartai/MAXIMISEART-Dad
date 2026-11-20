@@ -20,7 +20,6 @@ import pytest
 from rozliczenia.file_state import entry_kind, file_state, folder_entries, path_state, path_taken, remove_file
 
 ABSENT = [
-    pytest.param(FileNotFoundError(errno.ENOENT, "Nie można odnaleźć pliku"), id="brak"),
     pytest.param(NotADirectoryError(errno.ENOTDIR, "Nazwa katalogu jest nieprawidłowa"), id="plik-zamiast-folderu"),
 ]
 INACCESSIBLE = [

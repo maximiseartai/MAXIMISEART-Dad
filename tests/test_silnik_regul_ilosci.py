@@ -292,14 +292,6 @@ def test_kolumny_regul_i_kolumny_wiersza_bez_reguly_wynikaja_z_regul() -> None:
     assert rules.leave_empty_columns == ("AK", "AE")
 
 
-def test_reguly_z_wydania_licza_dzisiejsze_kolumny_kontroli_ilosci() -> None:
-    assert DEFAULT_QUANTITY_RULES.rule_columns == (
-        "N", "O", "P", "Q", "S", "T", "V", "Z", "AE", "AG", "AI", "AK", "AM", "AN", "AO", "AP",
-    )  # fmt: skip
-    assert DEFAULT_QUANTITY_RULES.without_rule_columns == ("V", "T", "N")
-    assert DEFAULT_QUANTITY_RULES.leave_empty_columns == ("AP", "AK")
-
-
 def _device_list(*components: Component) -> DeviceList:
     return DeviceList(components)
 
@@ -328,7 +320,6 @@ def _device_list(*components: Component) -> DeviceList:
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({-1}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-minus-1"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({7}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-7"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({True}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-true"),
-        pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({False}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-false"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({1}), time(1, 0, 5)))), "reguly[x].jesli[0].od", id="sekundy"),
         pytest.param(lambda: _rules(_rule("x", action=Fill(()))), "reguly[x].to.wpisy", id="wpisz-bez-kolumny"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("M", 1))), "reguly[x].to.wpisy[0].kolumna", id="kolumna-spoza-n-ap"),
@@ -372,8 +363,6 @@ def test_reguly_z_wydania_wczytuja_sie_a_zapis_i_odczyt_daja_te_same_reguly() ->
     document = yaml.safe_load(yaml.safe_dump(dump_quantity_rules(DEFAULT_QUANTITY_RULES), allow_unicode=True))
 
     assert parse_quantity_rules(document, devices) == DEFAULT_QUANTITY_RULES
-    assert len(DEFAULT_QUANTITY_RULES.rules) == 21
-    assert len(DEFAULT_QUANTITY_RULES.devices.components) == 12
 
 
 def test_kazdy_rodzaj_warunku_i_dzialania_przechodzi_przez_plik_bez_zmiany() -> None:

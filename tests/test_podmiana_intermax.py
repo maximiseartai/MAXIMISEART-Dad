@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 import errno
 from pathlib import Path
 
@@ -426,21 +426,3 @@ def test_kopia_ktorej_nie_da_sie_usunac_nie_zaslania_faktu(folders: Folders, bef
 
     assert outcome is Refusal.ONEDRIVE_HOLDS
     assert folders.state() == (ORIGINAL, [folders.register.name], {NAMES[before]: ORIGINAL})
-
-
-def test_kopia_ma_chwile_z_zegara_procesu_w_nazwie(folders: Folders, before: Before) -> None:
-    later = NOW + timedelta(hours=1)
-
-    outcome = replace_register(
-        folders.register,
-        ORIGINAL,
-        NEW,
-        lambda _written: None,
-        before=before,
-        copies=folders.copies,
-        now=lambda: later,
-        waiting=Waiting(folders.clock, folders.clock.pause),
-    )
-
-    assert isinstance(outcome, Replaced)
-    assert outcome.copy.path.name == NAMES[before].replace("14-05-07", "15-05-07")

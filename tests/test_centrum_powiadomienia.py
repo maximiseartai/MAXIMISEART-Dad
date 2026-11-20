@@ -15,7 +15,7 @@ from rozliczenia.centrum.github import ANSWER_KEPT_S
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes, render
-from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_REPORTS_FILE, REPORT
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT
 from rozliczenia.centrum.report_box import CloseReason, Refused, Unreachable
 from rozliczenia.centrum.tool_freshness import PUBLISHED_PAGE, AnswerSource, KeySource, PublishedRelease
 from rozliczenia.centrum.tool_update import Release
@@ -633,35 +633,6 @@ def test_wydanie_rozwiazuje_zgloszenie_wyslane_z_kolejki(tmp_path: Path) -> None
     [version] = new_versions(centrum)
 
     assert version["solved"] == [{"kind": "zgloszenie", "title": what}]
-
-
-def test_zgloszenie_wyslane_przed_kolejka_zostaje_przeczytane(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    config = ToolDirectory(tmp_path).config
-    (config / OLD_REPORTS_FILE).write_text(
-        json.dumps(
-            [
-                {
-                    "fingerprint": "0123456789abcdef",
-                    "number": 12,
-                    "commit": TOOL_COMMIT,
-                    "what": "Nie znaleziono wzorca.",
-                    "sent_at": "2026-10-19T08:00:00+00:00",
-                    "closure": {"reason": "completed", "at": CLOSED_AT.isoformat()},
-                }
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (config / NOTIFICATIONS_FILE).write_text(
-        json.dumps({"schema_version": 1, "przeczytane": ["zgloszenie-12-rozwiazana"]}), encoding="utf-8"
-    )
-    centrum.restart()
-
-    answer = notifications(centrum)
-
-    assert [(item["id"], item["unread"]) for item in answer["items"]] == [("zgloszenie-12-rozwiazana", False)]
-    assert answer["unread"] == 0
 
 
 def queued_case(fingerprint: str, what: str) -> dict[str, object]:

@@ -24,10 +24,8 @@ from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_list import WorkerEntry, WorkerList
 from rozliczenia.worker_reports import (
     DEFAULT_REMINDERS,
-    EXAMPLE_NUMBERS,
     MailId,
     OrderedDay,
-    OrderNumber,
     OwnEntries,
     ReadNumber,
     RegisterOrder,
@@ -185,7 +183,6 @@ def _days(found: Sequence[Reminder]) -> list[tuple[str, date]]:
         pytest.param(True, True, {"jan.testowy", "ewa.probna"}, id="aktywny-z-przypomnieniami"),
         pytest.param(False, True, {"ewa.probna"}, id="nieaktywny"),
         pytest.param(True, False, {"ewa.probna"}, id="przypomnienia-wylaczone"),
-        pytest.param(False, False, {"ewa.probna"}, id="nieaktywny-bez-przypomnien"),
     ],
 )
 def test_przypomnienie_idzie_tylko_do_aktywnego_wykonawcy_z_wlaczonymi_przypomnieniami(
@@ -212,10 +209,7 @@ def test_przypomnienie_idzie_tylko_do_aktywnego_wykonawcy_z_wlaczonymi_przypomni
         pytest.param(_at(DAY + timedelta(days=1), 21, 59), [_at(DAY + timedelta(days=1), 18, 0)], [], id="21:59-wieczorna-juz-poszla"),
         pytest.param(_at(DAY + timedelta(days=1), 21, 59), [NEXT_MORNING], [("jan.testowy", DAY)], id="21:59-nadrabia"),
         pytest.param(_at(DAY + timedelta(days=1), 22, 0), [NEXT_MORNING], [], id="22:00-noc"),
-        pytest.param(_at(DAY + timedelta(days=1), 23, 30), [], [], id="23:30-noc-bez-zadnego"),
         pytest.param(_at(DAY, 18, 30), [], [], id="dzien-x-wieczorem-za-wczesnie"),
-        pytest.param(_at(DAY, 21, 59), [], [], id="dzien-x-przed-22-za-wczesnie"),
-        pytest.param(_at(DAY + timedelta(days=1), 16, 30), [], [("jan.testowy", DAY)], id="16:30-poranna-nadrabia"),
         pytest.param(_at(DAY + timedelta(days=1), 16, 59), [], [("jan.testowy", DAY)], id="16:59-poranna-nadrabia"),
         pytest.param(_at(DAY + timedelta(days=1), 16, 59), [NEXT_MORNING], [], id="16:59-poranna-juz-poszla"),
         pytest.param(_at(DAY + timedelta(days=1), 17, 0), [], [], id="17:00-poranna-nie-nadrabia"),
@@ -304,18 +298,6 @@ def test_pierwsze_zdanie_taty_ma_dzien_w_kazdym_miejscu_pola_a_wzor_i_przyklad_z
     ]
 
 
-def test_laptop_wlaczony_przed_18_po_pominietej_porannej_daje_jedno_przypomnienie_o_18() -> None:
-    """Laptop taty włączony o 17:50 po pominiętej porze porannej: sprawdzenia co minutę do 17:59 nic nie dają, o 18:00
-    idzie jedno przypomnienie, a minuta później z nim w „Wysłanych” już żadne, więc Wykonawca nie dostaje dwóch maili w
-    10 minut (decyzja Maksa 12.11, ADR 0030)."""
-
-    evening = _at(DAY + timedelta(days=1), 18, 0)
-    before_evening = [_due(_at(DAY + timedelta(days=1), 17, minute)) for minute in range(50, 60)]
-
-    assert before_evening == [()] * 10
-    assert _days(_due(evening)) == [("jan.testowy", DAY)]
-    assert _due(_at(DAY + timedelta(days=1), 18, 1), sent=[_sent(DAY, evening)]) == ()
-
 def test_przypomnienie_wyslane_w_utc_liczy_sie_w_porze_taty() -> None:
     """Chwila z „Wysłanych” w innej strefie liczy się w strefie chwili sprawdzenia: 7:30 UTC to 8:30 u taty, poranna."""
 
@@ -370,35 +352,6 @@ def test_przypomnienie_za_inny_dzien_albo_do_innego_wykonawcy_nie_zamyka_pory() 
     sent = [_sent(DAY - timedelta(days=1), NEXT_MORNING, JAN), _sent(DAY, NEXT_MORNING, EWA)]
 
     assert _days(_due(NEXT_MORNING, sent=sent)) == [("jan.testowy", DAY)]
-
-
-@pytest.mark.parametrize(
-    ("mail", "ends"),
-    [
-        pytest.param(_mail(JAN, "Raport 09.11.2026", "40000001 tak inst20m"), True, id="pelny"),
-        pytest.param(_mail(JAN, "Raport 09.11.2026", "40000002 tak inst20m"), True, id="niepelny-inne-zlecenie"),
-        pytest.param(_mail(JAN_PRYWATNY, "raport 9.11.26", "40000001 nie brak klienta"), True, id="drugi-adres-krotka-data"),
-        pytest.param(_mail(JAN, "Raport 09.11.2026", "dziś nic"), False, id="bez-wpisow"),
-        pytest.param(_mail(JAN, "Raport 09.11.2016", "40000001 tak inst20m"), True, id="literowka-w-roku"),
-        pytest.param(_mail(JAN, "Raport 9.11", "40000001 tak inst20m"), True, id="blad-tematu-bez-roku"),
-        pytest.param(_mail(JAN, "Raport z poniedziałku", "40000001 tak inst20m"), True, id="blad-tematu-bez-daty"),
-        pytest.param(_mail(JAN, "Re: Raport 09.11.2026 - BŁĘDY PROSZĘ POPRAW", "40000001 tak inst20m"), True, id="poprawka-w-odpowiedzi"),
-        pytest.param(_mail(JAN, "Re: Zmiana w raportach 09.11.2026", "40000001 tak inst20m"), False, id="odpowiedz-o-czym-innym"),
-        pytest.param(_mail(JAN, "Fwd: Raport 09.11.2026", "40000001 tak inst20m"), False, id="przekazany-raport"),
-        pytest.param(_mail(JAN, "Raport 08.11.2026", "40000001 tak inst20m"), False, id="inny-dzien"),
-        pytest.param(_mail(EWA, "Raport 09.11.2026", "40000001 tak inst20m"), False, id="inny-wykonawca"),
-        pytest.param(_mail("obcy@przyklad.invalid", "Raport 09.11.2026", "40000001 tak"), False, id="adres-spoza-listy"),
-    ],
-)
-def test_raport_za_dzien_nawet_niepelny_i_z_bledem_tematu_konczy_przypomnienia_a_raport_za_inny_dzien_nie(
-    mail: ReportMail, ends: bool
-) -> None:
-    """Każdy Raport wykonawcy za dzień X od Wykonawcy z listy, nawet niepełny, kończy przypomnienia za X, także z błędem
-    tematu, który liczy się za wskazany dzień (ADR 0041, historie 3, 5, 20), i poprawka raportu w odpowiedzi (historia 6),
-    a odpowiedź na mail o czym innym, przekazany raport, raport za inny dzień, raport kogoś innego i mail bez żadnego
-    Wpisu, który nie jest raportem (ADR 0041), nie (US 37–38)."""
-
-    assert _days(_due(NEXT_MORNING, mails=[mail])) == ([] if ends else [("jan.testowy", DAY)])
 
 
 def test_plik_zbiorczy_okresu_dzien_przed_wdrozeniem_dzien_bez_zlecen_i_wykonawca_spoza_listy_nie_dostaja_przypomnien() -> None:
@@ -460,7 +413,6 @@ def test_tresc_przypomnienia_ma_temat_wzor_i_przyklad_ze_speca_a_na_koncu_stopke
 
     assert reminder.subject == "Przypomnienie: raport za dzień 05.11.2026"
     assert reminder.text == expected
-    assert EXAMPLE_NUMBERS == {OrderNumber("12345678"), OrderNumber("12345679")}
 
 
 @pytest.mark.parametrize(
@@ -489,41 +441,6 @@ def test_temat_przypomnienia_czyta_sie_z_powrotem_jako_jego_dzien(day: date) -> 
 
 
 # --- Przypomnienie tylko bez raportu: jedna reguła dnia raportu z Wpisaniem raportów (ADR 0041) ---
-
-
-@pytest.mark.parametrize(
-    ("text", "problems"),
-    [
-        pytest.param("40000001 tak montaż ONT", [], id="zwykly-opis"),
-        pytest.param("40000001 tak utp18m", [], id="wlasny-zapis"),
-        pytest.param("40000001 tak inst20m, klient zadowolony", [], id="kod-obok-opisu"),
-        pytest.param("40000001 tak instutp40m", ["FaultyDescription"], id="liczba-spoza-przedzialow"),
-        pytest.param("40000001 tak instmdik inst20m", ["FaultyDescription"], id="kolumna-drugi-raz"),
-        pytest.param("40000001 tak montaż instutp0m", ["FaultyDescription"], id="kod-spoza-przedzialow-obok-opisu"),
-    ],
-)
-@pytest.mark.parametrize(
-    "arrived", [pytest.param(_at(DAY, 19), id="tego-dnia"), pytest.param(_at(DAY + timedelta(days=1), 7), id="nastepnego-rana")]
-)
-@pytest.mark.parametrize(
-    "now",
-    [
-        pytest.param(NEXT_MORNING, id="poranna"),
-        pytest.param(_at(DAY + timedelta(days=1), 18), id="wieczorna"),
-        pytest.param(_at(DAY + timedelta(days=2), 8), id="poranna-kolejnego-dnia"),
-    ],
-)
-def test_raport_z_bledem_opisu_albo_zwyklym_opisem_konczy_przypomnienia_za_swoj_dzien_w_kazdej_porze(
-    text: str, problems: list[str], arrived: datetime, now: datetime
-) -> None:
-    """ADR 0041 (historie 1, 2, 9, 33): Raport wykonawcy za dzień X z Wpisem ``tak`` z Błędem opisu albo ze zwykłym
-    opisem jest przysłany, także gdy przyjdzie rano dnia X+1, więc Wykonawca nie dostaje przypomnienia za X w żadnej
-    porze; Błąd opisu widzi tylko tata, przy zleceniu we Wpisaniu raportów, a zwykły opis nie jest problemem."""
-
-    mails = [_mail(JAN, "Raport 09.11.2026", text, arrived)]
-
-    assert [type(problem).__name__ for problem in enter_reports(_reports(now, [_order()], mails)).problems] == problems
-    assert _due(now, mails=mails) == ()
 
 
 MISTAKEN_ORDERS = (
@@ -578,7 +495,7 @@ EWA_9 = ("ewa.probna", DAY)
 ADDED_TEXT = "40000007 tak inst20m\n40000008 tak spawpg"
 """Dwa numery, których INTERMAX nie ma: raport z nimi dopisuje oba Janowi (Zlecenia dopisane z raportu)."""
 TIE = MailId.of("<ten-sam@przyklad.invalid>")
-TIE_FAULTY = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak montaż", _at(DAY, 19))
+TIE_FAULTY = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak instutp40m", _at(DAY, 19))
 TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak inst20m", _at(DAY, 19))
 
 
@@ -587,7 +504,13 @@ TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak ins
     [
         pytest.param([], [], set(), id="bez-maila"),
         pytest.param([], [_mail(JAN, "Raport 09.11.2026", "40000001 tak inst20m")], {JAN_9}, id="czytelny"),
-        pytest.param([], [_mail(JAN, "Raport 09.11.2026", "40000001 tak montaż")], {JAN_9}, id="blad-opisu"),
+        pytest.param([], [_mail(JAN, "Raport 09.11.2026", "40000001 tak instutp40m")], {JAN_9}, id="blad-opisu"),
+        pytest.param(
+            [], [_mail(JAN, "Raport 09.11.2026", "40000001 tak instutp40m", _at(DAY + timedelta(days=1), 7))], {JAN_9}, id="blad-opisu-nastepnego-rana"
+        ),
+        pytest.param([], [_mail(JAN, "Raport 09.11.2026", "40000002 tak inst20m")], {JAN_9}, id="niepelny-inne-zlecenie"),
+        pytest.param([], [_mail(JAN_PRYWATNY, "raport 9.11.26", "40000001 nie brak klienta")], {JAN_9}, id="drugi-adres-krotka-data"),
+        pytest.param([], [_mail(JAN, "Raport 09.11.2016", "40000001 tak inst20m")], {JAN_9}, id="literowka-w-roku"),
         pytest.param([], [_mail(JAN, "Raport 09.11.2026", "dziś nic")], set(), id="bez-wpisow"),
         pytest.param([], [_mail(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat"),
         pytest.param([], [_mail(JAN, "Raport 26.11.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat-po-dzis"),

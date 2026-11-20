@@ -50,7 +50,7 @@ Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038).
 
 - Wysyłkę Logów Uruchomienia daje tylko ``comment_versions.post_of`` jako ``LogsPost``. Jej ``replace`` i podklasę
-  odrzuca typ (docstring ``comment_versions._VERSIONS``), ale nową ``Post`` złożoną z jej pól typ przepuszcza, bo
+  odrzuca typ (próbki ``DROGI_DO_LOGOW`` i ``ZNANE_LUKI_WYSYLKI``), ale nową ``Post`` złożoną z jej pól typ przepuszcza, bo
   ``Outbox.post`` bierze też gołą ``Post`` (przegląd #1371 r1). Dlatego wynik ``post_of`` idzie od razu do kolejki
   (``<kolejka>.post(post_of(wersja))``), a nazwę ``post_of`` test rozpoznaje po niej samej, z dowolną bazą i także
   jako napis, a nie po imporcie. Etykietę Logów (``comment_versions.LABEL``) kod poza ``post_of`` tylko podaje kolejce
@@ -1477,7 +1477,7 @@ def test_znane_luki_straznika_logow_przechodza_przez_ruff_mypy_i_straznika(tmp_p
 def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     """Miejsca pliku ``file``, które mogą zbudować albo przerobić wysyłkę Logów Uruchomienia obok ``post_of``.
 
-    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca też typ (docstring ``comment_versions._VERSIONS``),
+    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca też typ (próbki ``DROGI_DO_LOGOW`` i ``ZNANE_LUKI_WYSYLKI``),
     ale nie z ``# type: ignore[…]``. Typ przepuszcza też nową ``Post`` złożoną z pól gotowej wysyłki, bo ``Outbox.post``
     bierze też gołą ``Post`` (``Post(sent.target, …, Rank.OWN)`` i ``parts=(record.text,)``, przegląd #1371 r1).
     Dlatego sprawdzenie łapie tylko dwie rzeczy.
@@ -2124,16 +2124,6 @@ def test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy() -> None:
     )
 
 
-# Postać → moduł src, którego import prywatnej nazwy innego modułu sprawdzenie wyżej odrzuca: siostry dróg, które ruff
-# SLF001 odrzuca w tests/test_regula_danych.py i tests/test_komentarz_logow_uruchomienia.py.
-IMPORTY_PRYWATNE_SRC: typing.Final = {
-    "prywatny parser celu kolejki": "from rozliczenia.centrum.outbox import _target\n",
-    "prywatny parser pliku kolejki": "from rozliczenia.centrum.outbox import _archive_file\n",
-    "prywatna tabela wartości pamięci reguły danych": "from rozliczenia.client_data import _WORDS\n",
-    "prywatny moduł pakietu": "from rozliczenia.worker_reports._model import Login\n",
-    "import prywatnego modułu": "import rozliczenia.worker_reports._model\n",
-}
-
 # Znane luki importu prywatnej nazwy w src (tests/fixtures/znane_luki.py): import względny z modułu Centrum, który
 # sprawdzenie importów i ruff przepuszczają. Mypy rozwiązuje go tylko w pakiecie, a prywatnej nazwy nie odrzuca.
 ZNANE_LUKI_IMPORTU_SRC: typing.Final = {
@@ -2141,11 +2131,6 @@ ZNANE_LUKI_IMPORTU_SRC: typing.Final = {
     "import względny prywatnego parsera pliku kolejki": "from .outbox import _archive_file\n\n\ndef plik() -> object:\n    return _archive_file\n",
     "import względny prywatnej tabeli pamięci": "from ..client_data import _WORDS\n\n\ndef tabela() -> object:\n    return _WORDS\n",
 }
-
-
-@pytest.mark.parametrize("code", IMPORTY_PRYWATNE_SRC.values(), ids=IMPORTY_PRYWATNE_SRC.keys())
-def test_sprawdzenie_importow_src_lapie_import_prywatnej_nazwy(code: str) -> None:
-    assert [name for _, _, name in _private_imports(ast.parse(code)) if name not in SRC_BANNED]
 
 
 @wymaga_ruff

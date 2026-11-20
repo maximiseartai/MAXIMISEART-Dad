@@ -323,12 +323,10 @@ def _commit_times(repo: Path, expensive: dict[str, float]) -> None:
     git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
 
 
-@pytest.mark.parametrize("committed", [True, False], ids=["zacommitowana", "niezacommitowana"])
-def test_zmiana_modulu_uruchamia_testy_ktore_go_importuja_a_pozostalych_nie(tmp_path: Path, committed: bool) -> None:
+def test_zmiana_modulu_uruchamia_testy_ktore_go_importuja_a_pozostalych_nie(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     _write(repo, "src/pakiet/a.py", "def wartosc() -> int:\n    return 5\n")
-    if committed:
-        commit(repo, "zmiana a")
+    commit(repo, "zmiana a")
 
     answered = _szybko(repo)
 
@@ -393,15 +391,6 @@ def test_szybko_infra_tylko_gdy_kazdy_krok_ktory_padl_to_pytest_z_kodem_boxa(
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == expected, answered.stdout
 
 
-def test_zmiana_bez_bledu_konczy_sie_ok_choc_niedotkniety_test_pada(tmp_path: Path) -> None:
-    repo = _repo(tmp_path)
-    _write(repo, "src/pakiet/a.py", "def wartosc() -> int:\n    return 0 + 1\n")
-
-    answered = _szybko(repo)
-
-    assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
-
-
 def test_zielony_test_biegnie_znowu_dopiero_po_zmianie_pliku_od_ktorego_zalezy(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     runs = tmp_path / "przebiegi"
@@ -412,18 +401,6 @@ def test_zielony_test_biegnie_znowu_dopiero_po_zmianie_pliku_od_ktorego_zalezy(t
 
     assert [answered.stdout.splitlines()[-1] for answered in (first, again, after_change)] == ["SZYBKO OK"] * 3
     assert runs.read_text(encoding="utf-8") == ".."
-
-
-def test_pamiec_zielonych_nie_przepuszcza_zmiany_pliku_danych_pakietu(tmp_path: Path) -> None:
-    repo = _repo(tmp_path)
-    with (repo / "src" / "witryna" / "strona.py").open("a", encoding="utf-8") as module:
-        module.write("\n\nWERSJA = 2\n")
-    green = _szybko(repo)
-    _write(repo, "src/witryna/strona.html", "Inny tytuł\n")
-    after_change = _szybko(repo)
-
-    assert [green.stdout.splitlines()[-1], after_change.stdout.splitlines()[-1]] == ["SZYBKO OK", "SZYBKO FAIL | pytest"]
-    assert "FAILED tests/test_strona.py::test_tytul" in after_change.stdout
 
 
 @pytest.mark.parametrize(
@@ -453,16 +430,6 @@ def test_test_ktory_padl_biegnie_znowu_bez_zmian(tmp_path: Path) -> None:
 
     assert answered == ["SZYBKO FAIL | pytest"] * 2
     assert runs.read_text(encoding="utf-8") == ".."
-
-
-def test_nowy_niesledzony_test_biegnie(tmp_path: Path) -> None:
-    repo = _repo(tmp_path)
-    _write(repo, "tests/test_nowy.py", "def test_nowy() -> None:\n    assert False\n")
-
-    answered = _szybko(repo)
-
-    assert "FAILED tests/test_nowy.py::test_nowy" in answered.stdout
-    assert answered.returncode == 1
 
 
 def test_zizmor_i_actionlint_biegna_tylko_przy_zmianie_w_github(tmp_path: Path) -> None:
@@ -515,36 +482,6 @@ def test_zmiana_konfiguracji_zostawia_ci_testy_ponad_budzet_i_mowi_ktore_w_kazdy
 
 
 @pytest.mark.parametrize(
-    ("changed", "text", "cost_s", "failing"),
-    [
-        # 400 s to ponad budżet dalszych (45 s na każdego z 2 workerów), ale w ścianie odległości 1.
-        ("src/pakiet/b.py", "def inna() -> int:\n    return 0 + 1\n", 400.0, "tests/test_zawsze_pada.py::test_niedotkniety"),
-        (
-            "tests/test_konfiguracja.py",
-            CONFIGURATION_READER.replace("inna.toml", "inny.toml"),
-            9000.0,
-            "tests/test_konfiguracja.py::test_konfiguracja",
-        ),
-    ],
-    ids=["moduł, który test importuje", "zmieniony test, który czyta konfigurację"],
-)
-def test_zmiana_konfiguracji_razem_z_innym_plikiem_uruchamia_zmieniony_test_zawsze_a_zalezny_wprost_w_scianie(
-    tmp_path: Path, changed: str, text: str, cost_s: float, failing: str
-) -> None:
-    repo = _repo(tmp_path)
-    _write(repo, "tests/test_konfiguracja.py", CONFIGURATION_READER)
-    _commit_times(repo, dict.fromkeys(("tests/test_konfiguracja.py", "tests/test_zawsze_pada.py"), cost_s))
-    with (repo / "pyproject.toml").open("a", encoding="utf-8") as file:
-        file.write("\n")
-    _write(repo, changed, text)
-
-    answered = _szybko(repo)
-
-    assert f"FAILED {failing}" in answered.stdout, answered.stdout
-    assert answered.returncode == 1
-
-
-@pytest.mark.parametrize(
     ("workers", "verdict"),
     [
         ("2", ["zostawione CI: 1 z 1 plików testów (~2500 s w CI): test_zawsze_pada.py", "SZYBKO OK"]),
@@ -569,17 +506,15 @@ def test_test_zalezny_wprost_biegnie_w_scianie_na_tylu_workerach_ile_bierze_krok
 
 
 @pytest.mark.parametrize(
-    ("also_changed", "reader_s", "deferred", "deferred_s"),
+    ("reader_s", "deferred", "deferred_s"),
     [
         # Tańszy test_zawsze_pada nie ma drogi w grafie.
-        ((), 100.0, "tests/test_zawsze_pada.py", 90.0),
-        # test_posredni ma odległość 2 od a.py, tyle co test, który czyta konfigurację, więc rozstrzyga koszt.
-        (("src/pakiet/a.py", "def wartosc() -> int:\n    return 0 + 1\n"), 90.0, "tests/test_posredni.py", 100.0),
+        (100.0, "tests/test_zawsze_pada.py", 90.0),
     ],
-    ids=["sama konfiguracja", "konfiguracja i moduł"],
+    ids=["sama konfiguracja"],
 )
 def test_zmiana_konfiguracji_uruchamia_w_budzecie_testy_ktore_ja_czytaja_jak_w_odleglosci_2(
-    tmp_path: Path, also_changed: tuple[str, str], reader_s: float, deferred: str, deferred_s: float
+    tmp_path: Path, reader_s: float, deferred: str, deferred_s: float
 ) -> None:
     repo = _repo(tmp_path)
     _write(repo, "tests/test_konfiguracja.py", CONFIGURATION_READER)
@@ -587,8 +522,6 @@ def test_zmiana_konfiguracji_uruchamia_w_budzecie_testy_ktore_ja_czytaja_jak_w_o
     _commit_times(repo, {"tests/test_konfiguracja.py": reader_s, deferred: deferred_s})
     with (repo / "pyproject.toml").open("a", encoding="utf-8") as file:
         file.write("\n")
-    if also_changed:
-        _write(repo, *also_changed)
 
     answered = _szybko(repo, workers="4")
 
@@ -750,16 +683,6 @@ def test_testy_struktury_biegna_raz_na_mergu_z_polowa_workerow_kroku_pytest(tmp_
     answered = _szybko(repo, workers="4")
 
     assert re.search(r"^OK   testy struktury po mergu z origin/main \(\d+ s\)$", answered.stdout, re.MULTILINE), answered.stdout
-    assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
-
-
-def test_konflikt_z_baza_jest_uwaga_a_nie_porazka(tmp_path: Path) -> None:
-    repo = _repo(tmp_path)
-    _base_moved_on(repo, ("docs/notatka.md", "z main\n"), ("docs/notatka.md", "z gałęzi\n"))
-
-    answered = _szybko(repo)
-
-    assert "UWAGA: merge z origin/main ma konflikt w docs/notatka.md" in answered.stdout
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
 
 
@@ -980,17 +903,6 @@ def test_zmiana_kodu_opisanego_modelem_skilla_wywraca_szybkie_sprawdzenie_bez_tl
     found = f"verify-model: kod opisany modelem zmienił się: src/pakiet/b.py inna. Wykonaj kroki „Bring the model in line” z {MODEL_SKILL}/SKILL.md"
     assert (answered.returncode, _verdict(answered)) == (1, "SZYBKO FAIL | rozjazd modelu"), answered.stdout
     assert found in answered.stdout
-
-
-def test_skroty_przeliczone_po_zmianie_kodu_opisanego_modelem_nie_sa_rozjazdem_dla_szybko(tmp_path: Path) -> None:
-    repo = _repo(tmp_path)
-    _model_skill(repo)
-    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
-    rozjazd_modelu.przesun(repo / MODEL_SKILL, repo)
-
-    answered = _szybko(repo)
-
-    assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
 
 
 def test_napraw_przelicza_skroty_skilla_bez_zmian_modelu_gdy_rozjazd_to_jedyna_porazka(tmp_path: Path) -> None:

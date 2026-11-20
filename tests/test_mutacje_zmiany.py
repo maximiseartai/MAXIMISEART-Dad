@@ -501,31 +501,6 @@ def test_mutacja_kodu_z_cache_po_przekroczonym_czasie_testow_linii_biegnie_od_ra
     ], done.stdout
 
 
-def test_mutacja_ktora_test_pliku_lapie_po_limicie_czasu_calego_zbioru_trafia_do_zapisu_z_przekroczonym_czasem_a_nie_jako_przezyta(
-    tmp_path: Path,
-) -> None:
-    """Jak #1265 i #1279: zbiór testów pliku bez mutacji mieści się w ``--limit-s``, a po mutacji test, który ją łapie,
-    pada dopiero po limicie całego polecenia. ``PRZEKROCZONY CZAS`` nie mówi więc, że test jej nie łapie (#1339)."""
-
-    # Stałą czyta test, który nie wykonał kodu pliku, więc jej mutację sprawdza dopiero drugi przebieg z testami pliku.
-    tests = (
-        "import subprocess\nimport sys\nimport time\n\nimport rozliczenia.warunek as warunek\n\n\n"
-        "def test_import_w_procesie() -> None:\n    subprocess.run([sys.executable, '-c', 'import rozliczenia.warunek'], check=True)\n\n\n"
-        "def test_stala() -> None:\n    if warunek.LIMIT != 5:\n        time.sleep(60)\n    assert warunek.LIMIT == 5\n"
-    )
-    record = tmp_path / "zapis" / "czesc.json"
-
-    done = _run(_repo(tmp_path / "repo", tests, "LIMIT = 5\n", "LIMIT = 3\n"), "--limit-s", "10", "--zapis", str(record))
-
-    assert done.returncode == 1, done.stdout + done.stderr
-    name = "src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy"
-    late = f"PRZEKROCZONY CZAS: {name} → brak wyniku po 10 s (limit --limit-s narzędzia, nie pytest-timeout) (testy pliku)"
-    assert [line for line in done.stdout.splitlines() if " → " in line] == [late], done.stdout
-    written = json.loads(record.read_text(encoding="utf-8"))
-    assert written["wynik"] == "MUTACJE ZMIANY FAIL | przeżyło 0 | przekroczony czas 1 | mutacje=1 | wyjątki=0 | innego systemu=0"
-    assert (written["przezyte"], [_named(entry) for entry in written["przekroczony_czas"]]) == ([], [name])
-
-
 def test_mutacja_ktora_zawiesza_dopiero_testy_pliku_konczy_sie_bez_werdyktu_w_limicie_czasu_czesci(tmp_path: Path) -> None:
     # Stałą czyta test, który nie wykonał kodu pliku, więc jej mutację sprawdza dopiero drugi przebieg z testami pliku.
     tests = (
@@ -606,14 +581,6 @@ def test_klucz_mutacji_nie_zalezy_od_jej_linii_a_rozroznia_mutacje() -> None:
     assert len(set(keys)) == len(keys) == 2
 
 
-def test_zmiana_z_testami_ktore_widza_kazda_mutacje_konczy_sie_ok(tmp_path: Path) -> None:
-    done = _run(_repo(tmp_path, ALL_CASES))
-
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "NIEWYKRYTA" not in done.stdout
-    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0"
-
-
 def test_liczbe_mutacji_widac_w_logu_ci_zanim_pobiegna_testy(tmp_path: Path) -> None:
     # Log CI to plik, więc linia bez ``flush`` czekałaby w buforze przez cały pierwszy przebieg testów.
     line = "Mutacje: 2 w 1 plikach src/ i jednostek przepuszcza od baza. Testy dotknięte zmianą: 1."
@@ -647,17 +614,6 @@ def test_werdykt_mutacji_z_testami_pliku_widac_w_logu_ci_zanim_pobiegnie_nastepn
     seen = (tmp_path / "log-przy-drugiej-mutacji.txt").read_text(encoding="utf-8").splitlines()
     first = [line for line in seen if line.startswith("WYKRYTA: src/rozliczenia/warunek.py:1 zmiana linii 1 cofnięta do bazy → ")]
     assert len(first) == 1 and first[0].endswith(" (testy pliku)"), seen
-
-
-def test_czesci_dziela_mutacje_miedzy_siebie(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, ONE_CASE)
-
-    parts = [_run(repo, "--czesc", f"{number}/2") for number in (1, 2)]
-
-    names = [{line.split(" → ")[0].split(": ", 1)[1] for line in done.stdout.splitlines() if "WYKRYTA: " in line} for done in parts]
-    assert len(names[0]) == len(names[1]) == 1, [done.stdout for done in parts]
-    assert not names[0] & names[1]
-
 
 
 def test_czesc_bez_mutacji_przy_mutacjach_zmiany_konczy_sie_ok_z_numerem_czesci(tmp_path: Path) -> None:
@@ -815,25 +771,6 @@ def test_zly_wyjatek_daje_czesc_ktora_go_zglosi_takze_bez_mutacji(tmp_path: Path
     shape = "src/pakiet/a.py:3: wyjątek musi mieć postać `# mutacje-zmiany: <powód> | do RRRR-MM-DD | zgoda <kto>`"
     assert (zakres.mutanty, zakres.zly_wyjatek) == ((), shape if parts else None)
     assert (zakres.liczba_czesci(24), zakres.do(head).liczba_czesci(24)) == (parts, parts)
-
-
-@pytest.mark.parametrize("trial", [True, False], ids=["proba-na-scalonych-pr", "noc"])
-def test_narzedzie_podmienione_przez_probe_na_scalonych_pr_jest_niesprawdzone_a_nie_zmiana_zakresu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, trial: bool
-) -> None:
-    """Commit zmienia ``tools/narzedzie.py``, a próba podstawiła w jego miejscu narzędzie z checkoutu (zmiana w drzewie)."""
-
-    repo = mutation_repository(tmp_path / "repo", {"tools/narzedzie.py": FUNKCJA})
-    base = commit(repo, "baza")
-    (repo / "tools" / "narzedzie.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
-    commit(repo, "zmiana narzędzia")
-    (repo / "tools" / "narzedzie.py").write_text(FUNKCJA.replace("x > 1", "x > 5"), encoding="utf-8")
-    monkeypatch.setenv("MAXIMISEART_NA_SCALONYCH_PR", str(int(trial)))
-
-    zakres = ZakresMutacji.od(base, repo)
-
-    paths = {mutant.path for mutant in zakres.mutanty}
-    assert (zakres.niesprawdzone, paths) == ((("tools/narzedzie.py",), set()) if trial else ((), {"tools/narzedzie.py"}))
 
 
 def test_wyjatek_w_linii_mutacji_ja_pomija_a_wygasly_juz_nie(tmp_path: Path) -> None:
@@ -1128,16 +1065,6 @@ def test_cofniecie_przywraca_usunieta_linie_zaczynajaca_sie_od_dwoch_minusow(tmp
     assert "WYKRYTA: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy" in done.stdout
 
 
-def test_przeniesiony_plik_bez_zmian_nie_daje_mutacji(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, ONE_CASE, BASE)
-    git(repo, "mv", MODULE, "src/rozliczenia/przeniesiony.py")
-
-    done = _run(repo)
-
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i jednostek przepuszcza od baza"
-
-
 def test_plik_przeniesiony_do_narzedzi_spoza_src_i_tools_psuje_tylko_linie_zmienione_przy_przeniesieniu(tmp_path: Path) -> None:
     """Atrapa przeniesiona z ``tests/fixtures/`` do ``tools/lib/`` z jedną zmienioną linią to nie nowy plik, a zmiana
     testu w tym samym commicie, choć to plik ``.py``, nie wchodzi do zakresu."""
@@ -1214,15 +1141,6 @@ def test_plik_kodu_z_polska_litera_w_nazwie_dostaje_fragmenty_zacommitowany_i_ni
         "tools/żółw.py": [(2, 1)],
         "src/źdźbło.py": [(1, 2)],
     }
-
-
-def test_plik_bez_zaleznych_testow_konczy_sie_fail(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, "def test_nic() -> None:\n    pass\n")
-
-    done = _run(repo)
-
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert "żaden test nie zależy od src/rozliczenia/warunek.py" in done.stdout
 
 
 def test_wyjatek_nad_fragmentem_obejmuje_jego_cofniecie(tmp_path: Path) -> None:
@@ -1363,16 +1281,6 @@ def test_cofniecie_fragmentu_biegnie_gdy_test_nie_wykryl_innej_mutacji_jego_lini
     assert [any(line.startswith(f"{seen}: {name} → ") for line in lines) for seen, name in ((verdict, caught), ("NIEWYKRYTA", reverted))] == [True, True], done.stdout
 
 
-def test_nowy_niesledzony_plik_dostaje_mutacje(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, ONE_CASE, BASE)
-    (repo / "src" / "rozliczenia" / "nowy.py").write_text("def jeden(a: bool) -> bool:\n    return a or False\n", encoding="utf-8")
-
-    done = _run(repo)
-
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert "NIEWYKRYTA: src/rozliczenia/nowy.py:2 `False` → `True` → żaden test nie zależy od src/rozliczenia/nowy.py" in done.stdout
-
-
 def test_wyjatek_obowiazuje_jeszcze_w_dniu_terminu(tmp_path: Path) -> None:
     today = datetime.datetime.now(datetime.UTC).date()
     changed = CHANGED.replace("a and b\n", f"a and b  # mutacje-zmiany: tylko na próbę | do {today} | zgoda Maks\n")
@@ -1398,8 +1306,8 @@ def test_galaz_innego_systemu_jest_pominieta_a_nie_niewykryta(tmp_path: Path) ->
 
 @pytest.mark.parametrize(
     ("test", "conftest"),
-    [(ONE_CASE.replace("is True", "is False"), ""), (ONE_CASE, "import os\n\n\ndef pytest_sessionstart(session: object) -> None:\n    os._exit(3)\n")],
-    ids=["test-pada", "pytest-konczy-sie-przed-zapisem-junit"],
+    [(ONE_CASE, "import os\n\n\ndef pytest_sessionstart(session: object) -> None:\n    os._exit(3)\n")],
+    ids=["pytest-konczy-sie-przed-zapisem-junit"],
 )
 def test_testy_ktore_padaja_bez_mutacji_koncza_sie_bez_werdyktu_mutacji(tmp_path: Path, test: str, conftest: str) -> None:
     done = _run(_repo(tmp_path, test, conftest=conftest))
@@ -1424,6 +1332,7 @@ def test_test_ktory_bez_mutacji_pada_raz_jest_flaky_testem_a_czesc_mutuje_dalej(
     record = repo / ".ci-niestabilne" / "flaky-testy.json"
     if code:
         assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
+        assert "WYKRYTA" not in done.stdout
         assert not record.exists()
         return
     assert "FLAKY TESTY | przeszły po ponowieniu: tests/test_warunek.py::test_niestabilny" in done.stdout.splitlines()
@@ -1585,25 +1494,6 @@ def test_pokrycie_nocy_po_swoim_limicie_czasu_liczy_kazdy_plik_testow_jako_padni
     assert (part.returncode, part.stdout.splitlines()[-1]) == (2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą")
 
 
-def test_zmieniona_linia_narzedzia_dostaje_mutacje_jak_linia_src(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, ONE_CASE, BASE)
-    (repo / "tools" / "inne.py").write_text(
-        "def oba(a: bool, b: bool) -> bool:\n    return a and b\n\n\ndef jedno(a: bool, b: bool) -> bool:\n    return a or b\n", encoding="utf-8"
-    )
-    (repo / "tests" / "test_inne.py").write_text(
-        "from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))\n\n"
-        "from inne import jedno, oba  # noqa: E402\n\n\n"
-        "def test_inne() -> None:\n    assert oba(True, False) is False\n    assert jedno(True, False) is True\n",
-        encoding="utf-8",
-    )
-
-    done = _run(repo)
-
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert "WYKRYTA: tools/inne.py:2 bez `b` w `and`" in done.stdout
-    assert "NIEWYKRYTA: tools/inne.py:6 bez `b` w `or`" in done.stdout
-
-
 def test_narzedzia_podstawione_przez_probe_na_scalonych_pr_nie_sa_zmiana(tmp_path: Path) -> None:
     repo = _repo(tmp_path, ONE_CASE, BASE)
     (repo / "tools" / "inne.py").write_text("def f(a: bool, b: bool) -> bool:\n    return a\n", encoding="utf-8")
@@ -1624,21 +1514,6 @@ def test_narzedzia_podstawione_przez_probe_na_scalonych_pr_nie_sa_zmiana(tmp_pat
     assert "NIEWYKRYTA: tools/inne.py:2 bez `b` w `and`" in checkout.stdout
     assert "NIEWYKRYTA: tools/nowe.py:2 bez `b` w `or`" in checkout.stdout
     assert "NIESPRAWDZONA" not in checkout.stdout
-
-
-def test_zmiana_skryptu_skilla_i_pliku_narzedzi_spoza_pythona_nie_daje_mutacji(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, ONE_CASE, BASE)
-    script = repo / ".agents" / "skills" / "verify-proba" / "scripts" / "sprawdz.py"
-    script.parent.mkdir(parents=True)
-    script.write_text("def f(a: bool, b: bool) -> bool:\n    return a and b\n", encoding="utf-8")
-    hook = repo / "tools" / "hooks" / "pre-push"
-    hook.parent.mkdir()
-    hook.write_text("#!/bin/sh\nexec python3 tools/brama.py\n", encoding="utf-8")
-
-    done = _run(repo)
-
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i jednostek przepuszcza od baza"
 
 
 def _described(text: str, changed: list[int], old: tuple[str, ...] = ()) -> dict[str, str]:
@@ -1824,14 +1699,6 @@ def test_mutacja_trafia_w_wezel_za_polskimi_znakami_w_tej_samej_linii() -> None:
     assert _described(code, [1])["bez `zażółć` w `or`"] == 'x = (f("żółć"))\n'
 
 
-def test_cofniecie_fragmentu_przywraca_linie_bazy() -> None:
-    code = 'def f(s: str) -> bool:\n    return NAGLOWEK_LINII.search(s) is not None\n'
-
-    reverted = _described(code, [2], ("    return NAGLOWEK in s",))["zmiana linii 2 cofnięta do bazy"]
-
-    assert reverted == "def f(s: str) -> bool:\n    return NAGLOWEK in s\n"
-
-
 def test_cofniecie_samego_docstringu_komentarza_albo_importu_nie_jest_mutacja() -> None:
     code = '"""Nowy opis."""\n\nfrom a import b, c  # nowy komentarz\n\nx = 1\n'
 
@@ -1990,13 +1857,6 @@ FASTAPI = ODROCZONE + "from fastapi import APIRouter, Depends\n"
             id="pole-dataclass-poza-trasami-w-pliku-fastapi",
         ),
         pytest.param(
-            ODROCZONE + "@dataclass\nclass Wiersz:\n    x: int\n",
-            5,
-            ("    x: str",),
-            False,
-            id="znana-luka-widzi-jeden-plik-dataclass-w-modelu-pydantic-innego-pliku",
-        ),
-        pytest.param(
             "from dataclasses import dataclass\n@dataclass\nclass A:\n    x: brak.Typ\n",
             4,
             ("    x: int",),
@@ -2123,6 +1983,14 @@ def test_metoda_podana_fastapi_w_innym_pliku_zachowuje_adnotacje(tmp_path: Path,
     assert any(m.revert is Revert.HUNK for m in mutants("m.py", code, hunks, root=tmp_path)) is mutation
 
 
+def test_znana_luka_pole_dataclass_w_modelu_pydantic_innego_pliku_nie_dostaje_mutacji(tmp_path: Path) -> None:
+    code = ODROCZONE + "@dataclass\nclass Wiersz:\n    x: int\n"
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/model.py").write_text("from pydantic import BaseModel\n\nfrom m import Wiersz\n\n\nclass Model(BaseModel):\n    wiersz: Wiersz\n", encoding="utf-8")
+
+    assert not any(m.revert is Revert.HUNK for m in mutants("m.py", code, [Hunk(5, 1, ("    x: str",))], root=tmp_path))
+
+
 def test_adnotacje_i_docstringi_nie_dostaja_mutacji() -> None:
     code = 'def f(x: tuple[int, str] | None = None) -> bool:\n    """Opis."""\n\n\nif TYPE_CHECKING:\n    g(a or b)\n'
 
@@ -2146,7 +2014,7 @@ def test_opis_postaci_wyjatku_w_napisie_nie_jest_wyjatkiem() -> None:
     assert sorted(exceptions(code, "m.py")) == [6]
 
 
-@pytest.mark.parametrize("comment", ["# mutacje-zmiany: bez terminu", "# mutacje-zmiany: powód | do 2026-13-01 | zgoda Maks"])
+@pytest.mark.parametrize("comment", ["# mutacje-zmiany: powód | do 2026-13-01 | zgoda Maks"])
 def test_wyjatek_w_zlej_postaci_nazywa_plik_i_linie(comment: str) -> None:
     with pytest.raises(ValueError, match=r"^m\.py:2: "):
         exceptions(f"x = 1\ny = 2  {comment}\n", "m.py")

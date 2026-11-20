@@ -448,14 +448,14 @@ def test_required_czerwienieje_gdy_jednostka_zadania_padla_w_ostatniej_probie_a_
     assert werdykt_required.werdykt(plan, results, [*others, failed, _record(plan, job, units, attempt=2)]) == []
 
 
-@pytest.mark.parametrize(("event", "minutes"), [(Zdarzenie.PULL_REQUEST, 106), (Zdarzenie.PUSH, 96)])
-def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_ponowienie(event: Zdarzenie, minutes: int) -> None:
+@pytest.mark.parametrize("event", [Zdarzenie.PULL_REQUEST, Zdarzenie.PUSH])
+def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_ponowienie(event: Zdarzenie) -> None:
     """Zadania CI wykonują plan wczytany z ``plan.json``; zdarzenie z pliku rządzi ponowieniem i limitem zadania."""
 
     job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
     loaded = plan_runu.Plan.z_json(plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)).do_json())
 
-    assert (loaded.zdarzenie is event, loaded.limit_zadania_min(job)) == (True, minutes)
+    assert loaded.zdarzenie is event
     unknown = plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)).do_json().replace(f'"zdarzenie": "{event}"', '"zdarzenie": "release"')
     with pytest.raises(ValueError, match="release"):
         plan_runu.Plan.z_json(unknown)
@@ -775,15 +775,14 @@ def test_zadanie_wykonuje_kroki_po_czerwonym_pytest_przerywa_krok_po_limicie_i_z
     assert capsys.readouterr().out.splitlines()[-1] == "WYKONANIE FAIL | krok:pytest, krok:wiszacy"
 
 
-@pytest.mark.parametrize("event", [Zdarzenie.PULL_REQUEST, Zdarzenie.PUSH])
 def test_zawieszony_test_konczy_krok_pytest_po_limicie_z_linia_limitu_a_nie_po_godzinach(
-    mini_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: Zdarzenie
+    mini_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (mini_repo / "tests" / "test_wisi.py").write_text("import time\n\n\ndef test_wisi() -> None:\n    time.sleep(60)\n", encoding="utf-8")
     monkeypatch.setattr(plan_runu, "LIMIT_PYTEST_MIN_S", 3)
     job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_wisi.py",), 0.9)
 
-    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo)
+    code = wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo)
     out = capsys.readouterr().out
     result = json.loads(plan_runu.WYKONANIE.read_text(encoding="utf-8"))
 

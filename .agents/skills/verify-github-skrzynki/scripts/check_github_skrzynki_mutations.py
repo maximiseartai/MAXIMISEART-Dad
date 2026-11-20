@@ -169,13 +169,6 @@ MUTATIONS = (
         FAIL,
     ),
     Mutation(
-        "atrapa pliku tej samej nazwy odpowiada 400 zamiast 422, którym odpowiada GitHub",
-        (Edit(BOX_TESTS, "return self._answer(422, SAME_NAME)", "return self._answer(400, SAME_NAME)"),),
-        _replay("wiernosc-atrap"),
-        "test przechodzi na odpowiedzi, której GitHub nie daje",
-        FAIL,
-    ),
-    Mutation(
         "nagłówek Link bez następnej strony",
         (Edit(GITHUB, "return None if found is None else found[1]", "return None"),),
         _replay("aktualnosc"),

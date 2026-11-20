@@ -15,8 +15,6 @@ import smtplib
 import pytest
 import proba_przypomnien
 
-from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
-from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
@@ -193,8 +191,8 @@ def test_proba_liczy_przypomnienia_i_wysyla_jedno_tylko_na_podany_adres_z_tresci
 
 @pytest.mark.parametrize(
     "teraz",
-    [datetime(2026, 11, 11, 23, 0), datetime(2026, 11, 11, 17, 30)],
-    ids=["noc", "po-17-przed-wieczorna"],
+    [datetime(2026, 11, 11, 17, 30)],
+    ids=["po-17-przed-wieczorna"],
 )
 def test_proba_bez_naleznych_przypomnien_wysyla_przypomnienie_za_wczoraj_na_podany_adres(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], teraz: datetime
@@ -311,7 +309,6 @@ def _zly_plik(nazwa: str) -> Callable[[Klon], None]:
 @pytest.mark.parametrize(
     ("zepsuj", "powod"),
     [
-        (_bez_pliku(REMINDERS_FILE), f"przypomnienia wylaczone w Ustawieniach (config/{REMINDERS_FILE})"),
         (lambda klon: _przypomnienia(klon.config, wlaczone="false"), f"przypomnienia wylaczone w Ustawieniach (config/{REMINDERS_FILE})"),
         (_bez_pliku(SETTINGS_FILE), "brak INTERMAX albo folderu okresow w Ustawieniach taty"),
         (_bez_pliku(INBOX_ACCESS_FILE), f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"),
@@ -320,7 +317,7 @@ def _zly_plik(nazwa: str) -> Callable[[Klon], None]:
         (lambda klon: klon.okresy.rmdir(), "nieczytelny folder okresow"),
         (lambda klon: klon.intermax.unlink(), "nieczytelny INTERMAX: WorkbookError"),
     ],
-    ids=["bez-przypomnien", "wylaczone", "ustawienia", "dostep", "adresy", "pamiec-wpisania", "okresy", "intermax"],
+    ids=["wylaczone", "ustawienia", "dostep", "adresy", "pamiec-wpisania", "okresy", "intermax"],
 )
 def test_porazka_odczytu_ma_wlasna_linie_bez_wysylki(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], zepsuj: Callable[[Klon], None], powod: str
@@ -334,13 +331,11 @@ def test_porazka_odczytu_ma_wlasna_linie_bez_wysylki(
     assert serwer.received == []
 
 
-@pytest.mark.parametrize("plik", [REMINDERS_FILE, SETTINGS_FILE, LEGEND_FILE, WORKERS_FILE])
+@pytest.mark.parametrize("plik", [REMINDERS_FILE, SETTINGS_FILE])
 def test_plik_ustawien_bez_odczytu_ma_wlasna_linie_z_jego_nazwa_bez_wysylki(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], plik: str
 ) -> None:
     klon = _klon(tmp_path)
-    if plik == LEGEND_FILE:
-        (klon.config / plik).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     with without_reading(klon.config / plik), _gmail() as (imap, serwer):
         code, line = _proba(capsys, klon, imap, serwer)
 

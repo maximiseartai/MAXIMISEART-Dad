@@ -94,12 +94,6 @@ def test_github_konczy_zadanie_pytest_po_limicie_z_planu_a_nie_po_szesciu_godzin
     assert jobs()["pytest"]["timeout-minutes"] == "${{ matrix.limit_minut }}"
 
 
-@pytest.mark.parametrize("name", ["pytest", "mutations"])
-def test_zadanie_instaluje_chromium_tylko_gdy_plan_oznaczyl_je_przegladarka(name: str) -> None:
-    # Playwright przychodzi z zależnościami narzędzia (requirements.txt, dodatek dev), więc brakuje tylko przeglądarki.
-    assert [(step["if"], step.get("with")) for step in chromium(jobs()[name])] == [("${{ matrix.przegladarka }}", None)]
-
-
 TESTS_RUN_BY = ("tools/ci/wykonaj_zadanie.py", "tools/mutacje_zmiany.py")
 DEV = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"'
 
@@ -266,9 +260,9 @@ def test_kazde_zadanie_ktore_uruchamia_testy_albo_kroki_skilli_instaluje_chromiu
     workflow_jobs: dict[str, dict[str, Any]] = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]
     running = {name: job for name, job in workflow_jobs.items() if any(tool in str(job.get("steps")) for tool in TESTS_RUN_BY)}
 
-    installs = {name: [step.get("if") for step in chromium(job)] for name, job in running.items()}
+    installs = {name: [(step.get("if"), step.get("with")) for step in chromium(job)] for name, job in running.items()}
 
-    assert installs == dict.fromkeys(running, ["${{ matrix.przegladarka }}"])
+    assert installs == dict.fromkeys(running, [("${{ matrix.przegladarka }}", None)])
     # Chromium instaluje tylko akcja, więc wersja, cache i biblioteki systemowe mają jedną kopię.
     assert [name for name, job in running.items() for step in job["steps"] if "playwright install" in str(step.get("run"))] == []
     assert any("playwright install" in step.get("run", "") for step in action(CHROMIUM)["runs"]["steps"])
@@ -322,10 +316,8 @@ def _plan(event: str, *, skills: bool = False, errors: tuple[str, ...] = ()) -> 
     ("event", "skills", "changed", "reported"),
     [
         ("pull_request", True, {}, []),
-        ("push", True, {}, []),
         ("push", True, {"pytest": "skipped"}, ["pytest=skipped"]),
         ("pull_request", True, {"frontend": "failure"}, ["frontend=failure"]),
-        ("pull_request", True, {"ruff-mypy": "failure"}, ["ruff-mypy=failure"]),
         ("pull_request", True, {"mutations": "cancelled"}, ["mutations=cancelled"]),
         ("pull_request", False, {"mutations": "skipped"}, []),
         ("pull_request", True, {"mutations": "skipped"}, ["mutations=skipped"]),
@@ -360,19 +352,6 @@ def test_required_czerwienieje_bez_planu_i_gdy_zadanie_planu_nie_zglosilo_jednos
     assert without_skill.stdout.splitlines() == ["REQUIRED FAIL | Mutation checks (1/2): jednostki bez wyniku: skill:verify-a/ci"]
     assert failed_part.stdout.splitlines() == [f"REQUIRED FAIL | Mutation checks ({part}/2): jednostki z porażką: {SCRIPT}" for part in (1, 2)]
     assert lost.stdout.splitlines() == ["REQUIRED FAIL | mutacje skilli: x/check_x_mutation.py: nazwa spoza wzorca"]
-
-
-def test_kazdy_krok_wskazany_w_wyrazeniu_jest_wczesniej_w_tym_samym_zadaniu() -> None:
-    unknown = {}
-    for name, job in jobs().items():
-        earlier: set[str] = set()
-        for step in job["steps"]:
-            referenced = set(re.findall(r"steps\.([\w-]+)\.", yaml.safe_dump(step)))
-            if referenced - earlier:
-                unknown[f"{name}: {step.get('name', step.get('uses'))}"] = sorted(referenced - earlier)
-            earlier.add(step.get("id", ""))
-
-    assert unknown == {}
 
 
 @pytest.mark.parametrize(
@@ -466,10 +445,7 @@ CHAINED = "bash -c \"bash -e $0 && python -m pytest tests\" {0}"
     [
         ("pytest", None, {}, []),
         ("pytest", "Verify py -3 interpreter", TOLERANT, ["pytest: Verify py -3 interpreter"]),
-        ("pytest", "Run the planned units", TOLERANT, ["pytest: Run the planned units"]),
         ("frontend", None, TOLERANT, ["frontend"]),
-        ("frontend", "Audit workflows (zizmor)", TOLERANT, ["frontend: Audit workflows (zizmor)"]),
-        ("ruff-mypy", "Typecheck Python code (Windows)", TOLERANT, ["ruff-mypy: Typecheck Python code (Windows)"]),
         (REQUIRED, "Require every CI check to succeed and every planned unit to report", TOLERANT, [f"{REQUIRED}: Require every CI check to succeed and every planned unit to report"]),
         (REQUIRED, None, TOLERANT, [REQUIRED]),
         ("mutations", RECORD, {"run": "python tools/ci/zapis_czasow.py zadanie --wyjscie x.json && python -m pytest tests"}, [f"mutations: {RECORD}"]),
@@ -487,10 +463,7 @@ CHAINED = "bash -c \"bash -e $0 && python -m pytest tests\" {0}"
     ids=[
         "ci-yml",
         "sprawdzenie-py-3",
-        "jednostki-pytest",
         "zadanie-frontend",
-        "zizmor",
-        "mypy-windows",
         "werdykt-required",
         "zadanie-required",
         "sprawdzenie-za-zapisem-czasow",

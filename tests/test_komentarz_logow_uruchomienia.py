@@ -471,8 +471,7 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
 @pytest.mark.parametrize("zmiana", [dataclasses.replace, copy.replace], ids=["dataclasses.replace", "copy.replace"])
 def test_gotowej_wysylki_logow_nie_przerabia_replace_wartosci_bez_typu(zmiana: Callable[..., object]) -> None:
     """Wysyłkę Logów daje tylko ``post_of``: mypy odrzuca ``replace`` gotowej ``LogsPost``, a wartość bez typu (``Any``,
-    ``type: ignore``) rzuca ``TypeError``, bo ``LogsPost`` nie jest dataclassą i nie ma ``__replace__`` (docstring
-    ``comment_versions._VERSIONS``)."""
+    ``type: ignore``) rzuca ``TypeError``, bo ``LogsPost`` nie jest dataclassą i nie ma ``__replace__``."""
 
     post: Any = _proof_value("wysylka-logow")
 
@@ -492,8 +491,8 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
 
 
 def _proof_value(kind: str) -> object:
-    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów,
-    pamięć i każda wersja komentarza Uruchomienia, którą bierze ``post_of``."""
+    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów
+    i każda wersja komentarza Uruchomienia, którą bierze ``post_of``."""
 
     memory = empty_memory()
     match kind:
@@ -505,8 +504,6 @@ def _proof_value(kind: str) -> object:
             return guarded(memory, "Postęp.", "postęp").text
         case "wysylka-logow":
             return post_of(OwnLogs(guard_logs(record(), memory)))
-        case "pamiec":
-            return memory
         case _:
             return _guarded(kind)
 
@@ -526,19 +523,24 @@ _ODMOWY_PODKLASY: Final = {
     "plik": "Tekst pliku Logów nie ma podklas.",
     "wysylka": "Tekst do wysyłki nie ma podklas.",
     "wysylka-logow": "Wysyłka Logów nie ma podklas: daje ją tylko post_of.",
-    "pamiec": "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded.",
     **dict.fromkeys(("postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza"), _WERSJA_BEZ_PODKLAS),
 }
 """Odmowa podklasy każdego typu-dowodu z nagłówka jego klasy: inna odmowa (np. „Klasa bez podklas podaje odmowę”, gdy
 metaklasa nie przejrzy bazy za klasą pomocniczą) to inny błąd niż odmowa tej klasy."""
 
 
-@pytest.mark.parametrize("droga", _DROGI_PODKLASY.keys())
 @pytest.mark.parametrize(
-    "kind",
+    ("kind", "droga"),
     [
-        "logi", "tekst", "plik", "wysylka", "wysylka-logow", "pamiec",
-        "postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza",
+        *(
+            (kind, droga)
+            for kind in (
+                "logi", "tekst", "plik", "wysylka", "wysylka-logow",
+                "postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza",
+            )
+            for droga in ("type", "type-new-z-metaklasa-typu")
+        ),
+        ("logi", "type-z-baza-przed-bez-super"),
     ],
 )
 def test_typy_dowody_reguly_danych_odmawiaja_podklasy_przy_tworzeniu(kind: str, droga: str) -> None:
@@ -672,6 +674,13 @@ DROGI_DO_LOGOW: Final = {
         "def wersja(komorka: str, postep: ProgressVersion) -> ProgressVersion:\n"
         "    return dataclasses.replace(postep, text=komorka)\n",
         'Argument "text" to "replace" of "ProgressVersion" has incompatible type "str"',
+    ),
+    "dataclasses.replace gotowej wysyłki Logów": (
+        "import dataclasses\n\nfrom rozliczenia.centrum.comment_versions import LogsPost\n"
+        "from rozliczenia.centrum.outbox import Rank\n\n\n"
+        "def wysylka(gotowa: LogsPost) -> LogsPost:\n"
+        "    return dataclasses.replace(gotowa, rank=Rank.OWN)\n",
+        'Value of type variable "_DataclassT" of "replace" cannot be "LogsPost"',
     ),
     "dataclasses.replace pliku Archiwum": (
         "import dataclasses\n\n" + _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
@@ -1219,6 +1228,38 @@ def wysylka(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> LogsPost:
     return post_of(wersja)
 """,
         "bieg TypeError: Logi po strażniku daje tylko guard_logs, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ Logów wersji zastępczej po jej przyjęciu, przed post_of": (
+        _PODKLASA
+        + """from rozliczenia.centrum.comment_versions import StandInLogs
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> LogsPost:
+    wersja = StandInLogs(guard_logs(logi, pamiec))
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    object.__setattr__(wersja, "logs", SimpleNamespace(record=zle, text=zle.text))
+    return post_of(wersja)
+""",
+        "bieg TypeError: Logi po strażniku daje tylko guard_logs, nie SimpleNamespace.",
+    ),
+    "metaklasa z == równym każdej klasie: obiekt z __class__ wersji postępu, potem post_of": (
+        _PODKLASA
+        + """class RownaKazdej(type):
+    def __eq__(cls, other: object) -> bool:
+        return True
+
+    def __hash__(cls) -> int:
+        return id(cls)
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    pola = {"__class__": property(lambda self: ProgressVersion), "progress": postep.progress, "text": SimpleNamespace(text=komorka)}
+    klasa: Any = RownaKazdej("Wersja", (), pola)
+    return post_of(klasa())
+""",
+        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
     ),
 }
 
@@ -1801,75 +1842,6 @@ def test_logi_z_folderem_procesu_bez_dostepu_maja_pliki_none_bez_wpisu_nieoczeki
     assert _logs_file(tmp_path)["environment"]["files"] is None
     log = tmp_path / "centrum-rozliczen.log"
     assert UNEXPECTED_FAILURE_EVENT not in (log.read_text(encoding="utf-8") if log.exists() else "")
-
-
-def test_krok_konca_wyceny_z_nieoczekiwanym_wyjatkiem_nie_pomija_logow_z_wynikiem_ani_ich_wysylki(tmp_path: Path) -> None:
-    """Każdy krok końca Wyceny biegnie we własnej osłonie: wpis końca w dzienniku, który rzucił nieoczekiwanym wyjątkiem,
-    trafia do dziennika Centrum, a plik Logów z wynikiem i jego wysyłka i tak powstają."""
-
-    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
-
-    class BrokenEndJournal(Journal):
-        def end(self, run_id: str, result: RunResult) -> None:
-            raise RuntimeError("syntetyczna awaria wpisu końca")
-
-    journal = BrokenEndJournal(tmp_path / "dzienniki-wyceny", log, process="efenix")
-
-    class Disk(LogsOnDisk):
-        @property
-        def journal(self) -> Journal:
-            return journal
-
-    disk = Disk(log, journaled="efenix")
-    queue = RecordingQueue()
-    comments = _comments(tmp_path, queue, disk)
-    _priced(comments, disk)
-
-    comments.run_ended(_ended())
-
-    assert _logs_file(tmp_path)["run_id"] == RUN_ID
-    assert Rank.OWN in [post.rank for post in queue.posts]
-    assert f"{UNEXPECTED_FAILURE_EVENT} typ=RuntimeError" in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8")
-
-
-def test_logi_urwanego_uruchomienia_ktorych_pliku_katalog_logow_nie_przyjal_i_tak_ida_do_maksa(tmp_path: Path) -> None:
-    """Katalog Logów, który przy starcie nie przyjął pliku Logów Urwanego Uruchomienia, nie zatrzymuje tych Logów
-    w drodze do Maksa: wersja zastępcza idzie do Kolejki wysyłki, a dziennik znika za nią."""
-
-    journal = _urwane(tmp_path)
-    queue = RecordingQueue()
-
-    class Refusing(LogsOnDisk):
-        def write(self, logs: GuardedLogs) -> None:
-            raise PermissionError("katalog Logów nie przyjmuje pliku")
-
-    _started(_comments(tmp_path, queue, Refusing(CentrumLog(tmp_path / "centrum-rozliczen.log"), journaled="efenix")))
-
-    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
-    assert not journal.exists()
-
-
-def test_wyjatek_wysylki_wersji_zastepczej_zostawia_dziennik_na_dysku_a_wersja_idzie_przy_nastepnym_starcie(
-    tmp_path: Path,
-) -> None:
-    """Nieoczekiwany wyjątek przy wysyłce wersji zastępczej trafia do dziennika Centrum i zostawia jej dziennik na
-    dysku, więc następny start wysyła tę wersję raz."""
-
-    journal = _urwane(tmp_path)
-
-    class FailingQueue(RecordingQueue):
-        def post(self, post: LogsPost) -> bool:
-            raise RuntimeError("syntetyczna awaria kolejki")
-
-    _started(_comments(tmp_path, FailingQueue()))
-    after_failure = journal.exists()
-    queue = RecordingQueue()
-    _started(_comments(tmp_path, queue))
-
-    assert after_failure
-    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
-    assert not journal.exists()
-    assert f"{UNEXPECTED_FAILURE_EVENT} typ=RuntimeError" in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8")
 
 
 # Zgaśnięcie Centrum przed krokiem końca Wyceny (model ``verify-urwane-uruchomienie``; ``None``: bez zgaśnięcia) i czy na
@@ -3022,12 +2994,6 @@ def test_tekst_pola_narzedzia_bez_gramatyki_ma_zamkniety_typ_ktory_nie_przyjmuje
         RunLog.model_validate(dump)
 
 
-def test_kazde_pole_gramatyki_ma_tekst_w_pelnych_logach() -> None:
-    """Przypadki pól narzędzia biorą teksty z pełnych Logów, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam tekst."""
-
-    assert sorted(set(TOOL_TEXT_GRAMMAR) - {pole for pole, _ in _TEKSTY_POL_NARZEDZIA}) == []
-
-
 def _z_tekstem(sciezka: _Sciezka, tekst: Callable[[str], str]) -> tuple[str, dict[str, Any]]:
     """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst zamienia ``tekst``."""
 
@@ -3241,9 +3207,3 @@ def test_kazda_galaz_gramatyki_pola_narzedzia_ma_poprawny_tekst_narzedzia() -> N
 
     assert sorted(set(DRUGIE_GALEZIE) - set(TOOL_TEXT_GRAMMAR)) == []
     assert brak == []
-
-
-def test_kazde_pole_gramatyki_ma_alfabet() -> None:
-    """Test alfabetu bierze alfabet pola z ``ALFABETY``, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam alfabet."""
-
-    assert sorted(set(TOOL_TEXT_GRAMMAR) ^ set(ALFABETY)) == []

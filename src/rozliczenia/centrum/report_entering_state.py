@@ -73,7 +73,7 @@ class _Move(_Record):
     origin_name: str
     since: datetime
     overridden: bool
-    added: bool = False
+    added: bool
 
 
 class _Requested(_Record):
@@ -108,20 +108,6 @@ class _StateV1(_Record):
     own: list[_Own]
 
 
-class _StateV2(_Record):
-    schema_version: Literal[2]
-    rollout: date
-    own: list[_Own]
-    moves: list[dict[str, object]]
-
-
-class _StateV3(_Record):
-    schema_version: Literal[3]
-    rollout: date
-    own: list[_Own]
-    moves: list[_Move]
-
-
 class _State(_Record):
     schema_version: Literal[4]
     rollout: date
@@ -130,7 +116,7 @@ class _State(_Record):
     requested: list[_Requested] = []
 
 
-class _AnyState(RootModel[Annotated[_StateV1 | _StateV2 | _StateV3 | _State, Field(discriminator="schema_version")]]):
+class _AnyState(RootModel[Annotated[_StateV1 | _State, Field(discriminator="schema_version")]]):
     ...
 
 class _Kept(_Record):
@@ -407,7 +393,7 @@ class FileReportState:
                     move.overridden,
                     move.added,
                 )
-                for move in (state.moves if isinstance(state, _StateV3 | _State) else ())
+                for move in (state.moves if isinstance(state, _State) else ())
             )
             memory = OwnEntries(entries, moves)
         except (ValidationError, ValueError) as error:

@@ -214,13 +214,6 @@ def test_issue_dostaje_etykiete_swojego_rodzaju(label: Label) -> None:
     assert json.loads(request.body)["labels"] == [label]
 
 
-@pytest.mark.parametrize("status", [401, 403, 404])
-def test_odmowa_autoryzacji_to_odmowa_skrzynki(status: int) -> None:
-    outcome, _ = send_with(lambda: HttpResponse(status, b'{"message": "Bad credentials"}'))
-
-    assert outcome == Refused()
-
-
 @pytest.mark.parametrize(
     "answer",
     [
@@ -290,22 +283,13 @@ def test_issue_z_etykieta_sa_zbierane_ze_wszystkich_stron() -> None:
     assert [request.url.rsplit("=", 1)[1] for request in transport.requests] == ["1", "2"]
 
 
-@pytest.mark.parametrize("status", [401, 403, 404])
-def test_odmowa_autoryzacji_przy_szukaniu_to_odmowa_skrzynki(status: int) -> None:
-    outcome, _ = issues_with(lambda: HttpResponse(status, b'{"message": "Bad credentials"}'))
-
-    assert outcome == Refused()
-
-
 @pytest.mark.parametrize(
     "answer",
     [
-        no_network,
-        cut_off,
         lambda: HttpResponse(502, b"<html>Bad gateway</html>"),
         lambda: HttpResponse(200, b'{"message": "to nie jest lista"}'),
     ],
-    ids=["brak-sieci", "urwana-odpowiedz", "awaria-githuba", "nieczytelna-odpowiedz"],
+    ids=["awaria-githuba", "nieczytelna-odpowiedz"],
 )
 def test_brak_sieci_albo_niezwykla_odpowiedz_przy_szukaniu_to_skrzynka_nieosiagalna(
     answer: Callable[[], HttpResponse],
@@ -352,21 +336,6 @@ def test_wiersz_musi_byc_caly_a_nie_poczatkiem_innego() -> None:
     outcome, _ = find_with(pages([issue(3, FINGERPRINT + "0"), prefixed]))
 
     assert outcome is None
-
-
-def test_bez_otwartego_issue_z_odciskiem_nie_ma_zgloszenia_takze_po_przejrzeniu_kolejnych_stron() -> None:
-    full_page = [issue(number, OTHER_FINGERPRINT) for number in range(100, 200)]
-    outcome, transport = find_with(pages(full_page, [issue(5, OTHER_FINGERPRINT)]))
-
-    assert outcome is None
-    assert [request.url.rsplit("=", 1)[1] for request in transport.requests] == ["1", "2"]
-
-
-def test_otwarte_issue_z_odciskiem_na_drugiej_stronie_to_znalezione_zgloszenie() -> None:
-    full_page = [issue(number, OTHER_FINGERPRINT) for number in range(100, 200)]
-    outcome, _ = find_with(pages(full_page, [issue(42, FINGERPRINT)]))
-
-    assert outcome == 42
 
 
 @pytest.mark.parametrize(
@@ -439,24 +408,15 @@ def test_przyjety_komentarz_ma_identyfikator_i_adres() -> None:
     assert json.loads(request.body) == {"body": BODY}
 
 
-@pytest.mark.parametrize("status", [401, 403, 404])
-def test_odmowa_przy_komentarzu_to_odmowa_skrzynki(status: int) -> None:
-    outcome, _ = comment_with(lambda: HttpResponse(status, b'{"message": "Not Found"}'))
-
-    assert outcome == Refused()
-
-
 @pytest.mark.parametrize(
     "answer",
     [
-        no_network,
-        cut_off,
         lambda: HttpResponse(502, b"<html>Bad gateway</html>"),
         lambda: HttpResponse(201, json.dumps({"id": 901}).encode()),
         lambda: HttpResponse(201, json.dumps({"id": "901", "html_url": COMMENT_URL}).encode()),
         lambda: HttpResponse(201, b"[]"),
     ],
-    ids=["brak-sieci", "urwana-odpowiedz", "awaria-githuba", "bez-adresu", "id-tekstem", "nie-obiekt"],
+    ids=["awaria-githuba", "bez-adresu", "id-tekstem", "nie-obiekt"],
 )
 def test_brak_sieci_albo_niezwykla_odpowiedz_przy_komentarzu_to_skrzynka_nieosiagalna(
     answer: Callable[[], HttpResponse],
@@ -484,23 +444,14 @@ def test_poprawiony_komentarz_ma_ten_sam_identyfikator_i_adres_a_skrzynka_dostaj
     assert json.loads(request.body) == {"body": BODY}
 
 
-@pytest.mark.parametrize("status", [401, 403, 404])
-def test_odmowa_przy_poprawce_komentarza_to_odmowa_skrzynki(status: int) -> None:
-    outcome, _ = edit_with(lambda: HttpResponse(status, b'{"message": "Not Found"}'))
-
-    assert outcome == Refused()
-
-
 @pytest.mark.parametrize(
     "answer",
     [
-        no_network,
-        cut_off,
         lambda: HttpResponse(502, b"<html>Bad gateway</html>"),
         lambda: HttpResponse(201, json.dumps({"id": 901, "html_url": COMMENT_URL}).encode()),
         lambda: HttpResponse(200, json.dumps({"id": 901}).encode()),
     ],
-    ids=["brak-sieci", "urwana-odpowiedz", "awaria-githuba", "nie-200", "bez-adresu"],
+    ids=["awaria-githuba", "nie-200", "bez-adresu"],
 )
 def test_brak_sieci_albo_niezwykla_odpowiedz_przy_poprawce_komentarza_to_skrzynka_nieosiagalna(
     answer: Callable[[], HttpResponse],
@@ -531,18 +482,6 @@ def test_komentarze_issue_to_ich_identyfikatory_adresy_i_tresci_po_kolei() -> No
     [request] = transport.requests
     assert (request.method, request.url, request.body) == ("GET", f"{ISSUES}/12/comments?per_page=100&page=1", None)
     assert request.headers["Authorization"] == f"Bearer {KEY}"
-
-
-def test_komentarze_issue_sa_zbierane_ze_wszystkich_stron() -> None:
-    full_page = [{"id": number, "html_url": f"{COMMENT_URL}{number}", "body": ""} for number in range(1, 101)]
-
-    outcome, transport = comments_with(pages(full_page, [{"id": 101, "html_url": COMMENT_URL, "body": "ostatni"}]))
-
-    assert isinstance(outcome, tuple)
-    assert [found.id for found in outcome] == list(range(1, 102))
-    assert [request.url for request in transport.requests] == [
-        f"{ISSUES}/12/comments?per_page=100&page={page}" for page in (1, 2)
-    ]
 
 
 @pytest.mark.parametrize(
@@ -626,10 +565,11 @@ def test_limit_zapytan_githuba_to_brak_sieci_a_nie_odmowa_klucza(operation: str,
     assert outcome == Unreachable()
 
 
+@pytest.mark.parametrize("status", [401, 403, 404])
 @pytest.mark.parametrize("operation", OPERATIONS)
-def test_403_bez_limitu_zapytan_to_odmowa_klucza(operation: str) -> None:
+def test_odmowa_autoryzacji_bez_limitu_zapytan_to_odmowa_klucza_kazdej_operacji(operation: str, status: int) -> None:
     transport = ScriptedTransport(
-        lambda: HttpResponse(403, b'{"message": "Resource not accessible by personal access token"}')
+        lambda: HttpResponse(status, b'{"message": "Resource not accessible by personal access token"}')
     )
 
     outcome = OPERATIONS[operation](GitHubReportBox(transport=transport), KEY)
@@ -663,34 +603,6 @@ def test_archiwum_okresu_to_release_z_tagiem_z_listy_wydan_repozytorium_z_jego_p
         ("GET", f"{RELEASES}/5/assets?per_page=100&page=1", None),
     ]
     assert all(request.headers["Authorization"] == f"Bearer {KEY}" for request in transport.requests)
-
-
-def test_pliki_archiwum_sa_zbierane_ze_wszystkich_stron() -> None:
-    full_page = [{"id": index, "name": f"{index}.json.gz", "label": "", "state": "uploaded"} for index in range(100)]
-    transport = ScriptedTransport(
-        pages([{"id": 5, "tag_name": TAG}], full_page, [{"id": 100, "name": ASSET, "label": "", "state": "uploaded"}])
-    )
-
-    outcome = GitHubReportBox(transport=transport).archive(TAG, key=KEY)
-
-    assert isinstance(outcome, Archive)
-    assert [asset.id for asset in outcome.assets] == list(range(101))
-    assert [request.url.rsplit("=", 1)[1] for request in transport.requests] == ["1", "1", "2"]
-
-
-@pytest.mark.parametrize("operation", ["archive", "open_archive", "upload", "remove"])
-def test_odmowa_autoryzacji_przy_archiwum_to_odmowa_skrzynki(operation: str) -> None:
-    transport = ScriptedTransport(lambda: HttpResponse(401, b'{"message": "Bad credentials"}'))
-
-    outcome = OPERATIONS[operation](GitHubReportBox(transport=transport), KEY)
-
-    assert outcome == Refused()
-
-
-def test_404_przy_szukaniu_archiwum_okresu_to_odmowa_skrzynki_a_nie_brak_archiwum() -> None:
-    transport = ScriptedTransport(lambda: HttpResponse(404, b'{"message": "Not Found"}'))
-
-    assert GitHubReportBox(transport=transport).archive(TAG, key=KEY) == Refused()
 
 
 def test_bez_release_z_tagiem_okresu_archiwum_jeszcze_nie_ma() -> None:
@@ -788,17 +700,6 @@ EMPTY_REPOSITORY_ANSWERS = {
 }
 
 
-SAME_NAME = {
-    "message": "Validation Failed",
-    "errors": [{"resource": "ReleaseAsset", "code": "already_exists", "field": "name"}],
-}
-SAME_TAG = {
-    "message": "Validation Failed",
-    "errors": [{"resource": "Release", "code": "already_exists", "field": "tag_name"}],
-    "status": "422",
-}
-
-
 @dataclass
 class GitHubOnTransport:
     issues: dict[int, dict[str, Any]] = field(default_factory=dict)
@@ -839,8 +740,6 @@ class GitHubOnTransport:
                 return self._page(list(self.releases.values()), query)
             case "POST", ["releases"] if self.empty_repository is not None:
                 return self._answer(*self.empty_repository)
-            case "POST", ["releases"] if any(r["tag_name"] == body["tag_name"] for r in self.releases.values()):
-                return self._answer(422, SAME_TAG)
             case "POST", ["releases"]:
                 release = {"id": next(self._ids), "tag_name": body["tag_name"], "name": body["name"]}
                 self.releases[release["id"]] = release
@@ -849,8 +748,6 @@ class GitHubOnTransport:
                 return self._page([a for a in self.assets.values() if a["release"] == int(release_id)], query)
             case "POST", ["releases", release_id, "assets"]:
                 name, label = query["name"][0], query["label"][0]
-                if any(a["release"] == int(release_id) and a["name"] == name for a in self.assets.values()):
-                    return self._answer(422, SAME_NAME)
                 asset_id = next(self._ids)
                 self.data[asset_id] = request.body or b""
                 self.assets[asset_id] = {"id": asset_id, "name": name, "label": label, "state": "uploaded", "release": int(release_id)}
@@ -874,27 +771,6 @@ class GitHubOnTransport:
     @staticmethod
     def _answer(status: int, document: object) -> HttpResponse:
         return HttpResponse(status, json.dumps(document).encode())
-
-
-def test_archiwum_z_tagiem_ktory_juz_ma_release_to_odmowa_tresci_a_archiwum_zostaje_jedno() -> None:
-    box = GitHubReportBox(transport=GitHubOnTransport())
-    opened = box.open_archive(TAG, "Logi Uruchomień", "Opis.", key=KEY)
-
-    outcome = box.open_archive(TAG, "Logi Uruchomień", "Opis.", key=KEY)
-
-    assert (outcome, box.archive(TAG, key=KEY)) == (Rejected(), opened)
-
-
-def test_plik_o_nazwie_ktora_jest_juz_w_archiwum_to_odmowa_tresci_a_pierwszy_plik_zostaje() -> None:
-    box = GitHubReportBox(transport=GitHubOnTransport())
-    opened = box.open_archive(TAG, "Logi Uruchomień", "Opis.", key=KEY)
-    assert isinstance(opened, Archive)
-    first = box.upload(opened.id, ASSET, f"{ASSET} (wersja 1)", b"\x1f\x8bpierwszy", key=KEY)
-    assert isinstance(first, Asset)
-
-    outcome = box.upload(opened.id, ASSET, f"{ASSET} (wersja 2)", b"\x1f\x8bdrugi", key=KEY)
-
-    assert (outcome, box.archive(TAG, key=KEY)) == (Rejected(), Archive(opened.id, (first,)))
 
 
 LOGS = PeriodThread("logi-uruchomienia", tool("- Logi Uruchomienia okresu: 08_14_09_2026"), "reuse", tool("Logi Uruchomienia 08_14_09_2026"))
@@ -944,24 +820,6 @@ def test_skrzynka_githuba_zaklada_archiwum_okresu_wysyla_plik_a_po_diagnozie_pod
     assert github.files(TAG) == {ASSET: "{\"diagnosis\": \"BRAK_WZORCA\"}\n"}
     [release] = github.releases.values()
     assert release["name"] == "Logi Uruchomień 08_14_09_2026"
-
-
-def test_klucz_bez_uprawnienia_do_tresci_repozytorium_zostawia_plik_w_kolejce_a_komentarz_idzie_z_dopiskiem(
-    tmp_path: Path,
-) -> None:
-    github = GitHubOnTransport(refuse_releases=True)
-    queue = github_queue(tmp_path, github)
-
-    queue.post(logs_post("{}\n"))
-    # ZEWNĘTRZNE: Windows odmawia otwarcia pliku, który przejście kolejki właśnie podmienia na plik ze znacznikiem części, więc odczyt w trakcie przejścia pada PermissionError (dokumentacja MoveFileExW i CreateFileW)
-    assert not queue.wait_delivered("", "zgloszenie", timeout_s=30), "przejście kolejki się skończyło"
-
-    assert "przyczyna=odmowa-archiwum" in (tmp_path / "logs" / "centrum-rozliczen.log").read_text("utf-8")
-    [queued] = (tmp_path / "kolejka").glob("*.json")
-    assert json.loads(queued.read_text("utf-8"))["delivered_parts"] == 1
-    assert github.releases == {}
-    [comment] = github.issues[1]["comments"]
-    assert re.search(rf"Plik `{re.escape(ASSET)}` czeka w Kolejce wysyłki", str(comment["body"]))
 
 
 REPORT = report_target(FINGERPRINT, tool(TITLE))

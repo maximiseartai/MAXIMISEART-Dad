@@ -44,8 +44,7 @@ A change that adds a new way to the Skrzynka (a new `Target`, a second writer of
 
 ## The promise
 
-The checker's rules are stated in the docstring of `scripts/explore_outbox.py`. Their harm, which the docstring does
-not state:
+The checker's rules live in `scripts/explore_outbox.py`. Their harm:
 
 - **DOKLADNIE_RAZ**: a missing part means Maks never sees the rest of Logi Uruchomienia, a Kontrola ilości or a
   Zgłoszenie, and nobody knows it is missing, because the queue file is gone; a part twice fills the issue okresu with
@@ -119,7 +118,7 @@ What the model leaves out of this:
 ## Does the change touch it?
 
 The checker runs the real `Outbox` and `KeyedBox`. Each row is one indivisible step of this code that the checker can
-fail, lose or kill; the docstrings of `explore_outbox.py`, `MemoryBox`, `Bounds` and `Scope` say what it may do at each.
+fail, lose or kill; `MemoryBox`, `Bounds` and `Scope` in `explore_outbox.py` decide what it may do at each.
 
 | Step in the checker | Code |
 | --- | --- |
