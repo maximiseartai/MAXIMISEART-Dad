@@ -3302,7 +3302,7 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
         "M": "CZYNNOŚCI ZREALIZOWANE",
         "N": "ZWROT",
         "O": "UWAGI",
-    }
+    }, "kolumny wklejenia bez komórek (AKCJE, ZWROT, UWAGI) mają w Kopii nagłówek: z nich odtworzenie zna granicę wklejenia"
     rows = {row["row"]: row["cells"] for row in sheet["rows"]}
     in_period = {
         4: ("2026-09-08T00:00:00", 2, "adrian.testowy", "tak"),
