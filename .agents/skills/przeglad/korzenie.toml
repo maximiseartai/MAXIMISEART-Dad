@@ -188,5 +188,5 @@ opis = "Odmowa porównuje same skróty i podaje dwa skróty bez elementu, który
 przyklad = 2304
 
 [R-ENV-PRZENIESIENIA]
-opis = "Przeniesienie procesu na inną maszynę (exec przez boatbox na box) niesie argumenty i pliki wołającego, a gubi zmienne środowiska, kopię i ścieżki, które ustawił wołający i z których przeniesione narzędzie czyta decyzję, bo autor wyliczył wejścia narzędzia z jego argumentów."
+opis = "Proces przeniesiony na inną maszynę gubi zmienne, rewizje i ścieżki wołającego spoza swoich argumentów."
 przyklad = 2403
