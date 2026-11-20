@@ -565,6 +565,10 @@ class ToolDirectory:
         return self._moved(default_intermax_copies())
 
 
+def config_files(config: Path) -> dict[str, tuple[bytes, int]]:
+    return {path.relative_to(config).as_posix(): (path.read_bytes(), path.stat().st_mtime_ns) for path in sorted(config.rglob("*")) if path.is_file()}
+
+
 def write_report_key(tool: ToolDirectory, key: str = REPORT_KEY) -> Path:
     """Token do Zgłoszeń w lokalnym pliku obok Ustawień taty, jak go wpisuje Maks; zwraca ten plik."""
 
