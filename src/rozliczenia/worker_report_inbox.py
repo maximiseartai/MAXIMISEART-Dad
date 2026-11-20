@@ -638,6 +638,10 @@ def _since(imap: imaplib.IMAP4, day: date) -> list[str]:
 
 
 def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
+    """UID → flagi każdego z ``uids`` w paczkach po ``FETCH_BATCH``. Odpowiedź paczki, która nie ma flag dla któregoś
+    jej UID (także ``OK`` bez żadnej linii ``FETCH``), ma linię bez UID albo flag albo flagi UID spoza paczki, to
+    ``UnexpectedReply``."""
+
     flags = {}
     for sequence, batch in _batches(uids):
         lines = [line for line in _ok(imap.uid("FETCH", sequence, "(UID FLAGS)")) if line is not None]
