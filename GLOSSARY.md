@@ -82,6 +82,7 @@ Nowy kod nazywa pojęcie tym identyfikatorem, a nowe hasło dostaje wiersz w tej
 | Ustawienia ze startu | `SettingsAtStart` |
 | Decyzja taty | `Decision` |
 | Centrum rozliczeń | `centrum` |
+| Stanowisko | – |
 | Katalog procesów | `Catalog` |
 | Skrypt dla maszyn | `uruchom_proces` |
 | Zdarzenie przebiegu | `ProgressEvent` |
@@ -129,7 +130,7 @@ Jest jedynym źródłem prawdy o zleceniach wszystkich okresów.
 Zawiera między zleceniami całkowicie puste wiersze.
 Procesy go czytają.
 Uporządkowanie INTERMAX zmienia w nim tylko Surowe zlecenia i widok po otwarciu, Wpisanie raportów tylko zlecenia uporządkowanych dni (`SKUTECZNE`, `CZYNNOŚCI ZREALIZOWANE`, Przeniesienie zlecenia i Zlecenie dopisane z raportu), a przywrócenie Kopii INTERMAX zastępuje go w całości tą kopią.
-Edytują go tata na swoim komputerze i jeden jego pracownik na swoim.
+Edytują go tata na swoim komputerze i Andrzej na swoim.
 
 ## Aplikacja firmowa
 
@@ -225,7 +226,7 @@ _Avoid_: eksport, nowe dane
 
 ## Uporządkowanie INTERMAX
 
-Proces, który tata uruchamia w Centrum rozliczeń po wklejeniu Surowych zleceń dnia.
+Proces, który tata albo Andrzej uruchamia w Centrum rozliczeń po wklejeniu Surowych zleceń dnia, każdy na swoim komputerze.
 Przesuwa pierwszy wiersz na miejsce, gdy przyszedł przesunięty, dzieli zlecenia na segmenty Wykonawców w kolejności alfabetycznej, oddzielone jednym pustym wierszem, w segmencie układa je od najwcześniejszej godziny do najpóźniejszej i nadaje im od kolumny A do `UWAGI` wygląd reszty Rejestru zleceń z cienką ramką i pogrubionym tylko `WYKONAWCA`, Kolory operatora i Wpisy urządzenia i czynności INTERMAX, a kolumny z aplikacji za `UWAGI` usuwa i na ich miejsce kopiuje Historię adresu.
 Dzień stawia jeden pusty wiersz pod żółtym wierszem, którym tata oddziela dni, a bez niego 10 pustych wierszy pod ostatnim uporządkowanym zleceniem.
 Po nim Rejestr otwiera się na dzisiejszym dniu z kalendarza, a gdy dziś nie ma zleceń, na ostatnim wcześniejszym dniu ze zleceniami.
@@ -246,8 +247,8 @@ _Avoid_: dzień zrobiony, dzień sformatowany
 ## Kopia INTERMAX
 
 Stan Rejestru zleceń zapisany przed Uporządkowaniem INTERMAX albo przed przywróceniem innej Kopii INTERMAX, nazwany datą i godziną, z której pochodzi.
-Leży na komputerze taty poza OneDrive.
-Tata przywraca ją z Centrum rozliczeń; zmiany późniejsze od niej wtedy znikają.
+Leży poza OneDrive na komputerze, na którym powstała: tata i Andrzej mają każdy swoje.
+Przywraca ją z Centrum rozliczeń ten, na czyim komputerze leży; zmiany późniejsze od niej wtedy znikają, także zrobione na drugim komputerze.
 _Avoid_: backup, wersja
 
 ## Kolor operatora
@@ -659,9 +660,19 @@ Czas czekania na Decyzję taty nie wlicza się do `Czas uruchomienia` ani do met
 
 ## Centrum rozliczeń
 
-Lokalna aplikacja w przeglądarce na komputerze taty, z której uruchamia Uporządkowanie INTERMAX, Przygotowanie pliku zbiorczego, Przebieg rozliczeń, Wycenę w efenix i Wpisanie raportów, przywraca Kopię INTERMAX oraz widzi Status okresu każdego okresu i historię Uruchomień procesu.
+Lokalna aplikacja w przeglądarce na komputerze taty, z której tata uruchamia Uporządkowanie INTERMAX, Przygotowanie pliku zbiorczego, Przebieg rozliczeń, Wycenę w efenix i Wpisanie raportów, przywraca Kopię INTERMAX oraz widzi Status okresu każdego okresu i historię Uruchomień procesu.
 Jest jedynym wejściem taty do tych procesów, nie osobnym procesem.
+Na komputerze Andrzeja to samo Centrum rozliczeń daje tylko to, co pozwala jego Stanowisko.
 _Avoid_: dashboard, panel, centrum dowodzenia
+
+## Stanowisko
+
+To, czyje jest Centrum rozliczeń na danym komputerze, a więc co w nim widać i co da się w nim uruchomić: Stanowisko taty albo Stanowisko Andrzeja.
+Stanowisko taty ma całe Centrum rozliczeń.
+Stanowisko Andrzeja, pracownika biura taty, ma tylko Uporządkowanie INTERMAX z przywracaniem Kopii INTERMAX, a do tego Zgłoszenia i Uwagi do Maksa i Aktualizację narzędzia; nie ma okresów, Raportów wykonawców, Ilości usług, kwot, Rozliczeń pracowników ani efenix.
+Komputer ma jedno Stanowisko; ustawia je Maks przy instalacji, a komputer bez wskazanego Stanowiska ma Stanowisko taty.
+Nie jest Ustawieniem Centrum.
+_Avoid_: rola, profil, użytkownik, konto
 
 ## Katalog procesów
 
@@ -775,11 +786,13 @@ Własny tekst taty do Maksa z tytułem, który tata pisze z dowolnego widoku Cen
 Powiadomienia nazywają ją tym tytułem, nie numerem.
 Jest ogólna, o całym narzędziu, albo przypięta do jednego Uruchomienia procesu, i wtedy prowadzi do jego Logów Uruchomienia.
 Każda Uwaga taty to osobna sprawa, którą Maks zamyka.
+Ten sam tekst ze Stanowiska Andrzeja to Uwaga Andrzeja.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), feedback, komentarz
 
 ## Skrzynka Zgłoszeń
 
 Miejsce, do którego trafiają Zgłoszenia, Kontrole ilości, Logi Uruchomienia i Uwagi taty i w którym Maks je zamyka: prywatne repozytorium Zgłoszeń.
+Jedno dla obu Stanowisk: to, co przyszło ze Stanowiska Andrzeja, ma w tytule i w tagu Archiwum Logów okresu prefiks `ANDRZEJ`, więc ma własne issue i nie miesza się z tym, co przysłał tata.
 _Avoid_: issue tracker, publiczne issue
 
 ## Reguła danych
@@ -803,6 +816,7 @@ _Avoid_: niepewny wiersz, wiersz bez pewnego położenia
 
 Token, którym Centrum rozliczeń wysyła do Skrzynki Zgłoszeń.
 Wpisuje go Maks na komputerze taty, a tata go nie widzi.
+Andrzej ma na swoim komputerze własny Token do Zgłoszeń do tej samej Skrzynki, z własną datą ważności, którego też nie widzi; Maks unieważnia go bez szkody dla tokenu taty.
 Może go brakować albo Skrzynka może go odrzucić; wtedy nic nie wychodzi, dopóki Maks go nie naprawi, a tata widzi, że Token do Zgłoszeń nie działa i ma skontaktować się z Maksem.
 Tym samym tokenem Centrum pyta publiczne repozytorium narzędzia o Wydania (ADR 0014); gdy GitHub go tam nie przyjmie, Centrum pyta bez niego, a Token do Zgłoszeń dalej działa.
 _Avoid_: klucz, hasło
@@ -823,7 +837,7 @@ _Avoid_: outbox, bufor
 
 ## Archiwum Logów okresu
 
-Pełne Logi Uruchomień jednego okresu w Skrzynce Zgłoszeń: GitHub Release z tagiem `logi-<okres>` w prywatnym repozytorium Zgłoszeń, który Centrum zakłada przy pierwszych Logach okresu.
+Pełne Logi Uruchomień jednego okresu w Skrzynce Zgłoszeń: GitHub Release z tagiem `logi-<okres>` (ze Stanowiska Andrzeja `andrzej-logi-<okres>`) w prywatnym repozytorium Zgłoszeń, który Centrum zakłada przy pierwszych Logach okresu.
 Każde Uruchomienie ma w nim jeden plik o nazwie pliku Logów z `.gz`, który po rozpakowaniu jest bajt w bajt plikiem Logów z komputera taty, a w issue Logów okresu jeden komentarz z podsumowaniem i odnośnikiem do tego pliku.
 Obok leży raz każda wersja Wzorca, którym liczyły Uruchomienia okresu, jako `wzorzec-<SHA-256>.xlsx`, gdy przeszła sprawdzenie reguły danych (ADR 0025, „Wzorce w Archiwum Logów okresu”).
 Diagnoza podmienia plik swojego Uruchomienia.
