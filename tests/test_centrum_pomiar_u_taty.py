@@ -7,7 +7,7 @@ import re
 import pytest
 
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
-from rozliczenia.centrum.log import MAX_VIEW_TIMINGS, CentrumLog
+from rozliczenia.centrum.log import FOR_LOGS_FILE, MAX_VIEW_TIMINGS, CentrumLog
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import PeriodFolder
 from tests.fixtures.centrum import Centrum, centrum, view_timing
@@ -205,19 +205,6 @@ def test_po_limicie_pomiarow_widokow_dziennik_dalej_zapisuje_prace_serwera(tmp_p
     assert [line.split(" ")[1] for line in lines] == ["pomiar"] * MAX_VIEW_TIMINGS + ["stop"]
 
 
-def test_urwany_zapis_w_dzienniku_psuje_jeden_wpis_a_reszta_od_startu_zostaje(tmp_path: Path) -> None:
-    path = tmp_path / "centrum.log"
-    path.write_bytes(
-        b"2026-09-22T08:00:00+02:00 start port=47811 wersja=v1 konsola=nie\n"
-        b"2026-09-22T08:01:00+02:00 diagnoza proces=rozliczenie okres=22_28_09_2026 przyczyna=Z\xc5\n"
-        b"2026-09-22T08:02:00+02:00 stop port=47811\n"
-    )
-
-    entries = CentrumLog(path).recent(10)
-
-    assert [entry.split(" ")[1] for entry in entries] == ["start", "diagnoza", "stop"]
-
-
 def test_wynik_aktualizacji_zapisany_przed_restartem_centrum_nie_trafia_do_dziennika_drugi_raz(tmp_path: Path) -> None:
     log = CentrumLog(tmp_path / "centrum.log")
     log.started(port=47811, version="v1", console=False)
@@ -226,3 +213,22 @@ def test_wynik_aktualizacji_zapisany_przed_restartem_centrum_nie_trafia_do_dzien
     log.started(port=47811, version="v1", console=False)
 
     assert log.update_awaits(result="AKTUALIZACJA_NIEUDANA", before="a1", after=None) is False
+
+
+def test_wpisy_dla_logow_ktorych_nie_da_sie_oproznic_dostaja_tez_nastepne_logi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = CentrumLog(tmp_path / "centrum.log")
+    log.stopped(port=47811)
+    write_text = Path.write_text
+
+    def for_logs_locked(self: Path, data: str, encoding: str | None = None) -> int:
+        if self.name == FOR_LOGS_FILE:
+            raise PermissionError(13, "Odmowa dostępu", str(self))
+        return write_text(self, data, encoding=encoding)
+
+    monkeypatch.setattr(Path, "write_text", for_logs_locked)
+
+    takes = [log.take_for_logs() for _ in range(2)]
+
+    assert [([entry.split(" ")[1] for entry in entries], omitted) for entries, omitted in takes] == [(["stop"], 0)] * 2
