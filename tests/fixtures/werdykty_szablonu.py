@@ -68,10 +68,7 @@ def _with_mutation(*block: str) -> str:
     return _replaced(CHECKED, *block, CHECKED)
 
 
-# Pole ``Mechanizm:`` po Szczeblu: szczebel piramidy ADR 0031, który recenzent wybiera dla strażnika Ważnego.
 MECHANIZMY = ("architektura", "refaktor", "lint", "test", "weryfikacja")
-# Pole ``Idiom:`` po Szczeblu w trzech postaciach z ADR 0036 i Idiom, który ``szablon_werdyktu.findings`` z niego czyta:
-# id reguły, klasa idiomu bez reguły i wcześniejsze Ważne (PR, Ważne, runda); stoi tylko w wątku bez pola Mechanizm.
 IDIOMY: dict[str, tuple[str, tuple[str | None, str | None, tuple[int, str, int] | None]]] = {
     "drugie-wystapienie": ("Idiom: komentarz-w-src jak #1553 W1 r2", ("komentarz-w-src", None, (1553, "W1", 2))),
     "ucieczka-reguly": ("Idiom: os.name", ("os.name", None, None)),
@@ -172,8 +169,6 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     "mutacja-dwa-bloki-tego-samego-waznego": (_with_mutation(*_mutation(), *_mutation()), (1, 1), "Mutacja W1 r1: drugi blok tego Ważnego w werdykcie"),
     "mutacja-bez-rundy": (_with_mutation("### Mutacja W1", "```", MUTATION, "```"), (1, 1), "„### Mutacja W<n> r<k>”"),
 }
-# Wątek, którego pierwszy werdykt powstał przed wdrożeniem pola Mechanizm, kończy po staremu: Ważne bez niego
-# albo z polem ``Idiom:`` przechodzi, a z Mechanizmem też.
 PRZED_MECHANIZMEM = {
     "szablon-bez-mechanizmu": _replaced(MECHANISM),
     "szablon-z-mechanizmem": TEMPLATE,
