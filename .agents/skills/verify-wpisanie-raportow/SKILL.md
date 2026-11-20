@@ -79,18 +79,53 @@ otherwise):
 | Model action | Code |
 | --- | --- |
 | `TataZmienia` | Dad or his worker (through OneDrive) types a value into the cell or clears it and saves INTERMAX |
+| `KlikWolny` | none: no click runs (the Uruchomienie ended or has not read the files yet) |
 | `NowyMail` | a Raport wykonawcy with another content of the Wpis for this order arrives; the latest mail wins (`enter_reports`) |
 | `ZamkniecieOkresu`, `OtwarcieOkresu` | the Plik zbiorczy of the period appears (Przygotowanie) or Dad removes it; `report_entering.closed_periods` gives `Window.of` the closed tokens through `EnteringMemory.window` and `Window.opens` leaves the order out of `orders` in `enter_reports` |
-| `PojawiaSieKopia`, `TataUsuwaKopie` | OneDrive puts a conflict copy beside INTERMAX; Dad merges it and removes it |
+| `PojawiaSieKopia`, `TataUsuwaKopie` | OneDrive puts a conflict copy beside INTERMAX (a change of the worker and a replace by the tool at once); Dad merges it into INTERMAX and removes it, and what he copies over are his changes of the cell (`TataZmienia`) |
 | `Sprawdzanie` | Dad clicks „Wpisz raporty z maili”, or „Wpisz do INTERMAX” (Wpis na życzenie) at a Wpis of the last result, at a problem or at an order with a Wpis of a report with a faulty subject (`ReportEnteringEntry.on_request` looks for the offer with the identity of the clicked cell, `Offer.token`, in `ShownResult.offers` of `files.shown()` outside any lock, else `request_gone`, and `prepare` puts the offer's decision, `Offer.decide`, into `ReportEnteringParts.requested`; for the one cell it is one more content of the newest Wpis, like `NowyMail`); `RunHost.start` (one Uruchomienie at a time), `enter_from_mail` `check`: `EnteringMemory` of `parts.state`, the one load of the click, `FileReportState.load`, which reads the memory through `_TextFile.text` (`StateFile.retry` first, then the waiting text or the file) and `kept()` the same way, then `onedrive_conflicts.beside` (:276), whose copy is a Zatrzymanie before the mailbox |
-| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`EnteringMemory.enter` → `enter_reports` → `_cells.reconcile` on the snapshot of the memory and `kept` from `check`, then `_cells.with_added`; a memory file older than version 4 goes through `OlderOwnEntries.upgraded` first, Left out) and `save` (`write_cells` with the changes, the Przeniesienia zleceń and the Zlecenia dopisane z raportu of the click) as one step: without any of them `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
-| `ZapiszPamiec` | `parts.state.save_memory` (the memory with Dad's decisions of Wpis na życzenie, `EnteringMemory.requested`) → `FileReportState.save_memory` → `_TextFile.write` → `StateFile.write`; an `OSError` keeps the text waiting and the process gives only the warning `memory_not_saved` |
-| `ZapiszWynik` | :383 `parts.state.save_result` (the `ClickResult` with `ManualDifference` among its problems) → `_TextFile.write`, then :385 `onedrive_conflicts.beside`: a copy is the Zatrzymanie `conflict_after_save`, otherwise the summary; one step, because nothing between them writes a file or INTERMAX |
+| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`EnteringMemory.enter` → `enter_reports` → `_cells.reconcile` on the snapshot of the memory and `kept` from `check`, then `_cells.with_added`; a memory file older than version 4 goes through `OlderOwnEntries.upgraded` first, Left out) and `save` (`write_cells` with the changes, the Przeniesienia zleceń and the Zlecenia dopisane z raportu of the click) as one step: without any of them `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written. The window between the read of INTERMAX and its replace is known finding 1 of `verify-zapis-intermax`; the snapshot of the click is needed only in the plan, so it is gone after this step |
+| `ZapiszPamiec` | `parts.state.save_memory` (the memory with Dad's decisions of Wpis na życzenie, `EnteringMemory.requested`) → `FileReportState.save_memory` → `_TextFile.write` → `StateFile.write`; also with no cell written; an `OSError` keeps the text waiting and the process gives only the warning `memory_not_saved` and goes on |
+| `ZapiszWynik` | :383 `parts.state.save_result` (the `ClickResult` with `ManualDifference` among its problems) → `_TextFile.write` (an `OSError` keeps the text waiting, and the view shows it from memory), then :385 `onedrive_conflicts.beside`: a copy is the Zatrzymanie `conflict_after_save` with the summary, otherwise the summary, and the Uruchomienie ends; one step, because nothing between them writes a file or INTERMAX, so a switch-off there loses only what a switch-off after the end loses, and a copy that appears there appears before it |
 | `Odswiez` | a tab reads the Raporty view: `ReportEnteringEntry.view` → `FileReportState.shown` and `kept`, each `_TextFile.text` retries a waiting write; the Lista Wykonawców it reads from the Ustawienia snapshot only gives an unknown sender the login it was assigned to (#1475), and a list the system cannot read now counts as empty, so the sender stays unknown; no cell of the model depends on it |
-| `ZostawSprawdz` | „Zostaw moją” on tab k: `ReportEnteringEntry.keep` checks `files.shown()` outside any lock (`report_entering_run.py` :125-129), else `difference_gone` |
-| `ZostawCzytaj` | `FileReportState.keep` under `_deciding`: `self.kept()` |
-| `ZostawZapisz` | still under `_deciding`: `decisions.write` of the old decisions with the new one; `keep` ignores its result, so Dad gets the view without the difference also when the decision only waits in memory |
-| `Zgasniecie` | none: Centrum switches off at any step and Dad opens it again; the Uruchomienie, the requests and every waiting text are gone, files on disk and INTERMAX stay (`replace_atomically` is atomic) |
+| `ZostawSprawdz` | „Zostaw moją” on tab k: `ReportEnteringEntry.keep` checks `files.shown()` outside any lock (`report_entering_run.py` :125-129): the difference with this content is in the result of the last click, else `difference_gone` |
+| `ZostawCzytaj` | `FileReportState.keep` under `_deciding` (`report_entering_state.py` :440-441): `self.kept()`, the old decisions |
+| `ZostawZapisz` | still under `_deciding` (:442-444): `decisions.write` of the old decisions with the new one; `keep` ignores its result, so Dad gets the view without the difference also when the decision only waits in memory |
+| `Zgasniecie` | none: Centrum switches off at any step and Dad opens it again; the Uruchomienie, the requests of „Zostaw moją” and every waiting text (`StateFile._waiting`, `_TextFile._written`) are gone; the files on disk, not the memory this work computed or kept waiting, and INTERMAX stay (`replace_atomically` is atomic) |
+
+Definitions the actions share:
+
+| Model definition | Code |
+| --- | --- |
+| `Wpisy`, `Reczne`, `Pamieci` | the content of the Wpis raportu for the cell from the newest mail of the Wykonawca; the values Dad or his worker types in Excel, each equal to some Wpis; the memory of the cell: no entry, or the value the tool itself wrote |
+| `PamiecEfektywna` | `_TextFile.text`: the waiting text wins while the file is unavailable, otherwise the text on disk |
+| `PamiecWlasciwa` | the memory this Centrum work takes as right: the one the click computed after the INTERMAX write and before `save_memory`, otherwise the waiting text or the file |
+| `MozeZawiesc(z, czeka, awarie, max)` | `StateFile._save`: a write of a file whose text already waits goes without pauses and may fail again (`OSError`) without taking a new failure from the pool, like a failed retry |
+| `BezZmian`, `Zmiana`, `Roznica`, `NowaPamiec` | the rules of one cell, `worker_reports/_cells.py` `reconcile`, on the click's snapshot (`migPamiec`, `migDecyzje`) and INTERMAX as read. An order of a day of a closed period is not in `orders` (`enter_reports`: `window.opens`), so it gets no Wpis and no difference, and the memory drops it (`own`: the value must be in `current[cell]`); `if value is None or (cell is not None and normalize_text(cell) == normalize_text(value)): continue`; `if cell is None or cell == remembered.get((order.key, column))`: a Wpis into an empty cell or the tool's own entry; `elif Kept(order.key, column, value) not in kept`: `ManualDifference`; `own = {cell: value for cell, value in remembered.items() if value in current[cell]}`, then `own[...] = value` |
+| `PrzyczynaNadpisania` | the causes of an overwritten manual value, from the history, not the code: Dad restored the value the tool last wrote and no click whose memory survived saw the cell without it (the memory compares values, not authors), or he typed it after a switch-off that lost a newer memory (every value of the cell is a content of a Wpis, so each is or may be an old value of the tool) |
+| `Widoczna` | ZostawUcisza: the Raporty view (`_view`: problems without a decision from `kept`) shows the difference although Dad got the view without it |
+
+Each constant is a way to fail or a bound of a configuration (`stale` in `model/konfiguracje.json`):
+
+| Constant | Meaning |
+| --- | --- |
+| `Karty` | tabs of the Raporty view from which Dad clicks „Zostaw moją” at once (1 or 2) |
+| `MaxZgasniec` | switch-offs of Centrum (a power cut, a killed process); a text waiting in memory is lost |
+| `MaxAwariiIntermax` | `write_cells` gives `Refusal` or `Rejected` (Excel, OneDrive, a failed write), INTERMAX untouched |
+| `MaxAwariiPamieci`, `MaxAwariiWyniku`, `MaxAwariiDecyzji` | `StateFile.write` of the memory, the result and the decisions: `OSError` of `replace_atomically` of the file in `config/`; a file whose write failed may fail at every retry (`StateFile.retry`) and write (`StateFile.write`) while its text waits, without more failures from this pool |
+| `MozeOtworzyc` | Dad removes the Plik zbiorczy of a period that was already closed, so the period is open again |
+| `MozeKopia` | OneDrive puts a conflict copy beside INTERMAX (`onedrive_conflicts.beside`) |
+| `Wybaczone…` | the causes of known findings that the `…PozaZnanymi` variant of each promise skips; the script sets them |
+
+| Variable | Meaning |
+| --- | --- |
+| `komorka`, `autor`, `wpis`, `okresOtwarty`, `kopia` | Dad's world: the value of the cell in INTERMAX; a ghost of who typed it (nobody: empty, the tool, Dad or his worker); the content of the newest Wpis for the cell from the Skrzynka raportów (none without a Wpis); the period of the order's day has no Plik zbiorczy (`Window.opens`); a conflict copy of OneDrive lies beside INTERMAX |
+| `pamiec`, `pamiecCzeka`, `pamiecOdlozona`; `wynik`, `wynikCzeka`, `wynikOdlozony`; `decyzje`, `decyzjeCzeka`, `decyzjeOdlozone` | each file in `config/`: its text on disk, whether a text waits in the memory of this Centrum work (`StateFile.unavailable`) and which; the result holds the difference with a manual value (none or a content of a Wpis), the decisions the contents at which Dad clicked „Zostaw moją” |
+| `faza`, `migPamiec`, `migDecyzje`, `kopiaPrzySprawdzaniu`, `plan…` | the click of „Wpisz raporty z maili” (one at a time: `RunHost.start`): its phase, its snapshot of the memory and the decisions, a copy seen at `check`, and its plan |
+| `etap`, `tresc`, `odczyt`, `blokada` | „Zostaw moją” from the tabs: the stage of the request, the content of the difference, the decisions read under the lock, the lock `_deciding` |
+| `ostatniWlasny`, `zapomniala`, `zapomnialaCzeka`, `utrataPamieci`, `bezPamieci`, `upuszczona`, `zostawione` | ghosts, the history from which the promises take the causes of known findings: the value the tool last wrote into the cell; the memory on disk no longer has it because a click saw the cell without it; the same only in the waiting text; a switch-off left a memory other than `PamiecWlasciwa` on disk and the tool has not written since; why the memory lacks a value the tool wrote that still stands in the cell; the memory dropped an own entry that stands in the cell because the period was closed; the contents at which „Zostaw moją” returned the view without the difference to Dad |
+| `zgasniecia`, `awarieIntermax`, `awariePamieci`, `awarieWyniku`, `awarieDecyzji` | the counters of the `Max…` constants |
+| `nadpisane`, `falszywe`, `bezDecyzji`, `przeoczonaKopia` | the history variable of each promise: the set of causes at the moment of each event that breaks it |
 
 The script compares the definitions in `model/definicje.json` with their digests; among them is the assignment
 `create_app.report_files` in `centrum/app.py` (one `FileReportState` for the process and the view, so the waiting text
@@ -216,11 +251,11 @@ days before it (the cells of those days are neither written nor shown).
 When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
-2. Change the model so each action is again one indivisible step of the code, with the code's names in its comment.
-   TLA+ strings must be ASCII; comments may use Polish letters. Never weaken a promise or narrow a configuration to make
-   the check pass.
-3. A new way to fail gets a constant, a branch guarded by it, and a value in `stale` of every configuration in
-   `model/konfiguracje.json`. A new action of `Next` gets its words in `_STEPS` of the script.
+2. Change the model so each action is again one indivisible step of the code, and write the code's names in its row of
+   the table above, not in a comment: the model has none, and a new action, definition, constant or variable gets its
+   own row. TLA+ strings must be ASCII. Never weaken a promise or narrow a configuration to make the check pass.
+3. A new way to fail gets a constant with its row, a branch guarded by it, and a value in `stale` of every configuration
+   in `model/konfiguracje.json`. A new action of `Next` gets its words in `_STEPS` of the script.
 4. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
    to `scripts/check_model_wpisania_mutations.py` with the code counterpart in its name.
 5. Run the check. A new violation is a finding: replay it on the code (Read a result) before you call it a bug, report

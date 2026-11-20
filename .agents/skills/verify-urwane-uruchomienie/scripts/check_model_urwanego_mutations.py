@@ -32,8 +32,8 @@ def _check(config: str) -> tuple[str, ...]:
 
 
 _NO_RANK = (
-    Edit(MODEL, "StopienZeStartu == 1  ", "StopienZeStartu == 0  "),
-    Edit(MODEL, "StopienWlasny == 2    ", "StopienWlasny == 0    "),
+    Edit(MODEL, "StopienZeStartu == 1\n", "StopienZeStartu == 0\n"),
+    Edit(MODEL, "StopienWlasny == 2\n", "StopienWlasny == 0\n"),
 )
 
 MUTATIONS = (
@@ -116,9 +116,8 @@ MUTATIONS = (
         "dziennik z pierwszą linią z nieudanego zapisu zostaje po wyniku (Journal.end: return przy "
         "self._header, bez _remove)",
         (
-            Edit(MODEL, "          /\\ naglowekCzeka /\\ dziennik[r] = \"brak\"\n", "          /\\ naglowekCzeka\n"),
-            Edit(MODEL, "          /\\ naglowekCzeka /\\ dziennik[r] = \"jest\"\n          /\\ UsunPlik(r, {})\n",
-                 "          /\\ FALSE /\\ UsunPlik(r, {})\n"),
+            Edit(MODEL, "/\\ naglowekCzeka /\\ dziennik[r] = \"brak\"\n", "/\\ naglowekCzeka\n"),
+            Edit(MODEL, "/\\ naglowekCzeka /\\ dziennik[r] = \"jest\"\n          /\\ UsunPlik(r, {})\n", "/\\ FALSE /\\ UsunPlik(r, {})\n"),
         ),
         _check("koniec"),
         "pierwszy wpis rzuca OSError po zapisie pierwszej linii, okno efenix staje, a Wycena z wynikiem dostaje przy "
@@ -130,9 +129,9 @@ MUTATIONS = (
         (
             Edit(
                 MODEL,
-                "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in ZLogami\n          /\\ Odczytane(logi[r])\n"
+                "/\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in ZLogami\n          /\\ Odczytane(logi[r])\n"
                 "          /\\ UNCHANGED <<kursor, oczekujace, awarieOdczytu, poWyniku>>\n",
-                "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in ZLogami\n          /\\ krokZamykania' = \"usun\"\n"
+                "/\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in ZLogami\n          /\\ krokZamykania' = \"usun\"\n"
                 "          /\\ UNCHANGED <<kursor, rekord, oczekujace, awarieOdczytu, poWyniku>>\n",
             ),
         ),
@@ -272,14 +271,14 @@ MUTATIONS = (
     ),
     Mutation(
         "wersja zastępcza ze stopniem Logów z wynikiem (rank_of: Rank.OWN zamiast Rank.STAND_IN dla StandInLogs)",
-        (Edit(MODEL, "StopienZeStartu == 1  ", "StopienZeStartu == 2  "),),
+        (Edit(MODEL, "StopienZeStartu == 1\n", "StopienZeStartu == 2\n"),),
         _check("logi-i-kolejka"),
         "wynik bez Logów ze startu zastępuje Logi z wynikiem, które kolejka przyjęła bez ich pliku",
         NEW,
     ),
     Mutation(
         "postęp ze stopniem wersji zastępczej (rank_of: Rank.STAND_IN zamiast Rank.DRAFT dla ProgressVersion)",
-        (Edit(MODEL, "StopienPostepu == 0 ", "StopienPostepu == 1 "),),
+        (Edit(MODEL, "StopienPostepu == 0\n", "StopienPostepu == 1\n"),),
         _check("zegar"),
         "po cofnięciu zegara postęp w kolejce jest nowszy od Logów Urwanego Uruchomienia ze startu",
         NEW,
@@ -291,27 +290,27 @@ MUTATIONS = (
             *_NO_RANK,
             Edit(
                 MODEL,
-                "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\" /\\ koniecZapisany\n"
+                "/\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\" /\\ koniecZapisany\n"
                 "          /\\ oczekujace' = Append(oczekujace, [bieg |-> r, rodzaj |-> \"bezLogow\", tresc |-> Pusta,\n"
                 "                                               niezapisany |-> FALSE])\n"
                 "          /\\ kursor' = kursor + 1\n"
                 "          /\\ UNCHANGED <<krokZamykania, rekord, awarieOdczytu, poWyniku>>\n",
-                "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\" /\\ koniecZapisany\n"
+                "/\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\" /\\ koniecZapisany\n"
                 "          /\\ krokZamykania' = \"usun\"\n"
                 "          /\\ UNCHANGED <<kursor, rekord, oczekujace, awarieOdczytu, poWyniku>>\n",
             ),
             Edit(
                 MODEL,
-                "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in ZLogami\n",
-                "          /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"urwane\"\n",
+                "/\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj \\in ZLogami\n",
+                "/\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"urwane\"\n",
             ),
             Edit(
                 MODEL,
-                "       \\/ \\* bez pliku Logów i bez wpisu końca: StandInLogs(guard_logs(interrupted(read), forbidden))\n",
+                "       \\/ /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\" /\\ ~koniecZapisany\n",
                 "       \\/ /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"wynik\"\n"
                 "          /\\ krokZamykania' = \"usun\"\n"
                 "          /\\ UNCHANGED <<kursor, rekord, oczekujace, awarieOdczytu, poWyniku>>\n"
-                "       \\/ \\* bez pliku Logów i bez wpisu końca: StandInLogs(guard_logs(interrupted(read), forbidden))\n",
+                "       \\/ /\\ dziennik[r] = \"jest\" /\\ logi[r].rodzaj = \"brak\" /\\ ~koniecZapisany\n",
             ),
             Edit(MODEL, "    /\\ IF wKolejce /\\ ~naglowekCzeka\n", "    /\\ IF FALSE\n"),
             Edit(

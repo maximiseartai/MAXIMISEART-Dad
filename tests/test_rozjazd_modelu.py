@@ -307,7 +307,7 @@ def test_narzedzie_odmawia_skillowi_bez_definicji_i_definicji_ktorej_nie_ma(tmp_
 POZA_MODELEM: Final = {
     # „Changes to Komunikaty text, the log or Zgłoszenia do not matter here”: odmowę daje trasa w całym pliku
     # ``tool_update.py``, a ``update_without_port`` to tylko jej Komunikat.
-    "verify-aktualizacja-narzedzia": ["src/rozliczenia/centrum/refusal.py update_without_port"],
+    "verify-aktualizacja-narzedzia": ["src/rozliczenia/centrum/runs.py RunHost.begin_update", "src/rozliczenia/centrum/refusal.py update_without_port"],
     # „The rest of the table runs as real code”: klucze mają tylko części modelowane ręcznie.
     "verify-jedno-uruchomienie-naraz": [
         "src/rozliczenia/centrum/runs.py RunHost.start",
@@ -319,11 +319,22 @@ POZA_MODELEM: Final = {
         "src/rozliczenia/centrum/runs.py RunHost.after",
         "src/rozliczenia/centrum/shutdown.py Shutdown.request",
     ],
+    "verify-kolejka-skrzynki": ["src/rozliczenia/centrum/run_comments.py RunComments.send_left_behind", "src/rozliczenia/centrum/case_delivery.py _CaseDelivery.delivered"],
     # Wiersz ``hyperlinks.py``: „its reader `read_sheet_hyperlinks` is covered by pytest (…), not here”.
     "verify-kopia-wzorca": ["src/rozliczenia/hyperlinks.py read_sheet_hyperlinks"],
     # „Left out on purpose: (…) the Komunikat of an Uwaga that was not queued (`refusal.note_not_queued`), (…)
     # `KeyedBox.judge`”.
     "verify-sprawy-taty": ["src/rozliczenia/centrum/keyed_box.py KeyedBox.judge", "src/rozliczenia/centrum/refusal.py note_not_queued"],
+    "verify-urwane-uruchomienie": [
+        "src/rozliczenia/centrum/app.py create_app",
+        "src/rozliczenia/efenix_trace.py traced",
+        "src/rozliczenia/efenix_pricing.py _outcome",
+        "src/rozliczenia/centrum/run_comments.py RunComments._refresh",
+        "src/rozliczenia/centrum/process_kind.py startable",
+        "src/rozliczenia/centrum/catalog.py Catalog.prepared",
+        "src/rozliczenia/centrum/run_comments.py RecordMaker.of",
+        "src/rozliczenia/centrum/outbox.py _settle",
+    ],
     # „Every code name in the table is one of them, except `onedrive_conflicts.beside` (…), `OlderOwnEntries.upgraded`
     # (Left out) and `register_file.read` (…) (`verify-zapis-intermax`)”.
     "verify-wpisanie-raportow": [

@@ -80,21 +80,62 @@ you keep the two in step. Each model action is one indivisible step of this code
 
 | Model action | Code |
 | --- | --- |
-| `Start` | `efenix_pricing.py` `price_orders.save`: the orders of the scope in order |
+| `Start` | `efenix_pricing.py` `price_orders.save` in the mode Dad chose (`mode`): the orders of the scope in order, from the first |
 | `Otworz` | `_outcome` → `_priced_outcome`: `efenix.search` and `listing`; an order „Do akceptacji” is `Forwarded` without `open_order` (result `przekazane`). Otherwise `open_order`, `_dated` when the execution date is empty (on a page with or without quantities; it writes only the date, which the model leaves out), then the decision on the page: a page without any quantity (`not _priced(opened)`) goes to Wycena Emmetta; a page with quantities goes straight to `_completed` (`completion` in `efenix_positions.py`: `to_enter` where the page has less than the file, `excess` where it has more), with the result at once when nothing is to be entered |
 | `ZaladujEmmetta` | `_outcome`: `efenix.load_emmett(_emmett)` up to the click of „Załaduj do zlecenia”, after which efenix holds Wycena Emmetta (`efenix_browser.BrowserEfenix.load_emmett`, `_answer(LOAD_EMMETT, …)`); before the click the window counts the Emmett dialogs, waits until one is visible and applies `efenix_page.emmett_window_fault` (exactly one dialog, then exactly one proposal in it; otherwise `UnexpectedPage` with `ElementCount` before the click, so `Zatrzymanie` in place of this step), and reads whether the Emmett dialog shows a proposal (`#emmett-propozycja`, `efenix_page.emmett_window`) and whether the answer to `action_fill_emmett.php` came whole with 2xx (`_came_whole`, #908) into a `Proposal`, and it never reads the body of the answer to „Załaduj do zlecenia” (#895). An answer that refuses it raises: a redirect in `load_emmett` and a 4xx/5xx in `_finished` (`_ErrorAnswer`, #878) before the page is read, and a 2xx after which the Wycena's verdict `_emmett`, which the window runs inside its action on its `EmmettLoad`, finds the reloaded page (`_read_order`) without any quantity (`not _priced(load.page)`, also with an amount other than 0 from a card with an entered price) although Emmett did not propose nothing (`Proposal.NOTHING`; `Shape.EMMETT_NOT_LOADED`, #889, #908). When efenix did not load Wycena Emmetta that is `Zatrzymanie` in place of this step; when it loaded it and still answered with an error (a 5xx after the load) it is this step and then `Zatrzymanie` before `OdczytPoEmmetcie` |
 | `OdczytPoEmmetcie` | `load_emmett` reads the reloaded page (`_read_order`) and `_emmett` accepts it, then `_completed` on it: `completion` from Emmett's quantities |
-| `BrakPozycji` | `_outcome`: `missing_positions(..., PageRead.AFTER_EMMETT)` is `OrderError` after `load_emmett`, before `_completed` |
+| `BrakPozycji` | `_outcome`: `missing_positions(..., PageRead.AFTER_EMMETT)` is `OrderError` after `load_emmett`, before `_completed`; the Wycena Emmetta stays in efenix |
 | `Wpisz` | `_completed` → the window's `enter_quantity(position, quantity)` with the file's quantity, up to the moment efenix saved it (`BrowserEfenix.enter_quantity`, `_answer(SAVE_QUANTITY, …)`) |
 | `Potwierdz` | `enter_quantity` after the save: the JSON answer and the amount on the page; after the last position `_completed` gives `EmmettWarning(plan.excess)` when `excess` is not empty, and otherwise compares the amount with `Kwota` (`same_amount`); a `Ready` in the mode with Przekazanie (`mode is PricingMode.FORWARD` in `_outcome`) goes on to `Przekaz` instead of the result (the same after `Otworz` and `OdczytPoEmmetcie` when nothing is to be entered) |
 | `Przekaz` | `_forwarded`: the window's `forward_to_accept` up to the moment efenix changed the status (`BrowserEfenix.forward_to_accept`, the click of „Tak” and `_status_answer`, the only `action_change_status.php` request the window's guard lets through) |
-| `OdmowaPrzekazania` | `_forwarded`: the window's `forward_to_accept`, in which efenix shows its information dialog `#dialog_info` instead of the status dialog after the green „Zapisz” (`BrowserEfenix._refusal`: the window waits for one of the two dialogs, reads the text into a `ForwardRefusal`, closes the dialog and clicks no „Tak”, so nothing reaches efenix); `_forwarded` returns `OrderError(refusal)` without the search, and the order has no Znacznik |
+| `OdmowaPrzekazania` | `_forwarded`: the window's `forward_to_accept`, in which efenix shows its information dialog `#dialog_info` instead of the status dialog after the green „Zapisz” (`BrowserEfenix._refusal`: the window waits for one of the two dialogs, reads the text into a `ForwardRefusal`, closes the dialog and clicks no „Tak”, so nothing reaches efenix); `_forwarded` returns `OrderError(refusal)` without the search, and the order has no Znacznik, also an order Dad did not change; the next Uruchomienie with Przekazanie tries again |
 | `Szukaj` | `_forwarded` after the answer: the reload of the page, `efenix.search` again and `listing`: „Do akceptacji” is `Forwarded` (result `przekazane`), any other list `OrderError(OrderProblem.NOT_FORWARDED)` |
 | `KoniecZlecenia` | `save`: the result goes to `results` and `OrderJournal.ended`, then the next order |
 | `Zatrzymanie` | `LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable` from any window action, also `LoggedOut` from `enter_quantity` (efenix did not save the quantity: step `wpisz`), a stop after efenix saved it (step `potwierdz`), a Przekazanie efenix did not get (step `przekaz`, also one the window's guard aborted, `StatusChangeBlocked`) and a stop in the search after it (step `szukaj`): the window's exception passes through `_outcome`, `_efenix_stops` in `save` turns it into `StopError`, and `save` (`except StopError`) calls `_mark` with the results before it; the order the window stopped at has no result, so no Znacznik |
 | `Znaczniki` | `save`: `_mark` (`mark_orders` with `Mark.READY` for every `Ready` row and `Mark.FORWARDED` for every `Forwarded` row; `Mark.replaces`: a Znacznik przekazania replaces a Znacznik efenix, never the other way), also after `StopError`, then the end of the Uruchomienie |
 | `Zgasniecie` | none: Centrum switches off or is killed; memory is gone, efenix stays, no Znaczniki |
-| `Tata` | none: Dad changes a quantity of an order „Do wyceny” in efenix by hand while no Uruchomienie runs (`StanEfenix.edit` in the tests) |
+| `Tata` | none: Dad changes a quantity of an order „Do wyceny” in efenix by hand while no Uruchomienie runs, or during one with `TataWTrakcie` (`StanEfenix.edit` in the tests); an order „Do akceptacji” is the company's to price |
+| `Koniec` | none: the last Uruchomienie ended and nothing more happens |
+
+Definitions the actions share:
+
+| Model definition | Code |
+| --- | --- |
+| `Tryby` | `PricingMode`: without Przekazanie, and with it when `MozePrzekazac` |
+| `DoWpisania(q)`, `Nadmiar(q)` | `efenix_positions.py` `completion`: `to_enter` (positions where the page has less than the file) and `excess` (positions where it has more) |
+| `WynikDokonczenia(q)` | `_completed` after the last quantity: Ostrzeżenie Emmetta when `excess` is not empty, otherwise gotowe when the amount equals `Kwota` (AU) and an error when it does not |
+| `Dokoncz(q)` | `_completed` on a page with quantities `q`: `completion` gives the positions to enter; with none the result comes at once from the page's amount, otherwise the first quantity |
+| `Skonczone(q)` | `_outcome` after `_completed`: a gotowe order in the mode with Przekazanie goes on to `_forwarded`, any other result and the mode without Przekazanie end the order |
+| `Wynik(w, q)` | the result `w` of the order in this Uruchomienie with the quantities `q` in efenix, checked against `Oczekiwane(q)` for an order Dad changed (ZmianaTatyZostaje) and against gotowe or przekazane for one he did not (BladTylkoPoZmianieTaty) |
+| `Oczekiwane(q)` | the results the promises expect of an order completed upwards: Ostrzeżenie Emmetta with an excess, otherwise gotowe, or przekazane in the mode with Przekazanie, which forwards a gotowe order |
+| `Nowy(o)`, `Zle(o)` | `_mark`: the Znacznik each order gets (`Mark.replaces`), and a new Znacznik that breaks ZnacznikTylkoNaWycenionym |
+
+Each constant is a way to fail or a bound of a configuration (`stale` in `model/konfiguracje.json`):
+
+| Constant | Meaning |
+| --- | --- |
+| `LiczbaZlecen` | orders in the scope of the Plik zbiorczy, handled one after another |
+| `MaxUruchomien` | Uruchomienia of Wycena w efenix in the period |
+| `MaxZmianTaty` | Dad's changes of a quantity in efenix by hand |
+| `MozeZgasnac` | Centrum may switch off at any moment of an Uruchomienie |
+| `MozeSieZatrzymac` | a window action may not complete (Zatrzymanie) |
+| `MozeBrakowacPozycji` | the page after Wycena Emmetta may lack a position with a quantity in the file (`missing_positions`) |
+| `TataWTrakcie` | Dad changes efenix also during an Uruchomienie, a limit of the design (ADR 0024, see Scope) |
+| `MozePrzekazac` | Dad may run the Wycena in the mode with Przekazanie (`PricingMode.FORWARD`, ADR 0027) |
+| `MozeOdmowicPrzekazania` | efenix may refuse a Przekazanie with its information dialog (`ForwardRefusal`) |
+| `Wybaczone…` | the causes of known findings that the `…PozaZnanymi` variant of each promise skips; the script sets them |
+
+| Variable | Meaning |
+| --- | --- |
+| `efenix` | the quantities of each order on the efenix server |
+| `proces`, `zlecenie`, `krok`, `doWpisania` | whether an Uruchomienie runs, which order of the scope it handles, where in that order it is, and the positions it will still enter |
+| `wynik` | the result of each order in this Uruchomienie |
+| `znacznik` | the Znacznik in the `ADRES` cell of the Plik zbiorczy (`efenix_mark.Mark`) |
+| `status` | the order's status in efenix: „Do wyceny” or „Do akceptacji” |
+| `tryb` | the mode of this Uruchomienie (`PricingMode`) |
+| `tataZmienial` | Dad changed something in the order by hand |
+| `slady` | the causes of known findings that already happened, one set per order |
+| `czysciTate`, `obniza`, `zlyWynikPoTacie`, `zlyZnacznik`, `bladBezPowodu`, `zlePrzekazanie`, `zmianaPrzekazanego` | the history variable of each promise: `{}` until an event breaks it, then the `slady` of the order at that moment |
 
 The script compares the definitions in `model/definicje.json` (a name is a path from the module; `BrowserEfenix._until`
 is the wait of `_finished` and `_status_answer`) with their digests there. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
@@ -154,7 +195,7 @@ the window after a server write. A path that does not happen on the code means t
 Each configuration in `model/konfiguracje.json` has what can happen (`opis`), its constants and its known findings
 (`znane`); a configuration without `znane` passes.
 Each order has three positions; the Plik zbiorczy has 1 in A and C and 2 in B. Emmett gives A as the file and B one less
-than the file and leaves C empty, so the tool enters B over Emmett's quantity and C. Only Dad puts more than the file
+than the file (Emmett counts only the decoders in S, #960) and leaves C empty, so the tool enters B over Emmett's quantity and C. Only Dad puts more than the file
 into efenix (2 in A or C).
 
 ## Known findings
@@ -171,8 +212,9 @@ of the reconnaissance).
 When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
-2. Change the model so each action is again one indivisible step of the code, with the code's names in its comment.
-   Never weaken a promise or narrow a configuration to make the check pass. A new action of `Next` gets its words in
+2. Change the model so each action is again one indivisible step of the code, and write the code's names in its row of
+   the table above, not in a comment: the model has none, and a new action, definition, constant or variable gets its
+   own row. Never weaken a promise or narrow a configuration to make the check pass. A new action of `Next` gets its words in
    `_STEPS` of the script, or the check ends with `BŁĄD MODELU` before TLC.
 3. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
    to `scripts/check_model_wznowienia_mutations.py` with the code counterpart in its name.
