@@ -25,6 +25,7 @@ import repo
 import stan_pr
 from stan_pr import Pull
 import straznik
+import stawka_przegladu
 import szczebel_straznika
 import szablon_werdyktu
 import testy_scalenia
@@ -54,8 +55,8 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 5. każde Ważne werdyktu ``FAIL`` ma w bloku sekcji ``## Korzeń`` strażnika (``Strażnik: <selektor>``), a jego dowód
    ``tools/na_scalonych_pr.py --straznik`` przechodzi: mechanizm z HEAD pada na błędzie z drzewa SHA werdyktu
    (``bramka_straznika`` i ``straznik``, niżej), a szczebel z pola ``Mechanizm:`` Ważnego przyjmuje ten selektor
-   (``szczebel_straznika``, niżej); PR z lekką rundą przeglądu (``bramka_korzenia.light``) nie potrzebuje
-   do Ważnego ani bloku, ani strażnika, poza Ważnym ze szczeblem ``lint`` (``szczebel_straznika.LIGHT``);
+   (``szczebel_straznika``, niżej); PR z lekką rundą przeglądu nie potrzebuje do Ważnego ani bloku, ani
+   strażnika, poza Ważnym ze szczeblem ``lint`` (stawka PR, ``stawka_przegladu``, niżej);
 6. reguły ast-grep z bazy nie zgłaszają żadnej linii, którą PR dodaje, także gdy PR je usuwa albo osłabia, a każdy
    przypadek reguł bazy wymienia i łapie po scaleniu któraś reguła (``reguly_bazy``, niżej);
 7. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
@@ -158,7 +159,7 @@ RETRYING_PARENT = "SCAL_PR_RODZIC_PONAWIA"
 MERGE_LOCK = "scal-pr-merge.lock"
 MOVED_RETRIES = 3
 BASE_MOVED_EXIT = 3
-RULES = (testy_scalenia.ZASADY, werdykt_pr.ZASADY, limit_rund.ZASADY, ponowny_przeglad.ZASADY, bramka_korzenia.ZASADY, bramka_straznika.ZASADY, szczebel_straznika.ZASADY, straznik.ZASADY, reguly_bazy.ZASADY, rejestr_korzeni.ZASADY, naprawia.ZASADY, kontekst_przegladu.ZASADY)
+RULES = (testy_scalenia.ZASADY, werdykt_pr.ZASADY, limit_rund.ZASADY, ponowny_przeglad.ZASADY, bramka_korzenia.ZASADY, stawka_przegladu.ZASADY, bramka_straznika.ZASADY, szczebel_straznika.ZASADY, straznik.ZASADY, reguly_bazy.ZASADY, rejestr_korzeni.ZASADY, naprawia.ZASADY, kontekst_przegladu.ZASADY)
 EXAMPLES = """\
     .venv/bin/python tools/scal_pr.py 336               # sprawdza i scala
     .venv/bin/python tools/scal_pr.py 336 --bez-merge   # tylko sprawdza

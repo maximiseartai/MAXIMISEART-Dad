@@ -4,7 +4,6 @@ from pathlib import Path
 import subprocess
 import sys
 
-import bramka_korzenia
 import github
 import limit_rund
 from ostatnie_linie import SKILLE_VERIFY
@@ -12,11 +11,12 @@ import potomne
 from repo import ROOT
 import repo
 import stan_pr
+import stawka_przegladu
 import werdykt_pr
 
 ZASADY = """Dwa tryby służą recenzentowi (skill ``przeglad``, ``recenzent.md``) i niczego nie scalają. ``--przeglad`` drukuje
 kontekst przeglądu: pełny SHA HEAD PR, bazę i merge-base z nią, ``git diff --stat`` i zmienione pliki od merge-base,
-stawkę przeglądu (linia ``STAWKA``: ``lekka`` z ``bramka_korzenia.light`` albo ``pełna``),
+stawkę przeglądu (linia ``STAWKA``: ``lekka`` z ``stawka_przegladu.light`` albo ``pełna``),
 wynik ``tools/skille_dla_zmiany.py`` z HEAD PR liczony od merge-base (w kopii commitu HEAD, więc ``pilnuje:`` skilli
 jest z PR) i poprzednie werdykty PR w kolejności utworzenia, każdy z datą, autorem, dwiema pierwszymi liniami i tym,
 czy dotyczy HEAD (``PASS`` poza regułami ``--werdykt`` z dopiskiem). Gdy ostatni werdykt jest dla innego commitu,
@@ -71,7 +71,7 @@ def print_context(pull: stan_pr.Pull, base: str) -> int:
     print(f"ZMIANA | git diff --stat {fork} {pull.head}")
     print(repo.git(ROOT, "diff", "--stat", fork, pull.head, timeout=limit).rstrip())
     print(f"PLIKI | {len(files)}", *files, sep="\n")
-    print(STAKE_LIGHT if bramka_korzenia.light(pull) else STAKE_FULL)
+    print(STAKE_LIGHT if stawka_przegladu.light(pull) else STAKE_FULL)
     print(f"SKILLE | {SKILLS_FOR_CHANGE.as_posix()} {fork} na HEAD PR", *_skills_for_change(pull.head, fork), sep="\n")
     print(stan_pr.ci_line(pull))
     print(*werdykt_pr.history(pull.verdicts, pull.head), sep="\n")

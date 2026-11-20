@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence, Set
+from collections.abc import Sequence
 from datetime import datetime
 import json
 import re
@@ -12,12 +12,12 @@ from rejestr_korzeni import SECTION, Block
 from repo import REMOTE, ROOT
 import repo
 from stan_pr import Pull
+from stawka_przegladu import Stake
 import straznik
 import szablon_werdyktu
 from szablon_werdyktu import Item
-import szczebel_straznika
+import stawka_przegladu
 import werdykt_pr
-import wplyw_zmiany
 
 ZASADY = """Bramka korzenia przed merge'em (ADR 0031, decyzje Q8, Q10, Q14, Q17, Q18, Q20, Q25, Q26): opis PR ma sekcję
 ``## Korzeń`` z blokiem na każde Ważne i każdy czerwony `main`, który PR naprawia, a każdy kod ``NOWY`` z werdyktów PR
@@ -40,13 +40,9 @@ linię i listę czyta ``naprawia.listed_issues`` według tych samych reguł co �
 Granica: PR naprawy, który wskazuje issue inaczej (np. „Część: #N” albo „Naprawia czerwony main #N”), bramka liczy jak
 PR bez naprawy czerwonego `main`; linię „Część #N” każe pisać ``docs/agents/pr-i-ci.md`` i skill ``pr``, a jej brak
 łapie recenzent.
-Ważne PR, który dostaje lekką rundę przeglądu (``light``: ``wplyw_zmiany.light_review`` od ``origin/<baza PR>``, aneks
-„Lekka runda przeglądu PR samych narzędzi” ADR 0042, decyzja Maksa z 20.11.2026), bloku nie potrzebuje, więc warunek 5
-nie ma dla niego strażnika do dowodu, a jego kod ``NOWY`` nie musi stać na liście; blok czerwonego `main` nadal tak.
-Wyjątek (ADR 0046): Ważne ze szczeblem z ``szczebel_straznika.LIGHT`` w wątku, w którym obowiązuje szczebel strażnika
-(``szczebel_straznika.applies``), potrzebuje bloku jak w pełnej stawce, a blok innego Ważnego takiego PR nie jest
-nadmiarowy.
-Stawkę drukuje recenzentowi ``--przeglad`` (``kontekst_przegladu``).
+Które bloki Ważnych bramka żąda, które przepuszcza i których kody idą na listę, mówi stawka PR (``stawka_przegladu``):
+w lekkiej rundzie PR samych narzędzi blok potrzebuje tylko Ważne ze szczeblem ``lint``, a punktów rozstrzygnięcia
+bez Ważnego bramka wtedy nie zgłasza.
 Flaky test ma własne issue z etykietą ``flaky-test``, więc PR, który wskazuje tylko je, sekcji nie potrzebuje (Q10).
 Opis bez słów „Część” i „Naprawia” i bez werdyktu ``FAIL`` bramka pomija bez pytania GitHuba.
 
@@ -112,10 +108,6 @@ EVIDENCE = "Dowód:"
 PULL_REQUEST = "pull_request"
 
 
-def light(pull: Pull) -> bool:
-    return wplyw_zmiany.light_review(ROOT, f"refs/remotes/{REMOTE}/{pull.base}", pull.head)
-
-
 def problems(pull: Pull, deployed: datetime | None, *, guarded: bool = False) -> list[str]:
     """Przyczyny odmowy merge'a ``pull`` z bramki korzenia; ``deployed`` to chwila wdrożenia bramki na bazie PR
     (``werdykt_pr.deployment`` z ``MARKER``), ``guarded``, czy blok Ważnego kończy ``Strażnik:`` zamiast ``Dowód:``,
@@ -127,48 +119,37 @@ def problems(pull: Pull, deployed: datetime | None, *, guarded: bool = False) ->
         rounds = werdykt_pr.rounds(pull, werdykt_pr.rendered(pull))
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
         return [f"korzeń: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie"]
-    found: list[str] = []
-    lightly = light(pull)
-    majors = _light_majors(pull, rounds) if lightly else _expected(rounds, found)
-    expected = {heading: major.code for heading, major in majors.items() if not lightly or major.mechanism in szczebel_straznika.LIGHT}
-    codes = {} if lightly else {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)}
+    majors, strays = rejestr_korzeni.majors(rounds)
+    stake = stawka_przegladu.stake(pull, majors)
+    found = [
+        f"korzeń: punkt „Korzeń {resolution.label} r{resolution.round}: {resolution.code}” werdyktu r{number} nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"
+        for number, resolution in (strays if stake.full else [])
+    ]
+    expected = {heading: major.code for heading, major in majors.items() if heading in stake.required}
+    codes = {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)} if stake.full else {}
     if expected or any(word in pull.body for word in RED_MAIN_WORDS):
-        found.extend(_described(pull, expected, codes, guarded, spare=majors.keys() - expected.keys()))
+        described, listed = _described(pull, expected, stake, guarded)
+        found.extend(described)
+        for code, where in listed.items():
+            codes.setdefault(code, []).extend(where)
     found.extend(_unlisted(codes, pull))
     return _refusal(found, pull)
 
 
-def _light_majors(pull: Pull, rounds: Sequence[werdykt_pr.Round]) -> dict[str, rejestr_korzeni.Major]:
-    """Ważne PR z lekką rundą, gdy w wątku obowiązuje szczebel strażnika, bo tylko wtedy jego szczebel może żądać bloku."""
-
-    return rejestr_korzeni.majors(rounds)[0] if szczebel_straznika.applies(pull) else {}
-
-
-def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, list[str]], guarded: bool, *, spare: Set[str]) -> list[str]:
-    """Przyczyny z opisu PR: czerwony `main` z linii „Część” i „Naprawia” i sekcja ``## Korzeń``, której kody bloków
-    trafiają do ``codes``; ``spare`` to Ważne, których blok może stać w sekcji, choć bramka go nie żąda."""
+def _described(pull: Pull, expected: dict[str, str | None], stake: Stake, guarded: bool) -> tuple[list[str], dict[str, list[str]]]:
+    """Przyczyny z opisu PR (czerwony `main` z linii „Część” i „Naprawia” i sekcja ``## Korzeń``) i kody bloków sekcji,
+    które według ``stake`` stoją na liście korzeni, z miejscami, w których stoją."""
 
     try:
         html = github.html_markdownu(pull.body, pull.repository)
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
-        return [f"korzeń: GitHub nie wyrenderował opisu PR ({error}), uruchom ponownie"]
+        return [f"korzeń: GitHub nie wyrenderował opisu PR ({error}), uruchom ponownie"], {}
     found: list[str] = []
     expected.update({f"Czerwony main #{number}": None for number in _red_main(html, pull, found)})
-    if expected:
-        found.extend(_section(szablon_werdyktu.items(html), expected, pull, codes, guarded, spare))
-    return found
-
-
-def _expected(rounds: Sequence[werdykt_pr.Round], found: list[str]) -> dict[str, rejestr_korzeni.Major]:
-    """Nagłówki bloków ``W<n> r<k>`` każdego Ważnego werdyktów ``FAIL`` z kodem z ostatniego werdyktu, który go dotyczy
-    (``rejestr_korzeni.majors``, z którego tak samo czyta rejestr korzeni)."""
-
-    majors, strays = rejestr_korzeni.majors(rounds)
-    found.extend(
-        f"korzeń: punkt „Korzeń {resolution.label} r{resolution.round}: {resolution.code}” werdyktu r{number} nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"
-        for number, resolution in strays
-    )
-    return majors
+    if not expected:
+        return found, {}
+    section, listed = _section(szablon_werdyktu.items(html), expected, pull, stake, guarded)
+    return [*found, *section], listed
 
 
 def _new_codes(rounds: Sequence[werdykt_pr.Round]) -> list[str]:
@@ -207,11 +188,11 @@ def _red_main(html: str, pull: Pull, found: list[str]) -> list[int]:
     return red
 
 
-def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull, codes: dict[str, list[str]], guarded: bool, spare: Set[str]) -> list[str]:
+def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull, stake: Stake, guarded: bool) -> tuple[list[str], dict[str, list[str]]]:
     parsed = rejestr_korzeni.section(units)
     missing = [f"brak bloku „### {heading}: {code or 'R-KOD'}”" for heading, code in expected.items()]
     if parsed is None:
-        return [f"korzeń: brak sekcji „## {SECTION}”, a PR ma {_why(expected)}; {'; '.join(missing)}"]
+        return [f"korzeń: brak sekcji „## {SECTION}”, a PR ma {_why(expected)}; {'; '.join(missing)}"], {}
     found = [
         f"korzeń: w sekcji „## {SECTION}” przed blokiem jest {item.shown()}"
         if item.kind != "h3"
@@ -219,8 +200,10 @@ def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull,
         for item in parsed.strays
     ]
     blocks: dict[str, Block] = {}
+    listed: dict[str, list[str]] = {}
     for block in parsed.blocks:
-        codes.setdefault(block.code, []).append(f"blok „### {block.heading}”")
+        if stake.listed(block.heading):
+            listed.setdefault(block.code, []).append(f"blok „### {block.heading}”")
         if block.heading in blocks:
             found.append(f"korzeń: blok „### {block.heading}: {block.code}” powtórzony")
         blocks[block.heading] = block
@@ -237,8 +220,8 @@ def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull,
                 f"korzeń: {heading}: kod {block.code}, a ostatni werdykt, który go dotyczy, podaje {code}; inny kod rozstrzyga recenzent następnej rundy punktem „Korzeń {heading}: R-KOD - zdanie” w „## Sprawdzone” (Q25)"
             )
         found.extend(_fields(block, pull, guarded=guarded and heading.startswith("W")))
-    found.extend(f"korzeń: blok „### {heading}: {block.code}”, a PR nie ma takiego Ważnego ani czerwonego main" for heading, block in blocks.items() if heading not in expected and heading not in spare)
-    return found
+    found.extend(f"korzeń: blok „### {heading}: {block.code}”, a PR nie ma takiego Ważnego ani czerwonego main" for heading, block in blocks.items() if heading not in expected and heading not in stake.spare)
+    return found, listed
 
 
 def _why(expected: dict[str, str | None]) -> str:
