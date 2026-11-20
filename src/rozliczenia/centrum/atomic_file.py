@@ -1,10 +1,3 @@
-"""Atomowa zamiana pliku tekstowego Centrum: pliki stanu, Zgłoszenia, ich plik w kolejce i pliki kolejki Skrzynki.
-
-Na Windows zamiana pliku, który ktoś na chwilę trzyma otwarty (antywirus, indeksowanie), kończy się
-``PermissionError``, więc zamiana czeka i próbuje jeszcze raz (``RETRY_PAUSES_S``). Plik stanu (``StateFile``),
-którego mimo to nie da się zapisać, pamięta treść i zapisuje ją przy następnej próbie.
-"""
-
 from __future__ import annotations
 
 import threading
@@ -17,7 +10,6 @@ from typing import Final
 from rozliczenia.centrum.log import CentrumLog
 
 RETRY_PAUSES_S: Final = (0.05, 0.1, 0.2, 0.4)
-"""Przerwy przed kolejnymi próbami zamiany zablokowanego pliku: pięć prób w 0,75 s."""
 
 
 def replace_atomically(
@@ -28,16 +20,6 @@ def replace_atomically(
     pauses: Sequence[float] = RETRY_PAUSES_S,
     newline: str | None = None,
 ) -> None:
-    """Zapisuje ``text`` w UTF-8 (bajty bez zmiany) jako ``path`` przez plik tymczasowy w tym samym folderze.
-
-    ``newline`` jak w ``Path.write_text``: ``None`` zapisuje każde ``\n`` jako koniec linii systemu (na Windows
-    ``\r\n``), a ``""`` zapisuje znaki ``text`` bez zmiany, więc plik ma na każdym systemie te same bajty.
-
-    Zamiana, której Windows odmawia (``PermissionError``), czeka ``pause`` kolejnej przerwy z ``pauses`` i próbuje
-    ponownie; bez przerw jest jedna próba. Nieudany zapis (``OSError``) nie zostawia pustego ani urwanego pliku i nie
-    niszczy poprzedniej treści.
-    """
-
     temporary = path.with_name(path.name + ".tmp")
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -49,6 +31,7 @@ def replace_atomically(
             try:
                 temporary.replace(path)
                 return
+            # ZEWNĘTRZNE: Windows odmawia zamiany pliku, który inny program (antywirus, indeksowanie) trzyma na chwilę otwarty, a Python zgłasza ERROR_ACCESS_DENIED i ERROR_SHARING_VIOLATION jako PermissionError (Microsoft Learn MoveFileEx, CPython PC/errmap.h)
             except PermissionError:
                 pause(seconds)
         temporary.replace(path)
@@ -59,14 +42,6 @@ def replace_atomically(
 
 
 class StateFile:
-    """Plik stanu Centrum, którego nieudany zapis nie udaje zapisanego.
-
-    Treść, której nie udało się zapisać, czeka w pamięci (``unavailable``), a ``retry`` albo następny ``write``
-    zapisuje ją albo nowszą. Obie idą pod jedną blokadą, więc starsza treść nigdy nie zastąpi nowszej. Pierwsza
-    porażka po udanym zapisie trafia do dziennika Centrum jako ``where``. Tylko ona ponawia zamianę z przerwami:
-    każdy odczyt Powiadomień próbuje zapisu, więc przerwy przy dłuższej blokadzie spowalniałyby każdą stronę.
-    """
-
     def __init__(self, path: Path, log: CentrumLog, *, where: str, pause: Callable[[float], None]) -> None:
         self.path = path
         self._log = log
@@ -77,8 +52,6 @@ class StateFile:
 
     @property
     def unavailable(self) -> bool:
-        """Treść czeka na zapis, bo plik był niedostępny."""
-
         with self._lock:
             return self._waiting is not None
 

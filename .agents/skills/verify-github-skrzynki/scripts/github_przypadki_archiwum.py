@@ -540,7 +540,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "zalozenie-tego-samego-tagu",
         "Rejected, a archive po tagu daje to jedno Archiwum bez plików",
-        "test_skrzynka_zgloszen_github: test_archiwum_z_tagiem_ktory_juz_ma_release_to_odmowa_tresci_a_archiwum_zostaje_jedno",
+        "test_skrzynka_zgloszen_github: test_odmowa_tresci_wysylki_to_odmowa_tej_wysylki_a_nie_brak_sieci",
         _prepare_reopen,
         _reopen,
         _judge_reopen,
@@ -564,7 +564,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "plik-tej-samej-nazwy",
         "Rejected, a w Archiwum zostaje plik pierwszej wersji",
-        "test_skrzynka_zgloszen_github: test_plik_o_nazwie_ktora_jest_juz_w_archiwum_to_odmowa_tresci_a_pierwszy_plik_zostaje",
+        "test_skrzynka_zgloszen_github: test_odmowa_tresci_wysylki_to_odmowa_tej_wysylki_a_nie_brak_sieci",
         _prepare_same_name,
         _upload("tekst_po_diagnozie", "etykieta_po_diagnozie"),
         _judge_same_name,
@@ -572,7 +572,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "pliki-strony",
         f"dokładnie {PAGE + 1} wysłanych plików z dwóch stron listy",
-        "test_skrzynka_zgloszen_github: test_pliki_archiwum_sa_zbierane_ze_wszystkich_stron",
+        "test_skrzynka_zgloszen_github: test_issue_z_etykieta_sa_zbierane_ze_wszystkich_stron",
         _prepare_pages,
         _archive,
         _judge_pages,
@@ -598,7 +598,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "zly-klucz",
         "Refused w każdym kroku Archiwum, a pliki zostają",
-        "test_skrzynka_zgloszen_github: test_odmowa_autoryzacji_przy_archiwum_to_odmowa_skrzynki",
+        "test_skrzynka_zgloszen_github: test_odmowa_autoryzacji_bez_limitu_zapytan_to_odmowa_klucza_kazdej_operacji",
         _prepare_bad_key,
         _bad_key,
         _judge_bad_key,

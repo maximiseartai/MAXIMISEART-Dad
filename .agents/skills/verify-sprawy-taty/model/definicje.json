@@ -14,7 +14,7 @@
     "DadCases.ask_box": "8b92ad0d0d03bac0",
     "DadCases._close": "3874ba3ff2074875",
     "DadCases._change": "4bfd3f785f0a2513",
-    "_load": "b10e180d3602f300"
+    "_load": "ca0982839ef68627"
   },
   "src/rozliczenia/centrum/reports.py": {
     "ReportHandle.__init__": "cf33b3da191e07fe",

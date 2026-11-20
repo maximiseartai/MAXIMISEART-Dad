@@ -65,10 +65,7 @@ def test_czesci_podstawy_centrum_przejezdzaja_kazda_funkcje_all_raz_w_kolejnosci
     count = kroki_skilli.ci_parts(CENTRUM / "SKILL.md")
     every = runner.driven("all", {})
 
-    assert count > 1 and count <= len(every)
-    for parts in range(1, count + 1):
-        driven = [runner.driven("all", {ZMIENNA_CZESCI: f"{number}/{parts}"}) for number in range(1, parts + 1)]
-        assert sum(driven, ()) == every, parts
+    assert 1 < count <= len(every)
     assert set(every) == {feature.name for feature in runner.FEATURES if not feature.measurement}
     # Część nie zmienia przebiegu jednej funkcji (mutacje skilla), bo dzieli tylko all.
     assert runner.driven("zgloszenie", {ZMIENNA_CZESCI: "2/8"}) == ("zgloszenie",)

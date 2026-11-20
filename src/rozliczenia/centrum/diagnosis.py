@@ -282,7 +282,7 @@ def _intermax(computer: _Computer, label: str) -> list[CheckResult]:
     problem = intermax_ordering.register_problem(register, computer.dad_files)
     if problem is not None:
         return [CheckResult.failed(label, problem)]
-    return [CheckResult.passed(label, "Nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")]
+    return [CheckResult.passed(label, "Obok nie leży kopia konfliktu OneDrive, nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")]
 
 
 @_check("Wzorce")

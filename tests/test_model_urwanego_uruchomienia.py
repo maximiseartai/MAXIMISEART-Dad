@@ -102,6 +102,7 @@ def _change(root: Path, name: str) -> None:
         pytest.param("create_app.lifespan", id="start-kolejki"),
         pytest.param("run_process", id="wynik-uruchomienia"),
         pytest.param("_remove", id="usuniecie-dziennika"),
+        pytest.param("RunLog.interrupted", id="metoda-swojej-klasy"),
     ],
 )
 def test_zmieniona_definicja_opisana_modelem_jest_rozjazdem(tmp_path: Path, name: str) -> None:
@@ -111,18 +112,6 @@ def test_zmieniona_definicja_opisana_modelem_jest_rozjazdem(tmp_path: Path, name
     found = rozjazd_modelu.rozjazd(skill, tmp_path)
 
     assert found is not None and f"kod opisany modelem zmienił się: {_file_of(name)} {name}." in found, found
-
-
-def test_metoda_rozjazdu_to_metoda_swojej_klasy_a_nie_metoda_o_tej_nazwie_w_innej_klasie(tmp_path: Path) -> None:
-    """``RunLog.interrupted`` (Logi z dziennika) i ``RecordMaker.interrupted`` (te Logi z narzędziem i środowiskiem) to
-    dwie definicje: zmiana pierwszej jest rozjazdem tylko pierwszej."""
-
-    skill = _repository(tmp_path)
-    _change(tmp_path, "RunLog.interrupted")
-
-    found = rozjazd_modelu.rozjazd(skill, tmp_path)
-
-    assert found is not None and f"zmienił się: {_file_of('RunLog.interrupted')} RunLog.interrupted. " in found, found
 
 
 @pytest.mark.parametrize("name", ["obok", "RunComments.obok"])

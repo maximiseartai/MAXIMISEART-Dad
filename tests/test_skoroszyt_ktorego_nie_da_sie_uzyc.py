@@ -42,19 +42,6 @@ def test_przygotowanie_tlumaczy_wzorzec_otwarty_w_excelu_dopiero_w_zapisywaniu(t
     assert list(fixture.periods_directory.iterdir()) == []
 
 
-def test_przebieg_bez_pliku_zbiorczego_zatrzymuje_sprawdzanie_brakiem_pliku_zbiorczego(tmp_path: Path) -> None:
-    source_path, _, config_path = make_fixture(tmp_path)
-    source_path.unlink()
-
-    with pytest.raises(StopError) as raised:
-        run_settlements(
-            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
-            RunContext(),
-        )
-
-    assert raised.value.message.code == "BRAK_PLIKU_ZBIORCZEGO"
-
-
 def test_przebieg_bez_wzorca_rozliczenia_pracownika_w_zapisywaniu_nie_tworzy_skoroszytow_z_wzorca(
     tmp_path: Path,
 ) -> None:

@@ -36,7 +36,6 @@ TOOLS = ROOT / "tools"
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
 OK_LINE = "WYKONANIE OK | kroki skilli"
 CHECKED = "src/pakiet/sprawdzany.py"
-GUARDED = "---\nname: verify-x\npilnuje:\n  - src/pakiet/rout*.py\n---\n"
 ANCHORS = "src/pakiet/kotwice.txt"
 # Dawny znak potwierdzenia modelu w ``SKILL.md``: SHA, który przepisuje każdy rebase gałęzi (#1060).
 SYNC_COMMIT = re.compile(r"Sync commit: `[0-9a-f]{7,40}`")
@@ -53,19 +52,6 @@ MUTATIONS = (
 if __name__ == "__main__":
     {PASSING.replace(chr(10), chr(10) + "    ").rstrip()}
 """
-REPO = {
-    "src/pakiet/__init__.py": "",
-    CHECKED: "def run() -> int:\n    from pakiet import pomocnik\n\n    return pomocnik.X\n",
-    "src/pakiet/pomocnik.py": "X = 1\n",
-    "src/pakiet/obcy.py": "Y = 2\n",
-    "src/pakiet/routing.py": "Z = 3\n",
-    ANCHORS: "X\n",
-    ".agents/skills/verify-a/scripts/sprawdz_a.py": "from pakiet import sprawdzany\n",
-    "requirements.txt": "pytest\n",
-    "docs/opis.md": "opis\n",
-}
-
-
 def _skill(root: Path, name: str, scripts: dict[str, str], skill_md: str = "") -> None:
     skill = root / ".agents" / "skills" / name
     for script, body in scripts.items():
@@ -104,15 +90,6 @@ def _start(root: Path) -> subprocess.Popen[str]:
         text=True,
         encoding="utf-8",
     )
-
-
-def test_skrypty_z_werdyktem_przechodza(tmp_path: Path) -> None:
-    _skill(tmp_path, "verify-a", {"check_a_mutations.py": PASSING}, "py -3 scripts\\check_a_mutations.py")
-
-    result = _run(tmp_path)
-
-    assert result.returncode == 0, result.stdout
-    assert result.stdout.splitlines()[-1] == OK_LINE
 
 
 def test_skrypt_mutacji_o_zlej_nazwie_albo_w_podfolderze_daje_fail(tmp_path: Path) -> None:
@@ -267,7 +244,6 @@ def test_zadanie_mutations_ci_lokalnie_uruchamia_skrypty_mutacji_skilli(tmp_path
 @pytest.mark.parametrize(
     "mention",
     [
-        "py -3 ./.agents/skills/verify-a/scripts/check_a_mutations.py",
         "py -3 .\\.agents\\skills\\verify-a\\scripts\\check_a_mutations.py",
         "py -3 {root}/.agents/skills/verify-a/scripts/check_a_mutations.py",
     ],

@@ -122,9 +122,7 @@ CENTRUM_MARK: Final = ("X-Centrum-Rozliczen", "wysylka-rozliczen")
 """Nagłówek i wartość, którymi Centrum znaczy Mail z rozliczeniem: po nich „Wysłane” odróżniają mail Centrum od
 rozliczenia, które tata wysłał z tej skrzynki sam."""
 _XLSX: Final = ("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-"""Typ MIME pliku xlsx załącznika."""
 _BODY_PREFERENCE: Final = ("plain", "html")
-"""Treść maila to część ``text/plain``, a bez niej ``text/html`` (``mail_of``, ``mail_skeleton.chosen``)."""
 _SMTP_NETWORK: Final = (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)
 """Porażki SMTP, które są siecią, a nie odmową serwera, jak każdy inny ``OSError``: przypomnienie poczeka na następną
 próbę w tej porze. ``SMTPException`` dziedziczy po ``OSError``, więc idą przed odmową serwera."""
@@ -134,7 +132,6 @@ InboxAccess = Literal["ready", "missing", "unreadable"]
 """Plik dostępu do skrzynki: gotowy, brak pliku albo pustej linii (``missing``), zła treść (``unreadable``)."""
 
 LoginResult = Literal["accepted", "rejected", "no_network"]
-"""Wynik jednej próby logowania: skrzynka przyjęła hasło, odrzuciła je albo nie odpowiedziała."""
 
 ImapConnect = Callable[[], imaplib.IMAP4]
 """Połączenie z serwerem IMAP skrzynki raportów; testy i skille podają atrapę."""
@@ -172,8 +169,6 @@ InboxOutcome = Mails | PasswordRejected | InboxUnreachable
 
 @dataclass(frozen=True)
 class SentReminders:
-    """Przypomnienia o raporcie z folderu „Wysłane” z dni od dnia przed wskazanym."""
-
     reminders: tuple[SentReminder, ...]
 
 
@@ -190,8 +185,6 @@ class SentAttachment:
 
 @dataclass(frozen=True)
 class SentAttachments:
-    """Załączniki maili z folderu „Wysłane” z dni od dnia przed wskazanym, w kolejności skrzynki."""
-
     attachments: tuple[SentAttachment, ...]
 
 
@@ -213,8 +206,6 @@ class MailSent:
 
 @dataclass(frozen=True)
 class MailRefused:
-    """Serwer SMTP odmówił przypomnienia inaczej niż odrzuceniem hasła (np. adresu); ``cause`` to nazwa typu wyjątku."""
-
     cause: str
 
 
@@ -274,8 +265,6 @@ class SettlementMailbox(Protocol):
 
 @dataclass(frozen=True)
 class InboxCredentials:
-    """Adres skrzynki raportów i hasło aplikacji z pliku dostępu; hasła nie ma w ``repr``."""
-
     address: SenderAddress
     password: str = field(repr=False)
 
@@ -345,8 +334,6 @@ class ImapInbox:
         return self._submit(lambda sender: _attachment_message(mail, sender, at))
 
     def _submit(self, build: Callable[[SenderAddress], MIMEBase]) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
-        """Jeden mail przez SMTP z adresu i hasła aplikacji z pliku dostępu; porażka to wynik (docstring modułu)."""
-
         found = self._access()
         if not isinstance(found, InboxCredentials):
             return InboxUnreachable(found)
@@ -370,9 +357,6 @@ class ImapInbox:
         return MailSent()
 
     def survey(self, day: date) -> InboxSurvey | PasswordRejected | InboxUnreachable:
-        """Flagi i liczby maili z dni od dnia przed ``day``, jak ``mails_since`` tylko do odczytu: ``EXAMINE`` i
-        ``UID FETCH`` flag i tematów przez ``BODY.PEEK``."""
-
         return self._session(lambda imap, access: _survey(imap, access, day))
 
     def _session(self, read: Callable[[imaplib.IMAP4, InboxCredentials], _T]) -> _T | PasswordRejected | InboxUnreachable:
@@ -647,8 +631,6 @@ def _survey(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> InboxSu
 
 
 def _since(imap: imaplib.IMAP4, day: date) -> list[str]:
-    """UID maili otwartego folderu z dni od dnia przed ``day`` (``WorkerReportInbox.mails_since`` mówi dlaczego)."""
-
     first = day - timedelta(days=1)
     since = f"{first.day:02d}-{_MONTHS[first.month - 1]}-{first.year}"
     found = _ok(imap.uid("SEARCH", "SINCE", since))
@@ -676,14 +658,10 @@ def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
 
 
 def _folder(imap: imaplib.IMAP4) -> str:
-    """Folder Gmaila ze wszystkimi mailami (atrybut ``\\All``, RFC 6154), a bez niego ``INBOX``."""
-
     return _special(imap, rb"\all") or "INBOX"
 
 
 def _special(imap: imaplib.IMAP4, attribute: bytes) -> str | None:
-    """Folder z atrybutem ``attribute`` (małymi literami, RFC 6154); ``None``, gdy skrzynka go nie ma."""
-
     for line in _ok(imap.list()):
         found = _LIST_LINE.fullmatch(line) if isinstance(line, bytes) else None
         if found is not None and attribute in found["flags"].lower().split():
@@ -842,8 +820,6 @@ def _quit(smtp: smtplib.SMTP) -> None:
 
 
 def _fetched(imap: imaplib.IMAP4, uids: list[str], items: str) -> dict[str, tuple[bytes, bytes]]:
-    """UID → (początek odpowiedzi FETCH, literał) dla ``uids`` w paczkach po ``FETCH_BATCH``."""
-
     fetched = {}
     for sequence, _ in _batches(uids):
         for part in _ok(imap.uid("FETCH", sequence, items)):
@@ -858,8 +834,6 @@ def _fetched(imap: imaplib.IMAP4, uids: list[str], items: str) -> dict[str, tupl
 
 
 def _close(imap: imaplib.IMAP4) -> None:
-    """Wylogowanie bez wyjątku: po zerwanym połączeniu zamyka samo gniazdo."""
-
     try:
         imap.logout()
     except (OSError, imaplib.IMAP4.error):
@@ -932,9 +906,6 @@ class _HtmlText(HTMLParser):
 
 
 def _html_text(html: str) -> str:
-    """Tekst strony HTML: linia na każdy ``br``, ``p``, ``div``, ``tr`` i ``li``, a nowa linia w tekście to spacja, jak
-    w przeglądarce; bez pustych linii, stylów i skryptów."""
-
     parser = _HtmlText()
     parser.feed(html)
     parser.close()

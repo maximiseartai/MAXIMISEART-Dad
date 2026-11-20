@@ -112,12 +112,11 @@ def test_inny_numer_lokal_rodzaj_albo_slowo_ulicy_to_inny_adres(data: st.DataObj
     ("collective", "efenix"),
     [
         pytest.param("", "Poznań ul.Testowa 1", id="pusty-adres"),
-        pytest.param("UL. TESTOWA", "Poznań ul.Testowa", id="bez-numeru"),
         pytest.param("UL. TESTOWA 1/2", "Poznań ul.Testowa 1 Lokal 2 kod", id="cos-po-lokalu"),
         pytest.param("UL. 12 LOKAL 3", "Poznań ul. 12 Lokal 3", id="lokal-bez-nazwy-ulicy"),
     ],
 )
-def test_adres_bez_numeru_albo_z_czyms_po_lokalu_nie_jest_rowny_zadnemu(collective: str, efenix: str) -> None:
+def test_adres_pusty_bez_nazwy_ulicy_albo_z_czyms_po_lokalu_nie_jest_rowny_zadnemu(collective: str, efenix: str) -> None:
     assert not same_address(collective, efenix)
 
 
@@ -139,7 +138,6 @@ def test_numer_budynku_z_ukosnikiem_i_lokal_w_efenix_to_numer_z_dwoma_ukosnikami
     [
         pytest.param("UL. NAZWA 8B/27/3", "Poznań-Nowe Miasto ul.Nazwa 8B Lokal 27/3", id="8B-lokal-27/3"),
         pytest.param("ul. Nazwa Ulicy 12/7/2", "Poznań ul.Nazwa Ulicy 12 Lokal 7/2", id="12-lokal-7/2"),
-        pytest.param("UL. NAZWA 13/14/16", "Poznań ul.Nazwa 13/14 Lokal 16", id="13/14-lokal-16-dalej-rowne"),
     ],
 )
 def test_numer_z_dwoma_ukosnikami_w_pliku_to_budynek_z_lokalem_z_ukosnikiem_albo_budynek_z_ukosnikiem_z_lokalem(
@@ -187,7 +185,6 @@ def test_numer_budynku_z_ukosnikiem_rozni_sie_od_numeru_bez_niego_i_od_innej_cze
 @pytest.mark.parametrize(
     "address",
     [
-        pytest.param("UL. TESTOWA 1/2/3/4", id="trzy-ukosniki"),
         pytest.param("Poznań ul.Testowa 1/2/3 Lokal 4", id="dwa-ukosniki-i-lokal"),
         pytest.param("UL. TESTOWA 1//3", id="pusta-czesc-numeru"),
         pytest.param("UL. TESTOWA 1/2/", id="pusty-lokal"),

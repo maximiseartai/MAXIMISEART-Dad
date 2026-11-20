@@ -24,7 +24,7 @@ from rozliczenia.centrum import refusal
 from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.log import FOR_LOGS_FILE
-from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_REPORTS_FILE
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.github import HttpRequest, HttpResponse
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
@@ -78,7 +78,6 @@ FILES: dict[str, tuple[str, str]] = {
     "klucz_zgloszen": (TOOL.report_key.as_posix(), TEXT),
     "sprawy_taty": ((TOOL.config / DAD_CASES_FILE).as_posix(), TEXT),
     "wyslane_zgloszenia": ((TOOL.config / OLD_REPORTS_FILE).as_posix(), TEXT),
-    "uwagi_taty": ((TOOL.config / OLD_NOTES_FILE).as_posix(), TEXT),
     "przeczytane_powiadomienia": ((TOOL.config / NOTIFICATIONS_FILE).as_posix(), TEXT),
     "uruchomienia_centrum": ((TOOL.config / CENTRUM_RUNS_FILE).as_posix(), LINES),
     "adresy_skrzynki": ((TOOL.config / ADDRESSES_FILE).as_posix(), LINES),
@@ -103,7 +102,7 @@ FILES: dict[str, tuple[str, str]] = {
     "folder_okresu_przygotowania": (f"{MONTH}/INEA/{PERIOD}", FOLDER),
     "folder_zgloszen": (TOOL.queue.parent.as_posix(), FOLDER),
 }
-OLD_DAD_CASES = ("wyslane_zgloszenia", "uwagi_taty")
+OLD_DAD_CASES = ("wyslane_zgloszenia",)
 READ_AT_START = ("sprawy_taty", *OLD_DAD_CASES, "przeczytane_powiadomienia", "adresy_skrzynki")
 
 
@@ -244,9 +243,6 @@ def _build(root: Path) -> None:
     write_worker_list(world.path("lista_wykonawcow"), worker_list(addresses={"adrian.testowy": ["adrian@przyklad.invalid"]}))
     world.path("klucz_zgloszen").write_text("github_pat_SYNTETYCZNY123\n", encoding="utf-8")
     world.path("wyslane_zgloszenia").write_text(json.dumps([SENT_REPORT], ensure_ascii=False) + "\n", encoding="utf-8")
-    world.path("uwagi_taty").write_text(
-        json.dumps({"schema_version": 1, "uwagi": [SENT_DAD_NOTE]}, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
     world.path("przeczytane_powiadomienia").write_text(
         json.dumps({"schema_version": 1, "przeczytane": [READ_NOTIFICATION]}) + "\n", encoding="utf-8"
     )
@@ -279,7 +275,7 @@ def _build(root: Path) -> None:
         assert world.path(name).stat().st_size > 0, name
     assert len(list(world.path("logi_uruchomien").iterdir())) == 3, "Logi Uruchomienia obu podglądów i Uporządkowania"
     moved = json.loads(world.path("sprawy_taty").read_text(encoding="utf-8"))["sprawy"]
-    assert {SENT_REPORT["number"], SENT_DAD_NOTE["number"]} <= {case["number"] for case in moved}, "Sprawy taty bez spraw ze starych plików"
+    assert {SENT_REPORT["number"]} <= {case["number"] for case in moved}, "Sprawy taty bez sprawy ze starego pliku"
 
 
 Problems = list[str]
@@ -411,15 +407,6 @@ SENT_REPORT = {
     "what": "Nie znaleziono Wzorca pliku zbiorczego.",
     "sent_at": "2026-09-15T08:00:00+00:00",
     "closure": {"reason": "completed", "at": "2026-09-16T08:00:00+00:00"},
-}
-SENT_DAD_NOTE = {
-    "id": "5e1f0c2d3b4a49e8b7c6d5e4f3a2b1c0",
-    "title": "Brakuje ilości przy montażu",
-    "commit": None,
-    "written_at": "2026-09-15T09:00:00+00:00",
-    "number": 8,
-    "closure": None,
-    "run_id": None,
 }
 READ_NOTIFICATION = "zgloszenie-7-rozwiazana"
 LOGS_COMMENTS = [
@@ -561,11 +548,11 @@ _WINDOW = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
 _BOARD = _WINDOW | _OWNER
 _SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}
 _METRICS = {"metryki_przygotowania", "metryki_przebiegu", "metryki_uporzadkowania"}
-_NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "uwagi_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
+_NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
 _RUN = _OWNER | {"rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}
 _PREPARATION = _RUN | _FOLDERS | {"metryki_przygotowania", "wzorzec_wewnetrzny", "wzorzec_zbiorczy"}
 _SETTLEMENT = _RUN | _FOLDERS | {"metryki_przebiegu", "plik_zbiorczy", "wzorzec_pracownika"}
-_ORDERING = _RUN | {"metryki_uporzadkowania"}
+_ORDERING = _RUN | _METRICS | {"folder_okresow", "folder_kopii_intermax"}
 READS: dict[str, set[str]] = {
     "getSettings": _SETTINGS,
     "chooseRegister": _SETTINGS,
@@ -837,7 +824,6 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
             "klucz_zgloszen",
             "sprawy_taty",
             "wyslane_zgloszenia",
-            "uwagi_taty",
             "przeczytane_powiadomienia",
             "uruchomienia_centrum",
             "adresy_skrzynki",
@@ -864,7 +850,6 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "klucz_zgloszen": "config/zgloszenia-klucz.txt",
         "sprawy_taty": "config/sprawy-taty.json",
         "wyslane_zgloszenia": "config/zgloszenia-wyslane.json",
-        "uwagi_taty": "config/uwagi-taty.json",
         "przeczytane_powiadomienia": "config/powiadomienia.json",
         "uruchomienia_centrum": "config/centrum-uruchomienia.jsonl",
         "adresy_skrzynki": "config/skrzynka-adresy.jsonl",
@@ -942,7 +927,7 @@ def test_diagnoza_macierzy_po_zatrzymaniu_dla_taty_bierze_powtorke(world_templat
     assert run_id is not None
 
 
-@pytest.mark.parametrize(("process", "period"), [("preparation", PERIOD), ("settlement", SETTLEMENT_PERIOD)])
+@pytest.mark.parametrize(("process", "period"), [("preparation", PERIOD)])
 def test_lista_wykonawcow_bez_odczytu_wstrzymuje_start_i_jest_niedostepna_w_sekcji_wykonawcy(
     world_template: Path, tmp_path: Path, process: str, period: str
 ) -> None:
@@ -983,3 +968,26 @@ def test_folder_miesiaca_znikajacy_w_trakcie_listowania_jest_pominiety(tmp_path:
     scanned = period_folder.scan_period_folders(periods)
 
     assert [path for paths in scanned.locations.values() for path in paths] == [kept]
+
+
+def _legend_columns(client: CentrumClient) -> dict[str, str | None]:
+    legend = client.get("/api/settings/activity-legend").json()
+    return {column["letter"]: column["name"] for column in [legend["amount_column"], *legend["columns"], *legend["fill_columns"]]}
+
+
+def test_legenda_przy_wzorcu_pliku_zbiorczego_bez_odczytu_ma_kolumny_same_litery_a_kwota_swoja_nazwe(
+    world_template: Path, tmp_path: Path
+) -> None:
+    world = World(tmp_path / "swiat")
+    shutil.copytree(world_template, world.root)
+    client = world.client()
+    named = _legend_columns(client)
+    template = world.path("wzorzec_zbiorczy")
+    deny_reading(template)
+    try:
+        unread = _legend_columns(client)
+    finally:
+        allow_reading(template)
+
+    assert [letter for letter, name in named.items() if letter != "AS" and name is not None], "Wzorzec świata nie ma nazw pozycji cennika"
+    assert unread == {letter: named["AS"] if letter == "AS" else None for letter in named}

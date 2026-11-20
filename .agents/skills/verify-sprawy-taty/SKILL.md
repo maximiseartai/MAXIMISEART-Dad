@@ -352,6 +352,6 @@ is wrong:
 Left out: the text of a Zgłoszenie or an Uwaga and its guard, which of „na internet” and „na Token” a waiting case shows,
 the Logs line of a pinned Uwaga (`_CaseDelivery.prepare` and the comment after rejected Logs), an unreadable queue file
 (it stays, so the case keeps its file), a queue file whose removal failed, an unreadable `config/sprawy-taty.json` (no
-cases at all: their files are delivered and number nothing), the old files before one store (`OLD_REPORTS_FILE`,
-`OLD_NOTES_FILE`), an exception other than `OSError` from `Outbox.post` in `dad_notes.send` (no `finally` there; no
+cases at all: their files are delivered and number nothing), the old file before one store (`OLD_REPORTS_FILE`),
+an exception other than `OSError` from `Outbox.post` in `dad_notes.send` (no `finally` there; no
 known path raises one), and Maks reopening an issue.

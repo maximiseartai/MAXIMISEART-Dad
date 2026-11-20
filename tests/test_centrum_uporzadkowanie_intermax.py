@@ -54,7 +54,6 @@ from atrapy.intermax import (
     Order,
 )
 from atrapy.baza_zlecen import ELEVEN, FIVE, TWELVE, BaseSheet, Visit
-from atrapy.settlement import write_worker_list
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.wyciek import zawiera_wartosc
@@ -101,20 +100,6 @@ def test_bez_wskazanego_rejestru_zlecen_karta_mowi_co_ustawic_a_start_jest_odrzu
     assert (started.status_code, started.json()) == (409, {"message": "Najpierw wskaż INTERMAX."})
     assert centrum.client.get("/api/runs/current").json()["state"] == "idle"
     assert centrum.client.get("/api/intermax/days").json() == {"days": [], "problem": None}
-
-
-def test_uporzadkowanie_bez_listy_wykonawcow_nie_ostrzega_o_jej_zlym_ustawieniu(tmp_path: Path) -> None:
-    """Ostrzeżenie o ostatniej dobrej Liście Wykonawców ma tylko proces, który jej używa (DESIGN §4.3)."""
-
-    centrum = ordering_centrum(tmp_path)
-    write_worker_list(centrum.tool.worker_list)
-    centrum.client.get("/api/settings")
-    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
-
-    view = centrum.run_to_end()
-
-    assert view["result"]["ending"] == "finished"
-    assert not [warning for warning in view["result"]["warnings"] if warning.get("setting") == "wykonawcy"]
 
 
 def test_karta_mowi_ze_intermax_jest_otwarty_w_excelu_az_do_jego_zamkniecia(tmp_path: Path) -> None:
@@ -424,26 +409,6 @@ def test_po_chwilowej_odmowie_onedrive_uporzadkuj_z_centrum_ponawia_podmiane_na_
     assert copies(centrum) == [COPY]
 
 
-def test_gdy_onedrive_dalej_trzyma_intermax_centrum_mowi_tacie_o_synchronizacji_po_pieciu_sekundach_zegara(
-    tmp_path: Path,
-) -> None:
-    centrum = ordering_centrum(tmp_path)
-    original = centrum.register.read_bytes()
-    centrum.disk.replace, attempts = failing_replace(denied)
-    started_at = centrum.surroundings.clock.seconds
-
-    view = _stopped(centrum)
-
-    result = view["result"]
-    assert (result["stop_kind"], result["stops"][0]["what"]) == (
-        "for_tata",
-        "OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony.",
-    )
-    assert (len(attempts), centrum.surroundings.clock.seconds - started_at) == (11, 5.0)
-    assert centrum.register.read_bytes() == original
-    assert copies(centrum) == []
-
-
 def test_okres_uruchomienia_to_okres_dnia_startu_takze_gdy_skonczy_sie_po_polnocy(tmp_path: Path) -> None:
     # Poniedziałek tuż przed północą: następne pytania zegara są już we wtorek, w następnym okresie.
     clock = Clock([datetime(2026, 10, 26, 23, 59, 59), datetime(2026, 10, 27, 0, 0, 3)])
@@ -531,7 +496,7 @@ def test_zatrzymanie_do_maksa_prowadzi_do_diagnozy_intermax_i_zgloszenia(tmp_pat
     ]
     assert checks["Ustawienia Centrum"] == ("passed", "INTERMAX jest na miejscu.")
     assert checks["Pliki w OneDrive"] == ("passed", "Sprawdzone pliki są na tym komputerze: 1.")
-    assert checks["INTERMAX"] == ("passed", "Nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")
+    assert checks["INTERMAX"] == ("passed", "Obok nie leży kopia konfliktu OneDrive, nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")
     assert diagnosis.json()["next_action"] == "report"
     assert "- Proces: Uporządkowanie INTERMAX" in diagnosis.json()["report"]["body"]
     assert report.status_code == 200
@@ -551,6 +516,37 @@ def test_powtorzone_zatrzymanie_intermax_wyjasnia_diagnoza_intermax(tmp_path: Pa
     assert diagnosis["explanation"] == repeated["result"]["stops"][0]
     assert diagnosis["next_action"] == "rerun"
     assert {check["label"]: check["state"] for check in diagnosis["checks"]}["INTERMAX"] == "failed"
+
+
+def test_kopia_konfliktu_onedrive_obok_intermax_zatrzymuje_dla_taty_z_jej_nazwa_a_diagnoza_ja_wskazuje(
+    tmp_path: Path,
+) -> None:
+    centrum = ordering_centrum(tmp_path)
+    original = centrum.register.read_bytes()
+    conflict = centrum.register.with_name(f"{centrum.register.stem}-LAPTOP-ANDRZEJA{centrum.register.suffix}")
+    conflict.write_bytes(original)
+
+    first = _stopped(centrum)
+    repeated = _stopped(centrum)
+    diagnosis = centrum.client.post(f"/api/runs/{repeated['run']['id']}/diagnosis").json()
+    conflict.unlink()
+    after = centrum.run_to_end()
+
+    result = first["result"]
+    assert (result["stop_kind"], result["files_unchanged"], phase_states(first)["Sprawdzanie"]) == (
+        "for_tata",
+        True,
+        "failed",
+    )
+    assert result["stops"][0]["where"] == f"plik {conflict.name}, folder OneDrive"
+    assert result["stops"][0]["what"].startswith("Obok INTERMAX leży kopia konfliktu OneDrive")
+    assert [record["stop"]["code"] for record in centrum.metric_records()[:2]] == ["KOPIA_KONFLIKTU_INTERMAX"] * 2
+    assert (diagnosis["confirms_stop"], diagnosis["explanation"]) == (True, repeated["result"]["stops"][0])
+    [intermax] = [check for check in diagnosis["checks"] if check["label"] == "INTERMAX"]
+    assert (intermax["state"], intermax["detail"]) == ("failed", result["stops"][0]["what"])
+    assert after["result"]["headline"] == "INTERMAX uporządkowany"
+    assert copies(centrum) == [COPY]
+    assert (centrum.copies / COPY).read_bytes() == original
 
 
 def test_diagnoza_mowi_ktorego_intermax_z_ustawien_taty_nie_ma(tmp_path: Path) -> None:

@@ -1,53 +1,20 @@
-"""Model TLA+ wznowienia Wyceny w efenix: kod opisany modelem i opowieść kontrprzykładu.
+"""Model TLA+ wznowienia Wyceny w efenix: opowieść kontrprzykładu.
 
-Model opisuje definicje z ``model/definicje.json`` skilla ``verify-wznowienie-wyceny-efenix`` w chwili ich skrótów
-(rozjazd rozstrzyga ``tools/lib/rozjazd_modelu.py``). Zmiana innej części tych plików (``efenix_pricing.py``
-zmienia się często) rozjazdem nie jest. Werdykt i znane znaleziska sprawdza ``tests/test_model_tlc.py`` na drodze
-wspólnej dla modeli skilli.
+Rozjazd modelu z kodem opisanym modelem sprawdza ``tests/test_rozjazd_modelu.py``, a werdykt i znane znaleziska
+``tests/test_model_tlc.py``, na drodze wspólnej dla modeli skilli.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-import shutil
 
 import pytest
 
 from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
 import model_tlc
-import rozjazd_modelu
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "scripts" / "sprawdz_wznowienie_wyceny.py"
-DEFINITIONS = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "model" / "definicje.json"
-PRICING = "src/rozliczenia/efenix_pricing.py"
-
-
-def _drift_after(root: Path, anchor: str, replacement: str) -> str | None:
-    for path in (DEFINITIONS, *(ROOT / name for name in rozjazd_modelu.definicje(DEFINITIONS.parents[1]))):
-        copy = root / path.relative_to(ROOT)
-        copy.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(path, copy)
-    skill = root / DEFINITIONS.relative_to(ROOT).parents[1]
-    rozjazd_modelu.przesun(skill, root)
-    pricing = root / PRICING
-    text = pricing.read_text(encoding="utf-8")
-    assert text.count(anchor) == 1, anchor
-    pricing.write_text(text.replace(anchor, replacement), encoding="utf-8")
-    return rozjazd_modelu.rozjazd(skill, root)
-
-
-def test_zmieniona_definicja_opisana_modelem_jest_rozjazdem(tmp_path: Path) -> None:
-    found = _drift_after(tmp_path, "    if plan.excess:\n        return EmmettWarning(plan.excess)\n", "")
-
-    assert found is not None and f"kod opisany modelem zmienił się: {PRICING} _completed" in found, found
-
-
-def test_zmiana_obok_definicji_opisanych_modelem_nie_jest_rozjazdem(tmp_path: Path) -> None:
-    # Sprawdzania (``check`` w ``price_orders``) model nie opisuje.
-    found = _drift_after(tmp_path, "    def check() -> None:\n", "    def check() -> None:\n        pass\n")
-
-    assert found is None
 
 
 def test_kontrprzyklad_daje_obietnice_i_przyczyny_jej_zdarzenia_z_wyjscia_tlc(capsys: pytest.CaptureFixture[str]) -> None:

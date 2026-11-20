@@ -162,48 +162,6 @@ def test_wolny_port_dla_centrum_omija_port_na_ktorym_ktos_slucha(monkeypatch: py
         assert free_port() == drawn[1]
 
 
-@contextmanager
-def _port_silent_on_first_connection() -> Iterator[int]:
-    """Port, który przyjmuje pierwsze połączenie i milczy na nim do końca bloku, a od tego połączenia nikt na nim nie
-    słucha.
-
-    Słuchanie kończy samo pierwsze połączenie, a nie zegar, więc kolejność „milczał, potem nikt nie słuchał” nie zależy
-    od tego, jak szybko runner dojdzie do pierwszego pytania.
-    """
-
-    listener = socket.create_server(("127.0.0.1", free_port()))
-    port = listener.getsockname()[1]
-    held: list[socket.socket] = []
-
-    def accept_once() -> None:
-        connection, _ = listener.accept()
-        listener.close()
-        held.append(connection)
-
-    accepting = threading.Thread(target=accept_once, daemon=True)
-    accepting.start()
-    try:
-        yield port
-        # Blok czekał na health dłużej, niż trwa pierwsze połączenie, więc wątek kończy się od razu albo nigdy.
-        accepting.join(timeout=5)
-        assert not accepting.is_alive(), f"nikt nie połączył się z portem {port} (proxy w zmiennych środowiska?)"
-    finally:
-        listener.close()
-        for connection in held:
-            connection.close()
-
-
-def test_czekanie_na_centrum_bez_odpowiedzi_mowi_po_kolei_kiedy_port_milczal_a_kiedy_nikt_na_nim_nie_sluchal() -> None:
-    """Porażka czekania na ``health`` mówi, co port odpowiadał w kolejnych sekundach, bo bez tego log flaky testu skrótu
-    nie rozstrzygał, czy Centrum trzymało port bez odpowiedzi, czy nikt na nim nie słuchał (#1454)."""
-
-    with _port_silent_on_first_connection() as port, pytest.raises(urllib.error.URLError) as failure:
-        centrum_health(port, timeout_s=3)
-
-    spans = failure.value.__notes__[-1].splitlines()[1:]
-    assert (spans[0].split(": ", 1)[1].startswith("połączenie przyjęte, bez odpowiedzi"), "nikt nie słucha" in spans[-1]) == (True, True), spans
-
-
 def test_ponowne_uruchomienie_tylko_otwiera_karte_dzialajacego_centrum(tmp_path: Path) -> None:
     runtime = copy_centrum_runtime(tmp_path / "narzedzie")
     _check_out(runtime, COMMIT)

@@ -1,5 +1,3 @@
-"""Notka Wydania: to, co napisze narzędzie Wydań, Powiadomienie o nowej wersji odczyta bez straty."""
-
 from __future__ import annotations
 
 import pytest
@@ -19,7 +17,6 @@ EXAMPLE = """Ta wersja oszczędza Ci wpisywania.
 - Uwaga taty #12: Brakuje ilości przy montażu
 - Zgłoszenie #7: Zatrzymanie przy pustym ADRES
 """
-"""Notka Wydania, jak ją pisze narzędzie Wydań: wstęp, dwa punkty „Co nowego” i dwie rozwiązane sprawy taty."""
 
 
 def test_przykladowa_notka_ma_wstep_dwa_punkty_i_dwie_sprawy_taty_i_wraca_ta_sama() -> None:
@@ -83,6 +80,19 @@ def test_notka_poprawiona_recznie_na_githubie_ma_co_nowego_bez_listy_i_sprawy(te
     assert parse(text) == ReleaseNotes(SUMMARY, CASES)
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        pytest.param("- Prośba taty #5: Rodzaj, którego nie ma w Skrzynce Zgłoszeń", id="rodzaj-spoza-skrzynki"),
+        pytest.param("- Zgłoszenie 5: Numer bez krzyżyka", id="numer-bez-krzyzyka"),
+        pytest.param("- Zgłoszenie #0: Numer zero", id="numer-zero"),
+        pytest.param("Zgłoszenie #5: Bez myślnika", id="bez-myslnika"),
+    ],
+)
+def test_linie_spraw_ktorej_nie_da_sie_odczytac_notka_pomija_a_reszte_spraw_czyta(line: str) -> None:
+    assert parse(f"{SUMMARY}\n\n{CASES_HEADING}\n\n{line}\n{LISTED}") == ReleaseNotes(SUMMARY, CASES)
+
+
 @pytest.mark.parametrize("heading", ["# Rozwiązane sprawy taty", "##\tRozwiązane sprawy taty"], ids=["naglowek-#", "tabulator"])
 def test_co_nowego_z_naglowkiem_spraw_innego_zapisu_jest_odrzucone(heading: str) -> None:
     with pytest.raises(ValueError, match="Co nowego"):
@@ -117,9 +127,7 @@ def test_co_nowego_z_punktami_to_wstep_i_punkty_po_drodze_przez_notke(summary: s
         "Koszt - 5 zł za montaż.\nCentrum pokazuje, co nowego.",
         f"Wstęp.\n\n- {POINTS[0]}\n\nAkapit pod punktami.",
     ],
-    ids=["zdania-bez-punktow", "myslnik-w-zdaniu", "akapit-pod-punktami"],
+    ids=["notka-starego-wydania-bez-punktow", "myslnik-w-zdaniu", "akapit-pod-punktami-zgubilby-zdanie"],
 )
 def test_co_nowego_bez_samych_punktow_pod_wstepem_jest_calym_wstepem(summary: str) -> None:
-    """Stare Wydania i notka, której punktów nie da się pokazać bez straty zdania, wyglądają jak tekst notki."""
-
     assert whats_new(parse(render(ReleaseNotes(summary, ()))).summary) == WhatsNew(summary, ())

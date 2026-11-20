@@ -121,6 +121,7 @@ def _worker_settlements_exist(world: Settlement) -> None:
 PREPARATION: Sequence[Fault[Preparation]] = (
     Fault("token-okresu", "token okresu", _invalid_period, "ZLY_TOKEN_OKRESU"),
     Fault("brak-rejestru", "rejestr", lambda world: world.fixture.register_path.unlink(), "BRAK_REJESTRU"),
+    Fault("rejestr-otwarty", "rejestr", lambda world: _lock(world.fixture.register_path), "REJESTR_OTWARTY"),
     Fault(
         "brak-wzorca-wewnetrznego",
         "wzorzec wewnętrzny",

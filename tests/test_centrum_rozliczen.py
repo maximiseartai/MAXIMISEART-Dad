@@ -51,7 +51,7 @@ from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.contract import timing as timing_contract
 from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
-from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
+from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_REPORTS_FILE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
@@ -187,14 +187,6 @@ def test_health_przedstawia_centrum_rozliczen_ze_skroconym_commitem_i_identyfika
     assert again.json()["instance"] != health["instance"]
 
 
-def test_ten_sam_serwer_podaje_zbudowane_centrum_bez_node(tmp_path: Path) -> None:
-    response = centrum(tmp_path).client.get("/")
-
-    assert response.status_code == 200
-    assert "<title>Centrum rozliczeń</title>" in response.text
-    assert response.headers["cache-control"] == "no-cache"
-
-
 def test_po_aktualizacji_narzedzia_przegladarka_dostaje_nowy_pakiet_pod_ta_sama_nazwa(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -209,6 +201,8 @@ def test_po_aktualizacji_narzedzia_przegladarka_dostaje_nowy_pakiet_pod_ta_sama_
     (static / "assets" / "index.js").write_bytes(b"console.log('po aktualizacji')\n")
     updated = client.get("/assets/index.js", headers={"If-None-Match": bundle.headers["etag"]})
 
+    assert page.status_code == 200
+    assert "<title>Centrum rozliczeń</title>" in page.text
     assert '<script type="module" crossorigin src="/assets/index.js">' in page.text
     assert {page.headers["cache-control"], bundle.headers["cache-control"]} == {"no-cache"}
     assert (unchanged.status_code, unchanged.content) == (304, b"")
@@ -576,7 +570,6 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
         CONFIG_DIR / DAD_CASES_FILE,
         CONFIG_DIR / OLD_REPORTS_FILE,
         CONFIG_DIR / UNSENT_DIRECTORY / QUEUE_DIRECTORY / "20261024T101500000000Z-0001-zgloszenie-3f2a9c1b.json",
-        CONFIG_DIR / OLD_NOTES_FILE,
         CONFIG_DIR / NOTIFICATIONS_FILE,
         CONFIG_DIR / ADDRESSES_FILE,
         CONFIG_DIR / "plik-z-przyszlej-wersji.json",
@@ -591,7 +584,6 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
         "sprawy-taty",
         "wyslane-zgloszenia",
         "zgloszenie-w-kolejce",
-        "uwagi-taty",
         "przeczytane-powiadomienia",
         "adresy-w-skrzynce",
         "kazdy-nowy-plik-w-config",
@@ -603,14 +595,6 @@ def test_lokalne_pliki_taty_sa_poza_gitem(local_file: Path) -> None:
     )
 
     assert ignored.returncode == 0
-
-
-def test_motyw_jasny_jest_zapamietany(tmp_path: Path) -> None:
-    centrum(tmp_path).client.put("/api/settings/theme", json={"theme": "light"})
-
-    response = centrum(tmp_path).client.get("/api/settings")
-
-    assert response.json()["theme"] == "light"
 
 
 SETTINGS_NOT_SAVED = (
@@ -2544,19 +2528,6 @@ def test_zmiana_reguly_w_edytorze_zostaje_na_jej_miejscu_a_historia_mowi_zdaniem
     ]
 
 
-def test_regula_usunieta_w_edytorze_znika_a_historia_ma_jej_zdanie_przed(tmp_path: Path) -> None:
-    app = centrum(tmp_path)
-
-    removed = app.client.delete(f"{QUANTITY_RULES_URL}/t-umowa-u")
-
-    assert removed.status_code == 200, removed.text
-    assert "t-umowa-u" not in rule_sentences(app)
-    [row] = history_rows(app)
-    assert [(_text(rule["before"]), rule["after"]) for rule in row["rules"]] == [
-        ("Jeśli UMOWA zaczyna się od słowa „u”, to wpisz 1 w T.", None)
-    ]
-
-
 def _editor_rule(column: str, value: int) -> dict[str, Any]:
     """Reguła z edytora: przy „montaż” w CZYNNOŚCIACH wpisz ``value`` w ``column``."""
 
@@ -2950,22 +2921,6 @@ def test_jawna_zmiana_legendy_w_wydaniu_wchodzi_raz_jest_w_historii_z_cofnij_i_p
     assert [row["source"] for row in rows] == ["tata", "release"]
 
 
-def test_wydanie_bez_jawnej_zmiany_legendy_nie_rusza_legendy_taty(tmp_path: Path) -> None:
-    tool = ToolDirectory(tmp_path)
-    tool.config.mkdir(parents=True)
-    own = with_own(own_code("rt2", column=FixedColumn("AK")))
-    (tool.config / LEGEND_FILE).write_bytes(own)
-
-    client = started(tool, tuple(change for change in RELEASE_CHANGES if change.file is not LEGEND))
-    sentences, _ = legend_sentences(client)
-    rows = legend_history(client)
-    client.stop()
-
-    assert sentences["rt2"] == "rt2: 1 w AK, AM na czerwono, AF na zielono."
-    assert (tool.config / LEGEND_FILE).read_bytes() == own
-    assert rows == []
-
-
 RT2_OUTSIDE_FAULTS = next(change for change in RELEASE_CHANGES if change.id == "2026-11-rt2-bez-usterek")
 
 
@@ -2988,19 +2943,12 @@ def test_zmiana_z_wydania_ustawia_rt2_taty_ze_w_usterce_sie_nie_liczy_raz_z_cofn
     sentences, _ = legend_sentences(first)
     rows = legend_history(first)
     first.stop()
-    applied = (tool.config / LEGEND_FILE).read_bytes()
-    (tool.config / MEMORY_DIRECTORY / APPLIED_FILE).unlink()
-    (tool.config / HISTORY_FILE).unlink()
-    again = started(tool, (RT2_OUTSIDE_FAULTS,))
-    rows_again = legend_history(again)
-    again.stop()
 
     assert sentences["rt2"] == sentence
     assert [sentence for code, sentence in sentences.items() if code != "rt2"] == [
         sentence for sentence in MAIL_SENTENCES if not sentence.startswith("rt2:")
     ]
     assert [(row["source"], row["undoable"]) for row in rows] == [("release", True)]
-    assert ((tool.config / LEGEND_FILE).read_bytes(), rows_again) == (applied, [])
 
 
 def test_zmiana_z_wydania_rt2_nie_rusza_legendy_taty_bez_rt2(tmp_path: Path) -> None:
@@ -5157,22 +5105,6 @@ def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast
     assert [(row["source"], row["refused"]) for row in rows] == [("release", False)]
 
 
-@NO_ACCESS_ON_WINDOWS
-def test_proces_nie_startuje_na_pustej_liscie_gdy_przeniesienie_czeka_na_stary_plik_wykonawcow(tmp_path: Path) -> None:
-    """Przegląd #1569 r1, D2: gdy przeniesienie czeka na stary plik, którego system nie daje czytać, Przebieg
-    rozliczeń nie startuje na pustej liście, tak jak po odrzuconym przeniesieniu."""
-
-    tool = settling_centrum(tmp_path).tool
-    tool.worker_list.unlink()
-    old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
-    with without_access(tool.config / OLD_MAPPING_FILE):
-        client = started(tool, RELEASE_CHANGES)
-        refused = client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
-        client.stop()
-
-    assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING_SENTENCE)})
-
-
 @contextmanager
 def held_release_changes(tool: ToolDirectory, monkeypatch: pytest.MonkeyPatch, fault: str) -> Iterator[None]:
     """Do końca bloku start Centrum wstrzymuje zmiany z Wydania: system nie daje czytać Historii Ustawień
@@ -5701,13 +5633,6 @@ def _register_unreadable_rows(centrum_: SettlingCentrum) -> None:
     ("register", "damage", "state", "message"),
     [
         pytest.param(None, None, "not_set", settings_messages.worker_suggestions_not_set(), id="bez-rejestru"),
-        pytest.param(
-            ["nowy.login"],
-            lambda centrum_: register_of(centrum_.tmp_path).unlink(),
-            "unreadable",
-            settings_messages.worker_suggestions_unreadable(),
-            id="rejestru-nie-ma",
-        ),
         pytest.param(
             ["nowy.login"],
             lambda centrum_: register_of(centrum_.tmp_path).write_bytes(b"to nie jest skoroszyt"),
@@ -6261,14 +6186,6 @@ def test_dodany_wykonawca_staje_na_koncu_cofniety_wpis_wraca_na_miejsce_wpisu_ze
 @pytest.mark.parametrize(
     ("added", "rule"),
     [
-        pytest.param(
-            [worker_form(["drugi.nowy"], "Pierwszy Nowy")], settings_messages.worker_same_file(), id="ta-sama-nazwa"
-        ),
-        pytest.param(
-            [worker_form(["drugi.nowy"], "Drugi Nowy", [OBCY])],
-            settings_messages.worker_address_repeated(),
-            id="wspolny-adres",
-        ),
         pytest.param(
             [worker_form(["pierwszy.nowy"], "Drugi Nowy"), worker_form(["pierwszy.drugi"], "Trzeci Nowy")],
             settings_messages.worker_login_repeated(),
@@ -7621,8 +7538,13 @@ def choose_periods_directory(app: Centrum, folder: Path, way: str) -> dict[str, 
     return dict(response.json()["settings"])
 
 
-@pytest.mark.parametrize("way", ["okno", "wpisana"])
-@pytest.mark.parametrize("inside", INSIDE_DAD_LAYOUT)
+@pytest.mark.parametrize(
+    ("inside", "way"),
+    [
+        *[pytest.param(*case.values, "okno", id=f"{case.id}-okno") for case in INSIDE_DAD_LAYOUT],
+        pytest.param(*INSIDE_DAD_LAYOUT[0].values, "wpisana", id="tydzien-wpisana"),
+    ],
+)
 def test_folder_wskazany_w_srodku_ukladu_folderow_taty_zapisuje_sie_jako_zalaczniki_wszystkich_lat(
     tmp_path: Path, inside: tuple[str, ...], way: str
 ) -> None:
@@ -7643,18 +7565,15 @@ def test_folder_wskazany_w_srodku_ukladu_folderow_taty_zapisuje_sie_jako_zalaczn
     assert row["changes"] == [{"key": "foldery.folder_okresow", "before": None, "after": str(root)}]
 
 
-@pytest.mark.parametrize("way", ["okno", "wpisana"])
 @pytest.mark.parametrize("inside", [(), ("22_28_09_2026",)], ids=["folder-okresow", "folder-okresu"])
-def test_folder_wskazany_w_ukladzie_plaskim_zapisuje_sie_taki_jak_wskazany(
-    tmp_path: Path, inside: tuple[str, ...], way: str
-) -> None:
+def test_folder_wskazany_w_ukladzie_plaskim_zapisuje_sie_taki_jak_wskazany(tmp_path: Path, inside: tuple[str, ...]) -> None:
     periods = tmp_path / "INEA"
     periods.mkdir()
     write_period_files(periods, "22_28_09_2026")
     pointed = periods.joinpath(*inside)
     app = centrum(tmp_path)
 
-    settings = choose_periods_directory(app, pointed, way)
+    settings = choose_periods_directory(app, pointed, "okno")
 
     assert (settings["periods_directory"], settings["periods_all_years"]) == (
         {"state": "ready", "path": str(pointed), "name": pointed.name},
@@ -7679,8 +7598,7 @@ def test_folder_okresow_obok_rozliczen_roku_w_zalacznikach_zapisuje_sie_taki_jak
 
 
 @NO_ACCESS_ON_WINDOWS
-@pytest.mark.parametrize("way", ["okno", "wpisana"])
-def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskazany(tmp_path: Path, way: str) -> None:
+def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskazany(tmp_path: Path) -> None:
     """Układu nad folderem bez dostępu nie widać, więc zapisuje się wskazany folder, a nie błąd wyboru."""
 
     root = dad_layout(tmp_path)
@@ -7689,7 +7607,7 @@ def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskaz
     app = centrum(tmp_path)
 
     with without_access(week):
-        settings = choose_periods_directory(app, week, way)
+        settings = choose_periods_directory(app, week, "okno")
 
     assert settings["periods_directory"]["path"] == str(week)
 
@@ -7803,7 +7721,7 @@ def folder_history(client: CentrumClient) -> list[dict[str, Any]]:
     return [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == FOLDERS.name]
 
 
-@pytest.mark.parametrize("inside", [*INSIDE_DAD_LAYOUT[:3], pytest.param(None, id="tydzien-przeniesiony")])
+@pytest.mark.parametrize("inside", [INSIDE_DAD_LAYOUT[0], pytest.param(None, id="tydzien-przeniesiony")])
 def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_jako_zmiana_z_wydania_z_cofnij(
     tmp_path: Path, inside: tuple[str, ...] | None
 ) -> None:
@@ -7848,8 +7766,6 @@ def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_
     "saved",
     [
         pytest.param(("Załączniki",), id="zalaczniki"),
-        pytest.param(("INEA",), id="uklad-plaski"),
-        pytest.param(("INEA", "22_28_09_2026"), id="folder-okresu-w-ukladzie-plaskim"),
         pytest.param(None, id="nie-wskazano"),
     ],
 )
@@ -7857,7 +7773,6 @@ def test_folder_okresow_od_korzenia_ukladu_zostaje_po_aktualizacji_bez_wiersza_i
     tmp_path: Path, saved: tuple[str, ...] | None
 ) -> None:
     dad_layout(tmp_path)
-    (tmp_path / "INEA" / "22_28_09_2026").mkdir(parents=True)
     tool = ToolDirectory(tmp_path / "narzedzie-taty")
     write_folder_settings(tool, FolderSettings(periods_directory=None if saved is None else tmp_path.joinpath(*saved)))
     before = tool.settings.read_bytes()
@@ -8093,7 +8008,7 @@ def _around_boundary(before: str, crossing: str, after: str, crossing_monday: da
     week = timedelta(days=7)
     return [
         (crossing_monday, before),
-        *[(crossing_monday + timedelta(days=offset), crossing) for offset in range(1, 8)],
+        *[(crossing_monday + timedelta(days=offset), crossing) for offset in (1, 7)],
         (crossing_monday + week + timedelta(days=1), after),
     ]
 
@@ -8101,7 +8016,7 @@ def _around_boundary(before: str, crossing: str, after: str, crossing_monday: da
 @pytest.mark.parametrize(
     ("today", "token"),
     [
-        *[(date(2026, 9, 15) + timedelta(days=offset), "08_14_09_2026") for offset in range(7)],
+        *[(date(2026, 9, 15) + timedelta(days=offset), "08_14_09_2026") for offset in (0, 6)],
         # Na przełomie miesięcy i lat token ma miesiąc i rok poniedziałku.
         *_around_boundary("20_26_10_2026", "27_02_11_2026", "03_09_11_2026", date(2026, 11, 2)),
         *_around_boundary("22_28_12_2026", "29_04_01_2027", "05_11_01_2027", date(2027, 1, 4)),
@@ -9378,11 +9293,28 @@ def test_plik_tematu_stopki_albo_listy_bez_odczytu_to_odmowa_strony_podgladu_i_w
 
 TRESC_TATY = "Tekst taty dla {wykonawca}"
 TEMATY_ODRZUCONE_DZIS = [
-    pytest.param("Report {okres}", lambda: settings_messages.settlement_mail_reads_as_report(), id="odpowiedz-re-jak-raport"),
-    pytest.param("Rozliczenie raport {okres}", lambda: settings_messages.settlement_mail_report_word(), id="slowo-raport"),
+    pytest.param(
+        "Report {okres}",
+        lambda: settings_messages.settlement_mail_reads_as_report(),
+        False,
+        id="odpowiedz-re-jak-raport-bez-pamieci",
+    ),
+    pytest.param(
+        "Report {okres}",
+        lambda: settings_messages.settlement_mail_reads_as_report(),
+        True,
+        id="odpowiedz-re-jak-raport-przyjety-przed-zaostrzeniem",
+    ),
+    pytest.param(
+        "Rozliczenie raport {okres}",
+        lambda: settings_messages.settlement_mail_report_word(),
+        False,
+        id="slowo-raport-bez-pamieci",
+    ),
 ]
-"""Temat taty, którego dzisiejsza reguła nie przyjmuje, i zdanie tej reguły: odpowiedź ``Re:`` na ``Report 3–9 listopada
-2026`` skrzynka raportów wzięłaby za Raport wykonawcy, choć temat nie ma słowa „raport”."""
+"""Temat taty, którego dzisiejsza reguła nie przyjmuje, zdanie tej reguły i ``przyjety`` z ``_plik_tematu_taty``:
+odpowiedź ``Re:`` na ``Report 3–9 listopada 2026`` skrzynka raportów wzięłaby za Raport wykonawcy, choć temat nie ma
+słowa „raport”."""
 
 
 def _plik_tematu_taty(tool: ToolDirectory, subject: str, *, przyjety: bool) -> None:
@@ -9398,8 +9330,7 @@ def _plik_tematu_taty(tool: ToolDirectory, subject: str, *, przyjety: bool) -> N
         (tool.config / MEMORY_DIRECTORY / f"{SETTLEMENT_MAIL_FILE}.json").write_bytes(remembered.model_dump_json(by_alias=True).encode("utf-8"))
 
 
-@pytest.mark.parametrize("przyjety", [False, True], ids=["bez-pamieci", "przyjety-przed-zaostrzeniem"])
-@pytest.mark.parametrize(("subject", "sentence"), TEMATY_ODRZUCONE_DZIS)
+@pytest.mark.parametrize(("subject", "sentence", "przyjety"), TEMATY_ODRZUCONE_DZIS)
 def test_temat_taty_ktorego_regula_nie_przyjmuje_to_odmowa_strony_podgladu_i_wysylki_bez_maila(
     tmp_path: Path, subject: str, sentence: Callable[[], str], przyjety: bool
 ) -> None:

@@ -545,7 +545,7 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
 
     Pakiet ``tests`` nie ma danych: ``tests/__init__.py`` robiłby z każdego pliku spod ``tests/expected/`` i z
     ``tests/ruff.toml`` wejście każdego testu. ``tests/fixtures`` zostaje pakietem z danymi, bo jego plik czyta fixture
-    (``uwagi-taty-z-powiadomieniami.json`` dla ``test_zgloszenia_ci.py``).
+    (``schemat_logow_wydan.json`` dla ``test_centrum_karta_z_logow.py``).
 
     Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request, gdy graf
     (``sciezki_w_kodzie``) zobaczy ścieżkę tego pliku w pliku testu albo w module, który test importuje. Ten docstring

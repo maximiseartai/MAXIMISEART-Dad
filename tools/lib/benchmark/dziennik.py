@@ -196,8 +196,6 @@ def render_comment(records: Sequence[Mapping[str, Any]], before: str | None = No
 
 
 def guard_summary(record: Mapping[str, Any], budget_ms: int) -> tuple[str, bool]:
-    """Podsumowanie ostatniego pomiaru do joba CI i to, czy mediana czasu ściany mieści się w budżecie."""
-
     median = record["wall_ms"]["mediana"]
     within = median <= budget_ms
     verdict = "w budżecie" if within else f"ponad budżetem o {median - budget_ms} ms"

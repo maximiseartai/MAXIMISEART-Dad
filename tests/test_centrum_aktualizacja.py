@@ -7,9 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import threading
-import time
 from typing import Any
 
 import pytest
@@ -523,27 +521,6 @@ def test_nieprzewidziana_porazka_daje_komunikat_a_klon_zostaje_bez_zmian(tmp_pat
         f"wynik=NIEOCZEKIWANY_BLAD przed={running} po=- biblioteki=nie"
     ]
     assert centrum.client.post("/api/tool-update").status_code == 202
-
-
-def test_karta_widzi_porazke_dopiero_gdy_ponowne_klikniecie_jest_przyjete(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    centrum, repository = updating_centrum(tmp_path)
-    git_fails_unexpectedly(repository)
-    remove_tree = shutil.rmtree
-
-    def cleanup_slowed_by_antivirus(path: Any, *args: Any, **kwargs: Any) -> None:
-        time.sleep(0.3)
-        remove_tree(path, *args, **kwargs)
-
-    monkeypatch.setattr(shutil, "rmtree", cleanup_slowed_by_antivirus)
-
-    failed = update_until_done(centrum)
-    again = centrum.client.post("/api/tool-update")
-    tool_update_until(centrum, lambda view: view["state"] != "running")
-
-    assert failed["state"] == "failed"
-    assert again.status_code == 202, again.json()
 
 
 class _LockAroundUpdateThread:

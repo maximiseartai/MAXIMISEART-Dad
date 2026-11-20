@@ -2124,16 +2124,6 @@ def test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy() -> None:
     )
 
 
-# Postać → moduł src, którego import prywatnej nazwy innego modułu sprawdzenie wyżej odrzuca: siostry dróg, które ruff
-# SLF001 odrzuca w tests/test_regula_danych.py i tests/test_komentarz_logow_uruchomienia.py.
-IMPORTY_PRYWATNE_SRC: typing.Final = {
-    "prywatny parser celu kolejki": "from rozliczenia.centrum.outbox import _target\n",
-    "prywatny parser pliku kolejki": "from rozliczenia.centrum.outbox import _archive_file\n",
-    "prywatna tabela wartości pamięci reguły danych": "from rozliczenia.client_data import _WORDS\n",
-    "prywatny moduł pakietu": "from rozliczenia.worker_reports._model import Login\n",
-    "import prywatnego modułu": "import rozliczenia.worker_reports._model\n",
-}
-
 # Znane luki importu prywatnej nazwy w src (tests/fixtures/znane_luki.py): import względny z modułu Centrum, który
 # sprawdzenie importów i ruff przepuszczają. Mypy rozwiązuje go tylko w pakiecie, a prywatnej nazwy nie odrzuca.
 ZNANE_LUKI_IMPORTU_SRC: typing.Final = {
@@ -2141,11 +2131,6 @@ ZNANE_LUKI_IMPORTU_SRC: typing.Final = {
     "import względny prywatnego parsera pliku kolejki": "from .outbox import _archive_file\n\n\ndef plik() -> object:\n    return _archive_file\n",
     "import względny prywatnej tabeli pamięci": "from ..client_data import _WORDS\n\n\ndef tabela() -> object:\n    return _WORDS\n",
 }
-
-
-@pytest.mark.parametrize("code", IMPORTY_PRYWATNE_SRC.values(), ids=IMPORTY_PRYWATNE_SRC.keys())
-def test_sprawdzenie_importow_src_lapie_import_prywatnej_nazwy(code: str) -> None:
-    assert [name for _, _, name in _private_imports(ast.parse(code)) if name not in SRC_BANNED]
 
 
 @wymaga_ruff

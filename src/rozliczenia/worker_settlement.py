@@ -46,7 +46,6 @@ Cleared = Mapping[str, int]
 
 _COLUMNS: Final = tuple(column_index_from_string(column) - 1 for column in (*QUANTITY_LETTERS, AMOUNT_COLUMN))
 _FOR_WORKER: Final[Mapping[FillColour, int | None]] = {FillColour.RED: None, FillColour.GREEN: 1}
-"""Kolor pola → wartość pola w Rozliczeniu pracownika (``None``: puste)."""
 
 
 def for_worker(header: Mapping[str, int], rows: Sequence[DataRow], rules: QuantityRules) -> tuple[list[DataRow], Cleared]:

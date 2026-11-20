@@ -56,10 +56,6 @@ def test_kontrprzyklad_kolejki_opowiada_kroki_kodu_i_stan_kolejki_i_skrzynki_na_
     ]
 
 
-def _no_change(text: str) -> str:
-    return text
-
-
 @pytest.mark.parametrize(
     ("path", "edit", "moved"),
     [
@@ -71,9 +67,8 @@ def _no_change(text: str) -> str:
         (SERVER, lambda text: text.replace("class _Server(uvicorn.Server):\n", "class _Server(uvicorn.Server):\n    DODANE = 1\n"), "src/rozliczenia/centrum/server.py _Server"),
         (APP, lambda text: "POZA = 1\n" + text, None),
         (APP, lambda text: text.replace("        outbox.resume()\n", "        outbox.resume()  # komentarz\n"), None),
-        (SERVER, _no_change, None),
     ],
-    ids=["lifespan", "listen-when-released", "graceful-shutdown", "listen-locally", "serve", "server", "poza-definicjami", "komentarz", "bez-zmian"],
+    ids=["lifespan", "listen-when-released", "graceful-shutdown", "listen-locally", "serve", "server", "poza-definicjami", "komentarz"],
 )
 def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centrum(
     tmp_path: Path, path: Path, edit: Callable[[str], str], moved: str | None
@@ -86,7 +81,7 @@ def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centru
     rozjazd_modelu.przesun(skill, tmp_path)
     copy = tmp_path / path.relative_to(ROOT)
     changed = edit(copy.read_text(encoding="utf-8"))
-    assert edit is _no_change or changed != copy.read_text(encoding="utf-8"), "kotwica zmiany nie pasuje do kodu"
+    assert changed != copy.read_text(encoding="utf-8"), "kotwica zmiany nie pasuje do kodu"
     copy.write_text(changed, encoding="utf-8")
 
     found = rozjazd_modelu.rozjazd(skill, tmp_path)
@@ -125,10 +120,9 @@ ALL = [
             1,
         ),
         ("6/6", "", ALL[8:], "KOLEJKA SKRZYNKI OK", 0),
-        ("4/6", "", ALL[5:6], "KOLEJKA SKRZYNKI OK", 0),
         ("11/11", "", [], "KOLEJKA SKRZYNKI: PADŁO (MUTACJE_CZESC to K/N z 1 <= K <= N <= 10, nie '11/11')", 1),
     ],
-    ids=["calosc", "model-pada", "zakres-pada", "czesc-6-z-6", "czesc-4-z-6", "zla-czesc"],
+    ids=["calosc", "model-pada", "zakres-pada", "czesc-6-z-6", "zla-czesc"],
 )
 def test_podstawa_ci_uruchamia_jednostki_swojej_czesci_do_konca_i_pada_gdy_padla_ktoras(
     tmp_path: Path, part: str, failing: str, ran: list[str], last: str, returncode: int

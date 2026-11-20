@@ -263,21 +263,6 @@ def test_trwala_porazka_ogladana_zrywami_daje_komunikat_po_minucie(tmp_path: Pat
     assert len(centrum.log_lines(LOG_EVENT)) == 1
 
 
-def test_bez_dobrego_odczytu_zapisy_zepsutego_pliku_to_jedna_seria(tmp_path: Path) -> None:
-    # Bez dobrego odczytu strona od razu pokazuje Komunikat i czyta plik znów dopiero po zapisie taty.
-    centrum = _prepared(tmp_path)
-    path = centrum.fixture.collective_file_path
-    path.write_bytes(b"zepsuty od startu Centrum")
-    states = [centrum.view(VIEW)["state"]]
-    for save in range(3):
-        _hidden_for(centrum, 60)
-        path.write_bytes(b"dalej zepsuty" + bytes([save]))
-        states.append(centrum.view(VIEW)["state"])
-
-    assert states == ["problem"] * 4
-    assert len(centrum.log_lines(LOG_EVENT)) == 1
-
-
 def test_wolny_nieudany_odczyt_daje_komunikat_po_minucie_i_jeden_wpis(tmp_path: Path) -> None:
     # OneDrive przez 13 s pobiera plik tylko w chmurze i nie zdąży, a synchronizacja zmienia jego znacznik między
     # próbami; strona ponawia 3 s po każdej odpowiedzi.

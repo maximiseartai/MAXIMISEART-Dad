@@ -32,7 +32,6 @@ IDENTITY: Final = {
     "GIT_COMMITTER_NAME": NAME,
     "GIT_COMMITTER_EMAIL": EMAIL,
 }
-FORMAT = "%an <%ae> | %cn <%ce>"
 
 
 def _settings_env(project: Path, name: str = "settings.json") -> dict[str, str]:
@@ -87,22 +86,6 @@ def test_ustawienia_projektu_daja_agentom_tozsamosc_konta() -> None:
         + ". Claude Code daje te zmienne każdemu poleceniu Basha agenta, a GIT_AUTHOR_*/GIT_COMMITTER_* bije user.* z "
         "każdego configu, więc agent, który zmieni wspólny .git/config, nie zmienia autora commitów agentów (13.11, "
         f"recenzent PR #1646). Przywróć w env: {json.dumps(IDENTITY)}; tożsamości nie bierz z user.* configu."
-    )
-
-
-def test_commit_z_env_ustawien_ma_tozsamosc_konta_mimo_obcej_we_wspolnym_configu(
-    tmp_path: Path,
-) -> None:
-    worktree = _shared_config_with_foreign_identity(tmp_path)
-    agent = os.environ | _settings_env(ROOT)
-
-    _git(
-        worktree, "commit", "--quiet", "--allow-empty", "--message", "agent", env=agent
-    )
-
-    assert (
-        _git(worktree, "log", "-1", f"--format={FORMAT}")
-        == f"{NAME} <{EMAIL}> | {NAME} <{EMAIL}>"
     )
 
 

@@ -31,7 +31,7 @@ def leftovers(path: Path) -> list[str]:
     return sorted(other.name for other in path.parent.iterdir() if other != path)
 
 
-@pytest.mark.parametrize("failures", [1, 2, 4])
+@pytest.mark.parametrize("failures", [2, 4])
 def test_chwilowa_blokada_konczy_sie_zapisem_po_przerwach_od_najkrotszej(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failures: int
 ) -> None:

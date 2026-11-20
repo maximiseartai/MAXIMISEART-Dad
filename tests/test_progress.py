@@ -4,7 +4,6 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 import itertools
 
-import pytest
 
 from rozliczenia.domain import (
     IssueCountReady,
@@ -84,6 +83,7 @@ def test_projection_reduces_failed_przetworzenie_szablonu_pracownika_without_cou
         ]
     )
 
+    before = projection.snapshot
     failed = WorkerFailed("Darek Fikcyjny", template_index=2, elapsed_ms=25, phase_elapsed_ms=5)
     snapshot = projection.update(failed)
 
@@ -93,8 +93,7 @@ def test_projection_reduces_failed_przetworzenie_szablonu_pracownika_without_cou
     assert snapshot.templates_completed == 1
     assert snapshot.rows == 2
     assert snapshot.operation_counts["ZAPISANO"] == 1
-    with pytest.raises(TypeError):
-        snapshot.phase_states[ProgressPhase.SAVING] = PhaseState.COMPLETED  # type: ignore[index]
+    assert before.phase_states[ProgressPhase.SAVING] is PhaseState.RUNNING
 
 
 def test_projection_reduces_complete_przebieg_rozliczen_to_one_snapshot() -> None:

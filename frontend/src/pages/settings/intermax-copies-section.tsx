@@ -27,11 +27,6 @@ import { useResource } from "@/lib/use-resource"
 /** Wynik ostatniego „Przywróć tę kopię” na karcie albo odmowa serwera, gdy coś innego trwa. */
 type Outcome = IntermaxRestore | { state: "failed"; message: string }
 
-/**
- * Kopie INTERMAX od najnowszej z datą i godziną z nazwy; każdą tata przywraca po jednym zdaniu ostrzeżenia, że
- * zmiany po jej godzinie znikną. Wynik (przywrócona albo Komunikat odmowy) stoi nad listą, a lista czyta się od
- * nowa, bo stan sprzed przywrócenia jest teraz nową Kopią.
- */
 export function IntermaxCopiesSection() {
   const { resource: copies, reload } = useResource(getIntermaxCopies, [])
   const [chosen, setChosen] = React.useState<IntermaxCopy | null>(null)
@@ -127,7 +122,9 @@ function ConfirmRestoreDialog({
             Przywrócić kopię z {shown === null ? "" : dateTime(shown.taken_at)}?
           </AlertDialogTitle>
           <AlertDialogDescription className="tabular-nums">
-            Zmiany w INTERMAX wprowadzone po {shown === null ? "" : hourMinute(shown.taken_at)} znikną.
+            Zmiany w INTERMAX wprowadzone po {shown === null ? "" : hourMinute(shown.taken_at)} znikną, także te
+            zrobione na drugim komputerze. Przed przywróceniem narzędzie zrobi Kopię obecnego INTERMAX, więc
+            przywrócenie też da się cofnąć.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
