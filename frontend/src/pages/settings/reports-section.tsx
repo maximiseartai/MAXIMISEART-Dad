@@ -12,7 +12,6 @@ const REPORT_KEY_LABELS: Record<Configuration["reports"], string> = {
   refused_key: "Token odrzucony",
 }
 
-/** Stan połączenia ze Skrzynką Zgłoszeń, tylko do wglądu: Token do Zgłoszeń ustawia Maks (ADR 0032). */
 export function ReportsSection() {
   return (
     <WithConfiguration>

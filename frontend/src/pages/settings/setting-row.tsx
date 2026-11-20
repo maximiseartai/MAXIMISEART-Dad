@@ -49,7 +49,6 @@ export function SettingRow({
   )
 }
 
-/** Jedno zdanie przy polu: zła wartość, której Centrum nie zapisało, albo złe ustawienie w pliku. */
 export function FieldSentence({ id, children }: { id?: string; children: React.ReactNode }) {
   return (
     <p id={id} role="alert" className="flex items-start gap-2 text-sm text-pretty text-destructive">
@@ -59,7 +58,6 @@ export function FieldSentence({ id, children }: { id?: string; children: React.R
   )
 }
 
-/** Pole formularza w wierszu sekcji: etykieta po lewej (pusta przy kolejnym polu tej samej listy) i pole po prawej. */
 export function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
@@ -71,11 +69,6 @@ export function FormRow({ label, children }: { label: string; children: React.Re
   )
 }
 
-/**
- * Przyciski formularza w wierszu sekcji: przycisk usunięcia wpisu po lewej (`children`, przy nowym wpisie brak), „Anuluj”
- * i „Zapisz” po prawej. W czasie zapisu (`saving`) „Zapisz” czeka, a bez zmiany jest nieaktywne. Formularz, który pyta
- * o usunięcie (`removing`), ma w ich miejscu „Nie usuwaj” i „Usuń”.
- */
 export function FormActions({
   cancel,
   save,

@@ -11,17 +11,8 @@ import { DayDetails, type Keep, WorkerAvatar } from "@/pages/worker-reports/day-
 import { columnLabel, shortDay } from "@/pages/worker-reports/days"
 import { look } from "@/pages/worker-reports/status"
 
-/** Wiersz Mapy cieplnej: Wykonawca i stan dnia w każdej kolumnie zakresu. */
 export type HeatRow = { worker: string; cells: ReadonlyArray<{ column: ReportsDay; state: DayState }> }
 
-/**
- * Mapa cieplna Raportów: wiersz to Wykonawca, kolumna to dzień zakresu, kafelek „wpisane/zlecenia” w kolorze stanu z
- * popoverem dnia i znaczkiem dzwonka, gdy za ten dzień poszło Przypomnienie o raporcie, na końcu pierścień wpisanych
- * w zakresie. Kolumna Wykonawcy bierze wolne miejsce, kolumny dni mają stałą szerokość, a na wąskim ekranie tabela
- * przewija się w bok wewnątrz karty.
- * `dimmed` to filtr Status: kafelki niewybranych dni i dni przyszłe przygasają, a przy Przypomnianych linia pod
- * Wykonawcą liczy jego przypomnienia.
- */
 export function HeatMap({
   columns,
   today,
@@ -204,7 +195,6 @@ function Tile({
   )
 }
 
-/** Nazwa kafelka: `wykonawca.b, cz. 05.11: Bez raportu, wpisane 1 z 2`, z liczbą wysłanych Przypomnień o raporcie. */
 function tileLabel(worker: string, state: Extract<DayState, { kind: Status }>): string {
   const { day } = state
   const shown = `${worker}, ${shortDay(day.day)}: ${look(state.kind).label}, wpisane ${day.entered} z ${day.orders}`
@@ -217,7 +207,6 @@ function tileLabel(worker: string, state: Extract<DayState, { kind: Status }>): 
   return `${shown}, ${count} ${plural(count, { one: "przypomnienie wysłane", few: "przypomnienia wysłane", many: "przypomnień wysłanych" })}`
 }
 
-/** Znaczek dzwonka w rogu kafelka: za ten dzień poszło Przypomnienie o raporcie. */
 function ReminderPin() {
   return (
     <span
@@ -240,7 +229,6 @@ type Totals = {
   reminders: string[]
 }
 
-/** Liczby Wykonawcy w zakresie: dni z wynikiem kliknięcia, bez dni przyszłych. */
 function totalsOf(states: ReadonlyArray<DayState>): Totals {
   const totals: Totals = { orders: 0, entered: 0, problems: 0, withoutReport: 0, waiting: false, any: false, reminders: [] }
 
@@ -261,7 +249,6 @@ function totalsOf(states: ReadonlyArray<DayState>): Totals {
   return totals
 }
 
-/** Linia pod nazwą Wykonawcy przy filtrze Przypomniane: `3 przypomnienia · ost. 13.11` albo `Bez przypomnień`. */
 function remindersLine(totals: Totals): Summary {
   const last = totals.reminders.toSorted((left, right) => Date.parse(left) - Date.parse(right)).at(-1)
 
@@ -275,10 +262,8 @@ function remindersLine(totals: Totals): Summary {
   return { text: `${count} ${word} · ost. ${dayMonth(last)}`, tone: "text-reminder-tile-foreground" }
 }
 
-/** Linia pod nazwą Wykonawcy: tekst i jego kolor. */
 type Summary = { text: string; tone: string }
 
-/** Krótki stan Wykonawcy pod nazwą: `1 problem · 1 bez raportu`, `2 bez raportu`, `Czeka na raport`, `Komplet`. */
 function summary(totals: Totals): Summary {
   if (totals.problems > 0) {
     const problems = `${totals.problems} ${plural(totals.problems, { one: "problem", few: "problemy", many: "problemów" })}`
@@ -306,7 +291,6 @@ const RADIUS = 9
 
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 
-/** Pierścień wpisanych zleceń w zakresie: `96%` i `50 z 52 wpisanych`; bez zleceń tylko kreska. */
 function Ring({ entered, orders }: { entered: number; orders: number }) {
   if (orders === 0) {
     return <span className="text-muted-foreground">—</span>

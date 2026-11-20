@@ -123,11 +123,6 @@ function NoReports({ className }: { className: string | undefined }) {
 
 const NO_CHOICE: Readonly<Record<Choice, number>> = { problem: 0, without_report: 0, waiting: 0, complete: 0, reminded: 0 }
 
-/**
- * Pasek narzędzi (wyszukiwarka, filtr Status) i Mapa cieplna dni zakresu, pod nią Raporty spoza listy adresów z tych
- * dni. Wykonawcy zawsze alfabetycznie; filtr Status zostawia tych, którzy mają w zakresie dzień wybranego stanu albo,
- * przy Przypomnianych, dzień z Przypomnieniem o raporcie.
- */
 function ReportsMap({
   view,
   range,
