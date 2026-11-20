@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from rozliczenia.centrum.tool_update import GUARDIAN_LEASE_S
 from rozliczenia.message import Message, refer_if
 from rozliczenia.tool_files import HOST, LOG_PATH, TOOL_ROOT
@@ -54,6 +56,15 @@ def unexpected_start_failure() -> Message:
         action=(
             f"Kliknij {_SHORTCUT} ponownie. {refer_if('Jeśli komunikat wraca', request='przekaż dziennik')}"
         ),
+    )
+
+
+def unknown_workstation(file: Path) -> Message:
+    return Message(
+        code="NIEZNANE_STANOWISKO",
+        what="Centrum rozliczeń nie wystartowało, bo nie rozpoznaje Stanowiska tego komputera.",
+        where=f"plik {file.name} w folderze config narzędzia",
+        action="Przekaż ten komunikat Maksowi.",
     )
 
 
