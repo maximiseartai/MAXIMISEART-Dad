@@ -27,7 +27,7 @@ from rozliczenia.centrum.process_kind import (
 )
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.files import Unreadable
-from rozliczenia.centrum.settings.owner import SettingsReads, SettingsSnapshot
+from rozliczenia.centrum.settings.reads import SettingsReads, SettingsSnapshot
 from rozliczenia.period_folder import PeriodFolders, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period

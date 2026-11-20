@@ -6,7 +6,7 @@ from rozliczenia.centrum import refusal
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
-from rozliczenia.centrum.settings.owner import SettingsReads
+from rozliczenia.centrum.settings.reads import SettingsReads
 from rozliczenia.file_state import file_state
 
 

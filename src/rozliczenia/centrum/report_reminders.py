@@ -16,7 +16,7 @@ from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
-from rozliczenia.centrum.settings.owner import SettingsReads, SettingsSnapshot
+from rozliczenia.centrum.settings.reads import SettingsReads, SettingsSnapshot
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError

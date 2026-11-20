@@ -16,7 +16,7 @@ from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY
-from rozliczenia.centrum.settings.owner import SettingsReads
+from rozliczenia.centrum.settings.reads import SettingsReads
 from rozliczenia.file_state import file_state, path_state
 from rozliczenia.period_folder import (
     PeriodFolder,

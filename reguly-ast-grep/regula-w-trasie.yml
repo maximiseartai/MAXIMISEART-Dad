@@ -4,7 +4,7 @@ severity: error
 message: >-
   odmowa obok zapisu Ustawień poza ich właścicielem to druga droga reguły, którą „Cofnij” w Historii omija: przenieś
   regułę do właściciela Ustawień (CentrumSettings._checked albo _dad_change w settings/owner.py) i odmawiaj tylko na
-  podstawie jego wyniku; moduł, który Ustawienia tylko czyta, bierze SettingsReads zamiast CentrumSettings
+  podstawie jego wyniku; moduł, który Ustawienia tylko czyta, importuje z settings/reads.py (SettingsReads zamiast CentrumSettings)
 files:
   - src/rozliczenia/centrum/**/*.py
 # Prawo właściciela Ustawień: settings/owner.py sprawdza reguły przyjęcia zmiany, do niego komunikat kieruje resztę kodu.
@@ -32,11 +32,12 @@ rule:
   # Regułę przyjęcia zmiany ma tylko właściciel Ustawień (#1533, #1585 (a)); powroty z metadata.przypadki (_ensure_not_in_periods w
   # trasie DELETE i odmowa needed_by w trasie formularza). Zakres wynika z własności, nie ze składni trasy
   # (#1727 r1–r3: nazwa pliku, APIRouter(…), identyfikator APIRouter nie widziały FastAPI ani adnotacji napisem), ani z
-  # nazw metod zapisu (lista nazw rosła z każdym plikiem Ustawień w #1904, #1919, #1964 i zgubiła legend_after, #2457):
-  # każdy moduł Centrum poza właścicielem, który nazywa typ CentrumSettings (import, adnotacja, także napisem, konstruktor)
-  # albo importuje klasę wyniku zapisu właściciela, cały, bo metody zapisu ma CentrumSettings, a własny Protocol z nimi
-  # nazywa ich wynik; moduł, który Ustawienia tylko czyta, bierze protokół SettingsReads bez metod zapisu (mypy odmawia
-  # zapisu przez niego). Prywatne metody właściciela spoza niego zatrzymuje SLF001 ruff.
+  # nazw metod zapisu (lista nazw rosła z każdym plikiem Ustawień w #1904, #1919, #1964 i zgubiła legend_after, #2457),
+  # ani z postaci importu (#2489 r1 i r2: wynik zapisu we własnym Protocol, moduł właściciela pod aliasem): każdy moduł
+  # Centrum poza właścicielem, który importuje cokolwiek z settings/owner.py (tekst instrukcji importu ma słowo owner,
+  # więc alias, kilka modułów, nawias i import względny też) albo nazywa typ CentrumSettings, cały. Moduł, który
+  # Ustawienia tylko czyta, importuje z settings/reads.py (SettingsReads bez metod zapisu, więc mypy odmawia zapisu,
+  # oraz SettingsSnapshot i WorkerListRead). Prywatne metody właściciela spoza niego zatrzymuje SLF001 ruff.
   # Zgłoszone jest każde wywołanie funkcji katalogu odmów (refusal.…) poza kształtami z listy not: niżej i każde wywołanie
   # sprawdzenia _ensure_*. Każdy dozwolony kształt to raise wprost w bloku gałęzi (inside bez stopBy sięga tylko do
   # rodzica), a dozwolony if stoi wprost w ciele funkcji albo w case wyniku właściciela, więc odmowa w innej gałęzi, pod
@@ -51,35 +52,10 @@ rule:
           any:
             - kind: identifier
               regex: '^CentrumSettings$'
-            # Adnotacja napisem ("CentrumSettings", "owner.CentrumSettings | None"): treść literału daje parser.
-            - kind: string_content
-              regex: '(^|\W)CentrumSettings(\W|$)'
-              inside:
-                kind: type
-                stopBy: end
-            # Własny Protocol z metodą zapisu (#2489 r1 W1) nazywa w wyniku klasę wyniku właściciela: import tej klasy
-            # z settings/owner.py (zamknięty zbiór wyników zapisu, ten sam co w case-wyniku-wlasciciela) albo modułu
-            # właściciela w całości. Klasa o tej samej nazwie z innego modułu (logs_disk.Refused) zakresu nie daje.
+            - kind: import_statement
+              regex: '\bowner\b'
             - kind: import_from_statement
-              all:
-                - has:
-                    field: module_name
-                    regex: '^(rozliczenia\.centrum\.settings\.owner|\.+(settings\.)?owner)$'
-                - has:
-                    field: name
-                    regex: '^(Saved|Refused|NotSaved|KeptInPeriods|NotUndoable)( as \w+)?$'
-            - kind: import_from_statement
-              all:
-                - has:
-                    field: module_name
-                    regex: '^(rozliczenia\.centrum\.settings|\.+(settings)?)$'
-                - has:
-                    field: name
-                    regex: '^owner( as \w+)?$'
-            - kind: dotted_name
-              regex: '^rozliczenia\.centrum\.settings\.owner$'
-              inside:
-                kind: import_statement
+              regex: '\bowner\b'
     - any:
         - kind: call
           has:

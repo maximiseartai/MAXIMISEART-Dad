@@ -1805,7 +1805,7 @@ def test_regula_w_trasie_obejmuje_modul_z_kazda_metoda_zapisu_wlasciciela_bez_li
     assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(6, "regula-w-trasie")]
 
 
-_ODCZYT = "from rozliczenia.centrum.settings.owner import SettingsReads\n"
+_ODCZYT = "from rozliczenia.centrum.settings.reads import SettingsReads, SettingsSnapshot\n"
 
 
 @needs_ast_grep
@@ -1888,6 +1888,61 @@ _ODCZYT = "from rozliczenia.centrum.settings.owner import SettingsReads\n"
         ),
         pytest.param(
             "probka.py",
+            "import rozliczenia.centrum.settings.owner as wlasciciel\n",
+            "\n\ndef apply(saved: wlasciciel.Saved) -> None:\n    print(saved)\n",
+            [6, 8],
+            id="modul-wlasciciela-importem-pod-alias",
+        ),
+        pytest.param(
+            "probka.py",
+            "import json, rozliczenia.centrum.settings.owner as wlasciciel\n",
+            "\n\ndef apply(saved: wlasciciel.Saved) -> None:\n    print(json, saved)\n",
+            [6, 8],
+            id="modul-wlasciciela-obok-innego-w-jednym-imporcie",
+        ),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.settings import folders, owner as wlasciciel\n",
+            "\n\ndef apply(saved: wlasciciel.Saved) -> None:\n    print(folders, saved)\n",
+            [6, 8],
+            id="modul-wlasciciela-z-pakietu-pod-alias-obok-innego",
+        ),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.settings.owner import (\n    NotSaved,\n    Saved,\n)\n",
+            "\n\ndef apply(saved: Saved | NotSaved) -> None:\n    print(saved)\n",
+            [9, 11],
+            id="wynik-wlasciciela-w-nawiasie-na-kilku-liniach",
+        ),
+        pytest.param(
+            "probka.py",
+            "from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    from rozliczenia.centrum.settings.owner import Saved\n",
+            '\n\ndef apply(saved: "Saved") -> None:\n    print(saved)\n',
+            [9, 11],
+            id="wynik-wlasciciela-pod-type-checking",
+        ),
+        pytest.param(
+            "settings/history.py", "from . import owner\n", "\n\ndef apply(saved: owner.Saved) -> None:\n    print(saved)\n", [6, 8], id="modul-wlasciciela-z-kropki"
+        ),
+        pytest.param(
+            "probka.py", _ODCZYT, "\n\ndef read(snapshot: SettingsSnapshot) -> None:\n    print(snapshot.folders)\n", [], id="migawka-z-modulu-odczytu"
+        ),
+        pytest.param(
+            "probka.py",
+            "import rozliczenia.centrum.settings as ustawienia\n",
+            "\n\ndef apply(settings: ustawienia.owner.CentrumSettings) -> None:\n    settings.undo()\n",
+            [6, 8],
+            id="typ-przez-atrybut-pakietu",
+        ),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.run_logs_guard import owner_text\n",
+            "\n\ndef apply(text: str) -> None:\n    print(owner_text(text))\n",
+            [],
+            id="import-nazwy-zaczynajacej-sie-od-owner",
+        ),
+        pytest.param(
+            "probka.py",
             "from rozliczenia.centrum.logs_disk import Refused\n",
             "\n\ndef apply(refused: Refused) -> None:\n    print(refused)\n",
             [],
@@ -1908,10 +1963,11 @@ def test_regula_w_trasie_obejmuje_kazdy_modul_z_typem_wlasciciela_ustawien_poza_
     (``quantity_differences.py`` bez ``router`` w nazwie), r2 W1 i r3 W1 (``@app.delete`` na ``FastAPI`` w ``app.py``,
     adnotacja napisem), r4 W1 i r5 W2 (``getattr`` z nazwą metody zapisu) i moduł bez trasy, który nazywa typ
     ``CentrumSettings`` przez import, alias, atrybut modułu właściciela albo adnotację napisem, i moduł, który importuje
-    klasę wyniku zapisu właściciela albo cały moduł właściciela (własny ``Protocol`` z metodą zapisu, #2489 r1 W1), są
+    cokolwiek z ``settings/owner.py`` w każdej postaci instrukcji importu (własny ``Protocol`` z wynikiem zapisu,
+    #2489 r1 W1, moduł właściciela pod aliasem i obok innego, r2 W1, nawias, ``TYPE_CHECKING``, import względny), są
     zgłoszone; ten sam kod
     w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``), w module, który Ustawienia tylko czyta
-    przez ``SettingsReads``, w module bez Ustawień, w module z klasą o nazwie wyniku z innego modułu i w module, którego
+    przez ``settings/reads.py``, w module bez Ustawień, w module z klasą o nazwie wyniku z innego modułu i w module, którego
     napis tylko wspomina typ, nie."""
 
     base = _empty_base(tmp_path)
@@ -2036,11 +2092,21 @@ ZNANE_LUKI_REGULY_W_TRASIE: Final = {
         "def apply(settings: object, problem: object) -> None:\n    if problem:\n"
         '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, "change_folders")(problem)\n'
     ),
-    "zakres: własny Protocol z metodą zapisu, której wynik nie nazywa klasy wyniku właściciela (object)": (
+    "zakres: własny Protocol z metodą zapisu, który nic nie importuje z settings/owner.py (wynik object albo None)": (
         "from typing import Protocol\n\nfrom rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.settings.folders import FoldersEdit\n\n\n"
         "class _Zapis(Protocol):\n    def change_folders(self, edit: FoldersEdit) -> object: ...\n\n\n"
         "def apply(settings: _Zapis, edit: FoldersEdit, problem: object) -> None:\n    if problem:\n"
         "        raise refusal.settings_not_saved()\n    settings.change_folders(edit)\n"
+    ),
+    "zakres: moduł właściciela jako atrybut pakietu settings, bez słowa owner w imporcie": (
+        "import rozliczenia.centrum.settings as ustawienia\nfrom rozliczenia.centrum import refusal\n\n\n"
+        "def apply(saved: object, problem: object) -> bool:\n    if problem:\n"
+        "        raise refusal.settings_not_saved()\n    return isinstance(saved, ustawienia.owner.Saved)\n"
+    ),
+    "zakres: wynik zapisu właściciela przez moduł pośredni, który go ponownie eksportuje": (
+        "from rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.settings_writes import Saved\n\n\n"
+        "def apply(saved: Saved, problem: object) -> Saved:\n    if problem:\n"
+        "        raise refusal.settings_not_saved()\n    return saved\n"
     ),
     "zakres: właściciel Ustawień z pola obiektu, którego klasa nazywa CentrumSettings w innym module": (
         "from rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.route_context import RouteContext\n\n\n"

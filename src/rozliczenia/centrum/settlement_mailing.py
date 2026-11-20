@@ -18,7 +18,7 @@ from rozliczenia.centrum.log import SettlementMailFailure
 from rozliczenia.centrum.period_board import requested_folder
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
-from rozliczenia.centrum.settings.owner import SettingsReads, SettingsSnapshot
+from rozliczenia.centrum.settings.reads import SettingsReads, SettingsSnapshot
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.period_folder import PeriodFolder, WorkerSettlementFile, scan_period_folders

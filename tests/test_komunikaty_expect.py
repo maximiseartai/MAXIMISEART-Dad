@@ -863,7 +863,8 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
     "funkcja modułu, który Ustawienia tylko czyta, do zapisu przez SettingsReads": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.folders import FoldersEdit
-from rozliczenia.centrum.settings.owner import KeptInPeriods, NotSaved, Refused, Saved, SettingsReads
+from rozliczenia.centrum.settings.owner import KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.reads import SettingsReads
 
 
 def zapisz(settings: SettingsReads, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
