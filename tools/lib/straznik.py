@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
+import ast
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import Enum
@@ -29,7 +30,9 @@ checkoucie, do ostatniego kroku narzędzia strażnika (przy mypy także ruff), w
 ``srodowisko_ci.mismatch``. Przy ``ruff`` krok ruff biegnie drugi raz bez ``per-file-ignores`` i z ``--ignore-noqa``,
 jak sprawdzenia zakazów ruff w kroku reguł chwastów tego zadania: zakaz ``banned-api`` albo ``import *`` z tego biegu
 to znalezisko, gdy przywrócony plik nie używa tej nazwy na drzewie bez przywrócenia, czyli nazwa spoza prawa
-właściciela (wiersz ``OWNERS`` w ``tests/test_zakazy_ruff.py``) albo pod ``noqa``. Krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
+właściciela (wiersz ``OWNERS`` w ``tests/test_zakazy_ruff.py``) albo pod ``noqa``. Nazwę z ``from moduł import nazwa``
+ruff zgłasza na linii importu, więc zakaz ruff liczy się też na imporcie nazwy, której kod zakresu ``Gdzie`` używa
+(``_imports_into``), a inne znalezisko na imporcie nie, bo w pliku z FAIL to zwykle dryf API. Krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
 to ``KROK PISZE PLIKI``, bo Required CI liczy dalsze kroki na zmienionych plikach, a zakres ``Gdzie`` z FAIL ich nie
 opisuje; kopia wraca do stanu sprzed biegu. Każdy krok mypy i ruff i każdy bieg pytest biegnie w piaskownicy systemu
 (``piaskownica.prefix``: Landlock na Linuksie, ``sandbox-exec`` na macOS), w której zapis poza kopią biegu, jej ``HOME``
@@ -82,8 +85,7 @@ zmienia. Gałęzi tylko dla macOS nie sprawdza żaden krok Required CI, więc je
 maszynie, a test, który przechodzi tylko na Windows, dowód ``pytest`` odmawia bez mutacji, a test, który łapie błąd tylko
 w torze Windows (na Linuksie pominięty), daje ``NIEWYKRYTA``, więc strażnikiem błędu tylko na Windows jest test, który
 zachowanie Windows odtwarza na Linuksie. Plik, który po FAIL zmienił też ``main``, wraca przy mypy i ruff z treścią
-sprzed tej zmiany. Ruff zgłasza zakazaną nazwę z ``from moduł import nazwa`` na linii importu, więc ``Gdzie`` na jej
-użyciu w funkcji albo w ciele klasy dowód ``ruff`` łapie tylko wtedy, gdy kod tego miejsca stoi w drzewie bez zmian. Budowa środowiska, mypy i pytest wykonują kod PR
+sprzed tej zmiany. Budowa środowiska, mypy i pytest wykonują kod PR
 (backend budowy, pakiety i wtyczki z jego konfiguracji, ``conftest.py`` i testy), więc status „Werdykt i bramka” liczy
 dowód w jobie bez prawa zapisu (``.github/workflows/werdykt-i-bramka.yml``). Moduł nie importuje ``srodowisko_ci``
 (PyYAML), bo ``tools/scal_pr.py`` bierze z niego selektory systemowym Pythonem runnera, a środowisko (``Environment``)
@@ -385,7 +387,7 @@ def _restored(root: Path, guard: Guard, environment: Environment, case: Case, ow
             return Outcome(False, f"{case.label} | {case.failed[:8]} | {_writes(ran)}")
         where = _listed(changed)
         findings = list(dict.fromkeys((*ran.findings, *(finding for finding in ran.hidden if (finding[0], finding[2]) not in owned))))
-        inside = [finding for finding in findings if finding[0] in changed and finding[1] in _scope(root, environment.tree, case, finding[0])]
+        inside = [finding for finding in findings if finding[0] in changed and _counted(root, guard, environment.tree, case, finding)]
         if inside:
             return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {_shown(inside)}")
         tried.append(f"{where}: {'znaleziska poza funkcją z Gdzie: ' + _shown(findings) if findings else f'bez znaleziska (kod {ran.code})'}")
@@ -420,6 +422,33 @@ def _scope(root: Path, tree: str, case: Case, path: str) -> set[int]:
             return set(range(1, len(lines) + 1))
         found.update(range(low, high + 1))
     return found
+
+
+def _counted(root: Path, guard: Guard, tree: str, case: Case, finding: tuple[str, int, str]) -> bool:
+    """Czy znalezisko z przywróconego pliku liczy się do dowodu: w zakresie ``_scope``, a zakaz ruff (``_BANNED_CODES``)
+    także na linii importu nazwy, której kod zakresu używa, bo ``from moduł import nazwa`` ruff zgłasza na imporcie."""
+
+    path, line, message = finding
+    scope = _scope(root, tree, case, path)
+    if line in scope:
+        return True
+    return guard.kind is Kind.RUFF and message.partition(" ")[0] in _BANNED_CODES and line in _imports_into(_text(root, case.failed, path) or "", scope)
+
+
+def _imports_into(text: str, lines: set[int]) -> set[int]:
+    """Linie importów kodu Pythona ``text``, które wiążą nazwę użytą w liniach ``lines``; tekst spoza Pythona nie ma żadnej."""
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+    used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.lineno in lines}
+    return {
+        number
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import | ast.ImportFrom) and any((alias.asname or alias.name.partition(".")[0]) in used for alias in node.names)
+        for number in range(node.lineno, (node.end_lineno or node.lineno) + 1)
+    }
 
 
 def _judged(build: Build, mutation: Mutation) -> tuple[Verdict, str]:

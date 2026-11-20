@@ -303,8 +303,43 @@ def test_zakaz_ruff_dodany_w_pr_to_dowod_ruff_takze_przy_formacie_z_konfiguracji
     assert "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:5 TID251" in outcome.line, outcome.line
 
 
-# Właściciel ``os.system`` (prawo w ``per-file-ignores``) i zakaz ``time.sleep``, którego właścicielem nie jest.
-OWNER_BANNED = '"os.system".msg = "użyj subprocess.run"\n"time.sleep".msg = "czekaj przez kod.czekanie"\n[tool.ruff.lint.per-file-ignores]\n"kod/powloka.py" = ["TID251"]'
+@wymaga_ruff_i_mypy
+@pytest.mark.parametrize(
+    ("failed", "state"),
+    [
+        pytest.param(
+            "from os import system\n\n\nclass Powloka:\n    uruchom = staticmethod(system)\n",
+            "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:1 TID251 `os.system`",
+            id="nazwa-z-gdzie-z-importu",
+        ),
+        pytest.param(
+            "from os import system\nfrom kod.liczby import nastepna\n\n\nclass Powloka:\n    uruchom = staticmethod(nastepna)\n\n\nINNA = system\n",
+            "| NIEWYKRYTA | kod/powloka.py: znaleziska poza funkcją z Gdzie: kod/powloka.py:1 TID251",
+            id="import-nazwy-spoza-gdzie",
+        ),
+        pytest.param(
+            "from kod.liczby import nastepna\nfrom kod.liczby import nastepna\n\n\nclass Powloka:\n    uruchom = staticmethod(nastepna)\n",
+            "| NIEWYKRYTA | kod/powloka.py: znaleziska poza funkcją z Gdzie: kod/powloka.py:2 F811",
+            id="inna-reguła-na-imporcie-nazwy-z-gdzie",
+        ),
+    ],
+)
+def test_zakaz_ruff_na_imporcie_nazwy_uzytej_w_gdzie_to_dowod_ruff(tmp_path: Path, failed: str, state: str) -> None:
+    """``from os import system`` ruff zgłasza na linii importu, a ``Gdzie`` wskazuje użycie nazwy w ciele klasy (#1660 W2
+    r1: ``field(default_factory=empty_memory)``): zakaz na imporcie liczy się, gdy kod zakresu ``Gdzie`` tej nazwy używa,
+    a znalezisko innej reguły na takim imporcie nie."""
+
+    pull = _pull(tmp_path, {"kod/powloka.py": failed}, {"kod/powloka.py": SHELL_FIX, "pyproject.toml": PYPROJECT.format(mypy="", ruff="", banned=BANNED)})
+    where = failed.splitlines().index(next(line for line in failed.splitlines() if "staticmethod" in line)) + 1
+
+    outcome = pull.prove("ruff", (("kod/powloka.py", where, where),), scopes=(("kod/powloka.py", where, where),))
+
+    assert state in outcome.line, outcome.line
+
+
+# Właściciel ``os.system`` (prawo w ``per-file-ignores``, obok zwolnienia z innej reguły) i zakaz ``time.sleep``, którego
+# właścicielem nie jest.
+OWNER_BANNED = '"os.system".msg = "użyj subprocess.run"\n"time.sleep".msg = "czekaj przez kod.czekanie"\n[tool.ruff.lint.per-file-ignores]\n"kod/powloka.py" = ["TID251", "F401"]'
 OWNER = "import os\n\n\ndef uruchom() -> int:\n    return os.system('true')\n"
 
 
@@ -336,12 +371,21 @@ OWNER = "import os\n\n\ndef uruchom() -> int:\n    return os.system('true')\n"
             "| NIEWYKRYTA | kod/powloka.py: bez znaleziska (kod 0)",
             id="własna-nazwa-właściciela-przechodzi",
         ),
+        pytest.param(
+            "kod/powloka.py",
+            "import os\n\n\ndef uruchom() -> int:\n    import sys\n    return os.system('true')\n",
+            OWNER,
+            5,
+            "| NIEWYKRYTA | kod/powloka.py: bez znaleziska (kod 0)",
+            id="inna-reguła-z-per-file-ignores-przechodzi",
+        ),
     ],
 )
 def test_dowod_ruff_lapie_zakaz_ktory_odrzuca_krok_regul_chwastow(tmp_path: Path, path: str, failed: str, head: str, where: int, state: str) -> None:
     """Ruff zwalnia plik właściciela z całego ``TID251`` i nie zgłasza nazwy pod ``noqa``, a krok reguł chwastów
     zadania Required CI „Ruff, mypy” odrzuca w nim cudzą nazwę i każdą nazwę pod ``noqa`` (#1719 W1 r1); własna nazwa
-    właściciela, której plik używa na HEAD, w nowym miejscu nie jest dowodem."""
+    właściciela, której plik używa na HEAD, w nowym miejscu ani reguła spoza zakazów, z której plik zwalnia konfiguracja,
+    nie jest dowodem."""
 
     config = PYPROJECT.format(mypy="", ruff="", banned=OWNER_BANNED)
     pull = _pull(tmp_path, {"pyproject.toml": config, "kod/powloka.py": OWNER, path: failed}, {path: head})
