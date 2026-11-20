@@ -32,7 +32,8 @@ sekret w `config/`) i
 [ADR 0030](0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md) (Centrum
 wysyła też Przypomnienia o raporcie przez SMTP Gmaila tym samym hasłem
 aplikacji, a odrzucone przy nich hasło zakłada Zgłoszenie bez kliknięcia i
-podglądu taty, co czeka na decyzję Maksa w
+podglądu taty, wyjątek od zdania Decyzji o jednym kliknięciu z decyzji Maksa
+20.11.2026 w
 [#2329](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2329)).
 
 ## Decyzja

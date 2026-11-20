@@ -4,7 +4,8 @@
 
 Zaakceptowana (decyzja Maksa 12.11.2026 po rozmowie z tatą, grill w tej gałęzi). Wyprzedza mapę
 [Centrum w chmurze](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1145) tak jak
-[ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md). Zmienia te zdania ADR 0028:
+[ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md). Zmienia te zdania ADR 0028 i jedno zdanie
+[ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md):
 
 - „Na żądanie, nie w tle”: Centrum startuje samo po zalogowaniu taty i w tle wysyła Przypomnienia o raporcie.
   Wpisanie raportów dalej rusza tylko na kliknięcie taty;
@@ -17,12 +18,14 @@ Zaakceptowana (decyzja Maksa 12.11.2026 po rozmowie z tatą, grill w tej gałęz
   Centrum zmienia się tak samo, a [ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md) dostaje wysyłkę przez
   SMTP obok IMAP;
 - „Co widzi przeglądarka”: widok Raporty pokazuje też pory wysłanych przypomnień i informację o brakującej stopce,
-  bez adresów Wykonawców i bez treści maili.
-
-Kod przypomnień zmienia też zdanie decyzji [ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md) „Tata wysyła je
-jednym kliknięciem po Diagnozie i przed wysłaniem widzi jego dokładną treść”: odrzucone hasło aplikacji przy wysyłce
-przypomnień zakłada Zgłoszenie do Maksa samo, bez kliknięcia i podglądu taty. Ten wyjątek czeka na decyzję Maksa w
-[#2329](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2329).
+  bez adresów Wykonawców i bez treści maili;
+- zdanie decyzji ADR 0007 „Tata wysyła je jednym kliknięciem po Diagnozie i przed wysłaniem widzi jego dokładną
+  treść”: odrzucone hasło aplikacji przy wysyłce przypomnień zakłada Zgłoszenie do Maksa samo, bez kliknięcia i
+  podglądu taty. Decyzja Maksa 20.11.2026 w [#2329](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2329),
+  odpowiedź „A”: „Zgłoszenie przy odrzuconym haśle przypomnień zostaje wysyłane samo, bez kliknięcia”. Przypomnienia
+  biegną w tle, gdy tata zwykle nie siedzi przy Centrum, więc ze Zgłoszeniem na kliknięcie Maks dowiedziałby się o
+  wstrzymanych przypomnieniach dopiero po otwarciu Centrum, a Zgłoszenie niesie tylko części, które tata wysyła w
+  każdym Zgłoszeniu z Zatrzymania.
 
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zmienia pory, godzinę pierwszego przypomnienia, stopkę i treść maila w
 Ustawienia Centrum z dzisiejszymi wartościami jako domyślnymi; temat zostaje stały, a stały blok wzoru z
