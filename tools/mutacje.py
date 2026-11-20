@@ -344,7 +344,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.zasady:
         print(silnik_mutacji.ZASADY.strip())
         return 0
-    na_boxie.przenies(args.plik)
     if not args.juz_lapie and (limits := [flag for flag, value in (("--juz-lapie-s", args.juz_lapie_s), ("--podstawa-s", args.podstawa_s)) if value is not None]):
         parser.error(f"{' i '.join(limits)} to limity sprawdzenia {ALREADY}, które biegnie tylko z --juz-lapie: dopisz --juz-lapie albo usuń limit")
     args.juz_lapie_s = ALREADY_S if args.juz_lapie_s is None else args.juz_lapie_s
@@ -371,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     if refused := ciezkie_ci.mutations_refusal(len(mutations), args.odtwarzam, root=ROOT):
         print(refused)
         return 2
+    na_boxie.przenies(args.plik)
     planned = _planned(mutations, args.baza, args.juz_lapie_s, args.podstawa_s) if args.juz_lapie and not jak_ci else []
     code = review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s, base_commands=_base_commands(planned, args.podstawa_s))
     if code == 0:

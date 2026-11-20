@@ -1214,12 +1214,12 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
     )
     ciezkie_ci.argument(parser)
     args = parser.parse_args(argv)
-    na_boxie.przenies()
     if (args.pokrycie_czesc is None) != (args.zapis_pokrycia is None):
         parser.error("--pokrycie-czesc i --zapis-pokrycia idą razem")
     if refusal := ciezkie_ci.refusal({"change-mutations"}, args.odtwarzam, root=ROOT):
         print(refusal)
         return 2
+    na_boxie.przenies()
     if args.pokrycie_czesc is not None:
         return _shard(args)
     outcome = Outcome()

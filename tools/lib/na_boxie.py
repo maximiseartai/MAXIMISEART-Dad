@@ -15,15 +15,18 @@ taty, testy tylko na macOS), i sesja pytest (``SESJA``, które ``przenies_pytest
 zostaje tam, gdzie jest), bo narzędzie uruchomione przez test jest częścią testu. Pytest bez workerów albo z jednym
 zostaje na Macu, bo jest lekki. Decyzja czyta tylko środowisko, ``PATH`` i liczbę workerów pytest, a nie tekst polecenia.
 
-Na boxie polecenie biegnie z ``PYTEST_XDIST_AUTO_NUM_WORKERS`` równym liczbie rdzeni boxa, a inne zmienne środowiska
-Maca tam nie trafiają. Plik ``--plik`` mutacji jedzie w poleceniu, bo box widzi tylko pliki worktree, które widzi git.
-Ścieżki bezwzględne pod korzeniem repo stają się względne; ścieżka po ``=`` w opcji i ścieżka spoza repo zostają, jak są.
+Polecenie jedzie na box jako plik skryptu (``boatbox run --file``), który ``boatbox`` wysyła przez stdin, bo jeden
+argument polecenia na Linuksie boxa ma najwyżej 128 KiB, a plan mutacji bywa większy. Skrypt biegnie z
+``PYTEST_XDIST_AUTO_NUM_WORKERS`` równym liczbie rdzeni boxa, a inne zmienne środowiska Maca tam nie trafiają. Plik
+``--plik`` mutacji jedzie w skrypcie, bo box widzi tylko pliki worktree, które widzi git. Ścieżki bezwzględne pod
+korzeniem repo stają się względne; ścieżka po ``=`` w opcji i ścieżka spoza repo zostają, jak są.
 """
 
 from __future__ import annotations
 
 import base64
 from collections.abc import Sequence
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -31,6 +34,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
+import textwrap
 from typing import Any, NoReturn, Protocol
 
 BOX = "BOATBOX_BOX"
@@ -42,7 +47,9 @@ START_S = 300
 """Tyle ``uruchom`` daje boxowi na start, załadowanie dysku i sync ponad limit samego polecenia."""
 ROOT = Path(__file__).resolve().parents[2]
 NIESIONE = "$HOME/.boatbox-niesione"
-"""Katalog na boxie, do którego ``polecenie`` zapisuje plik niesiony w poleceniu."""
+"""Katalog na boxie, do którego ``skrypt`` zapisuje plik niesiony w skrypcie."""
+SKRYPTY = Path(tempfile.gettempdir()) / "na-boxie"
+"""Katalog na Macu ze skryptami dla ``boatbox run --file``, nazwanymi skrótem treści."""
 
 
 class Konfiguracja(Protocol):
@@ -61,16 +68,16 @@ def przeniesc() -> bool:
     return shutil.which("boatbox") is not None
 
 
-def polecenie(words: Sequence[str], cwd: Path, *, root: Path = ROOT, carried: tuple[Path, bytes] | None = None) -> str:
-    """Polecenie powłoki dla ``boatbox run`` z ``words`` (jak ``sys.orig_argv``): interpreter to ``.venv/bin/python``
+def skrypt(words: Sequence[str], cwd: Path, *, root: Path = ROOT, carried: tuple[Path, bytes] | None = None) -> str:
+    """Skrypt powłoki dla ``boatbox run --file`` z ``words`` (jak ``sys.orig_argv``): interpreter to ``.venv/bin/python``
     repo, ścieżki bezwzględne pod ``root`` są względne do ``cwd``, a ``cd`` wchodzi do ``cwd`` względem korzenia, gdy
-    ``cwd`` leży pod nim. ``carried`` (plik i jego treść) zapisuje plik na boxie i stawia jego ścieżkę za każde słowo,
-    które go nazywa, także po ``=`` w opcji."""
+    ``cwd`` leży pod nim. ``carried`` (plik i jego treść) skrypt zapisuje na boxie z heredoc i stawia jego ścieżkę za
+    każde słowo, które go nazywa, także po ``=`` w opcji."""
 
     here = cwd if cwd.is_relative_to(root) else root
-    steps = ['export PYTEST_XDIST_AUTO_NUM_WORKERS="$(nproc)"']
+    lines = ["set -e", 'export PYTEST_XDIST_AUTO_NUM_WORKERS="$(nproc)"']
     if here != root:
-        steps.append(f"cd {shlex.quote(os.path.relpath(here, root))}")
+        lines.append(f"cd {shlex.quote(os.path.relpath(here, root))}")
     words = [os.path.relpath(root / ".venv" / "bin" / "python", here), *words[1:]]
     parts = [shlex.quote(words[0])]
     for word in words[1:]:
@@ -78,31 +85,42 @@ def polecenie(words: Sequence[str], cwd: Path, *, root: Path = ROOT, carried: tu
         named = [given for given in (word, value if equals else "") if given and carried is not None and (cwd / given).resolve() == carried[0]]
         if carried is not None and named:
             name = re.sub(r"[^A-Za-z0-9._-]", "_", carried[0].name)
-            steps.append(f'mkdir -p "{NIESIONE}" && printf %s {base64.b64encode(carried[1]).decode()} | base64 -d > "{NIESIONE}/{name}"')
+            encoded = textwrap.wrap(base64.b64encode(carried[1]).decode(), 76)
+            lines += [f'mkdir -p "{NIESIONE}"', f"base64 -d > \"{NIESIONE}/{name}\" <<'NIESIONE'", *encoded, "NIESIONE"]
             parts.append(f'{shlex.quote(option + "=") if named[0] == value else ""}"{NIESIONE}/{name}"')
         elif os.path.isabs(word) and Path(word).is_relative_to(root):
             parts.append(shlex.quote(os.path.relpath(word, here)))
         else:
             parts.append(shlex.quote(word))
-    return " && ".join([*steps, " ".join(parts)])
+    return "\n".join([*lines, "exec " + " ".join(parts)]) + "\n"
 
 
-def _exec(command: str) -> NoReturn:
+def plik_skryptu(text: str) -> Path:
+    """Plik ``SKRYPTY`` z treścią ``text``, nazwany jej skrótem, więc równoległe przeniesienia nie piszą jednego pliku."""
+
+    SKRYPTY.mkdir(exist_ok=True)
+    path = SKRYPTY / f"{hashlib.sha256(text.encode()).hexdigest()[:16]}.sh"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _exec(text: str) -> NoReturn:
     print(f"NA BOXIE | ciężkie narzędzie repo nie biegnie na Macu: boatbox run {shlex.join(sys.orig_argv)}", file=sys.stderr, flush=True)
     sys.stdout.flush()
+    script = plik_skryptu(text)
     if not Path.cwd().is_relative_to(ROOT):
         os.chdir(ROOT)
-    os.execvp("boatbox", ["boatbox", "run", command])
+    os.execvp("boatbox", ["boatbox", "run", "--file", str(script)])
 
 
 def przenies(plik: str | os.PathLike[str] | None = None) -> None:
-    """Na Macu (``przeniesc``) zastępuje proces przez ``boatbox run`` z tym samym poleceniem; ``plik`` (wartość
-    ``--plik``, tak jak w argumentach) jedzie w poleceniu, gdy istnieje. Inaczej wraca od razu."""
+    """Na Macu (``przeniesc``) zastępuje proces przez ``boatbox run --file`` ze skryptem tego samego polecenia; ``plik``
+    (wartość ``--plik``) jedzie w skrypcie, gdy istnieje. Inaczej wraca od razu."""
 
     if not przeniesc():
         return
     carried = (Path(plik).resolve(), Path(plik).read_bytes()) if plik is not None and Path(plik).is_file() else None
-    _exec(polecenie(sys.orig_argv, Path.cwd(), carried=carried))
+    _exec(skrypt(sys.orig_argv, Path.cwd(), carried=carried))
 
 
 def przenies_pytest(config: Konfiguracja) -> None:
@@ -113,19 +131,20 @@ def przenies_pytest(config: Konfiguracja) -> None:
 
     workers = config.getoption("numprocesses", default=None)
     if isinstance(workers, int) and workers > 1 and przeniesc():
-        _exec(polecenie(sys.orig_argv, Path.cwd()))
+        _exec(skrypt(sys.orig_argv, Path.cwd()))
     os.environ[SESJA] = "1"
 
 
 def uruchom(words: Sequence[str], cwd: Path, *, timeout: float, result: str, into: Path) -> subprocess.CompletedProcess[str]:
-    """``words`` na boxie worktree ``cwd`` (``boatbox run`` z limitem ``timeout`` ponad ``START_S``), potem plik
+    """``words`` na boxie worktree ``cwd`` (``boatbox run --file`` z limitem ``timeout`` ponad ``START_S``), potem plik
     ``result`` (względny do ``cwd``) z boxa do katalogu ``into``, a na końcu usunięcie boxa, bo ``cwd`` to kopia, która
     znika po biegu. Kod ``NIE_WSTAL`` mówi, że box nie wstał, a polecenie nie ruszyło."""
 
     import potomne
 
     try:
-        done = potomne.run(["boatbox", "run", polecenie(words, cwd, root=cwd)], cwd=cwd, timeout=timeout + START_S)
+        script = plik_skryptu(skrypt(words, cwd, root=cwd))
+        done = potomne.run(["boatbox", "run", "--file", str(script)], cwd=cwd, timeout=timeout + START_S)
         if done.returncode != NIE_WSTAL:
             potomne.run(["boatbox", "get", result, str(into)], cwd=cwd, timeout=START_S)
         return done

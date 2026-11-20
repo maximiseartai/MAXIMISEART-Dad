@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Mapping
+import json
 import os
 from pathlib import Path
-import re
 import shlex
 import subprocess
 import sys
@@ -27,21 +27,36 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="boatbox biegnie
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
 ATRAPA_KOD = 7
-MUTACJE = [PYTHON, "tools/mutacje.py", "--plik", "brak.json"]
+ARGUMENT_LINUKSA = 131_072
+"""Najdłuższy jeden argument polecenia na Linuksie boxa (``MAX_ARG_STRLEN``)."""
+CI = {"GITHUB_ACTIONS": "true"}
+"""Bez tego ``mutacje_zmiany.py`` i ``ci_lokalnie.py`` odmawiają ciężkich zadań CI, zanim dojdą do przeniesienia."""
 PYTEST = [PYTHON, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--collect-only", "tests/test_adr.py"]
+SZYBKO = [PYTHON, "tools/szybko.py", "--baza", "nie/ma/takiej"]
 HEAVY = [
-    pytest.param(lambda tmp: [PYTHON, "tools/szybko.py", "--baza", "nie/ma/takiej"], 1, id="szybko"),
-    pytest.param(lambda tmp: MUTACJE, 1, id="mutacje"),
-    pytest.param(lambda tmp: [PYTHON, "tools/mutacje_zmiany.py", "--pokrycie-czesc", "1/2"], 2, id="mutacje-zmiany"),
-    pytest.param(lambda tmp: [PYTHON, "tools/benchmark_przebiegu.py", "comment", "--journal", str(tmp / "brak.jsonl")], 1, id="benchmark"),
-    pytest.param(lambda tmp: [PYTHON, "tools/ci_lokalnie.py", "--tylko", "pytest", "--kazdy-commit", "nie/ma/takiej"], 1, id="ci-lokalnie-pytest"),
-    pytest.param(lambda tmp: [*PYTEST, "-n", "2"], 0, id="pytest-z-workerami"),
+    pytest.param(lambda tmp: SZYBKO, {}, id="szybko"),
+    pytest.param(lambda tmp: [PYTHON, "tools/mutacje_zmiany.py"], CI, id="mutacje-zmiany"),
+    pytest.param(
+        lambda tmp: [PYTHON, "tools/benchmark_przebiegu.py", "freeze", "--commit", "0", "--reference-dir", str(tmp / "r"), "--mirror-dir", str(tmp / "l")],
+        {},
+        id="benchmark-freeze",
+    ),
+    pytest.param(lambda tmp: [PYTHON, "tools/ci_lokalnie.py", "--tylko", "pytest", "--kazdy-commit", "nie/ma/takiej"], CI, id="ci-lokalnie-pytest"),
+    pytest.param(lambda tmp: [*PYTEST, "-n", "2"], {}, id="pytest-z-workerami"),
 ]
 FAKE = """#!/bin/bash
 printf '%s\\n' "$PWD" "$@" > "$ATRAPA_ZAPIS/$1"
 if [ "$1" = get ]; then mkdir -p "$3" && cp "$ATRAPA_JUNIT" "$3/$2"; fi
 if [ "$1" = run ]; then exit "${ATRAPA_KOD:-7}"; fi
 """
+
+
+def _plan(path: Path, name: str = "ą") -> Path:
+    """Plan jednej mutacji, której kotwicy nie ma: przechodzi sprawdzenia ``mutacje.py`` przed przeniesieniem, a na
+    miejscu kończy się zaraz linią ``NIEAKTUALNA`` i kodem 1."""
+
+    path.write_text(json.dumps([{"nazwa": name, "zmiany": [["README.md", "nie ma takiej kotwicy", "y"]], "polecenie": ["-c", ""]}]), encoding="utf-8")
+    return path
 
 
 def _fake(tmp_path: Path) -> Path:
@@ -56,7 +71,7 @@ def _fake(tmp_path: Path) -> Path:
 def _env(tmp_path: Path, *, boatbox: bool = True, extra: Mapping[str, str] | None = None) -> dict[str, str]:
     """Środowisko agenta w powłoce Maca: bez zmiennych boxa, ``run --here`` i sesji pytest testu, z atrapą ``boatbox``."""
 
-    hidden = (na_boxie.BOX, na_boxie.TUTAJ, na_boxie.SESJA, "PYTEST_VERSION", "PYTEST_CURRENT_TEST", "PYTEST_XDIST_WORKER")
+    hidden = (na_boxie.BOX, na_boxie.TUTAJ, na_boxie.SESJA, "PYTEST_VERSION", "PYTEST_CURRENT_TEST", "PYTEST_XDIST_WORKER", "GITHUB_ACTIONS")
     env = {name: value for name, value in os.environ.items() if name not in hidden}
     path = [*[str(_fake(tmp_path))] * boatbox, "/usr/bin", "/bin"]
     return env | {"PATH": os.pathsep.join(path), "ATRAPA_ZAPIS": str(tmp_path / "zapis"), "QUIET_MACHINE_SCRATCH": str(tmp_path / "maszyna"), **(extra or {})}
@@ -69,21 +84,38 @@ def _run(
     return subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
 
 
-def _moved(tmp_path: Path) -> list[str] | None:
-    """Katalog i argumenty ``boatbox run`` z atrapy; ``None``, gdy narzędzie nie wołało ``boatbox run``."""
+def _moved(tmp_path: Path) -> tuple[str, list[str], str] | None:
+    """Katalog i argumenty ``boatbox run`` z atrapy oraz treść skryptu, który dostał; ``None``, gdy narzędzie nie wołało
+    ``boatbox run``."""
 
     record = tmp_path / "zapis" / "run"
-    return record.read_text(encoding="utf-8").splitlines() if record.exists() else None
+    if not record.exists():
+        return None
+    folder, *arguments = record.read_text(encoding="utf-8").splitlines()
+    assert arguments[:2] == ["run", "--file"], arguments
+    return folder, arguments, Path(arguments[2]).read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize(("build", "own"), HEAVY)
-def test_ciezkie_narzedzie_na_macu_przenosi_sie_na_box_z_tym_samym_poleceniem_i_jego_kodem(build: Callable[[Path], list[str]], own: int, tmp_path: Path) -> None:
+def _script(*lines: str) -> str:
+    return "\n".join(["set -e", 'export PYTEST_XDIST_AUTO_NUM_WORKERS="$(nproc)"', *lines]) + "\n"
+
+
+def _carried(script: str) -> bytes:
+    lines = script.splitlines()
+    start = next(number for number, line in enumerate(lines) if line.endswith("<<'NIESIONE'"))
+    return base64.b64decode("".join(lines[start + 1 : lines.index("NIESIONE", start)]))
+
+
+@pytest.mark.parametrize(("build", "extra"), HEAVY)
+def test_ciezkie_narzedzie_na_macu_przenosi_sie_na_box_z_tym_samym_poleceniem_i_jego_kodem(
+    build: Callable[[Path], list[str]], extra: dict[str, str], tmp_path: Path
+) -> None:
     command = build(tmp_path)
 
-    done = _run(command, tmp_path)
+    done = _run(command, tmp_path, extra=extra)
 
-    expected = f'export PYTEST_XDIST_AUTO_NUM_WORKERS="$(nproc)" && .venv/bin/python {shlex.join(command[1:])}'
-    assert (done.returncode, _moved(tmp_path)) == (ATRAPA_KOD, [str(ROOT), "run", expected]), done.stderr
+    moved = _moved(tmp_path)
+    assert (done.returncode, moved and moved[::2]) == (ATRAPA_KOD, (str(ROOT), _script(f"exec .venv/bin/python {shlex.join(command[1:])}"))), done.stderr
     assert "NA BOXIE | ciężkie narzędzie repo nie biegnie na Macu" in done.stderr
 
 
@@ -96,11 +128,11 @@ def test_ciezkie_narzedzie_na_macu_przenosi_sie_na_box_z_tym_samym_poleceniem_i_
         pytest.param(False, {}, id="bez-boatbox-w-path"),
     ],
 )
-@pytest.mark.parametrize(("build", "own"), [HEAVY[1], HEAVY[-1]])
+@pytest.mark.parametrize(("command", "own"), [pytest.param(SZYBKO, 1, id="szybko"), pytest.param([*PYTEST, "-n", "2"], 0, id="pytest-z-workerami")])
 def test_na_boxie_przy_run_here_w_sesji_pytest_i_bez_boatbox_narzedzie_zostaje(
-    build: Callable[[Path], list[str]], own: int, boatbox: bool, extra: dict[str, str], tmp_path: Path
+    command: list[str], own: int, boatbox: bool, extra: dict[str, str], tmp_path: Path
 ) -> None:
-    done = _run(build(tmp_path), tmp_path, boatbox=boatbox, extra=extra)
+    done = _run(command, tmp_path, boatbox=boatbox, extra=extra)
 
     assert (done.returncode, _moved(tmp_path)) == (own, None), done.stdout + done.stderr
 
@@ -112,45 +144,57 @@ def test_pytest_bez_workerow_albo_z_jednym_zostaje_na_macu(workers: list[str], t
     assert (done.returncode, _moved(tmp_path)) == (0, None), done.stdout + done.stderr
 
 
+@pytest.mark.parametrize(
+    ("command", "extra"),
+    [
+        pytest.param([PYTHON, "tools/ci_lokalnie.py", "--tylko", "ruff", "--kazdy-commit", "nie/ma/takiej"], {}, id="ci-lokalnie-bez-pytest"),
+        pytest.param([PYTHON, "tools/ci_lokalnie.py", "--tylko", "mutations"], {}, id="ci-lokalnie-odmowa-ciezkiego-ci"),
+        pytest.param([PYTHON, "tools/mutacje.py", "--zasady"], {}, id="mutacje-zasady"),
+        pytest.param([PYTHON, "tools/mutacje.py", "--plik", "brak.json"], {}, id="mutacje-bez-planu"),
+        pytest.param([PYTHON, "tools/mutacje_zmiany.py"], {}, id="mutacje-zmiany-odmowa-ciezkiego-ci"),
+        pytest.param([PYTHON, "tools/benchmark_przebiegu.py", "comment", "--journal", "brak.jsonl"], {}, id="benchmark-comment"),
+        pytest.param([PYTHON, "tools/benchmark_przebiegu.py", "guard", "--journal", "brak.jsonl", "--budget-ms", "1"], {}, id="benchmark-guard"),
+    ],
+)
+def test_lekki_tryb_albo_szybka_odmowa_ciezkiego_narzedzia_zostaje_na_macu(command: list[str], extra: dict[str, str], tmp_path: Path) -> None:
+    done = _run(command, tmp_path, extra=extra)
+
+    assert (done.returncode != ATRAPA_KOD, _moved(tmp_path)) == (True, None), done.stdout + done.stderr
+
+
 def test_polecenie_z_podkatalogu_wchodzi_do_niego_a_sciezka_pod_repo_jest_wzgledna(tmp_path: Path) -> None:
     done = _run([PYTHON, "szybko.py", "--baza", str(ROOT / "tools" / "nie" / "ma")], tmp_path, cwd=ROOT / "tools")
 
-    command = 'export PYTEST_XDIST_AUTO_NUM_WORKERS="$(nproc)" && cd tools && ../.venv/bin/python szybko.py --baza nie/ma'
-    assert _moved(tmp_path) == [str(ROOT / "tools"), "run", command], done.stderr
+    moved = _moved(tmp_path)
+    assert moved and moved[::2] == (str(ROOT / "tools"), _script("cd tools", "exec ../.venv/bin/python szybko.py --baza nie/ma")), done.stderr
 
 
 def test_narzedzie_spoza_katalogu_repo_przenosi_sie_z_korzenia_repo(tmp_path: Path) -> None:
     _run([PYTHON, str(ROOT / "tools" / "szybko.py"), "--baza", "nie/ma/takiej"], tmp_path, cwd=tmp_path)
 
-    command = 'export PYTEST_XDIST_AUTO_NUM_WORKERS="$(nproc)" && .venv/bin/python tools/szybko.py --baza nie/ma/takiej'
-    assert _moved(tmp_path) == [str(ROOT), "run", command]
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        pytest.param([PYTHON, "tools/ci_lokalnie.py", "--tylko", "ruff", "--kazdy-commit", "nie/ma/takiej"], id="ci-lokalnie-bez-pytest"),
-        pytest.param([PYTHON, "tools/mutacje.py", "--zasady"], id="mutacje-zasady"),
-    ],
-)
-def test_lekki_tryb_ciezkiego_narzedzia_zostaje_na_macu(command: list[str], tmp_path: Path) -> None:
-    done = _run(command, tmp_path)
-
-    assert (done.returncode != ATRAPA_KOD, _moved(tmp_path)) == (True, None), done.stdout + done.stderr
+    moved = _moved(tmp_path)
+    assert moved and moved[::2] == (str(ROOT), _script("exec .venv/bin/python tools/szybko.py --baza nie/ma/takiej"))
 
 
 @pytest.mark.parametrize("given", [pytest.param(["--plik", "{plik}"], id="osobno"), pytest.param(["--plik={plik}"], id="po-rownasie")])
-def test_plik_mutacji_jedzie_na_box_w_poleceniu(given: list[str], tmp_path: Path) -> None:
-    plan = tmp_path / "plan mutacji.json"
-    plan.write_text('[{"nazwa": "ą"}]', encoding="utf-8")
+def test_plik_mutacji_jedzie_na_box_w_skrypcie(given: list[str], tmp_path: Path) -> None:
+    plan = _plan(tmp_path / "plan mutacji.json")
 
     _run([PYTHON, "tools/mutacje.py", *[word.format(plik=plan) for word in given]], tmp_path)
 
     moved = _moved(tmp_path)
-    assert moved is not None
-    carried = re.search(r"printf %s (\S+) \| base64 -d > \"\$HOME/\.boatbox-niesione/plan_mutacji\.json\"", moved[2])
-    assert carried is not None and base64.b64decode(carried[1]) == plan.read_bytes(), moved[2]
-    assert moved[2].endswith('"$HOME/.boatbox-niesione/plan_mutacji.json"'), moved[2]
+    assert moved is not None and _carried(moved[2]) == plan.read_bytes(), moved
+    assert moved[2].endswith('"$HOME/.boatbox-niesione/plan_mutacji.json"\n'), moved[2]
+
+
+def test_plik_mutacji_ponad_limit_argumentu_linuksa_jedzie_na_box_w_pliku_skryptu_a_nie_w_argumencie(tmp_path: Path) -> None:
+    plan = _plan(tmp_path / "duzy.json", name="m" * 2 * ARGUMENT_LINUKSA)
+
+    _run([PYTHON, "tools/mutacje.py", "--plik", str(plan)], tmp_path)
+
+    moved = _moved(tmp_path)
+    assert moved is not None and _carried(moved[2]) == plan.read_bytes()
+    assert max(len(argument.encode()) for argument in moved[1]) < ARGUMENT_LINUKSA
 
 
 IMPORT_ENV = dict(os.environ)
@@ -159,7 +203,7 @@ IMPORT_ENV = dict(os.environ)
 
 @pytest.mark.skipif("NA_BOXIE_PROBKA" not in os.environ, reason="próbka testu w sesji pytest, którą uruchamia test niżej")
 def test_probka_test_uruchamia_narzedzie_ze_srodowiskiem_z_importu() -> None:
-    done = subprocess.run(MUTACJE, cwd=ROOT, env=IMPORT_ENV, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+    done = subprocess.run(SZYBKO, cwd=ROOT, env=IMPORT_ENV, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
 
     assert "NA BOXIE" not in done.stderr, done.stderr
 
@@ -197,9 +241,10 @@ def test_test_scalenia_na_macu_biegnie_na_boxie_kopii_a_junit_wraca_z_boxa(mac: 
 
     failed = testy_scalenia.failed_tests(copy, ["tests/test_x.py"], "test scalenia z main")
 
-    run = (mac / "zapis" / "run").read_text(encoding="utf-8").splitlines()
+    moved = _moved(mac)
     assert failed == ["tests/test_x.py::test_a"]
-    assert run[:2] == [str(copy), "run"] and f"--junitxml={testy_scalenia.JUNIT}" in run[2] and run[2].endswith(" tests/test_x.py"), run
+    assert moved is not None and moved[0] == str(copy), moved
+    assert f"--junitxml={testy_scalenia.JUNIT}" in moved[2] and moved[2].endswith(" tests/test_x.py\n"), moved[2]
     assert (mac / "zapis" / "get").read_text(encoding="utf-8").splitlines()[:3] == [str(copy), "get", testy_scalenia.JUNIT]
     assert (mac / "zapis" / "rm").exists()
 

@@ -182,7 +182,8 @@ def _measure_or_freeze(args: argparse.Namespace, references: Path) -> dict[str, 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    na_boxie.przenies()
+    if args.command not in ("comment", "guard"):
+        na_boxie.przenies()
     try:
         if args.command == "comment":
             print(render_comment(read_journal(args.journal), args.before, args.after), end="")

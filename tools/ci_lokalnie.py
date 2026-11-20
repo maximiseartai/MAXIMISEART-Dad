@@ -196,11 +196,11 @@ def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
     jobs = set(args.tylko.split(",")) if args.tylko else set(EVERY_COMMIT_JOBS if args.kazdy_commit else known)
     if unknown := jobs - known:
         parser.error(f"nieznane zadania: {', '.join(sorted(unknown))}; znane: {', '.join(sorted(known))}")
-    if jobs & {"pytest", "mutations"}:
-        na_boxie.przenies()
     if refusal := ciezkie_ci.refusal(jobs, args.odtwarzam, root=root):
         print(refusal)
         return 2
+    if jobs & {"pytest", "mutations"}:
+        na_boxie.przenies()
     if args.kazdy_commit:
         return _check_every_commit(root, args.kazdy_commit, jobs, fail_fast=args.do_pierwszego_bledu)
     complete = jobs == known
