@@ -1,15 +1,3 @@
-"""Reguły ilości jako zdania „jeśli … to …” dla taty (ADR 0033), z typów silnika ``quantity_engine``.
-
-Zdanie ma postać „Jeśli A i B, ale nie gdy C albo D, to działanie.”: warunki bez zaprzeczenia, potem zaprzeczone („ale
-nie gdy”), potem działanie. Reguła bez warunków to samo działanie, a reguła z samymi zaprzeczonymi to działanie z „ale
-nie gdy”. Zakresu zdanie nie mówi: okno Ustawień grupuje według niego reguły. Składnik nazywa jego pierwszy zapis z
-Listy Urządzeń (składnik spoza niej nazwa, którą poda wołający, a bez niej identyfikator), a kolumna to osobna część
-zdania z literą i nazwą pozycji cennika, którą pokazuje okno.
-
-Każdy rodzaj warunku i działania ma tu swoje zdanie (``match`` z ``assert_never``), więc nowy rodzaj w słowniku nie
-przejdzie mypy bez zdania.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -46,10 +34,6 @@ _NONE: Final[Mapping[str, str]] = MappingProxyType({})
 def rule_sentence(
     rule: QuantityRule, devices: DeviceList, names: Mapping[str, str], *, unlisted: Mapping[str, str] = _NONE
 ) -> list[SentencePart]:
-    """Zdanie reguły ``rule``; ``names``: litera kolumny → nazwa pozycji cennika (brak albo ``""``: sama litera),
-    ``unlisted``: identyfikator składnika spoza listy ``devices`` → jego nazwa (np. w odmowie reguły, której składnika
-    lista już nie ma)."""
-
     components = {**unlisted, **{component.id: component.spellings[0] for component in devices.components}}
     held = [_condition(condition, components) for condition in rule.conditions if not condition.negated]
     excepted = [_condition(condition, components) for condition in rule.conditions if condition.negated]
@@ -63,8 +47,6 @@ def rule_sentence(
 
 
 def component_sentence(component: Component) -> list[SentencePart]:
-    """Składnik Listy Urządzeń jako zdanie dla Historii Ustawień: nazwa, inne zapisy i grupa."""
-
     others = ", ".join(f"„{spelling}”" for spelling in component.spellings[1:])
     also = f", też {others}" if others else ""
     group = "" if component.group is None else f", grupa {_GROUPS[component.group]}"
@@ -72,8 +54,6 @@ def component_sentence(component: Component) -> list[SentencePart]:
 
 
 def plain_sentence(parts: Sequence[SentencePart]) -> str:
-    """Zdanie jako jeden tekst, np. w odmowie: kolumna jako „nazwa (litera)” albo sama litera, jak w oknie Ustawień."""
-
     return "".join(
         part.text if isinstance(part, SentenceText) else part.letter if part.name is None else f"{part.name} ({part.letter})"
         for part in parts
@@ -81,8 +61,6 @@ def plain_sentence(parts: Sequence[SentencePart]) -> str:
 
 
 def _named(component: str, components: Mapping[str, str]) -> str:
-    """Nazwa składnika dla taty (``components``: identyfikator → nazwa); identyfikator, gdy nazwy nie ma."""
-
     return components.get(component, component)
 
 
@@ -156,8 +134,6 @@ def _columns(letters: Sequence[str], names: Mapping[str, str]) -> list[str | Sen
 
 
 def _days(days: frozenset[int]) -> str:
-    """Dni tygodnia po kolei; trzy i więcej dni z rzędu jako przedział „poniedziałek–piątek”."""
-
     runs: list[list[int]] = []
     for day in sorted(days):
         if runs and runs[-1][-1] == day - 1:
@@ -179,8 +155,6 @@ def _joined(items: Sequence[str], last: str) -> str:
 
 
 def _parts(*items: str | SentenceColumn) -> list[SentencePart]:
-    """Części zdania: sąsiednie teksty sklejone w jeden, puste pominięte."""
-
     parts: list[SentencePart] = []
     for item in items:
         if isinstance(item, SentenceColumn):
