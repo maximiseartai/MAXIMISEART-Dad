@@ -44,9 +44,9 @@ MERGE_TEST_DISTANCE = 1
 # Suma czasów CI plików testu scalenia; Mac agenta liczy je ~5 razy szybciej (6.11.2026: 507 s w CI, 94 s na Macu).
 MERGE_TEST_BUDGET_S = 180.0
 MERGE_TEST_TIMEOUT_S = 300
-# Junit testu scalenia na boxie boat, względny do kopii, który ``na_boxie.uruchom`` zabiera z boxa; ``.gitignore`` go
-# ignoruje, bo plik w drzewie repo, który widzi git, wywraca sesję pytest sprawdzeniem drzewa repo (``DRZEWO REPO``).
 JUNIT = ".junit-testu-scalenia.xml"
+"""Junit testu scalenia na boxie boat, względny do kopii, który ``na_boxie.uruchom`` zabiera z boxa; ``.gitignore`` go
+ignoruje, bo plik w drzewie repo, który widzi git, wywraca sesję pytest sprawdzeniem drzewa repo (``DRZEWO REPO``)."""
 
 
 class Refused(Exception):
