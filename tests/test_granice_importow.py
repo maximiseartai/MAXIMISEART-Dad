@@ -355,6 +355,7 @@ IMPORT_CONTRACTS: typing.Final = (
     "Silnik nie importuje Centrum rozliczeń",
     "Pakiet silnika (rozliczenia/__init__.py) nie importuje Centrum rozliczeń",
     "imaplib i smtplib importuje tylko port Skrzynki raportów",
+    "Przeglądarkę okna efenix importuje tylko centrum/efenix_chrome.py",
 )
 wymaga_import_linter = pytest.mark.skipif(
     importlib.util.find_spec("importlinter") is None,
