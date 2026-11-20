@@ -129,6 +129,16 @@ def test_skladnik_z_doklejonymi_literami_to_skladnik_ktorego_reguly_ilosci_nie_z
 _UNKNOWN_WORD = st.text(LETTERS, max_size=4).map(lambda letters: "q" + letters)
 
 
+def test_slowo_spoza_listy_urzadzen_w_tescie_podpowiedzi_zaczyna_sie_od_q_bo_zaden_zapis_z_wydania_tak_sie_nie_zaczyna() -> None:
+    spellings = [spelling for component in DEFAULT_QUANTITY_RULES.devices.components for spelling in component.spellings]
+
+    assert [spelling for spelling in spellings if spelling.casefold().startswith("q")] == []
+
+
+def test_litery_doklejane_w_testach_regul_ilosci_nie_maja_x_bo_doklejone_xg_znika_z_urzadzen() -> None:
+    assert "x" not in LETTERS.casefold()
+
+
 @PROPERTY
 @given(st.data(), st.lists(st.tuples(st.integers(1, 3), st.one_of(st.sampled_from(COMPONENTS), _UNKNOWN_WORD)), min_size=1, max_size=5))
 def test_podpowiedz_listy_urzadzen_to_kolejne_nieznane_slowa_a_po_ich_dodaniu_lista_zna_kazde_slowo(
