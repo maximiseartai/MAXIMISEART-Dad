@@ -62,18 +62,6 @@ BY_CHANGE_ONLY = {
         "sprawdza plugin na sesjach próbek w katalogu tymczasowym, a nie całe repozytorium: sam plugin conftest stawia "
         "przy każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/stan_procesu.py, który importuje"
     ),
-    "tests/test_prywatne_skladowe.py::test_prywatna_skladowa_ustawien_w_module_centrum_pada_w_ruff": (
-        "sprawdza ruff SLF001 na próbce modułu Centrum w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
-    ),
-    "tests/test_prywatne_skladowe.py::test_znane_luki_prywatnych_skladowych_przechodza_przez_ruff_i_mypy": (
-        "sprawdza granicę ruff SLF001 na próbkach w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
-    ),
-    "tests/test_wyglad_wiersza_danych.py::test_prawo_wygladu_do_slf001_obejmuje_tylko_styl_komorki_openpyxl": (
-        "sprawdza kod row_look.py, który jego plik importuje, więc graf wybiera go przy zmianie tego modułu"
-    ),
-    "tests/test_import_dynamiczny.py": (
-        "sprawdza właściciela importu w trakcie działania na jego module; graf wybiera go przy zmianie tools/lib/import_dynamiczny.py, który importuje"
-    ),
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
     "tests/test_kolejka_skrzynki_zgloszen.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_ruff_i_plik_kolejki": (
         "graf wybiera jego plik przy zmianie outbox.py, client_data.py i tests/fixtures/plik_kolejki.py, które plik "
@@ -87,30 +75,12 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę dad_files.py, "
         "run_context.py i work.py, których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
     ),
-    "tests/test_regula_danych.py::test_pamiec_regula_danych_nie_ma_podklas_w_biegu_przy_kazdej_kolejnosci_baz": (
-        "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
-    ),
-    "tests/test_regula_danych.py::test_metody_pamieci_nie_da_sie_podmienic_na_obiekcie": (
-        "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
-    ),
-    "tests/test_regula_danych.py::test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straznikiem": (
-        "graf wybiera jego plik przy zmianie client_data, który plik importuje; zmianę run_logs_guard.py i dad_notes.py, "
-        "których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
-    ),
-    "tests/test_regula_danych.py::test_uwagi_techniczne_daje_tylko_straznik_pamieci_a_znane_luki_przechodza": (
-        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę run_logs_guard.py, "
-        "której próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
-    ),
     "tests/test_kolejka_skrzynki_zgloszen.py::test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza": (
         "graf wybiera jego plik przy zmianie outbox.py, który plik importuje, i plików konfiguracji ruff"
     ),
     "tests/test_komentarz_logow_uruchomienia.py::test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza_przez_plik_kolejki": (
         "graf wybiera jego plik przy zmianie run_logs_guard.py, comment_versions.py, outbox.py i client_data.py, które plik "
         "importuje, i plików konfiguracji ruff"
-    ),
-    "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_nazwy_komputera_w_src_przechodza_przez_ruff": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
-        "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
     "tests/test_wydanie.py::test_plan_odmawia_wydania_w_ktorym_zmiana_z_wydania_ktore_wyszlo_zniknela_albo_ma_inny_plik_lub_kod": (
         "graf wybiera jego plik przy zmianie tools/wydanie.py i tools/lib/zmiany_z_wydania.py, które plik importuje, a każdy "
@@ -125,14 +95,6 @@ BY_CHANGE_ONLY = {
         "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
     "tests/test_zakazy_ruff.py::test_tresc_z_wydania_poza_wlascicielem_nie_przechodzi_a_znane_luki_przechodza_przez_ruff_i_mypy": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
-        "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
-    "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_przez_ruff_i_mypy": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
-        "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
-    "tests/test_zakazy_ruff.py::test_wejscie_odczytu_okna_spoza_pamieci_wpisania_nie_przechodzi_a_znane_luki_przechodza_przez_ruff_i_mypy": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
         "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
