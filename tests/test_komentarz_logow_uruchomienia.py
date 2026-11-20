@@ -2800,7 +2800,7 @@ def _przyjete_spoza_alfabetu(gramatyka: re.Pattern[str], narzedzia: str, alfabet
     ("pole", "gramatyka", "narzedzia", "lapie"),
     [
         pytest.param("Tool.wydanie", re.compile(r"\d+\.\d+\.\d+"), "0.10.0", True, id="cyfra-spoza-ascii-przez-d-bez-re-ascii"),
-        pytest.param("CallFrame.function", re.compile(r"[A-Za-z_]\w*"), "price_orders", True, id="litera-spoza-ascii-przez-w-bez-re-ascii"),
+        pytest.param("CallFrame.function", re.compile(r"[A-Za-z_][^\W\d]*"), "price_orders", True, id="litera-spoza-ascii-przez-w-bez-re-ascii"),
         pytest.param(
             "RunLog.run_id", re.compile(r"[0-9a-f]{32}|[0-9a-f]{31}[^\S\x00-\x7f]"), RUN_ID, True, id="odstep-spoza-ascii-w-klasie-zaprzeczonej"
         ),
