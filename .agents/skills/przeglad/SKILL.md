@@ -72,9 +72,7 @@ Gdzie: <plik:linia>
 - <co sprawdzone i z jakim wynikiem, 1–5 punktów>
 ```
 
-Wartość pola `Mechanizm:` wybierasz według sekcji „Mechanizm” w [`korzen.md`](korzen.md), a listę wartości trzyma `Mechanism` w [`tools/lib/szablon_werdyktu.py`](../../../tools/lib/szablon_werdyktu.py), więc wartość spoza niej i Ważne bez tego pola to odmowa `--werdykt`; wątek, którego pierwszy werdykt powstał przed [ADR 0046](../../../docs/adr/0046-szczebel-straznika-wybiera-recenzent.md), kończy bez niego, jak dotąd z opcjonalnym polem `Idiom:` w tym miejscu.
+`Mechanizm:` wybierasz według sekcji „Mechanizm” w [`korzen.md`](korzen.md), a wątek z pierwszym werdyktem sprzed ADR 0046 kończy bez niego.
 Postać bloku `### Mutacja W<n> r<k>` i punktu `## Sprawdzone` zaczętego od `Korzeń ` podaje [`korzen.md`](korzen.md).
 `PASS` bez znalezisk ma tylko linie `WERDYKT: PASS <pełny SHA HEAD>`, `Znaleziska: 0 (Ważne 0, Drobne 0)`, bloki `### Mutacja` i `## Sprawdzone`.
-Treść czyta renderer GitHuba, więc pole albo nagłówek liczy się tylko poza blokiem kodu: wynik, który cytuje linię `Korzeń:`, `Gdzie:` albo `### W…`, ujmij w blok ``` albo ~~~.
-Dowód dłuższy niż 5 linii albo z linią ponad 300 znaków zapisz w pliku obok werdyktu i podaj w Dowodzie jego ścieżkę.
 Merge liczy `PASS` jako zgodę tylko w postaci, którą sprawdza `tools/scal_pr.py <PR> --werdykt <plik>`, także gdy ktoś opublikował go inaczej, więc werdykt publikuj tylko tym poleceniem.
