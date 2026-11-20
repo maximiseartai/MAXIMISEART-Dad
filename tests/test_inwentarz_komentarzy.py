@@ -387,7 +387,7 @@ def _jednostki(wynik: subprocess.CompletedProcess[str], poczatek: str) -> list[s
             {}, True, {"skrypty/opis.py": "# nagłówek opisu\nX = 1\n"},
             [
                 PRZECHODZI, *KROKI_CI,
-                f"MAIN | podstawa | verify-a | po merge'u, rozjazd modelu już na bazie, bo zmiana nie dotyka plików modelu: kod opisany modelem zmienił się: frontend/src/karta.ts.",
+                "MAIN | podstawa | verify-a | po merge'u, rozjazd modelu już na bazie, bo zmiana nie dotyka plików modelu: kod opisany modelem zmienił się: frontend/src/karta.ts.",
                 f"DOWÓD FALI OK | {OK_FALI}, noc 0",
             ], 0,
             id="rozjazd-modelu-z-bazy-nie-jest-porazka-fali",
