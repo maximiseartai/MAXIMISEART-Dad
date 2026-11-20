@@ -209,6 +209,13 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import yaml\ntekst = yaml.safe_dump(regula)": (ROOT_CONFIG, (), "yaml.safe_dump"),
     "from yaml import dump as zapisz": (SRC_CONFIG, ("rozliczenia",), "yaml.dump"),
     "import yaml as y\ny.dump_all(dokumenty, plik)": (DRIVE_CONFIG, (), "yaml.dump_all"),
+    "import yaml\nyaml.emit(zdarzenia, plik)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.emit"),
+    "import yaml\ntekst = yaml.serialize(wezel)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.serialize"),
+    "from yaml import serialize_all": (SRC_CONFIG, ("rozliczenia",), "yaml.serialize_all"),
+    "import yaml\nclass Zapis(yaml.SafeDumper): ...": (SRC_CONFIG, ("rozliczenia", "centrum"), "yaml.SafeDumper"),
+    "from yaml import CSafeDumper as Zapis": (ROOT_CONFIG, TOOLS_PROBE, "yaml.CSafeDumper"),
+    "from yaml.representer import SafeRepresenter": (ROOT_CONFIG, TOOLS_PROBE, "yaml.representer"),
+    "from yaml.emitter import Emitter": (DRIVE_CONFIG, (), "yaml.emitter"),
     # Treść z Wydania w miejscu pliku Ustawień bez odczytu: postacie z tabeli przypadków przy ZNANE_LUKI_TRESCI_Z_WYDANIA,
     # pierwsza to mail z treścią z Wydania z przeglądu #2029 (r1, W1).
     "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL": (
@@ -373,6 +380,21 @@ ZNANE_LUKI_SNU = {
     "nazwa w napisie: getattr": 'import time\n\ngetattr(time, "sleep")(0.3)\n',
     "inne API z limitem czasu: threading.Event.wait": "import threading\n\nthreading.Event().wait(0.3)\n",
 }
+
+
+ZNANE_LUKI_ZAPISU_YAML = {
+    "zakaz zna tylko nazwę z importu: getattr(yaml, \"safe_dump\")": 'import yaml\n\ntekst = getattr(yaml, "safe_dump")({"severity": "off"})\n',
+    "zakaz zna tylko PyYAML: inna biblioteka YAML": "from ruamel.yaml import YAML\n\nYAML().dump({}, None)\n",
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_zapisu_yaml_poza_tests_przechodza_przez_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_ZAPISU_YAML, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath(*TOOLS_PROBE, "sonda_luki.py"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_ZAPISU_YAML)")
 
 
 @wymaga_ruff
@@ -947,7 +969,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_mails.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
-    "src/rozliczenia/centrum/settings/files.py": frozenset({"yaml.dump"}),
+    "src/rozliczenia/centrum/settings/files.py": frozenset({"yaml.dump", "yaml.SafeDumper"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),
@@ -1112,7 +1134,26 @@ def _release_content_findings(*arguments: str, code: str | None = None) -> list[
 # Nazwy pakietu importlib wynikają z biblioteki działającego Pythona (test nazw niżej); reszta to moduły, których zadaniem
 # jest import albo wykonanie modułu. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po
 # nazwie, są znaną luką z próbkami w ZNANE_LUKI_IMPORTU, nie pełną listą.
-ZAPIS_YAML = ("yaml.dump", "yaml.dump_all", "yaml.safe_dump", "yaml.safe_dump_all")
+ZAPIS_YAML = (
+    "yaml.dump",
+    "yaml.dump_all",
+    "yaml.safe_dump",
+    "yaml.safe_dump_all",
+    "yaml.emit",
+    "yaml.serialize",
+    "yaml.serialize_all",
+    "yaml.Dumper",
+    "yaml.SafeDumper",
+    "yaml.BaseDumper",
+    "yaml.CDumper",
+    "yaml.CSafeDumper",
+    "yaml.CBaseDumper",
+    "yaml.dumper",
+    "yaml.emitter",
+    "yaml.serializer",
+    "yaml.representer",
+    "yaml.cyaml",
+)
 DYNAMIC_IMPORT = (
     "importlib.import_module",
     "importlib.__import__",
