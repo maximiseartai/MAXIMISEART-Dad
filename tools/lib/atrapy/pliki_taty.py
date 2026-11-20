@@ -15,14 +15,14 @@ from typing import Final
 COST_ROW: Final = 14
 HEADER_ROW: Final = 17
 FIRST_DATA_ROW: Final = 18
-CITY_COLUMN: Final = 1  # A
-ADDRESS_COLUMN: Final = 2  # B
-ORDER_COLUMN: Final = 6  # F: NUMER ZLECENIA
-WORKER_COLUMN: Final = 8  # H
-DATA_ROW_COLUMNS: Final = range(1, 47)  # A:AT, Wiersz danych
+CITY_COLUMN: Final = 1
+ADDRESS_COLUMN: Final = 2
+ORDER_COLUMN: Final = 6
+WORKER_COLUMN: Final = 8
+DATA_ROW_COLUMNS: Final = range(1, 47)
 LOOK_COLUMNS: Final = range(1, 13)  # A:L, Wygląd Wiersza danych
-QUANTITY_COLUMNS: Final = range(14, 43)  # N:AP, Ilości usług
-AMOUNT_COLUMN: Final = 47  # AU
+QUANTITY_COLUMNS: Final = range(14, 43)
+AMOUNT_COLUMN: Final = 47
 
 # register_columns: nagłówki A17:K17 Wzorca pliku zbiorczego taty, pod którymi Przygotowanie zapisuje kolumny wejścia;
 # Wzorzec rozliczenia pracownika ma je w B17:K17 (w A17 GODZINA).

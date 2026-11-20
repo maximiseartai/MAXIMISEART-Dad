@@ -541,6 +541,7 @@ metaklasa nie przejrzy bazy za klasą pomocniczą) to inny błąd niż odmowa te
             for droga in ("type", "type-new-z-metaklasa-typu")
         ),
         ("logi", "type-z-baza-przed-bez-super"),
+        ("postep", "type-z-baza-przed-bez-super"),
     ],
 )
 def test_typy_dowody_reguly_danych_odmawiaja_podklasy_przy_tworzeniu(kind: str, droga: str) -> None:
