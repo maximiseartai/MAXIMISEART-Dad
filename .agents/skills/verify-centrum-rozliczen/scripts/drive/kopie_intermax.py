@@ -129,9 +129,16 @@ def _drive(
     _row(page, oldest).get_by_role("button", name="Przywróć", exact=True).click()
     dialog = page.get_by_role("alertdialog")
     expect(dialog.get_by_role("heading", name=f"Przywrócić kopię z {_label(oldest)}?", exact=True)).to_be_visible()
-    warning = f"Zmiany w INTERMAX wprowadzone po {_label(oldest)[-5:]} znikną."
+    warning = (
+        f"Zmiany w INTERMAX wprowadzone po {_label(oldest)[-5:]} znikną, także te zrobione na drugim komputerze. "
+        "Przed przywróceniem narzędzie zrobi Kopię obecnego INTERMAX, więc przywrócenie też da się cofnąć."
+    )
     expect(dialog.get_by_text(warning, exact=True)).to_be_visible()
-    run.check(True, "one sentence warns that the changes after the Kopia's time disappear")
+    run.check(
+        True,
+        "the warning says that the changes after the Kopia's time disappear, also those made on the other computer, "
+        "and that a Kopia of the current INTERMAX comes first",
+    )
     run.capture(page, "241-kopie-intermax-ostrzezenie")
     dialog.get_by_role("button", name="Anuluj", exact=True).click()
     expect(dialog).to_have_count(0)
