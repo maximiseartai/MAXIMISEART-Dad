@@ -2413,6 +2413,30 @@ _PROBKI_REGUL_POWROTOW: Final = [
     ),
     pytest.param(
         "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in re.finditer(WORD, string=text):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-re-finditer-z-argumentem-nazwanym",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(string=text, pos=1):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-finditer-z-argumentami-nazwanymi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    return [text[found.end() :] for found in WORD.finditer(string=text)]\n",
+        [7],
+        id="reszta-w-wyrazeniu-listowym-z-argumentem-nazwanym",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(string=text.upper()):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [],
+        id="reszta-tekstu-innego-niz-argument-nazwany-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
         f"{_WORDS}    rests = []\n    for first, second in zip(WORD.finditer(text), WORD.finditer(text.upper())):\n        rests.append(text[first.end() :])\n    return rests\n",
         [9],
         id="reszta-w-petli-zip",
@@ -2490,6 +2514,10 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
     },
     "reszta-tekstu-od-kazdego-trafienia": {
         "tekst pętli pod inną nazwą": f"{_WORDS}    rests = []\n    rest = text\n    for found in WORD.finditer(text):\n        rests.append(rest[found.end() :])\n    return rests\n",
+        "iterator trafień w zmiennej": f"{_WORDS}    rests = []\n    found_all = WORD.finditer(text)\n    for found in found_all:\n        rests.append(text[found.end() :])\n    return rests\n",
+        "wycinek w lambdzie map": f"{_WORDS}    return list(map(lambda found: text[found.end() :], WORD.finditer(text)))\n",
+        "koniec wycinka zapisany wprost": f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.end() : len(text)])\n    return rests\n",
+        "pętla while po next": f"{_WORDS}    rests = []\n    found_all = WORD.finditer(text)\n    while (found := next(found_all, None)) is not None:\n        rests.append(text[found.end() :])\n    return rests\n",
     },
 }
 
