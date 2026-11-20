@@ -60,15 +60,11 @@ class _Range:
 
 
 class SheetHyperlinks:
-    """Hiperłącza jednego arkusza: pojedyncze komórki po wierszu, zakresy po granicach, z kolejnością w pliku."""
-
     def __init__(self, cells: dict[int, dict[int, tuple[int, Hyperlink]]], ranges: list[_Range]) -> None:
         self._cells = cells
         self._ranges = ranges
 
     def row(self, number: int, values: Sequence[object]) -> Mapping[int, Hyperlink]:
-        """Hiperłącza wiersza ``number`` o wartościach ``values`` (od kolumny A): kolumna od 1 → Hiperłącze."""
-
         found = self._cells.get(number)
         if found is None and not self._ranges:
             return _NONE

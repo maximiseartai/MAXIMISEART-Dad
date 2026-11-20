@@ -18,9 +18,6 @@ from .write_routes import Route, RouteCounts, TemplateKind
 
 
 METRICS_SCHEMA_VERSION = 3
-"""Wersja schematu rekordu metryk. Wersja 2 dodaje ``stop``: Rodzaj Zatrzymania i kod Komunikatu przerwanego
-Uruchomienia procesu. Wersja 3 dodaje ``routes``: ile zapisanych plików każdego rodzaju powstało każdą drogą zapisu z
-Wzorca (ADR 0008)."""
 MINIMUM_STATISTIC_SAMPLES = 5
 METRIC_MODES = frozenset(RunMode)
 METRIC_RESULTS = frozenset({"OK", "WYMAGA_SPRAWDZENIA", "BLAD_KRYTYCZNY"})
@@ -55,7 +52,6 @@ class RecordedStop(TypedDict):
 
 
 CompletedResult = Literal["OK", "WYMAGA_SPRAWDZENIA"]
-"""Wynik zakończonego Uruchomienia procesu; przerwane ma zamiast niego ``RecordedStop`` i wynik ``BLAD_KRYTYCZNY``."""
 
 
 def metric_record(

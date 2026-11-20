@@ -41,9 +41,6 @@ Przebieg rozliczeń, którego Sprawdzanie przeszło Wzorzec pod obecną nazwą."
 
 
 def _worker_template_unusable(error: WorkbookError) -> Message:
-    """Komunikat o Wzorcu rozliczenia pracownika z podpowiedzią zmiany nazwy, gdy brakuje go, a obok leży plik pod
-    dawną nazwą."""
-
     return settlement_messages.worker_template_unusable(error, _old_worker_template_beside(error))
 
 
@@ -70,8 +67,6 @@ class TemplateProblem:
 
 @dataclass(frozen=True)
 class ProcessTemplate:
-    """Wzorzec, z którego proces tworzy pliki, z Komunikatem tego procesu o Wzorcu, którego nie da się użyć."""
-
     file: TemplateFile
     _explain: Callable[[WorkbookError], Message]
 
@@ -88,8 +83,6 @@ class ProcessTemplate:
         return cls(TemplateFile.worker_settlement(path), _worker_template_unusable)
 
     def problem(self, check: TemplateCheck) -> TemplateProblem | None:
-        """``None``, gdy Wzorzec przechodzi Sprawdzanie ``check``."""
-
         try:
             check(self.file)
         except WorkbookError as error:
@@ -97,8 +90,6 @@ class ProcessTemplate:
         return None
 
     def checked(self, check: TemplateCheck) -> TemplateFile:
-        """Wzorzec po Sprawdzaniu ``check``, z którego Zapisywanie tworzy pliki; zatrzymanie, gdy go nie przechodzi."""
-
         found = self.problem(check)
         if found is not None:
             raise StopError(found.message)
@@ -115,8 +106,6 @@ def check_preparation(
     collective_template: Path,
     template_check: TemplateCheck,
 ) -> tuple[PeriodFiles, dict[str, str]]:
-    """Sprawdzanie Przygotowania pliku zbiorczego: pliki okresu i Wykonawcy albo zatrzymanie."""
-
     settlement_period = _parse_period(period)
     with _stops(messages.register_unusable):
         workbook_files.ensure_available(register)
@@ -130,8 +119,6 @@ def check_preparation(
 def check_settlement(
     source: Path, workers: WorkerList, worker_template: Path, template_check: TemplateCheck
 ) -> tuple[PeriodFolder, dict[str, str], TemplateFile]:
-    """Sprawdzanie Przebiegu rozliczeń: Folder okresu Pliku zbiorczego, Wykonawcy i sprawdzony Wzorzec albo zatrzymanie."""
-
     with _stops(settlement_messages.collective_file_unusable):
         workbook_files.ensure_available(source)
     try:

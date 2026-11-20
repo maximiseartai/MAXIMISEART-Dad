@@ -101,8 +101,6 @@ class IssueCountReady:
 
 @dataclass(frozen=True)
 class PlanReady:
-    """Plan gotowy: liczba Szablonów pracownika i łączna liczba problemów."""
-
     elapsed_ms: int
     template_total: int
     issue_count: int
@@ -111,8 +109,6 @@ class PlanReady:
 
 @dataclass(frozen=True)
 class WorkerStarted:
-    """Przetworzenie Szablonu pracownika ``template_index`` (od 1, po kolei z planu) się rozpoczęło."""
-
     worker_name: str
     template_index: int
     elapsed_ms: int
@@ -121,8 +117,6 @@ class WorkerStarted:
 
 @dataclass(frozen=True)
 class WorkerEnded:
-    """Przetworzenie Szablonu pracownika się zakończyło; ``issue_count`` jest łączna dla uruchomienia."""
-
     worker_name: str
     template_index: int
     status: WorkerStatus
@@ -134,8 +128,6 @@ class WorkerEnded:
 
 @dataclass(frozen=True)
 class WorkerFailed:
-    """Przetworzenie Szablonu pracownika zostało przerwane; przerywa też Zapisywanie."""
-
     worker_name: str
     template_index: int
     elapsed_ms: int

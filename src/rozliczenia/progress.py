@@ -57,8 +57,6 @@ class TemplateProcessing:
 
 @dataclass(frozen=True)
 class SavingStep:
-    """Ostatni krok Zapisywania procesu bez Szablonów pracownika (``StepReached``)."""
-
     label: str
     worker: str | None
     done: int
@@ -79,14 +77,11 @@ class ProgressSnapshot:
     templates_completed: int
     rows: int
     operation_counts: Mapping[WorkerStatus, int]
-    """Zakończone Przetworzenia Szablonów pracownika według wyniku."""
     current_worker: str | None
     total_elapsed_ms: int
     issue_count: int
     templates: tuple[TemplateProcessing, ...]
-    """Zakończone Przetworzenia Szablonów pracownika po kolei; rozpoczęte bez końca (odłączony podgląd) ich nie mają."""
     step: SavingStep | None = None
-    """Ostatni krok Zapisywania procesu bez Szablonów pracownika; ``None`` przed pierwszym i w innych procesach."""
 
 
 def _immutable_mapping(values: Mapping[KeyT, ValueT]) -> Mapping[KeyT, ValueT]:

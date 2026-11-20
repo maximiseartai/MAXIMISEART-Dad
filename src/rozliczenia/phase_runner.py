@@ -123,8 +123,6 @@ class PhaseRunner:
         return result
 
     def save(self, operation: Callable[[], ResultT]) -> ResultT:
-        """Zapisywanie; kończy się dopiero po ``each_template`` przez wszystkie Szablony pracownika z planu."""
-
         def every_template_ended(_result: ResultT) -> None:
             if self._templates_completed != len(self._templates):
                 raise ProgressProtocolError(
@@ -134,13 +132,6 @@ class PhaseRunner:
         return self._run_phase(ProgressPhase.SAVING, operation, every_template_ended)
 
     def each_template(self, settle: Callable[[str], TemplateResultT]) -> list[TemplateResultT]:
-        """W trwającym Zapisywaniu przetwarza po kolei Szablon pracownika każdego Wykonawcy z planu.
-
-        Wysyła ``WorkerStarted``, wywołuje ``settle`` i wysyła ``WorkerEnded``.
-        Wyjątek z ``settle`` to ``WorkerFailed`` zamiast ``PhaseFailed``
-        Zapisywania; przechodzi dalej bez zmian.
-        """
-
         if self._active_phase is not ProgressPhase.SAVING:
             raise ProgressProtocolError("Szablony pracownika przetwarza się tylko w trakcie Zapisywania.")
         results: list[TemplateResultT] = []
@@ -199,8 +190,6 @@ class PhaseRunner:
         return self._ms_since(self._phase_started)
 
     def durations_ms(self) -> Mapping[ProgressPhase, int]:
-        """Nowa kopia tylko do odczytu czasów etapów zmierzonych do tej chwili."""
-
         return MappingProxyType(dict(self._durations_ms))
 
     def _ms_since(self, started: float) -> int:

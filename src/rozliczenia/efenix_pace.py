@@ -66,8 +66,6 @@ class Pacing:
         return _PacedEfenix(efenix, self)
 
     def before_search(self) -> float:
-        """Przerwa przed szukaniem zlecenia; zwraca chwilę tego szukania."""
-
         if self._written_search is not None:
             left = ORDER_S - (self._pace.clock() - self._written_search)
             self._pace.sleep(min(max(left, ACTION_PAUSE_S), KEEPALIVE_S))
@@ -75,15 +73,11 @@ class Pacing:
         return self._pace.clock()
 
     def before_write(self, searched: float | None) -> None:
-        """Przerwa przed zapisem w zleceniu, którego szukanie było w chwili ``searched`` (``None``: bez szukania)."""
-
         self._pace.sleep(ACTION_PAUSE_S)
         self._written_search = searched
 
 
 class _PacedEfenix:
-    """Okno efenix z przerwami ``pacing`` przed zapisami; implementuje ``efenix_window.Efenix``."""
-
     def __init__(self, efenix: Efenix, pacing: Pacing) -> None:
         self._efenix = efenix
         self._pacing = pacing
