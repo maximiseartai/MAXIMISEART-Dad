@@ -27,7 +27,7 @@ from rozliczenia.quantities_to_fill import TEXT_COLUMNS, KindToFill, fill_hint, 
 from rozliczenia.tool_entry import FillKind
 from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.centrum.settings.files import Unreadable
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.reads import SettingsReads
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.text import plural
 from rozliczenia.workbook_files import WorkbookError, excel_lock_file
@@ -43,7 +43,7 @@ class FillingReads:
             self.reads.forget_all()
 
 
-def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: CloudFiles, filling: FillingReads) -> APIRouter:
+def filling_router(settings: SettingsReads, log: CentrumLog, cloud_files: CloudFiles, filling: FillingReads) -> APIRouter:
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 
     def read(token: str, path: Path) -> GoodRead[NumberedOrders] | filling_contract.QuantitiesToFillProblem:

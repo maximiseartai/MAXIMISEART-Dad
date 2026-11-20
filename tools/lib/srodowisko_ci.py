@@ -75,12 +75,13 @@ _PYTEST = "python -m pytest -q -rs -n 0 -p no:cacheprovider"
 # ruff komentarzem (ADR 0036), a potem reguły ast-grep na liniach dodanych od bazy runu, które dowód ``ast-grep <id>``
 # liczy tą samą funkcją ``odpalenia_ast_grep.on_added_lines``.
 _WEED_TESTS = (
-    "test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii",
-    "test_kazda_regula_calego_drzewa_jest_w_katalogu_regul",
-    "test_zadna_linia_repo_nie_tlumi_reguly_ast_grep",
-    "test_zadna_linia_repo_nie_tlumi_zakazu_ruff",
+    "tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii",
+    "tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul",
+    "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep",
+    "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff",
+    "tests/test_zakazy_ruff.py::test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw",
 )
-_WEED_RULES: dict[str, object] = {"if": _CI_IF, "run": " ".join((_PYTEST, *(f"tests/test_zapadki.py::{test}" for test in _WEED_TESTS)))}
+_WEED_RULES: dict[str, object] = {"if": _CI_IF, "run": " ".join((_PYTEST, *_WEED_TESTS))}
 _ADDED_LINES: dict[str, object] = {
     "if": _CI_IF,
     "env": {"MAXIMISEART_ZAPADKA_BAZA": "HEAD^1"},

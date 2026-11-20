@@ -35,15 +35,10 @@ import { TemplatesSection } from "@/pages/settings/templates-section"
 import { ToolSection } from "@/pages/settings/tool-section"
 import { WORKERS_SECTION, WorkersSection } from "@/pages/settings/workers-section"
 
-/** Grupy sekcji okna Ustawień w kolejności z ADR 0032; grupa bez żadnej sekcji się nie pokazuje. */
 const SETTINGS_GROUPS = ["Praca", "Ilości", "Pliki", "Połączenia", "Narzędzie", "Historia"] as const
 
 type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 
-/**
- * Sekcje okna Ustawień. Nowa sekcja to nowy wpis: lista po lewej, rozwijany wybór na wąskim oknie, adres
- * `#/ustawienia/<id>` i ścieżka „Ustawienia / <title>” biorą się stąd. W grupie sekcje stoją w kolejności wpisów.
- */
 const SETTINGS_SECTIONS = [
   { id: FOLDERS_SECTION, title: "Foldery", group: "Praca", icon: FolderIcon, Content: FoldersSection, function: null },
   { id: WORKERS_SECTION, title: "Wykonawcy", group: "Praca", icon: UsersIcon, Content: WorkersSection, function: "workers" },

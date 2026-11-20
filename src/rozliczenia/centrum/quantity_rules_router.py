@@ -60,6 +60,10 @@ class PriceList:
 
 RuleSentences = Callable[[str, str | None], list[SentencePart] | None]
 
+
+def without_rule_sentences() -> RuleSentences:
+    return lambda _key, _value: None
+
 def history_sentences(settings: CentrumSettings, price_list: PriceList) -> Callable[[], RuleSentences]:
     def reader() -> RuleSentences:
         devices = settings.quantity_rules().shown.devices

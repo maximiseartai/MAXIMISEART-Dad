@@ -51,6 +51,8 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
     close_reason,
 )
+from rozliczenia.centrum import start_problems
+from rozliczenia.centrum.scope import UnknownWorkstation, workstation_scope
 from rozliczenia.centrum.server import serve
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness, parse_published
@@ -99,6 +101,8 @@ boundary answers as the sentence says.
 - the native file and folder pickers answer with the path in ``File.PICKER_ANSWER``
   (consumed by the next picker; no file = Dad cancelled) and log each dialog title in ``Log.DIALOGS``;
 - opening a file in Excel or a folder in Explorer is logged in ``Log.OPENED`` instead of launching an application;
+- the Stanowisko is read once at the start from the run's ``config/``, as the shortcut's launcher reads it: no file
+  gives Dad's Stanowisko, and an unknown one ends the start with its Komunikat startu;
 - the Windows Autostart is the file ``File.AUTOSTART_SHORTCUT``: the switch „Uruchamiaj Centrum razem z Windows”
   writes or removes it, the drive may remove it by hand, and while ``Switch.NO_AUTOSTART`` is on the computer has no
   Windows Autostart, like a Mac.
@@ -753,10 +757,16 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
             raise ConnectionRefusedError("skrzynka raportów poza siecią (atrapa)")
         return imaplib.IMAP4("127.0.0.1", inbox.port)
 
+    config = Path(fixture["settings"]).parent
+    scope = workstation_scope(config)
+    if isinstance(scope, UnknownWorkstation):
+        print(start_problems.unknown_workstation(scope.file).text, flush=True)
+        return 1
     # Pip never reaches PyPI from a verification run.
     os.environ["PIP_NO_INDEX"] = "1"
     app = create_app(
-        config=Path(fixture["settings"]).parent,
+        config=config,
+        scope=scope,
         platform=ScriptedPlatform(root),
         autostart=ScriptedAutostart(root),
         log=log,

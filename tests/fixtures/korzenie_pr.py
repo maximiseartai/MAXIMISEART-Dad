@@ -55,8 +55,19 @@ C_BLOCK = _lines(
     "Wyżej nie, bo:",
     "(a) - nie ma drugiej drogi do usunięcia.",
     "(b) - typ nie wyrazi tej reguły.",
+    "(d) - reguła ast-grep nie wyrazi tej klasy.",
     EVIDENCE,
 )
+STRAZNICY = {
+    "mypy": "mypy",
+    "ruff": "ruff",
+    "ast-grep": "ast-grep zakazane-wywolanie",
+    "pytest": "pytest tests/test_x.py::test_y",
+    "proza": "brak - proza",
+    "naped": "brak - napęd",
+    "brak-testu": "brak - test",
+    "usuniete": "brak - usunięte",
+}
 OPISY = {
     "bez-sekcji": body(),
     "szczebel-c": body(C_BLOCK),
@@ -68,6 +79,11 @@ OPISY = {
     "blok-dwa-razy": body(C_BLOCK, C_BLOCK),
     "szczebel-c-bez-wyzej-nie": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (c) - test zachowania.", EVIDENCE)),
     "szczebel-c-bez-zdania-dla-b": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (c) - test zachowania.", "Wyżej nie, bo:", "(a) - nie ma drugiej drogi.", EVIDENCE)),
+    "szczebel-c-bez-zdania-dla-d": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (c) - test zachowania.", "Wyżej nie, bo:", "(a) - nie ma drugiej drogi.", "(b) - typ nie wyrazi reguły.", EVIDENCE)),
+    "szczebel-d": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (d) - reguła ast-grep.", "Wyżej nie, bo:", "(a) - nie ma drugiej drogi.", "(b) - typ nie wyrazi reguły.", EVIDENCE)),
+    "szczebel-d-ze-zdaniem-dla-c": body(
+        _lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (d) - reguła ast-grep.", "Wyżej nie, bo:", "(a) - nie ma drugiej drogi.", "(b) - typ nie wyrazi reguły.", "(c) - test nie złapie klasy.", EVIDENCE)
+    ),
     "szczebel-a-z-wyzej-nie": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", "Wyżej nie, bo: (a) - nic.", EVIDENCE)),
     "bez-dowodu": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.")),
     "bez-szczebla": body(_lines("### W1 r1: R-BEZ-TESTU", EVIDENCE)),
@@ -102,6 +118,12 @@ OPISY = {
     "straznik-spoza-listy": body(C_BLOCK.replace(EVIDENCE, "Strażnik: npm test")),
     "straznik-i-linia-po": body(C_BLOCK.replace(EVIDENCE, f"{GUARD}\nlinia 2")),
     "wyrwany-ze-straznikiem": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{ROOT_PR}", GUARD)),
+    **{f"straznik-{name}": body(C_BLOCK.replace(EVIDENCE, f"Strażnik: {selector}")) for name, selector in STRAZNICY.items()},
+    "dwa-ze-straznikiem-ruff": body(*(C_BLOCK.replace(EVIDENCE, "Strażnik: ruff").replace("W1 r1", f"W{number} r1") for number in (1, 2))),
+    "dwa-ze-straznikiem-ruff-nowy-kod-w2": body(
+        C_BLOCK.replace(EVIDENCE, "Strażnik: ruff"), C_BLOCK.replace(EVIDENCE, "Strażnik: ruff").replace("W1 r1: R-BEZ-TESTU", "W2 r1: R-NOWY-KOD")
+    ),
+    "straznik-ruff-nowy-kod": body(C_BLOCK.replace(EVIDENCE, "Strażnik: ruff").replace("R-BEZ-TESTU", "R-NOWY-KOD")),
     "dwa-z-tym-samym-straznikiem": body(*(_lines(f"### W{number} r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", GUARD) for number in (1, 2))),
 }
 PR_KORZENIA = {

@@ -12,6 +12,7 @@ from repo import ROOT
 from stan_pr import Pull, Waiting
 import straznik
 import szablon_werdyktu
+import szczebel_straznika
 import werdykt_pr
 
 ZASADY = """Warunek 5 merge'a ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): każde Ważne werdyktu
@@ -19,6 +20,9 @@ ZASADY = """Warunek 5 merge'a ([ADR 0042](../../docs/adr/0042-straznik-przy-pier
 strażnika przechodzi: ``tools/na_scalonych_pr.py --straznik <selektor> --z-commita <HEAD PR> --wazne <PR>/W<n>/r<k>``
 z kodu bazy PR, tym samym Pythonem, jedno wywołanie na selektor ze wszystkimi jego Ważnymi. Przechodzi tylko kod 0
 z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``, a w jakim środowisku, ``srodowisko_ci``.
+
+Selektor wybiera autor tylko spośród tych, które przyjmuje szczebel z pola ``Mechanizm:`` Ważnego
+(``szczebel_straznika``, ADR 0046); selektor, którego szczebel nie przyjmuje, to odmowa bez dowodu.
 
 Warunek obowiązuje od własnego wdrożenia (``MARKER``: ADR 0042, jak szablon werdyktu od ADR 0031;
 ``werdykt_pr.rule_applies``, decyzja Q20 ADR 0031), więc wątek z werdyktem sprzed niego kończy po staremu, z polem
@@ -66,14 +70,21 @@ def problems(pull: Pull) -> list[str]:
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to oczekiwanie z przyczyną
         return [Waiting(f"strażnik: GitHub nie wyrenderował werdyktów albo opisu PR ({error}), uruchom ponownie")]
     blocks = {block.heading: block for block in section.blocks} if section else {}
+    ruled = szczebel_straznika.applies(pull)
+    refused: list[str] = []
     wanted: dict[straznik.Guard, list[str]] = {}
-    for heading in majors:
+    for heading, major in majors.items():
         guard = blocks[heading].selector() if heading in blocks else None
-        if guard is not None:
-            label, round_ = heading.split(" r")
-            wanted.setdefault(guard, []).append(f"{pull.number}/{label}/r{round_}")
+        if guard is None:
+            continue
+        label, round_ = heading.split(" r")
+        case = f"{pull.number}/{label}/r{round_}"
+        if ruled and (reason := szczebel_straznika.refusal(major.mechanism, guard)):
+            refused.append(f"strażnik: Ważne {case}: {reason}; wpisz w jego bloku sekcji ## Korzeń przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}")
+        else:
+            wanted.setdefault(guard, []).append(case)
     deadline = time.monotonic() + PROOF_TIMEOUT_S
-    return [reason for guard, cases in wanted.items() for reason in _proved(pull, guard, cases, deadline - time.monotonic())]
+    return [*refused, *(reason for guard, cases in wanted.items() for reason in _proved(pull, guard, cases, deadline - time.monotonic()))]
 
 
 def _proved(pull: Pull, guard: straznik.Guard, cases: list[str], left: float) -> list[str]:

@@ -211,14 +211,11 @@ _WITHOUT_INTERMAX: Final = RegisterWindow((), frozenset(), ())
 
 
 def _read(window: Window, mails: Sequence[ReportMail], addresses: WorkerAddresses) -> ReportsOutcome:
-    """Wynik rdzenia raportów dla maili ``mails`` w oknie ``window`` bez zleceń INTERMAX i bez pamięci Wpisania."""
-
     memory = EnteringMemory(_WithoutMemory())
     return memory.enter(window, _WITHOUT_INTERMAX, mails, addresses, DEFAULT_ACTIVITY_LEGEND, DEFAULT_QUANTITY_RULES)
 
 
 _WHOLE_TIME: Final = Window(date.max, date.min, frozenset())
-"""Okno, które otwiera każdy dzień: przegląd czyta nim także Raport z dniem spoza okna próby, który rdzeń pomija."""
 _REVIEW_HEAD: Final = """PRZEGLĄD WPISÓW Z PRAWDZIWEJ SKRZYNKI RAPORTÓW (tools/proba_skrzynki_raportow.py --przeglad)
 Ten plik zawiera prawdziwe maile Wykonawców taty. Trzymaj go w ~/.t3/notes/<run>/, nie w repozytorium i nie w /tmp.
 Jego treść nie trafia do czatu, issue ani PR: wolno wypisać tylko zbiorcze wnioski i liczby, a każdy błąd dostaje test
@@ -230,8 +227,6 @@ uznaje za numer tylko liczbę co najmniej tak długą jak najkrótszy NUMER ZL. 
 
 @dataclass(frozen=True)
 class ReviewFile:
-    """Plik przeglądu Wpisów (``--przeglad``): ``path`` po dowiązaniach, ``replace`` z ``--nadpisz``."""
-
     path: Path
     replace: bool
 
@@ -240,8 +235,6 @@ class ReviewFile:
         return cls(path.expanduser().resolve(), replace)
 
     def refusal(self) -> str | None:
-        """Powód odmowy pliku przed łączeniem ze skrzynką, bez ścieżki; ``None``, gdy plik wolno zapisać."""
-
         if any((folder / ".git").exists() for folder in self.path.parents):
             return "plik przegladu w repozytorium Git, a ma prawdziwe maile: podaj sciezke w ~/.t3/notes/<run>/"
         if self.path.is_dir():
@@ -347,8 +340,6 @@ def _entry_line(entry: ReportEntry) -> str:
 
 
 def _recognised(outcome: ReportsOutcome) -> bool:
-    """Rdzeń rozpoznał Raport wykonawcy od adresu z pliku adresów z Wpisem raportu, który ma ``tak`` albo ``nie``."""
-
     return any(entry.verdict is not None for report in _reports(outcome) for entry in report.entries)
 
 

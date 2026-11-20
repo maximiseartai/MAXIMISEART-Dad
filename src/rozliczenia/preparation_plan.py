@@ -34,8 +34,6 @@ _BLANK_WORKER_LABEL = "(pusty)"
 
 @dataclass(frozen=True)
 class PeriodOrder:
-    """Zlecenie okresu: wiersz Rejestru i jego data z ``DATA GODZ. POCZ.``."""
-
     register_row: RegisterRow
     started: datetime
 
@@ -50,8 +48,6 @@ class PeriodOrder:
 
 @dataclass(frozen=True)
 class CollectiveRow:
-    """Wiersz danych Pliku zbiorczego: Zlecenie skuteczne i Wpis narzędzia dla jego treści i ``CZYNNOŚCI ZREALIZOWANE``."""
-
     order: PeriodOrder
     entry: ToolEntry
 
@@ -74,8 +70,6 @@ class IncompletePeriod:
 
 @dataclass(frozen=True)
 class Plan:
-    """Plan okresu; ``collective_rows`` to Zlecenia skuteczne w kolejności Rejestru, tak jak trafią do Pliku zbiorczego."""
-
     period: SettlementPeriod
     sheet: str
     orders: list[PeriodOrder]
@@ -92,8 +86,6 @@ class Plan:
 
     @property
     def incomplete_period(self) -> IncompletePeriod | None:
-        """Niepełny okres, gdy żadne zlecenie okresu nie jest z poniedziałku."""
-
         last_order_day = max(order.started.date() for order in self.orders)
         if last_order_day >= self.period.monday:
             return None

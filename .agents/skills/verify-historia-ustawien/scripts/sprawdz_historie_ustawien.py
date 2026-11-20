@@ -1,12 +1,3 @@
-"""Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
-opowiada każdy kontrprzykład krokami kodu ``CentrumSettings``. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia
-TLC i rozjazd modelu z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko ostrzega
-linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
-
-    .venv/bin/python .agents/skills/verify-historia-ustawien/scripts/sprawdz_historie_ustawien.py
-    py -3 .agents\\skills\\verify-historia-ustawien\\scripts\\sprawdz_historie_ustawien.py
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence

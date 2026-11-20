@@ -517,6 +517,11 @@ unexpected_start_failure [NIEOCZEKIWANY_BLAD_STARTU]
   Gdzie: dziennik Centrum logs\centrum-rozliczen.log w folderze narzędzia
   Co zrobić: Kliknij skrót „Centrum rozliczeń” ponownie. Jeśli komunikat wraca, przekaż dziennik osobie utrzymującej narzędzie.
 
+unknown_workstation [NIEZNANE_STANOWISKO]
+  Co się stało: Centrum rozliczeń nie wystartowało, bo nie rozpoznaje Stanowiska tego komputera.
+  Gdzie: plik stanowisko.txt w folderze config narzędzia
+  Co zrobić: Przekaż ten komunikat Maksowi.
+
 not_started_after_update [NIE_WYSTARTOWALO_PO_AKTUALIZACJI]
   Co się stało: Centrum rozliczeń nie wystartowało po aktualizacji narzędzia.
   Gdzie: narzędzie na tym komputerze
@@ -1543,6 +1548,9 @@ settlement_mail_unknown_field [zdanie]
 
 settlement_mail_empty_text [zdanie]
   Wpisz treść maila z rozliczeniem.
+
+outside_scope [zdanie]
+  Tej części Ustawień nie ma w tym Centrum rozliczeń.
 
 autostart_unsupported [zdanie]
   Start razem z Windows działa tylko na komputerze z Windows.

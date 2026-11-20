@@ -41,7 +41,7 @@ Decyzje autora tego PR:
 
 - **Numer 0046**, bo 0045 rezerwuje specyfikacja #2439.
 - **Pole `Mechanizm:` stoi po `Szczebel:`**, który zostaje: `Szczebel:` mówi, jak autor wyrwał korzeń, a `Mechanizm:`, jakiego strażnika żąda Ważne.
-- **Przejście.** Wątek, którego pierwszy werdykt powstał przed wejściem tego pliku do bazy PR, kończy po staremu, bez pola `Mechanizm:` i z opcjonalnym `Idiom:` (`werdykt_pr.rule_applies`, jak decyzja Q20 ADR 0031); stare werdykty z `Idiom:` czyta `szablon_werdyktu.findings` jak dotąd, więc raport tygodniowy liczy je do czasu ticketu #2463.
+- **Przejście.** Wątek, którego pierwszy werdykt powstał przed wejściem tego pliku do bazy PR, kończy po staremu, bez pola `Mechanizm:` i z opcjonalnym `Idiom:` (`werdykt_pr.rule_applies`, jak decyzja Q20 ADR 0031); stare werdykty z `Idiom:` szablon przyjmuje jak dotąd, ale od ticketu #2463 żadne narzędzie pola nie czyta, a raport tygodniowy liczy odpalenia strażników w Required CI i poszerzenia reguł z historii gita.
 
 ## Wdrożenie
 
@@ -65,7 +65,7 @@ Decyzje autora tego PR:
 
 ## Zmienia te zdania ADR 0031
 
-- „Szczebel i dowód”, zdanie „Zapadka (d) stoi między (c) a (e) […]: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają”: pierwszeństwo szczebli daje piramida pola `Mechanizm:`, w której reguła ast-grep (szczebel `lint`) stoi przed testem, więc działająca reguła (d) idzie przed testem (c); (e) zostaje dozwolone tylko wtedy, gdy (a)–(d) nie działają. Litery (a)–(e) pola `Szczebel:` i linie „Wyżej nie, bo:” zostają, jak dziś.
+- „Szczebel i dowód”, zdanie „Zapadka (d) stoi między (c) a (e) […]: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają”: pierwszeństwo szczebli daje piramida pola `Mechanizm:`, w której reguła ast-grep (szczebel `lint`) stoi przed testem, więc działająca reguła (d) idzie przed testem (c); (e) zostaje dozwolone tylko wtedy, gdy (a)–(d) nie działają. Litery (a)–(e) pola `Szczebel:` zostają, a „Wyżej nie, bo:” ma linię na każdy szczebel przed wpisanym w tym pierwszeństwie, w kolejności liter, więc blok (c) mówi też, czemu nie (d), a blok (d) nie mówi o (c) (bramka korzenia od #2460).
 
 ## Zmienia te zdania ADR 0036
 

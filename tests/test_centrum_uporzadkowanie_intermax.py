@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+import zipfile
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
@@ -29,6 +30,7 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.scope import SCOPES, Workstation
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 
 from tests.fixtures.centrum import ToolDirectory, phase_states, views_until, write_report_key
@@ -518,18 +520,24 @@ def test_powtorzone_zatrzymanie_intermax_wyjasnia_diagnoza_intermax(tmp_path: Pa
     assert {check["label"]: check["state"] for check in diagnosis["checks"]}["INTERMAX"] == "failed"
 
 
+@pytest.mark.parametrize(
+    "otwarty", [pytest.param(False, id="intermax-zamkniety"), pytest.param(True, id="intermax-otwarty-w-excelu")]
+)
 def test_kopia_konfliktu_onedrive_obok_intermax_zatrzymuje_dla_taty_z_jej_nazwa_a_diagnoza_ja_wskazuje(
-    tmp_path: Path,
+    tmp_path: Path, otwarty: bool
 ) -> None:
     centrum = ordering_centrum(tmp_path)
     original = centrum.register.read_bytes()
     conflict = centrum.register.with_name(f"{centrum.register.stem}-LAPTOP-ANDRZEJA{centrum.register.suffix}")
     conflict.write_bytes(original)
+    lock = open_in_excel(centrum.register) if otwarty else None
 
     first = _stopped(centrum)
     repeated = _stopped(centrum)
     diagnosis = centrum.client.post(f"/api/runs/{repeated['run']['id']}/diagnosis").json()
     conflict.unlink()
+    if lock is not None:
+        lock.unlink()
     after = centrum.run_to_end()
 
     result = first["result"]
@@ -547,6 +555,27 @@ def test_kopia_konfliktu_onedrive_obok_intermax_zatrzymuje_dla_taty_z_jej_nazwa_
     assert after["result"]["headline"] == "INTERMAX uporządkowany"
     assert copies(centrum) == [COPY]
     assert (centrum.copies / COPY).read_bytes() == original
+
+
+def _parts(workbook: Path) -> dict[str, bytes]:
+    with zipfile.ZipFile(workbook) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
+def test_uporzadkowanie_w_centrum_andrzeja_bez_wzorcow_daje_ten_sam_intermax_co_w_centrum_taty(tmp_path: Path) -> None:
+    ordered = {}
+    for workstation in (Workstation.DAD, Workstation.ANDRZEJ):
+        centrum = ordering_centrum(tmp_path / workstation.value, scope=SCOPES[workstation])
+        before = _parts(centrum.register)
+        view = centrum.run_to_end()
+        after = _parts(centrum.register)
+        changed = {name: part for name, part in after.items() if before.get(name) != part}
+        ordered[workstation] = (view["result"]["headline"], copies(centrum), after.keys() - changed.keys(), changed)
+
+    assert not any(path.suffix == ".xlsx" for path in ToolDirectory(tmp_path / "andrzej").config.rglob("*"))
+    assert ordered[Workstation.DAD][:2] == ("INTERMAX uporządkowany", [COPY])
+    assert any(name.startswith("xl/worksheets/") for name in ordered[Workstation.DAD][3])
+    assert ordered[Workstation.ANDRZEJ] == ordered[Workstation.DAD]
 
 
 def test_diagnoza_mowi_ktorego_intermax_z_ustawien_taty_nie_ma(tmp_path: Path) -> None:

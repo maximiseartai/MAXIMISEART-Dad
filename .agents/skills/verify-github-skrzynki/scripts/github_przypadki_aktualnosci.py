@@ -117,9 +117,6 @@ def _asking(client: Client) -> tool_freshness.Asking:
     return tool_freshness.Asking(client.api, TIMEOUT_S, None)
 
 
-# --- przypadki ------------------------------------------------------------------------------------------------------
-
-
 def _prepare_tag_pages(live: AktualnoscLive, earlier: Facts) -> Facts:
     tags = live.oracle.tags
     return {"na_stronie": max(1, -(-len(tags) // 3)), "tagi": tags}

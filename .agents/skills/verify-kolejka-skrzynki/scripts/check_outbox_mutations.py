@@ -24,7 +24,7 @@ NEW = "KOLEJKA: NOWE NARUSZENIE"
 
 def _explorer(scope: str) -> tuple[str, ...]:
     """Polecenie mutacji: jeden zakres do pierwszego nowego naruszenia, bo mutacji wystarczy werdykt, a podstawa (to
-    samo polecenie bez mutacji) i tak przechodzi każdy harmonogram zakresu; pomiar przebiegu bez zatrzymania (#963)
+    samo polecenie bez mutacji) i tak przechodzi każdy harmonogram zakresu; pomiar przebiegu bez zatrzymania
     podaje ``explore_outbox.explore``."""
 
     return (EXPLORER, "--scope", scope, "--stop-at-new")
