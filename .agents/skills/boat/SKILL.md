@@ -14,7 +14,7 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 
 Polecenie jest **ciężkie**, gdy na Macu trwałoby ponad minutę albo zajmuje kilka rdzeni naraz, oraz gdy uruchamia kod z zewnątrz; pytest jest ciężki wtedy i tylko wtedy, gdy ma więcej niż jeden worker xdist, bo tak rozstrzyga jego bramka.
 Ciężkie polecenie biegnie zawsze na boxie, także wiele naraz i równolegle, każda część, którą da się rozdzielić, na własnym boxie; Mac zostaje dla edycji, gita i agentów.
-Ciężkie wejście repo (`szybko.py`, `mutacje.py`, `mutacje_zmiany.py`, `benchmark_przebiegu.py` poza `comment` i `guard`, `ci_lokalnie.py` z zadaniem `pytest` albo `mutations`, `na_scalonych_pr.py` z poleceniem i pytest z więcej niż jednym workerem xdist) uruchomione na Macu poza `boatbox run --here` nie rusza: kończy się kodem 78 i linią `CIĘŻKIE NA MACU ODMOWA | uruchom: boatbox run '<to samo polecenie>'`, które uruchamiasz sam; narzędzie uruchomione przez inne narzędzie repo albo przez test biegnie przy wołającym.
+Ciężkie wejście repo (`szybko.py`, praca silnika mutacji, czyli `mutacje.py` i skrypty mutacji skilli `verify-*`, model TLC skilli, `mutacje_zmiany.py`, `benchmark_przebiegu.py` poza `comment` i `guard`, `ci_lokalnie.py` z zadaniem `pytest` albo `mutations`, `na_scalonych_pr.py` z poleceniem i pytest z więcej niż jednym workerem xdist) uruchomione na Macu poza `boatbox run --here` nie rusza: kończy się kodem 78 i linią `CIĘŻKIE NA MACU ODMOWA | uruchom: boatbox run '<to samo polecenie>'`, które uruchamiasz sam; narzędzie uruchomione przez inne narzędzie repo albo przez test (także w procesie sesji pytest) biegnie przy wołającym.
 
 | Praca | Jak |
 |---|---|

@@ -41,6 +41,8 @@ HEAVY = [
     pytest.param(lambda tmp: [PYTHON, "tools/ci_lokalnie.py", "--tylko", "pytest", "--kazdy-commit", "nie/ma/takiej"], CI, id="ci-lokalnie-pytest"),
     pytest.param(lambda tmp: [PYTHON, "tools/na_scalonych_pr.py", "--commit", "HEAD", "--", "tools/mutacje_zmiany.py", "--baza", "HEAD"], {}, id="na-scalonych-pr"),
     pytest.param(lambda tmp: [*PYTEST, "-n", "2"], {}, id="pytest-z-workerami"),
+    pytest.param(lambda tmp: [PYTHON, ".agents/skills/verify-kopia-wzorca/scripts/check_copy_mutations.py"], {}, id="skrypt-mutacji-skilla"),
+    pytest.param(lambda tmp: [PYTHON, ".agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_model_kolejki.py"], {}, id="model-tlc-skilla"),
 ]
 FAKE = """#!/bin/bash
 printf '%s\\n' "$PWD" "$@" > "$ATRAPA_ZAPIS/$1"
@@ -157,7 +159,7 @@ def test_polecenie_z_podkatalogu_wchodzi_do_niego_na_boxie(tmp_path: Path) -> No
 def test_narzedzie_spoza_katalogu_repo_dostaje_polecenie_z_korzenia_repo(tmp_path: Path) -> None:
     done = _run([PYTHON, str(ROOT / "tools" / "szybko.py"), "--baza", "nie/ma"], tmp_path, cwd=tmp_path)
 
-    assert _refusal(f".venv/bin/python {ROOT / 'tools' / 'szybko.py'} --baza nie/ma") in done.stderr, done.stderr
+    assert _refusal(".venv/bin/python tools/szybko.py --baza nie/ma") in done.stderr, done.stderr
 
 
 WOLAJACY = """import os
@@ -178,6 +180,15 @@ def test_ciezkie_narzedzie_uruchomione_przez_narzedzie_repo_biegnie_przy_nim_z_j
     done = _run([PYTHON, "-c", WOLAJACY], tmp_path)
 
     assert (done.returncode, "MUTACJE ZMIANY OK" in done.stdout, "ODMOWA" in done.stdout) == (0, True, False), done.stdout + done.stderr
+
+
+def test_ciezkie_wejscie_wolane_w_procesie_sesji_pytest_nie_odmawia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(potomne, "POTOMEK_NARZEDZIA", False)
+    for name in (na_boxie.BOX, na_boxie.TUTAJ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PATH", f"{_fake(tmp_path)}{os.pathsep}{os.environ['PATH']}")
+
+    assert (os.environ.get("PYTEST_VERSION") is not None, na_boxie.na_macu()) == (True, False)
 
 
 IMPORT_ENV = dict(os.environ)
@@ -213,7 +224,7 @@ def mac(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     junit.write_text(JUNIT, encoding="utf-8")
     for name, value in (_env(tmp_path) | {"ATRAPA_JUNIT": str(junit)}).items():
         monkeypatch.setenv(name, value)
-    for name in (na_boxie.BOX, na_boxie.TUTAJ):
+    for name in (na_boxie.BOX, na_boxie.TUTAJ, "PYTEST_VERSION"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(potomne, "POTOMEK_NARZEDZIA", False)
     return tmp_path

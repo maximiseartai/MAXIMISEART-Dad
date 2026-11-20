@@ -3,12 +3,15 @@ w ogóle nie rusza, tylko kończy się kodem ``ODMOWA`` i jedną linią z gotowy
 
 Mac to proces z ``boatbox`` w ``PATH`` (CI, box boat i komputer taty go nie mają) bez ``BOX``, które ``boatbox`` ustawia
 w każdym poleceniu na boxie, i bez ``TUTAJ``, które ustawia wyłącznie ``boatbox run --here`` (Excel, Centrum
-z prawdziwymi plikami taty, testy tylko na macOS). Ciężkie wejścia (``szybko.py``, ``mutacje.py``, ``mutacje_zmiany.py``,
+z prawdziwymi plikami taty, testy tylko na macOS). Ciężkie wejścia (``szybko.py``, ``mutacje_zmiany.py``,
 ``benchmark_przebiegu.py`` poza ``comment`` i ``guard``, ``ci_lokalnie.py`` z zadaniem ``pytest`` albo ``mutations``,
 ``na_scalonych_pr.py`` z poleceniem oraz pytest z więcej niż jednym workerem xdist, przez ``odmowa_pytest``
-w ``tests/conftest.py``) wołają ``odmowa`` po odczycie argumentów i własnych szybkich odmowach. Odmowa nie czyta
-argumentów i niczego nie przenosi: agent sam uruchamia podane polecenie na boxie, a wejście, którego box nie ma, daje
-tam jawny błąd, jak przy każdym ``boatbox run``.
+w ``tests/conftest.py``) wołają ``odmowa`` po odczycie argumentów i własnych szybkich odmowach, a ciężką pracę
+mutacji (``tools/mutacje.py`` i 29 skryptów mutacji skilli ``verify-*``) i modelu TLC (skrypty ``sprawdz_*``
+i ``check_model_*`` skilli) odmawia sam silnik, ``silnik_mutacji`` i ``model_tlc.main``. Odmowa nie czyta argumentów
+i niczego nie przenosi: agent sam uruchamia podane polecenie na boxie, a wejście albo wyjście spoza tego, co box widzi
+(HEAD, gałęzie, ``origin/*``, tagi i pliki worktree widziane przez gita), daje tam błąd albo wynik na boxie, jak przy
+każdym ``boatbox run`` (skill ``boat``).
 
 Odmawia tylko proces, którego nie uruchomiło inne narzędzie repo (``potomne.POTOMEK_NARZEDZIA``): narzędzie uruchomione
 przez test w sesji pytest albo przez inne narzędzie jest częścią pracy wołającego i biegnie tam, gdzie on. Pytest bez
@@ -50,21 +53,29 @@ class Konfiguracja(Protocol):
     def getoption(self, name: str, default: Any = ...) -> Any: ...
 
 
-def na_macu() -> bool:
-    """Czy ciężkie wejście jest na Macu: ``boatbox`` w ``PATH`` (nie Windows), nie na boxie (``BOX``), bez jawnego
-    wyjątku ``TUTAJ`` i w procesie, którego nie uruchomiło inne narzędzie repo."""
-
+def _mac() -> bool:
     if sys.platform == "win32" or potomne.POTOMEK_NARZEDZIA or any(os.environ.get(name) for name in (BOX, TUTAJ)):
         return False
     return shutil.which("boatbox") is not None
 
 
+def na_macu() -> bool:
+    """Czy ciężkie wejście jest na Macu: ``boatbox`` w ``PATH`` (nie Windows), nie na boxie (``BOX``), bez jawnego
+    wyjątku ``TUTAJ``, w procesie, którego nie uruchomiło inne narzędzie repo, i poza sesją pytest (``PYTEST_VERSION``,
+    które pytest wpisuje do ``os.environ`` swojego procesu przed kolekcją), bo test, który woła ciężkie wejście w swoim
+    procesie (``model_tlc.main`` w ``tests/test_model_tlc.py``), jest częścią sesji."""
+
+    return not os.environ.get("PYTEST_VERSION") and _mac()
+
+
 def polecenie(words: Sequence[str], cwd: Path, *, root: Path = ROOT) -> str:
-    """To samo polecenie do uruchomienia w katalogu repo na boxie: interpreter to ``.venv/bin/python`` repo, a ``cd``
-    wchodzi do ``cwd``, gdy leży pod ``root``; reszta słów zostaje, jak jest."""
+    """To samo polecenie do uruchomienia w katalogu repo na boxie: interpreter to ``.venv/bin/python`` repo, ścieżka
+    bezwzględna pod ``root`` (np. skrypt) jest względna, bo repo boxa leży gdzie indziej, a ``cd`` wchodzi do ``cwd``,
+    gdy leży pod ``root``; reszta słów zostaje, jak jest."""
 
     here = cwd if cwd.is_relative_to(root) else root
-    command = shlex.join([os.path.relpath(root / ".venv" / "bin" / "python", here), *words[1:]])
+    rest = [os.path.relpath(word, here) if os.path.isabs(word) and Path(word).is_relative_to(root) else word for word in words[1:]]
+    command = shlex.join([os.path.relpath(root / ".venv" / "bin" / "python", here), *rest])
     return f"cd {shlex.quote(os.path.relpath(here, root))} && {command}" if here != root else command
 
 
@@ -87,10 +98,11 @@ def odmowa() -> None:
 
 def odmowa_pytest(config: Konfiguracja) -> None:
     """``odmowa`` dla sesji pytest z ``pytest_configure`` kontrolera, tylko z więcej niż jednym workerem xdist
-    (pytest-xdist liczy już ``-n auto`` w ``pytest_cmdline_main``); pełny pytest agent puszcza w tle przez ``boatbox job``."""
+    (pytest-xdist liczy już ``-n auto`` w ``pytest_cmdline_main``), bez wyjątku sesji pytest, który ten proces sam ma;
+    pełny pytest agent puszcza w tle przez ``boatbox job``."""
 
     workers = config.getoption("numprocesses", default=None)
-    if isinstance(workers, int) and workers > 1 and na_macu():
+    if isinstance(workers, int) and workers > 1 and _mac():
         command = shlex.quote(polecenie(sys.orig_argv, Path.cwd()))
         _odmowa(f" (pełny pytest w tle: boatbox job pytest {command}, potem boatbox wait pytest)")
 

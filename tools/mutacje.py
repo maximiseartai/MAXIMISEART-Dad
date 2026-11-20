@@ -21,7 +21,6 @@ import czasy_ci
 import github
 from jednostka import ZMIENNA_CZESCI
 from kroki_lokalne import environment
-import na_boxie
 import plan_runu
 from ostatnie_linie import MUTACJE_OK
 import potomne
@@ -370,7 +369,6 @@ def main(argv: list[str] | None = None) -> int:
     if refused := ciezkie_ci.mutations_refusal(len(mutations), args.odtwarzam, root=ROOT):
         print(refused)
         return 2
-    na_boxie.odmowa()
     planned = _planned(mutations, args.baza, args.juz_lapie_s, args.podstawa_s) if args.juz_lapie and not jak_ci else []
     code = review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s, base_commands=_base_commands(planned, args.podstawa_s))
     if code == 0:

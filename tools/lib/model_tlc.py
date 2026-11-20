@@ -43,6 +43,7 @@ import tempfile
 import threading
 from typing import NamedTuple
 
+import na_boxie
 import narzedzia_tlc
 import potomne
 import rozjazd_modelu
@@ -187,6 +188,7 @@ def main(model: Model, argv: list[str] | None = None, *, opis: str | None = None
     parser.add_argument("--config", action="append", help=f"Tylko ta konfiguracja (nazwa z {KONFIGURACJE}).")
     parser.add_argument("--strict", action="store_true", help="Znane znaleziska też kończą się kodem 1.")
     args = parser.parse_args(argv)
+    na_boxie.odmowa()
 
     root = model.skill.parents[2]
     drift = rozjazd_modelu.rozjazd(model.skill, root)

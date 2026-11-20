@@ -31,6 +31,7 @@ from typing import Any, NamedTuple, Protocol, TypeVar
 from import_dynamiczny import jest_modul
 from jednostka import ZMIENNA_CZESCI, Czesc
 from kroki_lokalne import JSON_OUTPUT, diagnostics, environment, static_steps
+import na_boxie
 from ostatnie_linie import MUTACJE_OK
 import potomne
 from repo import ROOT
@@ -494,9 +495,11 @@ def verdicts(
     """Werdykt i ostatnia linia wyjścia każdej mutacji po kolei, bez sprawdzenia podstawy; ``workers`` mutacji naraz.
 
     Z ``deadline`` (chwila ``time.monotonic()``) żadne polecenie nie biegnie dłużej niż do niej. Z ``commit`` mutacje
-    biegną na kopii tego commitu bez niezacommitowanych zmian checkoutu.
+    biegną na kopii tego commitu bez niezacommitowanych zmian checkoutu. Na Macu, przed pierwszą mutacją, ciężka praca
+    odmawia z poleceniem ``boatbox`` (``na_boxie.odmowa``).
     """
 
+    na_boxie.odmowa()
     for verdict, last, _ in _timed(mutations, workers=workers, limit_s=limit_s, deadline=deadline, commit=commit):
         yield verdict, last
 
@@ -847,11 +850,15 @@ def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: s
     biegło, także po limicie, więc linię ``CZAS`` i ostrzeżenie dostaje też PRZEKROCZONY CZAS, który brama typów zmienia w
     WYKRYTA PRZEZ BRAMĘ TYPÓW, i ZAWIESZENIE, które ``in_ci`` liczy jako wykrycie; bez linii ``CZAS`` jest tylko mutacja,
     której polecenie nie biegło (NIEAKTUALNA, BEZ WERDYKTU przed startem).
+
+    To jedyne wejście ciężkiej pracy ``check_all`` (29 skryptów mutacji skilli ``verify-*``) i ``review``
+    (``tools/mutacje.py``): na Macu, przed podstawą, odmawia z poleceniem ``boatbox`` (``na_boxie.odmowa``).
     """
 
     if not mutations:
         print("MUTACJE: brak mutacji, więc nie ma czego dowieść")
         return 1
+    na_boxie.odmowa()
     if part:
         total = len(mutations)
         mutations = _part(mutations, part)
