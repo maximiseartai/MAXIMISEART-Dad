@@ -74,6 +74,9 @@ def test_git_w_tescie_czyta_tylko_konfiguracje_testow(tmp_path: Path) -> None:
         "global\ttag.gpgsign=false",
         "global\tmaintenance.auto=false",
         "global\tgc.auto=0",
+        "global\tprotocol.https.allow=never",
+        "global\tprotocol.ssh.allow=never",
+        "global\tprotocol.git.allow=never",
     ], MISSING_FIXTURE
 
 
