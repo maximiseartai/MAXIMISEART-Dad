@@ -146,7 +146,7 @@ kodu pliku to ich podzbiór bez xdist, więc przekroczyłyby limit znowu, ADR 00
 przebiegu nie jest też przeżyta: limit dotyczy całego polecenia ``pytest``, a sam zbiór testów pliku trwa blisko niego
 (run 42783639074, część 10/37: 802.59 s bez wykrycia), więc mutacja, po której test pada, potrafi go przekroczyć przed
 końcem ``-x`` (#1339). Gdy nie wykryje jej brama typów (cofnięcia fragmentu brama nie sprawdza), trafia do zapisu
-jako ``przekroczony_czas``, a do issue z dopiskiem, że noc nie dała jej werdyktu.
+jako ``przekroczony_czas``, a noc nie daje jej issue, tylko linię ``MUTACJE NOCNE BEZ ISSUE`` logu zgłoszenia.
 Mutację, która przeżyła ostatni przebieg testów albo nie ma żadnego testu, sprawdza jeszcze brama typów
 (``silnik_mutacji.type_gate``): ruff i mypy obu systemów, kroki bramy pre-push. Mutację, która idzie do testów pliku,
 brama sprawdza przed nimi (linia z dopiskiem ``(przed testami pliku)``), bo trwa sekundy, a one minuty na wszystkich
