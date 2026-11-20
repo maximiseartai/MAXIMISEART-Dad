@@ -28,7 +28,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, REPORT
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE
-from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
+from rozliczenia.centrum.outbox import QUEUE_DIRECTORY, QUEUE_THREAD
 from rozliczenia.centrum.platform import Autostart, AutostartState, Platform
 from rozliczenia.centrum.report_reminders import ReminderRhythm
 from rozliczenia.centrum.report_box import (
@@ -563,6 +563,11 @@ class ToolDirectory:
     @property
     def intermax_copies(self) -> Path:
         return self._moved(default_intermax_copies())
+
+
+def config_files_after_queue(client: CentrumClient, config: Path) -> dict[str, tuple[bytes, int]]:
+    join_threads_since(client.since, named=QUEUE_THREAD)
+    return {path.relative_to(config).as_posix(): (path.read_bytes(), path.stat().st_mtime_ns) for path in sorted(config.rglob("*")) if path.is_file()}
 
 
 def write_report_key(tool: ToolDirectory, key: str = REPORT_KEY) -> Path:

@@ -27,23 +27,14 @@ const GROUPS: ReadonlyArray<Option<Group | "none">> = [
   { value: "extender", label: "Extender" },
 ]
 
-/** Wybór „Dodaj do” przy podpowiedzi: nowy składnik albo id składnika z listy. */
 const NEW = "nowy"
 
-/**
- * Składnik w formularzu: `id` `null` to nowy składnik; `suggestion`: zapis z podpowiedzi, przy której stoi formularz.
- */
 type Editing = { id: string | null; form: ComponentForm; suggestion: string | null }
 
 function formOf(device: DeviceComponent): ComponentForm {
   return { name: device.name, other_spellings: device.other_spellings, group: device.group }
 }
 
-/**
- * Lista Urządzeń: składniki URZĄDZENIA, które znają Reguły ilości, z innymi zapisami i grupą. Ołówek przy składniku i
- * „Dodaj składnik” otwierają formularz w miejscu wiersza; pod listą zapisy z ostatnich okresów, których lista nie zna,
- * z „Dodaj” jako nowy składnik albo inny zapis istniejącego.
- */
 export function DevicesSection() {
   const [editing, setEditing] = React.useState<Editing | null>(null)
 
@@ -235,11 +226,6 @@ function DeviceEditor({
   )
 }
 
-/**
- * Zapisy z URZĄDZENIA zleceń bez reguły w ostatnich okresach, których Lista Urządzeń nie zna; po dodaniu znikają, bo
- * każda przyjęta zmiana Ustawień czyta je od nowa. Okres, którego Pliku zbiorczego nie dało się przeczytać, to zdanie
- * pod nimi, jak w podglądzie reguły. Bez podpowiedzi i takich okresów sekcja ich nie pokazuje.
- */
 function Suggestions({
   editing,
   editor,

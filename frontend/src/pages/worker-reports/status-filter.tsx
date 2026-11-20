@@ -7,7 +7,6 @@ import { Separator } from "@/components/ui/separator"
 import type { Choice } from "@/pages/worker-reports/day-state"
 import { look, STATUSES } from "@/pages/worker-reports/status"
 
-/** Pozycje listy w kolejności: stany dni, a pod kreską Przypomniane. */
 const CHOICES: ReadonlyArray<Choice> = [...STATUSES, "reminded"]
 
 /**

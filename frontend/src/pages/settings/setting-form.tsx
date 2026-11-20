@@ -11,21 +11,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { useSettings, type FieldRefusal } from "@/lib/settings"
 import { FieldSentence, SettingRow } from "@/pages/settings/setting-row"
 
-/** Pole z serwera przy wierszu formularza: sam wiersz (`tresc`) albo jego część (`pora_wieczorna.od`). */
 type RowField<Row extends string> = Row | `${Row}.${string}`
 
-/** Wiersz pola z serwera, czyli jego pierwszy człon (`pora_wieczorna.od` → `pora_wieczorna`); pole spoza wierszy to `null`. */
 function rowOf<Row extends string>(rows: readonly Row[], field: string | null): Row | null {
   const head = (field ?? "").split(".")[0]
 
   return rows.find((row) => row === head) ?? null
 }
 
-/**
- * Sekcja Ustawień z formularzem jednego ustawienia (`setting`): zły plik, którego pole nie ma wiersza w formularzu
- * (`rows`), stoi zdaniem nad nim, a formularz (`children`) zaczyna od zapisanych wartości po każdym zapisie i cofnięciu.
- * `Above` stoi między tym zdaniem a formularzem, np. przełącznik zapisywany od razu.
- */
 export function SettingFormSection<Setting extends { problem: SettingProblem | null }, Form>({
   setting: select,
   rows,
@@ -69,11 +62,8 @@ export function SettingFormSection<Setting extends { problem: SettingProblem | n
   }
 }
 
-/** Zdania i zaznaczenie złej wartości przy wierszach formularza (`row`). */
 type RowSentences<Row extends string> = {
-  /** Zdanie pod wierszem: odmowa zapisu do następnej zmiany formularza, zły plik, dopóki tata go nie zapisze. */
   sentence: (row: Row) => string | null
-  /** Pole, którego wartości serwer nie przyjął przy ostatnim „Zapisz”. */
   invalid: (field: RowField<Row>) => true | undefined
 }
 
@@ -86,10 +76,6 @@ type SettingForm<Form, Row extends string> = RowSentences<Row> & {
   submit: (event: React.FormEvent<HTMLFormElement>) => void
 }
 
-/**
- * Stan formularza sekcji Ustawień, który zapisuje się przyciskiem „Zapisz” (`save`): odmowa z polem stoi przy jego
- * wierszu, a porażka bez pola to powiadomienie okna Ustawień.
- */
 export function useSettingForm<Form extends object, Row extends string>({
   saved,
   problem,
@@ -144,7 +130,6 @@ export function useSettingForm<Form extends object, Row extends string>({
   }
 }
 
-/** „Anuluj”, tylko gdy formularz się zmienił, i „Zapisz”, które w czasie zapisu czeka. */
 export function SaveButtons({
   editor,
   label,
@@ -171,7 +156,6 @@ export function Sentence({ children }: { children: string | null }) {
   return children === null ? null : <FieldSentence>{children}</FieldSentence>
 }
 
-/** Wiersz z polem tekstu pod opisem (`singleLine`: jedna linia, np. temat) i zdaniem odmowy albo złego pliku pod nim. */
 export function TextRow<Row extends string>({
   editor,
   row,
@@ -215,10 +199,6 @@ export function TextRow<Row extends string>({
 /** Czas od ostatniej zmiany formularza do podglądu: pisanie nie pyta serwera przy każdej literze. */
 const PREVIEW_AFTER_MS = 250
 
-/**
- * Podgląd maila z formularza (`preview`), także przed zapisem. Formularz, którego serwer nie przyjmuje, zostawia
- * ostatni podgląd; zdanie o złej wartości daje dopiero „Zapisz”.
- */
 export function MailPreview<Form, Shown>({
   form,
   preview,

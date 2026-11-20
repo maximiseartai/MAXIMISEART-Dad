@@ -15,6 +15,7 @@ from tests.fixtures.git_repo import commit, copy_files, git, with_imports
 import inwentarz_komentarzy
 import odpalenia_ast_grep
 import rozjazd_modelu
+from wplyw_zmiany import STRUCTURE
 
 windows_bez_ast_grep = pytest.mark.skipif(
     sys.platform == "win32" and inwentarz_komentarzy.AST_GREP is None,
@@ -81,6 +82,8 @@ def _wpisy(root: Path, capsys: pytest.CaptureFixture[str], pliki: dict[str, str]
         pytest.param({".importlinter": "[importlinter]\n# opis\nroot_package = x\n"}, [".importlinter:2 | ini | plik | - | # opis"], id="komentarz-ini"),
         pytest.param({"requirements.txt": "pytest>=8  # opis\n"}, ["requirements.txt:1 | requirements | plik | - | # opis"], id="komentarz-requirements"),
         pytest.param({".gitignore": "# opis\n.venv/\n"}, [".gitignore:1 | gitignore | plik | - | # opis"], id="komentarz-gitignore"),
+        pytest.param({".gitignore": "  # wzorzec\n"}, [], id="wciety-krzyzyk-gitignore-to-wzorzec"),
+        pytest.param({".gitattributes": "  # opis\n*.sh text\n"}, [".gitattributes:1 | gitignore | plik | - | # opis"], id="wciety-komentarz-gitattributes"),
         pytest.param({"tools/a.py": 'X = "# nie komentarz"\n'}, [], id="krzyzyk-w-napisie-pythona"),
         pytest.param({"ruff.toml": 'nazwa = "a # b"\n'}, [], id="krzyzyk-w-napisie-toml"),
         pytest.param(
@@ -316,11 +319,13 @@ BAZA_FALI: Final = {
     MODEL: json.dumps({"frontend/src/karta.ts": {rozjazd_modelu.CALY_PLIK: "-"}, "skrypty/model.py": {"Klasa": "-"}}),
 }
 JEDNOSTKA: Final = re.compile(r"^(?:MAIN|NOC) \| |^DOWÓD FALI ")
+WEZEL_Z_WYBORU_PR: Final = next(wezel for wezel in STRUCTURE if "::" in wezel)
 PRZECHODZI: Final = "MAIN | pytest | 1 plików poza wyborem pull requestu | OK"
 KROKI_CI: Final = ["MAIN | krok CI | e2e | po merge'u", "MAIN | krok CI | timing | po merge'u"]
 BEZ_ROZJAZDU: Final = "MAIN | podstawa | verify-a | po merge'u, rozjazd modelu: brak"
 ROZJAZD_KARTY: Final = f"MAIN | podstawa | verify-a | {rozjazd_modelu.ROZJAZD}: kod opisany modelem zmienił się: frontend/src/karta.ts."
 OK_FALI: Final = "lokalnie: pytest 1 plików, rozjazd modelu 1 skilli | po merge'u: kroki CI 2, podstawy 1"
+PRACA_PR: Final = " | praca PR: Required CI"
 
 
 def _fala(root: Path, baza: dict[str, str], zmiana: dict[str, str], *, stary_skrot: bool) -> tuple[subprocess.CompletedProcess[str], str]:
@@ -375,26 +380,34 @@ def _jednostki(wynik: subprocess.CompletedProcess[str], poczatek: str) -> list[s
         ),
         pytest.param(
             {}, False, {"skrypty/opis.py": "# nagłówek opisu\nX = 1\n"},
-            [PRZECHODZI, *KROKI_CI, BEZ_ROZJAZDU, f"DOWÓD FALI OK | {OK_FALI}, noc 0"], 0,
+            [PRZECHODZI, *KROKI_CI, BEZ_ROZJAZDU, f"DOWÓD FALI OK | {OK_FALI}, noc 0{PRACA_PR}"], 0,
             id="komentarz-bez-czytelnika-w-zakresie-runu",
         ),
         pytest.param(
             {"tests/test_opis.py": TEST_Z_WYBORU_PR}, False, {"skrypty/opis.py": "# nagłówek opisu\nX = 1\n"},
-            [PRZECHODZI, *KROKI_CI, BEZ_ROZJAZDU, f"DOWÓD FALI OK | {OK_FALI}, noc 0"], 0,
+            [PRZECHODZI, *KROKI_CI, BEZ_ROZJAZDU, f"DOWÓD FALI OK | {OK_FALI}, noc 0{PRACA_PR}"], 0,
             id="test-z-wyboru-pull-requestu-liczy-required-ci-a-nie-dowod",
+        ),
+        pytest.param(
+            {WEZEL_Z_WYBORU_PR.partition("::")[0]: "def test_inny():\n    pass\n"}, False, {"skrypty/opis.py": "# nagłówek opisu\nX = 1\n"},
+            [
+                "MAIN | pytest | 2 plików poza wyborem pull requestu | OK", *KROKI_CI, BEZ_ROZJAZDU,
+                f"DOWÓD FALI OK | lokalnie: pytest 2 plików, rozjazd modelu 1 skilli | po merge'u: kroki CI 2, podstawy 1, noc 0{PRACA_PR}",
+            ], 0,
+            id="wezel-plik-test-z-wyboru-pull-requestu-zostawia-reszte-pliku-lokalnemu-pytest",
         ),
         pytest.param(
             {}, True, {"skrypty/opis.py": "# nagłówek opisu\nX = 1\n"},
             [
                 PRZECHODZI, *KROKI_CI,
                 "MAIN | podstawa | verify-a | po merge'u, rozjazd modelu już na bazie, bo zmiana nie dotyka plików modelu: kod opisany modelem zmienił się: frontend/src/karta.ts.",
-                f"DOWÓD FALI OK | {OK_FALI}, noc 0",
+                f"DOWÓD FALI OK | {OK_FALI}, noc 0{PRACA_PR}",
             ], 0,
             id="rozjazd-modelu-z-bazy-nie-jest-porazka-fali",
         ),
         pytest.param(
             {}, False, {"skrypty/mutowany.py": "# nagłówek mutowanego\n\nM = 1\n"},
-            [PRZECHODZI, *KROKI_CI, BEZ_ROZJAZDU, "NOC | skrypt mutacji | verify-a/check_a_mutations.py | po merge'u", f"DOWÓD FALI OK | {OK_FALI}, noc 1"], 0,
+            [PRZECHODZI, *KROKI_CI, BEZ_ROZJAZDU, "NOC | skrypt mutacji | verify-a/check_a_mutations.py | po merge'u", f"DOWÓD FALI OK | {OK_FALI}, noc 1{PRACA_PR}"], 0,
             id="skrypt-mutacji-nocy-wymieniony-bez-biegu",
         ),
         pytest.param(

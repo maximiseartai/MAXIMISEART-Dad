@@ -15,17 +15,12 @@ import { FieldSentence, SettingRow, SettingsPanel } from "@/pages/settings/setti
 
 type Login = InboxPasswordSaved["login"]
 
-/** Jedno zdanie po próbie logowania: czy skrzynka przyjęła nowe hasło. */
 const LOGIN_SENTENCES: Record<Login, string> = {
   accepted: "Skrzynka przyjęła hasło.",
   rejected: "Skrzynka nie przyjęła hasła. Sprawdź je i wpisz jeszcze raz.",
   no_network: "Hasło zapisane, ale skrzynka nie odpowiada. Sprawdź internet.",
 }
 
-/**
- * Skrzynka raportów: tata wpisuje nowe hasło aplikacji Google w pole, które nigdy nie pokazuje starego (serwer go nie
- * wysyła). Po zapisie Centrum raz loguje się do skrzynki i mówi, czy hasło przyjęła. Adres skrzynki wpisuje Maks.
- */
 export function InboxSection() {
   const { settings, reload } = useSettings()
   const [typing, setTyping] = React.useState(false)
@@ -88,7 +83,6 @@ export function InboxSection() {
   }
 }
 
-/** Nowe hasło: Enter i „Zapisz” zapisują i sprawdzają skrzynkę, Esc i „Anuluj” wracają; zła wartość stoi pod polem. */
 function NewPassword({ onDone, onCancel }: { onDone: (login: Login) => void; onCancel: () => void }) {
   const { secretSaved } = useSettings()
   const [value, setValue] = React.useState("")

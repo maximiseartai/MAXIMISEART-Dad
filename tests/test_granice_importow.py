@@ -50,7 +50,7 @@ Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038).
 
 - Wysyłkę Logów Uruchomienia daje tylko ``comment_versions.post_of`` jako ``LogsPost``. Jej ``replace`` i podklasę
-  odrzuca typ (docstring ``comment_versions._VERSIONS``), ale nową ``Post`` złożoną z jej pól typ przepuszcza, bo
+  odrzuca typ (próbki ``DROGI_DO_LOGOW`` i ``ZNANE_LUKI_WYSYLKI``), ale nową ``Post`` złożoną z jej pól typ przepuszcza, bo
   ``Outbox.post`` bierze też gołą ``Post`` (przegląd #1371 r1). Dlatego wynik ``post_of`` idzie od razu do kolejki
   (``<kolejka>.post(post_of(wersja))``), a nazwę ``post_of`` test rozpoznaje po niej samej, z dowolną bazą i także
   jako napis, a nie po imporcie. Etykietę Logów (``comment_versions.LABEL``) kod poza ``post_of`` tylko podaje kolejce
@@ -355,6 +355,7 @@ IMPORT_CONTRACTS: typing.Final = (
     "Silnik nie importuje Centrum rozliczeń",
     "Pakiet silnika (rozliczenia/__init__.py) nie importuje Centrum rozliczeń",
     "imaplib i smtplib importuje tylko port Skrzynki raportów",
+    "Przeglądarkę okna efenix importuje tylko centrum/efenix_chrome.py",
 )
 wymaga_import_linter = pytest.mark.skipif(
     importlib.util.find_spec("importlinter") is None,
@@ -510,20 +511,27 @@ def skrzynka() -> ssl.SSLSocket:
     ),
     "czyta tylko pliki .py: Centrum z modułu bez źródła .pyc": "from rozliczenia.centrum import runs\n\nGOSPODARZ = runs\n",
     "czyta tylko pliki .py: imaplib z modułu bez źródła .pyc": "import imaplib\n\nSKRZYNKA = imaplib.IMAP4_SSL\n",
+    "czyta tylko instrukcje importu: przeglądarka okna efenix przez wbudowane __import__": (
+        'OKNO = __import__("rozliczenia.efenix_browser")\n'
+    ),
+    "czyta tylko pliki .py: przeglądarka okna efenix z modułu, który Python na Windows importuje z .pyw": (
+        "from rozliczenia import efenix_browser\n\nOKNO = efenix_browser\n"
+    ),
+    "czyta tylko pliki .py: przeglądarka okna efenix z modułu bez źródła .pyc": (
+        "from rozliczenia import efenix_browser\n\nOKNO = efenix_browser\n"
+    ),
 }
 
 
 def _contract_tree(src: Path) -> None:
-    """Najmniejszy pakiet ``rozliczenia`` w ``src`` z modułami, które nazywają kontrakty z ``IMPORT_LINTER_CONFIG``, i
-    moduł ``kontrola``, który łamie oba kontrakty importem wprost: jego zgłoszenie dowodzi, że ``lint-imports`` czytał
-    to drzewo."""
-
     for name, code in {
         "__init__.py": "",
         "centrum/__init__.py": "",
         "centrum/runs.py": "",
+        "centrum/efenix_chrome.py": "from rozliczenia import efenix_browser\n",
+        "efenix_browser.py": "",
         "worker_report_inbox.py": "import imaplib\nimport smtplib\n",
-        "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\n",
+        "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\nimport rozliczenia.efenix_browser\n",
     }.items():
         (src / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
         (src / "rozliczenia" / name).write_text(code, encoding="utf-8")
@@ -551,6 +559,7 @@ def test_znane_luki_kontraktow_importow_przechodza_przez_ruff_i_import_linter(tm
 
     assert "rozliczenia.kontrola is not allowed to import rozliczenia.centrum:" in wynik, wynik
     assert "rozliczenia.kontrola -> imaplib" in wynik, wynik
+    assert "rozliczenia.kontrola -> rozliczenia.efenix_browser" in wynik, wynik
     assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_KONTRAKTOW)")
 
 
@@ -749,6 +758,20 @@ def test_format_logow_uruchomienia_nie_wczytuje_gospodarza_uruchomien_ani_diagno
             "Schemat Logów Uruchomienia, strażnik reguły danych i postęp Wyceny (RUN_LOGS_FORMAT w "
             "tests/test_granice_importow.py) nie wczytują gospodarza Uruchomień (runs) ani Diagnozy (diagnosis), także "
             "przez inne moduły src i importem w funkcji: Logi z nich składa src/rozliczenia/centrum/logs_of_run.py.",
+        ]
+    )
+
+
+def test_kopia_wejscia_w_logach_nie_wczytuje_modulow_centrum() -> None:
+    found = _chains("rozliczenia/centrum/logged_input_copy.py", lambda module: module.startswith("rozliczenia.centrum."))
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Schemat Kopii wejścia w Logach (src/rozliczenia/centrum/logged_input_copy.py) nie wczytuje modułów Centrum "
+            "rozliczeń (reszty schematu Logów, kontraktu Centrum), także przez inne moduły src i importem w funkcji: "
+            "brama Legendy czynności czyta z pliku Logów samą Kopię wejścia, więc jej schemat zależy tylko od typów Kopii "
+            "wejścia silnika (rozliczenia.input_copy). Typ, którego potrzebuje, weź z modułu silnika.",
         ]
     )
 
@@ -1454,7 +1477,7 @@ def test_znane_luki_straznika_logow_przechodza_przez_ruff_mypy_i_straznika(tmp_p
 def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     """Miejsca pliku ``file``, które mogą zbudować albo przerobić wysyłkę Logów Uruchomienia obok ``post_of``.
 
-    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca też typ (docstring ``comment_versions._VERSIONS``),
+    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca też typ (próbki ``DROGI_DO_LOGOW`` i ``ZNANE_LUKI_WYSYLKI``),
     ale nie z ``# type: ignore[…]``. Typ przepuszcza też nową ``Post`` złożoną z pól gotowej wysyłki, bo ``Outbox.post``
     bierze też gołą ``Post`` (``Post(sent.target, …, Rank.OWN)`` i ``parts=(record.text,)``, przegląd #1371 r1).
     Dlatego sprawdzenie łapie tylko dwie rzeczy.

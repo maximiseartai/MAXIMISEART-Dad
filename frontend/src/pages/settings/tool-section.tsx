@@ -47,11 +47,6 @@ export function ToolSection() {
 
 const AUTOSTART = "Uruchamiaj Centrum razem z Windows"
 
-/**
- * Start Centrum razem z Windows: przełącznik zakłada albo usuwa skrót w folderze Autostart, a jego położenie to stan
- * skrótu z serwera. Gdy przełącznika nie da się zmienić (komputer bez Windows, folder Autostart nieczytelny), jest
- * nieaktywny, a zdanie dlaczego podaje serwer.
- */
 function Autostart() {
   const { settings, switchAutostart, autostartPending } = useSettings()
 

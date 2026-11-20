@@ -1,18 +1,3 @@
-"""Uzupełnienie pliku zbiorczego w Centrum: Ilości do uzupełnienia okresu jako zasób tylko do odczytu (ADR 0016).
-
-Każde żądanie czyta zapisany Plik zbiorczy jedynym odczytem skoroszytu, także gdy trzyma go Excel, i przelicza
-Ilości do uzupełnienia w silniku (``quantities_to_fill``) bieżącymi Regułami ilości i Legendą czynności z Ustawień
-Centrum, nie tymi, z których plik powstał (ADR 0013: przelicza, niczego nie przechowuje); Centrum nigdy nie zmienia
-pliku. Pliku Reguł ilości, Listy Urządzeń albo Legendy czynności, którego system nie daje teraz czytać, strona nie
-zastępuje plikiem z Wydania: odmawia zdaniem o tym pliku, zanim przeczyta Plik zbiorczy, a okno „Uruchomić z zapisem?”
-dostaje wiersze nieprzeczytane, bo start Przebiegu rozliczeń odmawia wtedy tym samym zdaniem. Na żywo: tani znacznik
-zapisu i ostatni dobry odczyt (``live_file``, ``FillingReads``).
-Podsumowanie dostaje tylko numery wierszy, stan „zrobione” i liczniki kolumn, a strona rodzaju też teksty
-wiersza, komórki N:AP i nazwy pozycji cennika, nigdy adres, numer zlecenia ani UMOWA. Nieudany odczyt to
-Komunikat, który nazywa Plik zbiorczy, i wpis w dzienniku Centrum z przyczyną, bez treści wierszy. Czy Przebieg
-rozliczeń okresu się odbył, mówi Status okresu z plików Folderu okresu, ten sam co na Tablicy okresów.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -49,15 +34,6 @@ from rozliczenia.workbook_files import WorkbookError, excel_lock_file
 
 
 class FillingReads:
-    """Ostatnie dobre odczyty Plików zbiorczych dla stron Uzupełnienia i działanie po wyniku Uruchomienia.
-
-    Uruchomienie, które zmieniło pliki okresu (``files_unchanged`` fałszywe), mogło podmienić jego Plik zbiorczy, więc
-    ostatni dobry odczyt sprzed niego nie zastępuje już nieudanego odczytu: ``run_ended`` (``runs.AfterRun``) zapomina
-    odczyty wszystkich plików, zanim karta wyniku dostanie wynik. Pliki innych okresów tracą przez to tylko minutę
-    pokazywania ostatniego dobrego odczytu podczas porażki. Pliki czyta uchwyt plików taty pracy Centrum (``files``),
-    którego pamięć reguły danych poznaje komórki zakazanych kolumn każdego odczytu (ADR 0025).
-    """
-
     def __init__(self, work: CentrumWork, files: DadFiles) -> None:
         self.reads: LastGoodReads[NumberedOrders] = LastGoodReads(clock=work.clock)
         self.files = files
@@ -147,8 +123,6 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
 
 
 def without_quantity_sentence(rows: Sequence[int]) -> str | None:
-    """„1 wiersz bez ilości: 20”, „3 wiersze bez ilości: 18, 19, 20”, „12 wierszy bez ilości: …”; ``None`` bez wierszy."""
-
     if not rows:
         return None
     count = len(rows)
@@ -222,8 +196,6 @@ def _stamp(read: GoodRead[NumberedOrders]) -> filling_contract.CollectiveFileRea
 
 @dataclass(frozen=True)
 class _Unreadable:
-    """Odczyt Pliku zbiorczego bez Ilości do uzupełnienia: Komunikat i typ błędu dla dziennika (``-`` bez niego)."""
-
     message: Message
     type: str
 
@@ -244,11 +216,7 @@ def _attempt(path: Path, cloud_files: CloudFiles, files: DadFiles) -> NumberedOr
 
 
 def _excel_lock(path: Path) -> str:
-    """``tak`` albo ``nie`` tylko wtedy, gdy system odpowiedział o pliku blokady; inaczej ``nieznany``.
-
-    ``path_state`` sprawdza prawa jak każdy odczyt, także ACL w Windows, gdzie ``os.access`` ich nie widzi.
-    """
-
+    # ZEWNĘTRZNE: os.access w Windows nie czyta ACL, tylko atrybut tylko do odczytu, więc nie mówi, czy system da plik blokady (CPython Modules/posixmodule.c, os_access_impl)
     match path_state(excel_lock_file(path)):
         case "missing":
             return "nie"

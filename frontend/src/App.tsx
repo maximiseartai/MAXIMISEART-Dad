@@ -51,8 +51,6 @@ export function App() {
                 <CurrentPage value={page}>
                   <page.Content />
                 </CurrentPage>
-                {/* Każdy adres strony to osobny widok, także w jej obrębie (`#/uzupelnienie/<okres>/<rodzaj>`); okno
-                    Ustawień nad stroną nie zmienia jej adresu i mierzy się samo. */}
                 {address === coldUnder ? null : <ViewTiming key={address} page={page} />}
               </div>
             </SidebarInset>

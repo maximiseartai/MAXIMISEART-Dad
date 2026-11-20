@@ -216,11 +216,11 @@ no longer describes.
 1. Read the diff of the covered files since their digests (the `git diff`
    above; the drift line names each changed file and definition). For each
    hunk, find its row in the table.
-2. Change the matching actions so that one action stays one indivisible step
-   of the code, and write the code's names in its row of the table, not in a
-   comment: the model has none, and a new action, definition, constant or
-   variable gets its own row. TLA+ strings must be ASCII (no Polish letters
-   inside `"…"`).
+2. Change the matching actions so that one action stays one indivisible step of
+   the code, and write the code's names in its row of the table, not in a
+   comment: the model has none, and a new action of `Next`, constant or variable
+   gets its own row, and a new definition gets one when it models code. TLA+
+   strings must be ASCII (no Polish letters inside `"…"`).
 3. A new way to fail gets a `CONSTANT` with its row, a branch guarded by it, and a value in
    `stale` of every configuration in `model/konfiguracje.json`. Turn it on in the
    configuration whose theme fits, or give it its own configuration there.

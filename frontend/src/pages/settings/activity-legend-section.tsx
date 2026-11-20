@@ -28,14 +28,8 @@ const COLOURS: ReadonlyArray<Option<FillForm["colour"]>> = zFillForm.shape.colou
 
 const NEW_CODE: ActivityCodeForm = { spellings: [""], column: null, value: 1, amount: null, fills: [], counts_in_fault: true }
 
-/** Kod w formularzu: `id` `null` to nowy kod. */
 type Editing = { id: string | null; form: ActivityCodeForm }
 
-/**
- * Legenda czynności: każdy Kod czynności jednym zdaniem, w kolejności z pliku; kolumna ma nazwę pozycji cennika z
- * Wzorca. Ołówek przy kodzie i „Dodaj kod” otwierają formularz w miejscu wiersza. Zła legenda pokazuje swoje zdanie nad
- * legendą, którą Centrum liczy mimo to.
- */
 export function ActivityLegendSection() {
   const [editing, setEditing] = React.useState<Editing | null>(null)
 
@@ -103,12 +97,6 @@ function CodeRow({ code, edit }: { code: ActivityCodeSentence; edit: () => void 
   )
 }
 
-/**
- * Formularz Kodu czynności: zapisy, kolumna Ilości usług (stała albo przedziałami liczby z kodu) z wartością, kwota w AS
- * i kolory kolumn. Kolumny wybiera się tylko z tych, w które legenda może pisać, po nazwie z cennika. Każda zmiana, także
- * „Usuń kod”, który przełącza formularz w pytanie „Usunąć kod?”, pokazuje podgląd skutku tej samej zmiany, którą zapisuje
- * dopiero „Zapisz” albo „Usuń”; zła wartość to jedno zdanie przy polu, a problem całego kodu nad formularzem.
- */
 function CodeEditor({
   editing,
   legend,
