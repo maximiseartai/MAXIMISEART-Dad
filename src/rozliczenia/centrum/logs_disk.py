@@ -105,7 +105,7 @@ class _OrderEnded(_JournalRecord):
 class _RunEnded(_JournalRecord):
     at: datetime
     entry: Literal["koniec Uruchomienia"]
-    result: RunResult | None = None
+    result: RunResult | None
 
 
 _JournalEntry = Annotated[_JournalStarted | _OrderBegun | _OrderEnded | _RunEnded, Field(discriminator="entry")]

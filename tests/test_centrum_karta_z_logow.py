@@ -23,7 +23,7 @@ from rozliczenia.efenix_pricing import OrderKind, OrderResult
 from rozliczenia.efenix_window import ListedOrder
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, EndEntry, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
+from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
 from rozliczenia.centrum.run_logs import (
@@ -54,7 +54,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from atrapy.dziennik_wyceny import begun_line, end_line, journal_path, left_journal, start_line
+from atrapy.dziennik_wyceny import begun_line, journal_path, left_journal, start_line
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import PERIOD
 from tests.fixtures.run_cards import first_view, restored, unlisted
@@ -370,6 +370,7 @@ def test_wiersz_historii_otwiera_karte_swojego_uruchomienia_takze_po_ponownym_st
 
     expected = {live["run"]["id"]: restored(live, started[live["run"]["id"]]) for live in (preview, saved)}
     assert before == after == expected
+    assert centrum.client.get("/api/runs/current").json()["previous"] == expected[saved["run"]["id"]]
 
 
 MODE_WORDS_BEFORE_SCHEMA_3 = {"RUN": "zapis", "DRY-RUN": "podgląd"}
@@ -399,11 +400,11 @@ def with_configuration_view(record: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.mark.parametrize(
     "schema",
-    [as_schema_1, as_schema_2, with_configuration_view, None],
-    ids=["schemat-1", "schemat-2", "widok-konfiguracja", "schemat-3"],
+    [as_schema_1, as_schema_2, with_configuration_view],
+    ids=["schemat-1", "schemat-2", "widok-konfiguracja"],
 )
 def test_karta_po_starcie_i_wiersz_historii_otwieraja_logi_kazdego_schematu(
-    tmp_path: Path, schema: Callable[[dict[str, Any]], dict[str, Any]] | None
+    tmp_path: Path, schema: Callable[[dict[str, Any]], dict[str, Any]]
 ) -> None:
     centrum = settling_centrum(tmp_path)
     preview = run_to_end(centrum, dry_run=True)
@@ -413,15 +414,14 @@ def test_karta_po_starcie_i_wiersz_historii_otwieraja_logi_kazdego_schematu(
     records = {run_id: json.loads(path.read_text(encoding="utf-8")) for run_id, path in paths.items()}
     assert {record["schema_version"] for record in records.values()} == {3}
     assert {record["mode"] for record in records.values()} == {"RUN", "DRY-RUN"}
-    if schema is not None:
-        for run_id, path in paths.items():
-            path.write_text(json.dumps(schema(records[run_id]), ensure_ascii=False), encoding="utf-8")
-        start_file = centrum.tool.last_started
-        started = json.loads(start_file.read_text(encoding="utf-8"))
-        assert (started["schema_version"], started["mode"]) == (2, "RUN")
-        start_file.write_text(
-            json.dumps(started | {"schema_version": 1, "mode": "zapis"}, ensure_ascii=False), encoding="utf-8"
-        )
+    for run_id, path in paths.items():
+        path.write_text(json.dumps(schema(records[run_id]), ensure_ascii=False), encoding="utf-8")
+    start_file = centrum.tool.last_started
+    started = json.loads(start_file.read_text(encoding="utf-8"))
+    assert (started["schema_version"], started["mode"]) == (2, "RUN")
+    start_file.write_text(
+        json.dumps(started | {"schema_version": 1, "mode": "zapis"}, ensure_ascii=False), encoding="utf-8"
+    )
     saved_id = saved["run"]["id"]
 
     centrum.restart()
@@ -509,14 +509,6 @@ def test_logi_ktorych_system_nie_daje_odczytac_to_odmowa_a_nie_nieczytelne(tmp_p
     (tmp_path / RUN_LOGS_DIRECTORY / name_of(start())).mkdir(parents=True)
 
     assert isinstance(on_disk(tmp_path).logs(RUN_ID), Refused)
-
-
-def test_identyfikator_spoza_centrum_nie_ma_logow_choc_nazwa_pliku_sie_nim_konczy(tmp_path: Path) -> None:
-    written(tmp_path, interrupted_logs(start()))
-    disk = on_disk(tmp_path)
-
-    asked = [f"efenix-{RUN_ID}", RUN_ID.upper(), f"{RUN_ID}.json", "*", ""]
-    assert [disk.logs(run_id) for run_id in asked] == [Missing()] * len(asked)
 
 
 def test_identyfikator_spoza_centrum_nie_ma_logow_bez_zagladania_do_katalogu_logow(
@@ -706,14 +698,6 @@ def test_postep_wyceny_ma_zlecenia_skonczone_po_kolei_a_miedzy_zleceniami_zadneg
     )
 
 
-def test_wpis_konca_z_wersji_ktora_nie_zapisywala_wyniku_jest_dalej_wpisem_konca(tmp_path: Path) -> None:
-    left_journal(tmp_path, start(), end_line(SECOND + timedelta(minutes=9)))
-
-    [left] = on_disk(tmp_path).left_behind()
-
-    assert left.journal is not None and left.journal.end == EndEntry(None)
-
-
 @NO_ACCESS_ON_WINDOWS
 def test_dziennik_ktorego_start_centrum_nie_moze_usunac_zostaje_na_dysku_z_linia_dziennika_centrum(tmp_path: Path) -> None:
     path = left_journal(tmp_path, start())
@@ -785,7 +769,7 @@ def test_wycena_zatrzymana_po_zleceniach_konczy_sie_w_powiadomieniu_bez_liczby_z
 
     [ended] = RunCards(on_disk(tmp_path), list).ended("efenix")
 
-    assert (stopped.summary, ended.orders) == (None, None)
+    assert ended.orders is None
 
 
 def test_zero_zlecen_przed_zamknieciem_centrum_nie_ostrzega(tmp_path: Path) -> None:

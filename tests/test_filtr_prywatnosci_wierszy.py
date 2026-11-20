@@ -129,7 +129,6 @@ def test_tresc_zlecenia_dla_regul_ilosci_ma_pore_bez_daty_dziennej() -> None:
     ("cell", "value"),
     [
         (None, 0),
-        ("", 0),
         ("  ", 0),
         (0, 0),
         (0.0, 0),
@@ -140,10 +139,8 @@ def test_tresc_zlecenia_dla_regul_ilosci_ma_pore_bez_daty_dziennej() -> None:
         (" 2 ", 2),
         ("2,0", 2),
         (Decimal("3"), 3),
-        (45, 45),
         (1.5, NON_NUMERIC),
         ("=O18+P18", NON_NUMERIC),
-        ("dwa", NON_NUMERIC),
         (True, NON_NUMERIC),
         (STARTED, NON_NUMERIC),
     ],

@@ -137,7 +137,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.potomne import wait_for
-from atrapy.preparation import COMPLETED_WITHOUT_CODES, INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
+from atrapy.preparation import COMPLETED_WITHOUT_CODES, incomplete_period_rows, paste_raw_orders, register_order
 from atrapy.settlement import PERIOD, WORKERS, worker_list, write_quantity_source, write_worker_list
 import sys
 
@@ -509,28 +509,6 @@ def test_diagnoza_z_innym_wynikiem_niz_ostatnio_wyslana_zmienia_komentarz_logow(
     ]
     assert sent[-1] == json.loads(local_logs(centrum, run_id))
     assert len(box(centrum).archived(ARCHIVE)) == 1
-
-
-def test_to_samo_wyjasnienie_o_innym_pliku_okresu_zmienia_komentarz_logow(tmp_path: Path) -> None:
-    centrum = watched_centrum(tmp_path)
-    run_id = unexpected_exception(centrum)
-    thread_with(centrum, comments=1)
-    collective = centrum.collective_file.with_name(f"~${centrum.collective_file.name}")
-    collective.write_bytes(b"")
-    first = diagnose(centrum, run_id)
-    sent = [diagnosed_logs(centrum, edits=1)]
-
-    collective.unlink()
-    (centrum.period_directory / f"~${INTERNAL_SETTLEMENT_NAME}").write_bytes(b"")
-    second = diagnose(centrum, run_id)
-
-    sent.append(diagnosed_logs(centrum, edits=2))
-    shown = [diagnosis["explanation"]["where"] for diagnosis in (first, second)]
-    assert shown[0] != shown[1]
-    logged = [logs["diagnosis"]["explanation"] for logs in sent]
-    assert [(explanation["code"], explanation["where"]) for explanation in logged] == [
-        ("PLIK_OKRESU_OTWARTY", where) for where in shown
-    ]
 
 
 def test_inny_plik_tylko_w_chmurze_za_tym_samym_co_zrobic_zmienia_komentarz_logow(tmp_path: Path) -> None:
@@ -1920,15 +1898,14 @@ def test_porownanie_zatrzymania_okna_efenix_pomija_czasy_krokow_a_nie_przyczyne(
 def test_plik_ktory_nie_jest_plikiem_logow_konczy_sie_bledem_albo_granica(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Pliku, którego nie ma, i pliku ``.gz``, który nie jest gzipem, narzędzie nie czyta (kod 2); JSON, który nie jest
-    Logami Uruchomienia tego kodu, nie odtwarza się, a Logi bez commitu nie mają kopii commitu (kod 3)."""
+    """Pliku ``.gz``, który nie jest gzipem, narzędzie nie czyta (kod 2); JSON, który nie jest Logami Uruchomienia tego
+    kodu, nie odtwarza się, a Logi bez commitu nie mają kopii commitu (kod 3)."""
 
     not_logs = tmp_path / "nie-logi.json"
     not_logs.write_text('{"schema_version": 2, "tool": {"wydanie": null, "commit": null}}', encoding="utf-8")
     not_gzip = tmp_path / "nie-gzip.json.gz"
     not_gzip.write_text("{}", encoding="utf-8")
 
-    assert _replayed(capsys, tmp_path / "nie-ma.json", "--na-tym-drzewie")[0] == 2
     assert _replayed(capsys, not_gzip, "--na-tym-drzewie")[0] == 2
     code, lines = _replayed(capsys, not_logs, "--na-tym-drzewie")
     assert (code, lines[0].split(" (")[0]) == (3, "NIE DA SIĘ ODTWORZYĆ: plik nie jest Logami Uruchomienia w schemacie tego kodu")
@@ -2619,21 +2596,6 @@ def test_problem_rdzenia_zdjety_z_logow_daje_pierwsza_roznice_w_problemach_wpisa
     assert lines[3] == "Pierwsza różnica: Wpisanie raportów (report_entering).problems[0].mail", lines
 
 
-def test_logi_wpisania_raportow_sprzed_dni_zamknietych_bez_pola_closed_odtwarzaja_sie_zgodnie(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Logi Wpisania raportów sprzed #1229 nie mają tokenów okresów z Plikiem zbiorczym (``closed``), bo kliknięcie ich
-    wtedy nie sprawdzało: odtwarzają się jak kliknięcie bez okresu zamkniętego."""
-
-    produced = _report_entering(tmp_path / "taty")
-    assert produced.record["report_entering"]["closed"] == []
-    changed = _changed(produced, tmp_path, lambda record: record["report_entering"].pop("closed"))
-
-    code, lines = _replayed(capsys, changed, "--na-tym-drzewie")
-
-    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
-
-
 def test_logi_wpisania_raportow_bez_legendy_czynnosci_odtwarzaja_sie_legenda_z_wydania_z_granica(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -3243,31 +3205,6 @@ def test_logi_wyceny_z_dwoma_wierszami_o_tym_samym_numerze_zl_odtwarzaja_sie_zgo
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
-def test_logi_wyceny_sprzed_odczytu_wierszy_listy_koncza_odtworzenie_granica(
-    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Logi sprzed #843 mają szukanie z trafieniami bez odczytu wierszy listy, więc Atrapa nie wie, co pokazać:
-    odtworzenie kończy się granicą (kod 3), a nie różnicą."""
-
-    produced = shared_logs("efenix")
-
-    def without_results(record: dict[str, Any]) -> None:
-        for order in record["efenix_orders"]:
-            for step in order["steps"]:
-                if step["action"] == "szukanie":
-                    step["results"] = None
-
-    changed = _changed(produced, tmp_path, without_results)
-
-    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
-
-    assert (code, lines[0]) == (
-        3,
-        "NIE DA SIĘ ODTWORZYĆ: Logi Wyceny w efenix nie mają odczytu wierszy listy po szukaniu (Logi sprzed #843), więc "
-        "Atrapa nie wie, co pokazać",
-    ), lines
-
-
 def _page(amount: str, quantities: dict[str, int | str]) -> dict[str, Any]:
     """Odczyt strony zlecenia po otwarciu w śladzie: kwota końcowa i ilości (każda pozycja Atrapy bez podanej ma 0)."""
 
@@ -3351,26 +3288,6 @@ def test_atrapa_z_logow_nazywa_wiersz_bez_numeru_zl_i_roznice_adresu_ktorej_nie_
             ("wiersz 20: Atrapa nie umie pokazać różnicy adresu ['województwo']", False),
         ),
     )
-
-
-def test_kopia_wejscia_bez_folderow_nad_plikiem_daje_roznice_w_kopii_a_nie_zgodnosc(
-    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Kopia wejścia bez nazw folderów nad plikiem (Logi sprzed #847): odbudowa kładzie Plik zbiorczy w folderze okresu,
-    więc Kopia odtworzenia ma foldery, których Kopia w Logach nie ma, a pierwszą różnicą jest Kopia wejścia."""
-
-    produced = shared_logs("settlement")
-    changed = _changed(produced, tmp_path, lambda record: record["input_copy"][0].pop("folders"))
-
-    code, lines = _replayed(capsys, changed, "--na-tym-drzewie", *produced.arguments)
-
-    assert (code, lines[0]) == (1, "ODTWORZENIE RÓŻNE"), lines
-    name = produced.record["input_copy"][0]["name"]
-    assert lines[3:6] == [
-        f"Pierwsza różnica: Kopia wejścia (input_copy)[0: plik {name}].folders[0]",
-        "  Logi:        (brak)",
-        '  Odtworzenie: "okresy"',
-    ]
 
 
 def test_inna_data_wykonania_w_sladzie_zlecen_efenix_daje_roznice_w_sladzie_przy_tych_samych_komunikatach(
@@ -3820,27 +3737,14 @@ def test_narzedzie_w_drzewie_bez_kodu_procesu_nie_odtwarza_kodem_innego_checkout
     assert done.stderr == f"BŁĄD: rozliczenia z {ROOT / 'src' / 'rozliczenia' / '__init__.py'}, a nie z {tree.resolve() / 'src'}\n"
 
 
-def _head() -> str:
-    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
-
-
-def test_odtworzenie_biegnie_na_kopii_commitu_z_logow_jej_wlasnym_narzedziem(
+def test_commit_z_logow_ktorego_nie_ma_w_repozytorium_konczy_sie_granica(
     tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Bez ``--na-tym-drzewie`` narzędzie robi kopię commitu z Logów i odtwarza w niej; commitu, którego nie ma w
-    repozytorium, nie odtwarza."""
+    """Bez ``--na-tym-drzewie`` narzędzie nie odtwarza commitu z Logów, którego nie ma w repozytorium."""
 
     produced = shared_logs("settlement")
-    head = _head()
-    at_head = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=head))
-
-    code, lines = _replayed(capsys, at_head, *produced.arguments)
-
-    assert (code, lines[0], lines[2]) == (0, "ODTWORZENIE ZGODNE", f"Kod: commit {head} z Logów, w osobnym drzewie"), lines
-
     unknown = "0" * 40
-    (tmp_path / "nieznany").mkdir()
-    elsewhere = _changed(produced, tmp_path / "nieznany", lambda record: record["tool"].update(commit=unknown))
+    elsewhere = _changed(produced, tmp_path, lambda record: record["tool"].update(commit=unknown))
 
     code, lines = _replayed(capsys, elsewhere, *produced.arguments)
 

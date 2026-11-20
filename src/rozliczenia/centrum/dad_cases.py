@@ -27,8 +27,6 @@ from rozliczenia.centrum.work import CentrumWork
 DAD_CASES_FILE: Final = "sprawy-taty.json"
 SCHEMA_VERSION: Final = 1
 OLD_REPORTS_FILE: Final = "zgloszenia-wyslane.json"
-OLD_NOTES_FILE: Final = "uwagi-taty.json"
-_OLD_NOTES_SCHEMA: Final = 1
 
 
 @dataclass(frozen=True)
@@ -184,9 +182,7 @@ def _load(config_directory: Path) -> list[Case]:
     try:
         document = json.loads((config_directory / DAD_CASES_FILE).read_text(encoding="utf-8"))
     except FileNotFoundError:
-        reports = _document(config_directory / OLD_REPORTS_FILE)
-        notes = _document(config_directory / OLD_NOTES_FILE)
-        return _cases(_old_reports(reports)) + _cases(_old_notes(notes))
+        return _cases(_old_reports(_document(config_directory / OLD_REPORTS_FILE)))
     except (OSError, ValueError):
         return []
     if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
@@ -205,38 +201,10 @@ def _old_reports(document: object) -> object:
     if not isinstance(document, list):
         return None
     return [
-        {"kind": REPORT.key, "id": entry.get("fingerprint"), "title": entry.get("what"), **_shared(entry, "sent_at")}
+        {"kind": REPORT.key, "id": entry.get("fingerprint"), "commit": entry.get("commit"), "number": entry.get("number")}
         for entry in document
         if isinstance(entry, dict) and type(entry.get("number")) is int
     ]
-
-
-def _old_notes(document: object) -> object:
-    if not isinstance(document, dict) or document.get("schema_version") != _OLD_NOTES_SCHEMA:
-        return None
-    entries = document.get("uwagi")
-    if not isinstance(entries, list):
-        return None
-    return [
-        {
-            "kind": NOTE.key,
-            "id": entry.get("id"),
-            "title": entry.get("title"),
-            **_shared(entry, "written_at"),
-            "run_id": entry.get("run_id"),
-        }
-        for entry in entries
-        if isinstance(entry, dict) and isinstance(entry.get("title"), str) and read_moment(entry.get("written_at"))
-    ]
-
-
-def _shared(entry: dict[str, object], sent_at: str) -> dict[str, object]:
-    return {
-        "commit": entry.get("commit"),
-        "sent_at": entry.get(sent_at),
-        "number": entry.get("number"),
-        "closure": entry.get("closure"),
-    }
 
 
 def _cases(entries: object) -> list[Case]:
