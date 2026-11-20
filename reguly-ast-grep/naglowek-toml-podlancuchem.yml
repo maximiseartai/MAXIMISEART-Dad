@@ -1,0 +1,29 @@
+id: naglowek-toml-podlancuchem
+language: python
+severity: error
+message: >-
+  nagłówek tabeli TOML/INI szukany podłańcuchem tekstu pliku nie widzi [ tool.uv ], klucza kropkowego uv.… pod [tool]
+  ani komentarza: czytaj plik tomllib (albo configparser) i pytaj o klucz
+files:
+  - tools/**/*.py
+  - src/**/*.py
+  - .agents/skills/*/scripts/**/*.py
+metadata:
+  przypadki:
+    - 2161/W1/r1
+rule:
+  kind: comparison_operator
+  all:
+    - has:
+        field: operators
+        regex: '^(not )?in$'
+    - has:
+        nthChild: 1
+        kind: string
+        regex: '^[rbf]?["'']\['
+    - has:
+        stopBy: end
+        kind: call
+        has:
+          field: function
+          regex: '\.read_text$'

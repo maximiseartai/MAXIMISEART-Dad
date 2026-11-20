@@ -733,12 +733,16 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "historia-w-docstringu": "historię zmiany zostaw w opisie PR,",
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
+    "komunikat-boxa-podlancuchem": "bierz własność box_boat.WLASNOSC z junit",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
+    "krok-mypy-ruff-poza-krokami": "weź krok z kroki_lokalne.static_steps",
     "lokator-tytulu-okna": "użyj settings_title(page)",
+    "naglowek-toml-podlancuchem": "czytaj plik tomllib",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "stosunek-czasow-sciany": "licz kroki budżetu (węzły, wywołania), nie zegar",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
     "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
 }
@@ -799,11 +803,15 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 REGULY_CALEGO_DRZEWA: Final = (
     "historia-w-docstringu",
     "komentarz-w-src",
+    "komunikat-boxa-podlancuchem",
     "kotwica-konca-linii",
+    "krok-mypy-ruff-poza-krokami",
     "lokator-tytulu-okna",
+    "naglowek-toml-podlancuchem",
     "odczyt-docstringu",
     "regula-w-trasie",
     "stan-pliku-poza-file-state",
+    "stosunek-czasow-sciany",
     "watki-workera",
     "wlasna-wyrocznia-numeru",
 )
@@ -2167,7 +2175,15 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 # konfigurację.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
+    "krok-mypy-ruff-poza-krokami": (("tools",), ".py"),
+    "naglowek-toml-podlancuchem": (("tools",), ".py"),
+    "komunikat-boxa-podlancuchem": (("tools",), ".py"),
+    "stosunek-czasow-sciany": (("tests",), ".py"),
 }
+_SYS = "import sys\n\n"
+_TOML = "from pathlib import Path\n\n\ndef uv(plik: Path) -> bool:\n    return "
+_BOX = "import box_boat\n\n\ndef infra(wyjscie: str) -> bool:\n    return "
+_ZEGAR = "import time\n\n\ndef test_stosunek() -> None:\n    start = time.perf_counter()\n    srodek = time.perf_counter()\n"
 _PATTERN = "import re\n\nLINE = "
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
 # (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
@@ -2182,6 +2198,23 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\n$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
+    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--no-incremental"]\n', [3]),
+    ("krok-mypy-ruff-poza-krokami", f"{_SYS}POLECENIE = (sys.executable, '-m', 'ruff', 'check')\n", [3]),
+    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "pytest", "-q"]\n', []),
+    ("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', []),
+    ("naglowek-toml-podlancuchem", f'{_TOML}"[tool.uv" in plik.read_text(encoding="utf-8")\n', [5]),
+    ("naglowek-toml-podlancuchem", f'{_TOML}"[project]" not in plik.read_text()\n', [5]),
+    ("naglowek-toml-podlancuchem", f'import tomllib\n\n{_TOML}"uv" in tomllib.loads(plik.read_text())["tool"]\n', []),
+    ("naglowek-toml-podlancuchem", f'{_TOML}"[tool.uv" in str(plik)\n', []),
+    ("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT in wyjscie\n", [5]),
+    ("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT not in wyjscie\n", [5]),
+    ("komunikat-boxa-podlancuchem", "from box_boat import KOMUNIKAT\n\n\ndef infra(wyjscie: str) -> bool:\n    return KOMUNIKAT in wyjscie\n", [5]),
+    ("komunikat-boxa-podlancuchem", "import box_boat\n\n\ndef komunikat() -> str:\n    return box_boat.KOMUNIKAT\n", []),
+    ("komunikat-boxa-podlancuchem", f'{_BOX}"OK" in wyjscie\n', []),
+    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / (srodek - start) < 2\n", [7]),
+    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.monotonic() - start) / (time.monotonic() - srodek) < 2\n", [7]),
+    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert time.perf_counter() - srodek < start\n", []),
+    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / 2 < start\n", []),
 ]
 
 
@@ -2218,6 +2251,22 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+    },
+    "krok-mypy-ruff-poza-krokami": {
+        "program bez -m": 'POLECENIE = ["mypy", "--no-incremental"]\n',
+        "narzędzie w zmiennej": f'{_SYS}NARZEDZIE = "mypy"\nPOLECENIE = [sys.executable, "-m", NARZEDZIE]\n',
+        "polecenie w jednym napisie": 'POLECENIE = "python -m mypy --no-incremental"\n',
+    },
+    "naglowek-toml-podlancuchem": {
+        "tekst pliku w zmiennej": 'from pathlib import Path\n\n\ndef uv(plik: Path) -> bool:\n    tekst = plik.read_text()\n    return "[tool.uv" in tekst\n',
+        "klucz bez nawiasu": f'{_TOML}"tool.uv" in plik.read_text()\n',
+    },
+    "komunikat-boxa-podlancuchem": {
+        "tekst komunikatu w literale": 'def infra(wyjscie: str) -> bool:\n    return "BOX: boat przeniósł katalog repo" in wyjscie\n',
+        "szukanie przez find": f"{_BOX}wyjscie.find(box_boat.KOMUNIKAT) >= 0\n",
+    },
+    "stosunek-czasow-sciany": {
+        "czasy w nazwanych zmiennych": f"{_ZEGAR}    pierwszy = srodek - start\n    drugi = time.perf_counter() - srodek\n    assert drugi / pierwszy < 2\n",
     },
 }
 

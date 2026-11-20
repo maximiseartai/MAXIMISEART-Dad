@@ -1,0 +1,27 @@
+id: krok-mypy-ruff-poza-krokami
+language: python
+severity: error
+message: >-
+  polecenie mypy albo ruff złożone na miejscu biegnie inaczej niż brama pre-push i Required CI (bez mypy --platform
+  win32, inne środowisko): weź krok z kroki_lokalne.static_steps
+files:
+  - tools/**/*.py
+  - src/**/*.py
+  - .agents/skills/*/scripts/**/*.py
+ignores:
+  - tools/lib/kroki_lokalne.py
+metadata:
+  przypadki:
+    - 2116/W1/r4
+rule:
+  kind: string
+  regex: '^["''](mypy|ruff)["'']$'
+  inside:
+    any:
+      - kind: list
+      - kind: tuple
+  follows:
+    pattern: ','
+    follows:
+      kind: string
+      regex: '^["'']-m["'']$'
