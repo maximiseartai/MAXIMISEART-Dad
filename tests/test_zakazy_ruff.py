@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import pkgutil
-import re
 import subprocess
 import sys
 import tomllib
@@ -217,6 +217,8 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "from yaml import CSafeDumper as Zapis": (ROOT_CONFIG, TOOLS_PROBE, "yaml.CSafeDumper"),
     "from yaml.representer import SafeRepresenter": (ROOT_CONFIG, TOOLS_PROBE, "yaml.representer"),
     "from yaml.emitter import Emitter": (DRIVE_CONFIG, (), "yaml.emitter"),
+    "import yaml\nZapis = yaml.YAMLObject.yaml_dumper": (ROOT_CONFIG, TOOLS_PROBE, "yaml.YAMLObject"),
+    "from yaml import add_representer": (SRC_CONFIG, ("rozliczenia",), "yaml.add_representer"),
     # Treść z Wydania w miejscu pliku Ustawień bez odczytu: postacie z tabeli przypadków przy ZNANE_LUKI_TRESCI_Z_WYDANIA,
     # pierwsza to mail z treścią z Wydania z przeglądu #2029 (r1, W1).
     "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL": (
@@ -386,25 +388,49 @@ ZNANE_LUKI_SNU = {
 def _drogi_zapisu_pyyaml() -> set[str]:
     import yaml
 
-    piszace = re.compile(r"(Dumper|Emitter|Serializer|Representer)$")
-    funkcje = {f"yaml.{nazwa}" for nazwa in dir(yaml) if re.match(r"(dump|safe_dump|emit|serialize)", nazwa)}
-    klasy = {f"yaml.{nazwa}" for nazwa, wartosc in vars(yaml).items() if isinstance(wartosc, type) and piszace.search(nazwa)}
+    piszace: tuple[type, ...] = (yaml.emitter.Emitter, yaml.serializer.Serializer, yaml.representer.BaseRepresenter)
+    if importlib.util.find_spec("yaml._yaml") is not None:
+        piszace += (importlib.import_module("yaml._yaml").CEmitter,)
+
+    def klasa_pisze(wartosc: object) -> bool:
+        return isinstance(wartosc, type) and issubclass(wartosc, piszace)
+
+    publiczne = {nazwa: wartosc for nazwa, wartosc in vars(yaml).items() if not nazwa.startswith("_")}
+    funkcje = {nazwa for nazwa, wartosc in publiczne.items() if inspect.isfunction(wartosc) and "Dumper" in inspect.signature(wartosc).parameters}
+    funkcje |= {
+        nazwa
+        for nazwa, wartosc in publiczne.items()
+        if inspect.isfunction(wartosc) and set(wartosc.__code__.co_names) & (funkcje | {n for n, w in publiczne.items() if klasa_pisze(w)})
+    }
+    klasy = {nazwa for nazwa, wartosc in publiczne.items() if klasa_pisze(wartosc)}
+    atrybuty = {
+        f"{nazwa}.{atrybut}"
+        for nazwa, wartosc in publiczne.items()
+        if isinstance(wartosc, type) and not klasa_pisze(wartosc)
+        for atrybut in dir(wartosc)
+        if not atrybut.startswith("__") and klasa_pisze(getattr(wartosc, atrybut, None))
+    }
     moduly = {
-        modul.name
+        modul.name.removeprefix("yaml.")
         for modul in pkgutil.iter_modules(yaml.__path__, "yaml.")
         if any(
-            isinstance(wartosc, type) and wartosc.__module__ == modul.name and piszace.search(nazwa)
-            for nazwa, wartosc in vars(importlib.import_module(modul.name)).items()
+            getattr(wartosc, "__module__", None) == modul.name
+            and (klasa_pisze(wartosc) or (inspect.isfunction(wartosc) and "Dumper" in inspect.signature(wartosc).parameters))
+            for wartosc in vars(importlib.import_module(modul.name)).values()
         )
     }
-    return funkcje | klasy | moduly
+    return {f"yaml.{droga}" for droga in funkcje | klasy | atrybuty | moduly}
 
 
 def test_kazda_droga_zapisu_pyyaml_ma_zakaz_poza_tests() -> None:
-    """Drogi zapisu wynikają z zainstalowanego PyYAML, nie z wyliczenia: funkcja zapisu, klasa, która pisze YAML
-    (``*Dumper``, ``*Emitter``, ``*Serializer``, ``*Representer``), i podmoduł, który taką klasę definiuje."""
+    """Drogi zapisu wynikają z wartości w zainstalowanym PyYAML, nie z nazw: klasa pisząca to podklasa ``Emitter``,
+    ``Serializer``, ``BaseRepresenter`` albo ``CEmitter``, a drogą jest publiczna nazwa ``yaml``, atrybut publicznej klasy
+    i podmoduł, które wskazują taką klasę, oraz funkcja z parametrem ``Dumper`` albo wołająca inną drogę."""
 
-    assert sorted(_drogi_zapisu_pyyaml() ^ set(ZAPIS_YAML)) == [], (
+    zakazane = set(ZAPIS_YAML)
+    bez_zakazu = [droga for droga in sorted(_drogi_zapisu_pyyaml()) if not any(droga == z or droga.startswith(f"{z}.") for z in zakazane)]
+
+    assert bez_zakazu == [], (
         "zakaz zapisu YAML przez PyYAML w ruff.toml korzenia, src/ruff.toml i drive/ruff.toml ma wymieniać każdą drogę zapisu PyYAML"
     )
 
