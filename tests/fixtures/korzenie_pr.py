@@ -146,7 +146,6 @@ SKILL = {
         "# Przegląd", "", "## Co jest porażką", "", "- Nowy punkt z przykładem #1457.", "- Punkt bez przykładu.", f"- Nowy punkt z przykładem #{FEATURE}.", "", "## Dowody", "", "Tekst.", ""
     ),
 }
-# Treści werdyktów pod dwiema pierwszymi liniami: punkt rozstrzygnięcia kodu w „## Sprawdzone” (decyzja Q25) i szczebla (ADR 0046).
 WERDYKTY = {
     "rozstrzyga-w1-r1": _lines("## Sprawdzone", "- Korzeń W1 r1: R-DRUGA-DROGA - druga droga, nie brak testu.", "- diff"),
     "rozstrzyga-nowym-kodem": _lines("## Sprawdzone", "- Korzeń W1 r1: NOWY R-NOWY-KOD - opis kodu spoza listy.", "- diff"),
