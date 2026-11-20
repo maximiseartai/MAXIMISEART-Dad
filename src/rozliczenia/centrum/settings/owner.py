@@ -482,7 +482,11 @@ class CentrumSettings:
             for file in _FILES.values():
                 if self._places[file.name].unsupported() is None:
                     self._observe(file)
-            return self._history.read()
+            read = self._history.read()
+            if isinstance(read, Unreadable):
+                return read
+            rows = tuple(row if row.file in _UNDOABLE else row.model_copy(update={"undoable": False}) for row in read.rows)
+            return read.model_copy(update={"rows": rows})
 
     def apply_release_changes(self) -> None:
         changes = self._release_changes
