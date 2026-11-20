@@ -80,8 +80,6 @@ def _with_part(content: bytes, name: str, part: bytes) -> bytes:
 
 
 def _cached_formula_result(content: bytes) -> bytes:
-    """Wzorzec z wynikiem formuły AU18 w pliku: liczbą w kształcie telefonu, którą policzył Excel."""
-
     with zipfile.ZipFile(io.BytesIO(content)) as package:
         sheet = package.read("xl/worksheets/sheet1.xml").decode("utf-8")
     cached = sheet.replace("<f>SUM(N18:R18)</f><v />", "<f>SUM(N18:R18)</f><v>600123456</v>")
@@ -140,9 +138,6 @@ def _remembered(memory: ForbiddenValues) -> ForbiddenValues:
 
 @dataclass(frozen=True)
 class Case:
-    """Wiersz tabeli postaci: nazwa Wzorca w ``config`` (z niej układ), jego bajty, czy praca zna ``_ADDRESS`` i wynik
-    (``None``: przechodzi)."""
-
     file: str
     content: Callable[[], bytes]
     expected: Refusal | None
@@ -270,9 +265,6 @@ CASES: Final[dict[str, Case]] = {
 
 @pytest.mark.parametrize("case", CASES)
 def test_sprawdzenie_wzorca_do_archiwum_daje_wynik_z_tabeli_postaci(case: str) -> None:
-    """Wzorzec z treścią taty, której reguła danych nie wypuszcza, nie idzie do Archiwum, a uwaga nazywa Wzorzec i
-    powód bez wartości; Wzorzec bez niej idzie pod nazwą ze skrótu swoich bajtów, z tymi bajtami."""
-
     row = CASES[case]
     memory = _remembered(empty_memory()) if row.remembered else empty_memory()
     content = row.content()
@@ -305,9 +297,6 @@ def test_wartosc_poznana_po_pierwszym_sprawdzeniu_zatrzymuje_ten_sam_wzorzec_prz
 
 
 def test_wzorzec_z_pliku_kolejki_ma_nazwe_ze_skrotu_swoich_bajtow_a_wzorca_bez_sprawdzenia_nie_ma() -> None:
-    """Plik kolejki oddaje Wzorzec tylko pod nazwą ze skrótu jego bajtów i nazwą Wzorca z ``config``, więc ta sama nazwa
-    w Archiwum to zawsze te same bajty; konstruktor bez dowodu sprawdzenia odmawia."""
-
     content = _bytes(_workbook())
     name = asset_name(hashlib.sha256(content).hexdigest())
     other = asset_name(hashlib.sha256(content + b"x").hexdigest())

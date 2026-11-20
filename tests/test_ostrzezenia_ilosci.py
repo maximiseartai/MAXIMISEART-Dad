@@ -57,14 +57,14 @@ def _mixed_period() -> list[RegisterRow]:
     """Rejestr, w którym wiersze Pliku zbiorczego (18–23) mają inne numery niż wiersze Rejestru zleceń (2–9)."""
 
     return [
-        _order(1, "nokia zte"),  # Plik zbiorczy 18
+        _order(1, "nokia zte"),
         None,
-        _order(2, "nokia zte SYN-URZ-2"),  # 19: składnik nieznany Regułom ilości
+        _order(2, "nokia zte SYN-URZ-2"),
         _order(3, "SYN-URZ-3", successful="nie"),  # nieskuteczne: nie trafia do Pliku zbiorczego
-        _order(4, "prewencja"),  # 20
-        _order(5, None),  # 21: puste URZĄDZENIA
-        _order(6, "SYN-URZ-6"),  # 22
-        _order(7, "Niedostępność usług", started=MONDAY),  # 23
+        _order(4, "prewencja"),
+        _order(5, None),
+        _order(6, "SYN-URZ-6"),
+        _order(7, "Niedostępność usług", started=MONDAY),
     ]
 
 

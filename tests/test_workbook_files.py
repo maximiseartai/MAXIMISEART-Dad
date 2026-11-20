@@ -110,8 +110,6 @@ def not_a_zip(path: Path) -> None:
 
 
 def with_target_headers(path: Path) -> None:
-    """Nagłówki docelowe pliku zbiorczego w A17:K17, z WYKONAWCA w H17."""
-
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
@@ -462,9 +460,9 @@ def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
-        sheet.insert_rows(19)  # pusty wiersz między Wierszami danych nie jest Wierszem danych
-        sheet["L22"] = "poza A:K"  # wiersz bez wartości w A:K nie jest Wierszem danych
-        sheet["K23"] = "tylko K"  # wartość w ostatniej kolumnie A:K wystarcza
+        sheet.insert_rows(19)
+        sheet["L22"] = "poza A:K"
+        sheet["K23"] = "tylko K"
         sheet["AT18"] = "uwagi"
         sheet["AU18"] = "poza A:AT"
         workbook.save(path)
@@ -501,17 +499,17 @@ def excel_collective_file(directory: Path) -> Path:
     replace_cells(
         path,
         {
-            "A18": '<c r="A18" s="13" t="s"><v>4</v></c>',  # sharedStrings[4] == "Instalacje"
+            "A18": '<c r="A18" s="13" t="s"><v>4</v></c>',
             "B18": _inline("B18", "syntetyczny adres 1"),
             "F18": '<c r="F18" s="15"><v>1001</v></c>',
-            "G18": '<c r="G18" s="16"><v>46301.375</v></c>',  # format daty 14
+            "G18": '<c r="G18" s="16"><v>46301.375</v></c>',
             "H18": _inline("H18", "adrian.testowy"),
             "J18": '<c r="J18" s="15" t="b"><v>1</v></c>',
             "K18": '<c r="K18" s="15" t="str"><v>wynik formuły</v></c>',
             "N18": '<c r="N18" s="26"><v>2</v></c>',
             "O18": '<c r="O18" s="26"><v>2.5</v></c>',
             "P18": '<c r="P18" s="26"><f>N18*2</f><v>4</v></c>',
-            "AT18": '<c r="AT18" s="31" t="s"><v>0</v></c>',  # sharedStrings[0] == "Suma"
+            "AT18": '<c r="AT18" s="31" t="s"><v>0</v></c>',
             "Q30": '<c r="Q30" s="26"><f t="shared" ref="Q30:Q140" si="90">N30+1</f><v>1</v></c>',
             "L60": _inline("L60", "poza A:K"),
             "C100": _inline("C100", "tylko C"),
@@ -666,8 +664,6 @@ def test_rozliczenie_pracownika_z_wzorca_zachowuje_wspolne_formuly_calcchain_i_f
 def _settlement_folders(
     tmp_path: Path, template_path: Path, rows: list[DataRow], *, copied: bool = True
 ) -> tuple[Path, Path]:
-    """Rozliczenie pracownika z Wzorca (kopią, gdy ``copied``) i to samo z jego bliźniaka drogą openpyxl."""
-
     created = tmp_path / "rozliczenie"
     expected = tmp_path / "przez-openpyxl"
     created.mkdir()
@@ -691,8 +687,6 @@ def _row(**columns: Any) -> ExcelRow:
 
 
 def _data_row(values: ExcelRow, **highlights: Highlights) -> DataRow:
-    """Wiersz danych z wartościami ``values`` i Wyróżnieniami w podanych kolumnach; pozostałe komórki bez Wyróżnień."""
-
     return data_row(values, {_column_index(letter): cell for letter, cell in highlights.items()})
 
 
@@ -821,7 +815,6 @@ def test_rozliczenie_pracownika_ma_wyroznienia_wierszy_danych_i_czcionke_naglowk
         assert _highlights(written["N18"]) == (None, None, Color(theme=1), False, True)
         assert _highlights(written["A19"]) == (None, None, None, False, False)
         assert (written["G18"].value, is_date_format(written["G18"].number_format)) == (datetime(2026, 9, 8), True)
-        # A w kolumnach wyglądu: krój nagłówka A17; N poza nimi: krój komórki Wzorca.
         assert [(written[cell].font.name, written[cell].font.sz) for cell in ("A18", "N18", "A19")] == [
             (wzorzec[cell].font.name, wzorzec[cell].font.sz) for cell in ("A17", "N18", "A17")
         ]
@@ -1026,8 +1019,6 @@ class _FullDisk(Workbook):
 
 
 class _NotAZip(Workbook):
-    """Skoroszyt, którego zapis daje plik bez archiwum ZIP, więc odwołań zewnętrznych nie da się w nim przywrócić."""
-
     def save(self, filename: object) -> None:
         assert isinstance(filename, Path), "write_atomically podaje ścieżkę pliku tymczasowego"
         filename.write_bytes(b"to nie jest skoroszyt")
@@ -1076,8 +1067,6 @@ def test_tekst_bledu_zapisu_to_krok_i_nazwa_pliku_bez_folderu(tmp_path: Path, mo
 
 
 def _register_row() -> RegisterRow:
-    """Wiersz Rejestru zleceń: komórka pod każdym nagłówkiem docelowym go nazywa."""
-
     return register_row({header: f"syntetyczne {header}" for header in TARGET_HEADERS})
 
 
@@ -1210,7 +1199,6 @@ def _worker_template_with_merge(tmp_path: Path, merged: str, *, copied: bool) ->
     return (marked_for_copy if copied else refused_by_copy)(template_path)
 
 
-# Zapis Wzorca rozliczenia pracownika obejmuje kolumny A:AT Wierszy danych zapisanych wierszy (18 i 19).
 @pytest.mark.parametrize("merged", ["A20:B20", "AU19:AV19"], ids=["wiersz-pod-zapisanymi", "kolumna-za-zapisem"])
 @pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
 def test_scalenie_wzorca_rozliczenia_pracownika_poza_komorkami_zapisu_nie_przeszkadza(
@@ -1341,9 +1329,6 @@ def test_skoroszyt_bez_arkusza_workbook_active_to_ksztalt_ktorego_zapisy_xml_nie
 def test_wzorzec_z_ukrytym_aktywnym_arkuszem_idzie_dawna_droga_i_wiersze_trafiaja_do_tego_arkusza(
     tmp_path: Path, hidden: bool
 ) -> None:
-    """Kopia Wzorca nie pisze w ukrytym arkuszu ``workbook.active``: Rozliczenie pracownika powstaje dawną drogą openpyxl,
-    która pisze Wiersze danych w tym samym arkuszu."""
-
     template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(template_path)
     if hidden:
@@ -1522,9 +1507,6 @@ SHEET_ROWS_2_TO_4 = b'<worksheet><sheetData><row r="2"><c r="A2"/></row><row r="
 
 
 def test_wiersze_od_dolu_koncza_sie_na_pierwszym_wierszu_arkusza() -> None:
-    """Wiersze nad numerem mniejszym niż pierwszy wiersz arkusza to wszystkie jego wiersze, a wiersza nad pierwszym
-    arkusz nie ma (``KeyError``)."""
-
     sheet = RowsFromBottom(SHEET_ROWS_2_TO_4)
 
     assert [row.number for row in sheet.above(1)] == [2, 3, 4]

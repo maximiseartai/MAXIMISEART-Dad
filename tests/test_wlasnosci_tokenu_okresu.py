@@ -49,8 +49,6 @@ def _parsed(token: str) -> SettlementPeriod | str:
 
 @st.composite
 def _changed_tokens(draw: st.DrawFn) -> str:
-    """Token okresu z jedną częścią przesuniętą o 1, czyli zwykle token innego dnia albo żadnego okresu."""
-
     parts = [int(part) for part in _written(draw(TUESDAYS)).split("_")]
     changed = draw(st.integers(0, 3))
     parts[changed] += draw(st.sampled_from((-1, 1)))

@@ -189,7 +189,7 @@ def test_przygotowanie_skoroszytow_pracownikow_publikuje_folder_rozliczen_pracow
     )
     try:
         empty = active_worksheet(empty_workbook)
-        assert [worksheet_input_row(empty, row) for row in (18, 19)] == template_rows  # pusty Szablon to Wzorzec
+        assert [worksheet_input_row(empty, row) for row in (18, 19)] == template_rows
     finally:
         empty_workbook.close()
 
@@ -217,8 +217,6 @@ def highlights(cell: Cell) -> tuple[object, ...]:
 
 
 def template_look(cell: Cell) -> tuple[object, ...]:
-    """Krój i rozmiar czcionki, obramowanie i format liczby komórki."""
-
     return (cell.font.name, cell.font.sz, cell.border.left.style, cell.number_format)
 
 
@@ -257,7 +255,6 @@ def test_wiersze_danych_rozliczenia_pracownika_maja_wyroznienia_pliku_zbiorczego
         source = active_worksheet(source_workbook)
         header_font = (template["B17"].font.name, template["B17"].font.sz)
         expected_template_look = template_look(template["N18"])
-        # Szablon pracownika Adriana dostaje pierwsze i trzecie zlecenie Pliku zbiorczego: wiersze 18 i 20.
         expected_highlights = {
             written: highlights(source[read]) for written, read in (("A19", "A20"), ("B18", "B18"), ("N18", "N18"))
         }
@@ -316,14 +313,12 @@ def test_znacznik_efenix_i_znacznik_przekazania_w_adresie_nie_przechodza_do_rozl
     summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert summary.written_count == 2
-    # Szablon pracownika Adriana dostaje wiersze 18 i 20 Pliku zbiorczego, Darka wiersz 19.
     adrian = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx")
     darek = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx")
     try:
         written = active_worksheet(adrian)
         assert highlights(written["B18"]) == (None, None, Color("FFFF0000"), True, True)
         assert highlights(active_worksheet(darek)["B18"])[:2] == (None, None)
-        # Ręczne zaznaczenie taty w ADRES i kolor Znacznika w innej kolumnie przechodzą jak każde Wyróżnienie.
         assert highlights(written["B19"])[:2] == ("solid", Color("FFFFFF00"))
         assert highlights(written["C18"])[:2] == ("solid", Color(f"FF{Mark.READY.value}"))
     finally:
@@ -345,7 +340,6 @@ def test_numer_zlecenia_w_rozliczeniu_pracownika_ma_hiperlacze_z_pliku_zbiorczeg
     summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert (summary.written_count, summary.empty_count, summary.warnings) == (2, 1, [])
-    # Szablon pracownika Adriana dostaje pierwsze i trzecie zlecenie Pliku zbiorczego, Darka drugie.
     assert hyperlinks(target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx") == {"F18": links[18], "F19": links[20]}
     assert hyperlinks(target_directory / f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx") == {"F18": links[19]}
     assert hyperlinks(target_directory / f"Rozliczenie {PERIOD} - Kamil Syntetyczny.xlsx") == {}
@@ -379,7 +373,6 @@ def test_przebieg_rozliczen_na_wzorcu_z_formula_w_wierszu_danych_zapisuje_jak_op
     expected_directory = tmp_path / "przez-openpyxl"
     expected_directory.mkdir()
     adrian = f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"
-    # Szablon pracownika Adriana dostaje pierwsze i trzecie zlecenie Pliku zbiorczego.
     adrian_rows = [row for row in read_data_rows(source_path, DadFiles()).rows if row.number in (18, 20)]
     twin = refused_by_copy(Path(shutil.copy(worker_template_path, tmp_path / "bliźniak Wzorca.xlsx")))
     TemplateFile.worker_settlement(twin).create(expected_directory / adrian, adrian_rows)
@@ -394,7 +387,7 @@ def test_przebieg_rozliczen_na_wzorcu_z_formula_w_wierszu_danych_zapisuje_jak_op
     assert set(compare_worker_settlements(expected_directory, written_directory).values()) == {0}
     empty_workbook = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Kamil Syntetyczny.xlsx")
     try:
-        assert active_worksheet(empty_workbook)["K18"].value == "=N18+1"  # formuła Wzorca nie jest danymi
+        assert active_worksheet(empty_workbook)["K18"].value == "=N18+1"
     finally:
         empty_workbook.close()
 
@@ -453,8 +446,6 @@ def with_unmapped_worker(source_path: Path) -> None:
 
 
 def with_workers(source_path: Path, workers: dict[int, str | None]) -> None:
-    """Zmienia WYKONAWCĘ (kolumna H) w podanych Wierszach danych Pliku zbiorczego."""
-
     workbook = load_workbook(source_path)
     try:
         sheet = active_worksheet(workbook)
@@ -586,8 +577,6 @@ def test_wykonawca_z_dwoma_loginami_ma_jedno_rozliczenie_pracownika_z_wierszami_
 
 
 def _stopped_in(phase: ProgressPhase) -> dict[ProgressPhase, PhaseState]:
-    """Stany etapów Uruchomienia zatrzymanego w etapie ``phase``: wcześniejsze ukończone, późniejsze nierozpoczęte."""
-
     order = list(ProgressPhase)
     return {
         each: PhaseState.COMPLETED if order.index(each) < order.index(phase) else PhaseState.FAILED if each is phase else PhaseState.PENDING
@@ -639,9 +628,6 @@ def test_nieczytelny_plik_zbiorczy_zatrzymuje_przebieg_rozliczen_bezpiecznym_kom
 def test_plik_zbiorczy_niedostepny_do_odczytu_nie_jest_nazwany_uszkodzonym(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str, error: OSError, failing_phase: ProgressPhase
 ) -> None:
-    """Plik zbiorczy, którego system nie oddaje, zatrzymuje Przebieg w Odczycie danych po ukończonym Sprawdzaniu; folder
-    bez dostępu (``stat``) już w Sprawdzaniu."""
-
     source_path, target_directory, config_path = make_fixture(tmp_path)
     original = getattr(Path, failing)
 

@@ -60,8 +60,6 @@ REFUSALS = {"ci": czekanie.CI_LOOP, "pgrep": czekanie.PGREP_LOOP, "watch": czeka
 
 @dataclass(frozen=True)
 class Case:
-    """Polecenie i odmowy, które według docstringu hooka może dostać (pusty zbiór: przechodzi)."""
-
     text: str
     refusals: frozenset[str]
 
@@ -99,8 +97,6 @@ PENDING = st.sampled_from(("pending", "pass", "PENDING"))
 
 @st.composite
 def _ci_query(draw: st.DrawFn) -> tuple[str, tuple[str, ...]]:
-    """Zapytanie o CI z docstringu: ``gh pr checks``/``view``, ``gh run view``/``list``, ``gh api`` o status commitu."""
-
     number = draw(NUMBERS)
     form, arguments = draw(
         st.sampled_from(
@@ -127,8 +123,6 @@ def _sleep(draw: st.DrawFn) -> tuple[str, tuple[str, ...]]:
 
 @st.composite
 def _waits(draw: st.DrawFn) -> Template:
-    """Czekanie na pierwszym planie, które według docstringu dostaje odmowę."""
-
     sleep, sleep_arguments = draw(_sleep())
     kind = draw(st.sampled_from(("ci", "pgrep", "watch")))
     if kind == "watch":
@@ -168,7 +162,6 @@ def _waits(draw: st.DrawFn) -> Template:
                 (f"{condition}\ndo\n  {sleep}\ndone", (*condition_arguments, *sleep_arguments)),
                 # Wcięcie przed słowem pętli i przed ``done`` (pętla w skrypcie wklejonym z edytora).
                 (f"cd .\n  {condition}\n  do\n    {sleep}\n  done", (*condition_arguments, *sleep_arguments)),
-                # ``done`` jako argument za ``do`` nie kończy pętli (runda 3 #636).
                 (
                     f"{condition}; do echo {draw(st.sampled_from(('do done', 'dodone', 'to do done')))}; {sleep}; done",
                     (*condition_arguments, *sleep_arguments),
@@ -177,7 +170,6 @@ def _waits(draw: st.DrawFn) -> Template:
         )
     )
     if kind == "ci" and draw(st.booleans()):
-        # Licznik prób od 1 z wyjściem z pętli: docstring liczy ``for`` jako czekanie tylko z nimi.
         query, query_arguments = draw(_ci_query())
         counter = draw(st.sampled_from(("$(seq 1 {})", "{{1..{}}}")))
         loop = (
@@ -211,7 +203,6 @@ def _quiet(draw: st.DrawFn) -> Template:
                 ),
                 ("pgrep -fl {}", (draw(NAMES),)),
                 ("git status --short", ()),
-                # ``sleep``, ``exit``, adres CI i ``--watch`` stoją poza pętlą albo w innym poleceniu prostym.
                 (f"until {query}; do gh auth refresh; done; {sleep}", (*query_arguments, *sleep_arguments)),
                 (
                     f"for id in {{}} {{}}; do {sleep}; gh run view $id --json {{}}; done; {query} || exit 1",
@@ -264,7 +255,6 @@ WRAPPERS: tuple[Callable[[str], str], ...] = (
 )
 PIPE = " | "
 CONNECTORS = ("; ", " && ", " || ", PIPE, "\n", "\n  ")
-# Polecenia, które według docstringu hooka uruchamiają argument ``-c`` jako skrypt powłoki, także przez inne polecenie.
 SCRIPT_RUNNERS = (
     "sh",
     "bash",
@@ -303,13 +293,9 @@ WORDS = st.one_of(
     st.sampled_from(
         ("-", "--", "root", "~/.bashrc", '"moje rc"', "'a b'", "$(mktemp)", "`mktemp`", "\\;", "x\\&y")
     ),
-    # Separator w cudzysłowie to znak, a nie koniec polecenia.
     st.sampled_from(("'a;b'", '"x|y"', "'(c'")),
-    # Przekierowanie między słowami nie kończy polecenia.
     st.sampled_from(("2>/dev/null", ">&2", "&>/dev/null", ">|plik", "<&0")),
-    # Znaki w ``${…}`` nie kończą polecenia ani nie otwierają nowego, a ``}`` poza nim nie zamyka ``$(`` (runda 3 #636).
     st.sampled_from(("${x:-)}", "${x:-(}", "${x:-a;b}", "${x:-a|b}", "$(echo {a,b})")),
-    # ``${…}`` w ``${…}`` i za ``$(…)`` albo `` `…` `` w nim, a ``}`` poza ``${…}`` niczego nie zamyka (runda 1 #648).
     st.sampled_from(("${x:-${y})}", "${x-${y:=a|b}}", "${x:-$(echo -l)|b}", "${x:+`echo -l`;b}", "{a,b}")),
 )
 SCRIPT_OPTIONS = st.builds(
@@ -321,15 +307,11 @@ SCRIPT_OPTIONS = st.builds(
 
 @st.composite
 def _script_prefix(draw: st.DrawFn) -> str:
-    """Początek ``-c`` powłoki z dowolnymi słowami przed ``-c``, jak ``bash --rcfile x -euc``."""
-
     return " ".join([draw(st.sampled_from(SCRIPT_RUNNERS)), *draw(st.lists(WORDS, max_size=8)), draw(SCRIPT_OPTIONS)])
 
 
 @st.composite
 def _shell_script(draw: st.DrawFn) -> Callable[[str], str]:
-    """Skrypt ``-c`` powłoki: ``main`` brał za skrypt argument każdego ``-c``, więc żadna z tych form nie przechodzi."""
-
     prefix = draw(_script_prefix())
     return lambda member: f"{prefix} {_single_quoted(member)}"
 
@@ -348,8 +330,6 @@ PARAMETER_WORDS: tuple[Callable[[str], str], ...] = (
 
 @st.composite
 def _parameter_default(draw: st.DrawFn) -> Callable[[str], str]:
-    """Skrypt ``-c`` powłoki w podstawieniu w wartości ``${…}``: ``echo ${x:-$(bash -c '…')}``, ``X=${x:=`…`}``."""
-
     script = draw(_shell_script())
     assignment = draw(st.sampled_from(("echo ", "X=")))
     operator = draw(st.sampled_from(PARAMETER_OPERATORS))
@@ -372,10 +352,8 @@ def _compound(draw: st.DrawFn) -> Case:
     return Case(text, frozenset().union(*(member.refusals for member in members)))
 
 
-# Człony ziarna 7015 z recenzji #687 z ``!`` na początku potoku, gdzie ``_compound`` je teraz stawia.
 PGREP_WAIT = "until ! pgrep -f bench.py >/dev/null; do sleep 1; done"
 NEGATED_PIPELINE = Case(f"{PGREP_WAIT}; ! {PGREP_WAIT} | {PGREP_WAIT}", frozenset({"pgrep"}))
-# Jedyna pętla stoi za ``!``: odmowa zależy tylko od tego, że hook widzi pętlę za ``!``.
 LOOP_AFTER_NEGATION = Case(f"echo a; ! {PGREP_WAIT} | cat", frozenset({"pgrep"}))
 
 
@@ -399,8 +377,6 @@ LOOP_WORDS = ("until", "while", "for", "do", "done", "sleep", "gh", "pgrep")
 
 @st.composite
 def _pattern(draw: st.DrawFn) -> str:
-    """Wzorzec wyszukiwania bez spacji ze słowami pętli (``while|until``, ``^(for|done)$``), jak w #446."""
-
     words = draw(st.lists(st.sampled_from(LOOP_WORDS), min_size=1, max_size=3))
     body = draw(st.sampled_from(("|", "\\|", ";", "&", "!"))).join(words)
     opening, closing = draw(
@@ -474,13 +450,9 @@ def _loops(draw: st.DrawFn) -> Template:
 
 @st.composite
 def _redirected(draw: st.DrawFn) -> tuple[Case, Case]:
-    """Ta sama pętla czekania z przekierowaniami za ``done``: na pierwszym planie i puszczona ``&``."""
-
     loop = draw(_loops())
     redirections = " ".join(draw(st.lists(st.sampled_from(REDIRECTIONS), max_size=3)))
     looped = f"{loop.text()} {redirections}".rstrip()
-    # ``&`` w grupie za potokiem puszcza w tło tylko tę grupę, a nie pętlę.
-    # ``\&`` za potokiem to znak, a nie tło.
     after = draw(
         st.sampled_from(("", "; gh pr checks 1", " && echo koniec", "\necho koniec", " | sed s/a/\\&/", *GROUPS_AFTER))
     )
@@ -531,20 +503,16 @@ def test_przekierowanie_za_petla_to_nie_tlo_a_pętla_puszczona_ampersandem_przec
 
 
 @PROPERTY
-# Skrypt ``-c`` powłoki w apostrofach to polecenie, a nie literał (#496).
 @example(case=Case("bash -c 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'", frozenset({"ci"})))
 @example(case=Case("echo a; timeout 600 sh -c 'until ! pgrep -f bench.py; do sleep 5; done'", frozenset({"pgrep"})))
-# Napis przyklejony do skryptu ``-c`` (``'\\''``) to dalszy ciąg skryptu: bez tego ``done`` ginęło w literale.
 @example(
     case=Case(
         "bash -c 'until ! pgrep -f x; do perl -e '\\''select(undef,undef,undef,1)'\\''; done'; sleep 1; gh pr checks 1",
         frozenset({"pgrep"}),
     )
 )
-# ``$(…)`` w ``"…"`` to polecenie, a pętla bez ``sleep`` nie kończy oceny następnych.
 @example(case=Case('echo "$( until ! gh pr checks 1; do sleep 30; done )"', frozenset({"ci"})))
 @example(case=Case("until gh pr view 1; do gh auth refresh; done; until ! gh pr checks 1; do sleep 30; done", frozenset({"ci"})))
-# Opcje powłoki przed ``-c`` (runda 2 #636): ``bash -l -c`` i ``su -c`` przechodziły.
 @example(
     case=Case(
         "/bin/bash --noprofile --norc -o pipefail -c 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
@@ -555,9 +523,7 @@ def test_przekierowanie_za_petla_to_nie_tlo_a_pętla_puszczona_ampersandem_przec
 @example(case=Case("bash -l -c 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'", frozenset({"ci"})))
 @example(case=Case("su - x -c 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'", frozenset({"ci"})))
 @example(case=Case("cd x\n  until ! gh pr checks 1 | grep -q pending; do sleep 30; done", frozenset({"ci"})))
-# ``done`` jako argument za ``do`` nie kończy pętli, więc jej ``sleep`` zostaje w ciele (runda 3 #636).
 @example(case=Case("while gh pr checks 1 | grep -q pending; do echo do done; sleep 30; done", frozenset({"ci"})))
-# Skrypt ``-c`` w podstawieniu w ``${…}`` (runda 1 #648), a separator w tym podstawieniu kończy polecenie powłoki.
 @example(case=Case("echo ${x:-$(bash -c 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done')}", frozenset({"ci"})))
 @example(case=Case("X=${X:-$(bash -c 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done')}", frozenset({"ci"})))
 @example(case=Case("echo ${x:-`bash -c 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'`}", frozenset({"ci"})))
@@ -590,14 +556,12 @@ LOOP = Template("until ! gh pr checks {} | grep -q pending; do sleep 30; done", 
 
 
 @PROPERTY
-# Runda 1 #636: opcja przed ``-c``.
 @example(prefix="bash -l -c", wait=LOOP)
 @example(prefix="bash -e -c", wait=LOOP)
 @example(prefix="bash --login -c", wait=LOOP)
 @example(prefix="zsh -i -c", wait=LOOP)
 @example(prefix="sh -x -c", wait=LOOP)
 @example(prefix="su -c", wait=LOOP)
-# Runda 2 #636: opcja z wartością, dłuższe ``su`` i słowa dłuższe niż dawne okno 80 znaków.
 @example(prefix="bash -euo pipefail -c", wait=LOOP)
 @example(prefix="bash -eo pipefail -c", wait=LOOP)
 @example(prefix="sh -eo pipefail -c", wait=LOOP)
@@ -611,14 +575,11 @@ LOOP = Template("until ! gh pr checks {} | grep -q pending; do sleep 30; done", 
 @example(prefix="su -m -l root -c", wait=LOOP)
 @example(prefix="su - root -m -c", wait=LOOP)
 @example(prefix="bash -o pipefail -o errexit -o nounset -o noclobber -o xtrace -o verbose -o noglob -c", wait=LOOP)
-# ``$(…)`` i `` `…` `` wśród słów to osobne polecenie, po którym słowa wracają do powłoki.
 @example(prefix="bash $(echo -l) -c", wait=LOOP)
 @example(prefix="bash `echo -l` --norc -c", wait=LOOP)
 @example(prefix="bash 'a;b' --norc -c", wait=LOOP)
-# Runda 3 #636: ukośnik przed nazwą powłoki i ``)`` w ``${…}``.
 @example(prefix="\\bash -c", wait=LOOP)
 @example(prefix="bash ${x:-)} -c", wait=LOOP)
-# Runda 1 #648: ``)`` za zagnieżdżonym ``${…}``, ``|`` za ``$(…)`` w ``${…}`` i `` ` `` zamyka niedomknięte w nim ``${``.
 @example(prefix="bash ${x:-${y})} -c", wait=LOOP)
 @example(prefix="bash ${x:-$(echo -l)|b} -c", wait=LOOP)
 @example(prefix="bash `echo ${x` -c", wait=LOOP)
@@ -629,7 +590,6 @@ def test_skrypt_c_powloki_z_dowolnymi_slowami_przed_c_to_polecenie(prefix: str, 
     assert _judged(command) == wait.refusals, command
 
 
-# Separator, ``(``, ``$(`` i lewy `` ` `` bez odstępu przed słowem powłoki zaczynają jej polecenie (runda 3 #636).
 GLUED = (
     ("(", ")"),
     ("x=$(", ")"),
@@ -689,7 +649,6 @@ def test_dolar_klamra_w_komentarzu_nie_ukrywa_skryptu_c_w_nastepnej_linii(
     assert _judged(command) == wait.refusals, command
 
 
-# Separator kończy polecenie proste powłoki, a ``$(…)`` i `` `…` `` zaczynają w nim osobne.
 SEPARATORS = (
     ("; ", ""),
     (" && ", ""),
@@ -707,9 +666,7 @@ SEPARATORS = (
 @example(prefix="bash -l x.sh", separator=("; ", ""), program="grep -c", wait=LOOP)
 @example(prefix="su - root", separator=(" | ", ""), program="python3 -c", wait=LOOP)
 @example(prefix="sh", separator=(" $(", ")"), program="python3 -c", wait=LOOP)
-# ``}`` poza ``${…}`` niczego nie otwiera, więc ``;`` za ``{a,b}`` kończy polecenie (runda 1 #648).
 @example(prefix="bash {a,b}", separator=("; ", ""), program="grep -c", wait=LOOP)
-# Komentarz z niedomkniętym ``${`` kończy się z linią, a z nim polecenie powłoki (runda 1 #648).
 @example(prefix="bash x.sh", separator=(" # ${x:-(\n", ""), program="grep -c", wait=LOOP)
 @given(
     prefix=st.builds(
