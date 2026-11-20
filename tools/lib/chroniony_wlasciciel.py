@@ -21,9 +21,9 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
 
-Wpis z ``{a,b}`` daje każdą ścieżkę z nawiasu. Właścicielem jest tylko plik drzewa nazwany wpisem wprost, więc wpis
-ze wzorcem (``src/**``) albo katalog to zasięg reguły, nie właściciel, a konfiguracja, której narzędzie nie wczyta, nie
-daje właściciela.
+Wpis z ``{a,b}`` daje każdą ścieżkę z nawiasu. Właścicielem jest tylko plik, którego ścieżkę wpis podaje wprost, więc
+wpis ze wzorcem (``src/**``) albo katalog to zasięg reguły, nie właściciel, a konfiguracja, której narzędzie nie wczyta,
+nie daje właściciela.
 """
 
 RUFF = "ruff.toml"
@@ -53,8 +53,7 @@ class _Tree:
 
 def owners(root: Path, tree: str) -> frozenset[str]:
     listed = _Tree(root, tree, frozenset(repo.git(root, "ls-tree", "-r", "-z", "--name-only", tree).split("\0")) - {""})
-    found = {*_banned(listed), *_importers(listed), *_ignored(listed)}
-    return frozenset(found & listed.files)
+    return frozenset({*_banned(listed), *_importers(listed), *_ignored(listed)})
 
 
 def refusal(files: Sequence[str], protected: frozenset[str]) -> str | None:
