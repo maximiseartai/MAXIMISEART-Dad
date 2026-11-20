@@ -36,9 +36,11 @@ hook pomija jako polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` 
 ``flock`` albo ``script`` z dowolnymi słowami przed ``-c`` (``bash -euo pipefail -c '…'``, ``bash -lc``,
 ``su -l -s /bin/sh root -c``).
 
-Granica: inne harnessy niż Claude Code (Codex, opencode), pętlę w skrypcie uruchomionym z pliku (także zapisanym
-heredokiem do pliku), w Pythonie (``python3 - <<'EOF'`` i ``python3 -c '…'`` z ``time.sleep``), z adresem
-``gh api`` w cudzysłowie i pętle, których wzorca hook nie zna, łapie tylko przegląd. Pętla bez pliku zadania w sobie
+Granica: hook nie widzi pętli w skrypcie uruchomionym z pliku (także zapisanym heredokiem do pliku), w Pythonie
+(``python3 - <<'EOF'`` i ``python3 -c '…'`` z ``time.sleep``), z adresem ``gh api`` w cudzysłowie ani pętli, których
+wzorca nie zna. W sesji Claude Code siódme takie samo zapytanie takiej pętli o stan CI w 10 minut odrzuca nakładka
+``gh`` (``tools/hooks/odpytywanie_gh.py``), a resztę, także w innych harnessach (Codex, opencode), łapie tylko
+przegląd. Pętla bez pliku zadania w sobie
 przechodzi, także ``while kill -0 $P; do sleep 5; done; cat …/tasks/b1.output``, bo tak samo wygląda czekanie na
 gotowość serwera z zadania w tle (``curl … && break``), którego koniec nie przyjdzie; tak samo pętla na zwykłym pliku
 (``until grep -q KONIEC ci.log; do sleep 5; done``). Tak samo ponowienie z ``eval "…"``, z polecenia złożonego ze zmiennych

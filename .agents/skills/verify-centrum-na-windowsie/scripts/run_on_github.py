@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import datetime
 import json
 from pathlib import Path
@@ -9,6 +10,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
+import github
 from skrypt_skilla import Parser
 
 OPIS = """Run verify-centrum-na-windowsie on GitHub's Windows machine from any computer, and bring the evidence home.
@@ -33,10 +35,10 @@ WORKFLOW = "verify-centrum-na-windowsie.yml"
 
 
 def _gh(*args: str) -> str:
-    result = subprocess.run(["gh", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        raise SystemExit(f"VERIFY FAIL | gh {' '.join(args)}: {result.stderr.strip()}")
-    return result.stdout.strip()
+    try:
+        return github.gh(*args, limit_s=None).strip()
+    except subprocess.CalledProcessError as error:
+        raise SystemExit(f"VERIFY FAIL | gh {' '.join(args)}: {error.stderr.strip()}") from None
 
 
 def _git(*args: str) -> str:
@@ -79,12 +81,14 @@ def main(argv: list[str] | None = None) -> int:
         ref = args.ref or _git("branch", "--show-current")
         run_id = _dispatch(ref, args.feature, head)
     print(f"RUN {run_id} | https://github.com/maximiseartai/MAXIMISEART-Dad/actions/runs/{run_id}", flush=True)
-    subprocess.run(["gh", "run", "watch", run_id, "--interval", "30"], cwd=REPO_ROOT, stdout=subprocess.DEVNULL, check=False)
+    with suppress(subprocess.CalledProcessError):
+        github.gh("run", "watch", run_id, "--interval", "30", limit_s=None)
     run = json.loads(_gh("run", "view", run_id, "--json", "conclusion,headSha"))
     conclusion, checked = run["conclusion"], run["headSha"]
     evidence = args.run_dir / "evidence" / f"github-{run_id}"
     evidence.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["gh", "run", "download", run_id, "--dir", str(evidence)], cwd=REPO_ROOT, check=False)
+    with suppress(subprocess.CalledProcessError):
+        github.gh("run", "download", run_id, "--dir", str(evidence), limit_s=None)
     verdicts = [
         line
         for drive in sorted(evidence.rglob("drive.txt"))

@@ -75,6 +75,9 @@ DIFFERENT = [
     pytest.param([["pr", "checks", str(number)] for number in range(LIMIT + 2)], id="rozne-pr"),
     pytest.param([["pr", "view", "1", "--json", "title"]] * (LIMIT + 2), id="pr-view-bez-stanu-ci"),
     pytest.param([["run", "view", "1", "--log-failed"]] * (LIMIT + 2), id="logi-runu"),
+    pytest.param([["run", "view", "1", "--log"]] * (LIMIT + 2), id="caly-log-runu"),
+    pytest.param([["run", "view", "1", "--web"]] * (LIMIT + 2), id="run-w-przegladarce"),
+    pytest.param([["run", "view", "1", "-w"]] * (LIMIT + 2), id="run-w-przegladarce-krotko"),
     pytest.param([["api", "repos/o/r/actions/jobs/1/logs"]] * (LIMIT + 2), id="logi-zadania"),
     pytest.param([["issue", "list"]] * (LIMIT + 2), id="inne-polecenie"),
 ]
