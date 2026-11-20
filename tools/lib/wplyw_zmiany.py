@@ -40,7 +40,8 @@ szybko biegnie przed testami bez drogi w grafie; każdy taki plik wchodzi też d
 
 Lekką rundę przeglądu (``light_review``) dostaje zmiana od ``merge-base`` HEAD PR z bazą, w której każda ścieżka
 to plik pod ``tools/`` poza ``tools/wydanie.py``, plik pod ``.github/`` albo test narzędzi: plik ``.py`` pod ``tests/``,
-który na HEAD (usunięty: na ``merge-base``) importuje wprost moduł z ``tools/``, a żadnego z ``src/``. Pliki Wydania
+który na HEAD (usunięty: na ``merge-base``) dochodzi importem, wprost albo przez inny moduł, do modułu z ``tools/``,
+a do żadnego z ``src/``; nazwy modułów w napisach, które graf wyboru testów liczy, się tu nie liczą. Pliki Wydania
 (``DAD_FILES`` w ``tools/wydanie.py``, ``config/`` z ``src/rozliczenia/tool_files.py``) leżą poza ``tools/``.
 
 Testy, które sięgają pliku (``Repository.reaching``), to inna reguła niż wybór: krawędź katalogu, globu i danych
@@ -53,7 +54,7 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict, deque
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 import enum
 from fnmatch import fnmatchcase
@@ -227,15 +228,28 @@ def light_review(root: Path, base: str, head: str) -> bool:
         return True
     files = changed | frozenset(path for path in repo.git(root, "ls-tree", "-r", "-z", "--name-only", head).split("\0") if path)
     modules = _modules(files)
-    return all(_tools_test(path, repo.blob(root, head, path) or repo.blob(root, fork, path) or b"", files, modules) for path in tests)
+    imported: dict[str, set[str]] = {}
+
+    def imports(path: str) -> set[str]:
+        if path not in imported:
+            try:
+                nodes = list(ast.walk(ast.parse(repo.blob(root, head, path) or repo.blob(root, fork, path) or b"")))
+            except (SyntaxError, ValueError):
+                nodes = []
+            imported[path] = {target for name in _imports(nodes, path) for target in _resolve(name, path, modules, files)}
+        return imported[path]
+
+    return all(_tools_test(path, imports) for path in tests)
 
 
-def _tools_test(path: str, source: bytes, files: frozenset[str], modules: Mapping[str, set[str]]) -> bool:
-    try:
-        nodes = list(ast.walk(ast.parse(source)))
-    except (SyntaxError, ValueError):
-        return False
-    reached = {target for name in _imports(nodes, path) for target in _resolve(name, path, modules, files)}
+def _tools_test(path: str, imports: Callable[[str], set[str]]) -> bool:
+    reached, pending = {path}, [path]
+    while pending:
+        for target in imports(pending.pop()) - reached:
+            reached.add(target)
+            if target.endswith(".py"):
+                pending.append(target)
+    reached.discard(path)
     return any(target.startswith("tools/") for target in reached) and not any(target.startswith("src/") for target in reached)
 
 
