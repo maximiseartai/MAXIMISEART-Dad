@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import json
+from typing import Final
 
 from fastapi import APIRouter
 
@@ -27,6 +28,7 @@ _REFUSED: dict[int | str, dict[str, object]] = {
     409: {"model": common_contract.Problem, "description": "Pliku Legendy czynności nie da się teraz przeczytać"},
 }
 _UNKNOWN_OR_REFUSED: dict[int | str, dict[str, object]] = {404: {"model": common_contract.Problem}, **_REFUSED}
+_CODE_URL: Final = "/activity-legend/{code_id:path}"
 
 
 def activity_legend_router(
@@ -70,11 +72,11 @@ def activity_legend_router(
     def add(code: contract.ActivityCodeForm) -> contract.ActivityLegendSaved:
         return saved(contract.AddActivityCode(kind="add", code=code))
 
-    @router.put("/activity-legend/{code_id:path}", operation_id="changeActivityCode", responses=_UNKNOWN_OR_REFUSED)
+    @router.put(_CODE_URL, operation_id="changeActivityCode", responses=_UNKNOWN_OR_REFUSED)
     def change(code_id: str, code: contract.ActivityCodeForm) -> contract.ActivityLegendSaved:
         return saved(contract.ChangeActivityCode(kind="change", code_id=code_id, code=code))
 
-    @router.delete("/activity-legend/{code_id:path}", operation_id="removeActivityCode", responses=_UNKNOWN_OR_REFUSED)
+    @router.delete(_CODE_URL, operation_id="removeActivityCode", responses=_UNKNOWN_OR_REFUSED)
     def remove(code_id: str) -> contract.ActivityLegendSaved:
         return saved(contract.RemoveActivityCode(kind="remove", code_id=code_id))
 
