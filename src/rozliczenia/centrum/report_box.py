@@ -59,7 +59,12 @@ class Issue:
     number: int
     body: str
     closure: Closure | None = None
-    title: str = ""
+
+
+@dataclass(frozen=True)
+class ListedIssue:
+    issue: Issue
+    title: str
 
 
 @dataclass(frozen=True)
@@ -99,8 +104,9 @@ class Removed:
 SendOutcome = Sent | Refused | Rejected | Unreachable
 CommentOutcome = Commented | Refused | Rejected | Unreachable
 IssuesOutcome = tuple[Issue, ...] | Refused | Unreachable
+ListOutcome = tuple[ListedIssue, ...] | Refused | Unreachable
 CommentsOutcome = tuple[Comment, ...] | Refused | Unreachable
-FindOutcome = int | None | Refused | Unreachable
+FindOutcome = Issue | None | Refused | Unreachable
 ArchiveOutcome = Archive | None | Refused | Unreachable
 OpenArchiveOutcome = Archive | Refused | Rejected | Unreachable
 UploadOutcome = Asset | Refused | Rejected | Unreachable
@@ -114,7 +120,7 @@ class ReportBox(Protocol):
     def comment(self, number: int, body: str, *, key: str) -> CommentOutcome:
         ...
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         ...
 
     def comments(self, number: int, *, key: str) -> CommentsOutcome:
@@ -145,8 +151,8 @@ _EMPTY_REPOSITORY: Final = 409
 _CLOSE_REASONS: Final[Mapping[str, CloseReason]] = {reason: reason for reason in get_args(CloseReason)}
 
 
-def newest_with_line(issues: tuple[Issue, ...], line: str) -> int | None:
-    return max((issue.number for issue in issues if line in issue.body.splitlines()), default=None)
+def newest_with_line(issues: tuple[Issue, ...], line: str) -> Issue | None:
+    return max((issue for issue in issues if line in issue.body.splitlines()), key=lambda issue: issue.number, default=None)
 
 
 def archive_url(tag: str, name: str) -> str:
@@ -183,7 +189,7 @@ class GitHubReportBox:
         answer = self._send("PATCH", f"{API}/repos/{REPOSITORY}/issues/comments/{comment_id}", {"body": body}, key)
         return _commented(answer, 200)
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         state = "all" if include_closed else "open"
         entries = self._pages(f"{API}/repos/{REPOSITORY}/issues?state={state}&labels={label}&", key)
         return entries if not isinstance(entries, list) else tuple(i for i in map(_issue, entries) if i is not None)
@@ -316,12 +322,13 @@ def _asset(entry: object) -> Asset | None:
     return Asset(entry["id"], entry["name"], label if isinstance(label, str) else "", entry.get("state") == "uploaded")
 
 
-def _issue(entry: object) -> Issue | None:
+def _issue(entry: object) -> ListedIssue | None:
     if not isinstance(entry, dict) or not isinstance(entry.get("number"), int):
         return None
     body, title = entry.get("body"), entry.get("title")
     closure = _closure(entry) if entry.get("state") == "closed" else None
-    return Issue(entry["number"], body if isinstance(body, str) else "", closure, title if isinstance(title, str) else "")
+    issue = Issue(entry["number"], body if isinstance(body, str) else "", closure)
+    return ListedIssue(issue, title if isinstance(title, str) else "")
 
 
 def _closure(entry: dict[str, object]) -> Closure:

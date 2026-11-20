@@ -23,7 +23,7 @@ from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, PART_LIMIT, OpenIssue, Outbox, Post
 from rozliczenia.centrum.report_issue import RETURNED_HEADING, fingerprint_line
-from rozliczenia.centrum.report_box import FindOutcome
+from rozliczenia.centrum.report_box import FindOutcome, Issue
 from rozliczenia.centrum.tool_freshness import RELEASES_TIMEOUT_S, CommitSource
 from rozliczenia.centrum.tool_update import UpdateResult
 from rozliczenia.centrum.work import CentrumWork
@@ -526,10 +526,10 @@ class Reports:
         if answer is None:
             return
         [found] = answer
-        if found is None or isinstance(found, int):
+        if found is None or isinstance(found, Issue):
             with self._lock:
                 if self._numbered.get(fingerprint, 0) == numbered:
-                    self._open[fingerprint] = found
+                    self._open[fingerprint] = None if found is None else found.number
 
     def _find_open(self, fingerprint: str) -> FindOutcome | NoKey:
         return self._box.find_issue(REPORT.label, fingerprint_line(fingerprint), include_closed=False)

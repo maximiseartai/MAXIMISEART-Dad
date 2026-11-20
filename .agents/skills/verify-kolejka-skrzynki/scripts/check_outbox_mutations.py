@@ -89,7 +89,7 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "    if found is None:\n        step = _deliver_archive(post, version, box, archive_open=archive_open)\n",
+                "    if issue is None:\n        step = _deliver_archive(post, version, box, archive_open=archive_open)\n",
                 "    if True:\n        step = _deliver_archive(post, version, box, archive_open=archive_open)\n",
             ),
         ),
@@ -115,8 +115,8 @@ MUTATIONS = (
         (
             Edit(
                 VERIFIED,
-                "    return _settle(post, version, _issue(issues, found), (returned,), box)\n",
-                "    return Delivered(found, ())\n",
+                "    return _settle(post, version, found, (returned,), box)\n",
+                "    return Delivered(found.number, ())\n",
             ),
         ),
         _explorer("zgloszenie-wrocilo"),
@@ -404,8 +404,8 @@ MUTATIONS = (
         (
             Edit(
                 KEYED_BOX,
-                "        return (*listed, *missing), complete\n",
-                "        return listed, complete\n",
+                "        return listed, tuple(missing), complete\n",
+                "        return listed, (), complete\n",
             ),
         ),
         _explorer("watek-okresu-lista"),

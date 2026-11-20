@@ -39,7 +39,7 @@ from rozliczenia.centrum.report_box import (
     CommentOutcome,
     CommentsOutcome,
     Commented,
-    IssuesOutcome,
+    ListOutcome,
     Label,
     OpenArchiveOutcome,
     Refused,
@@ -457,7 +457,7 @@ class FileReportBox:
             for comment_id, text in zip(found.comment_ids, found.comment_texts, strict=True)
         )
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         if include_closed:
             with self._lock:
                 Log.REPORT_QUESTIONS.append(self._root, {"label": label})

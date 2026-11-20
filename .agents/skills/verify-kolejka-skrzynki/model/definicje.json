@@ -1,12 +1,12 @@
 {
   "src/rozliczenia/centrum/outbox.py": {
-    "cały plik": "ac48ffcda936f0d1"
+    "cały plik": "d827e078be8ee984"
   },
   "src/rozliczenia/centrum/keyed_box.py": {
-    "cały plik": "74177306d23b6168"
+    "cały plik": "715f7107d10ee02f"
   },
   "src/rozliczenia/centrum/report_box.py": {
-    "cały plik": "ef1d8b1f331f6082"
+    "cały plik": "21d04ab0e3405ecd"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
     "cały plik": "3f6c449f36c0031d"

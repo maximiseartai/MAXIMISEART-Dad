@@ -40,8 +40,8 @@ from rozliczenia.centrum.report_box import (
     CommentOutcome,
     CommentsOutcome,
     Commented,
-    IssuesOutcome,
     Label,
+    ListOutcome,
     OpenArchiveOutcome,
     Refused,
     RemoveOutcome,
@@ -326,7 +326,7 @@ class FakeReportBox:
         behind = issue in self.background_issues
         return _comment_url(issue.number, issue.position(comment_id) if behind else comment_id)
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         if label in self.background:
             with self._changed:
                 return self._background_box.listed(label, include_closed=include_closed)

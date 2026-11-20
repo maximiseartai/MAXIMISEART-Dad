@@ -74,6 +74,8 @@ from rozliczenia.centrum.report_box import (
     Issue,
     IssuesOutcome,
     Label,
+    ListedIssue,
+    ListOutcome,
     OpenArchiveOutcome,
     Refused,
     Rejected,
@@ -550,15 +552,17 @@ class KeyedBox:
         return outcome
 
     def labelled_issues(self, label: Label, *, include_closed: bool) -> IssuesOutcome | NoKey:
-        """Issue tego Stanowiska (``box_prefix.owns``) z etykietą ``label`` z listy Skrzynki i te, które ``KeyedBox``
-        założył w ``LIST_LAG_S``, a lista ich nie ma.
+        """Issue z etykietą ``label`` z listy Skrzynki i te, które ``KeyedBox`` założył w ``LIST_LAG_S``, a lista ich nie ma.
 
         Lista bez zamkniętych nie pokazuje ani issue, za którym nie nadążyła, ani issue, które Maks już zamknął, więc
         takie issue dołącza dopiero wtedy, gdy nie ma go zamkniętego na liście z zamkniętymi; bez jej odpowiedzi dołącza.
         """
 
         listed = self._labelled(label, include_closed=include_closed)
-        return listed if isinstance(listed, NoKey | Refused | Unreachable) else listed[0]
+        if isinstance(listed, NoKey | Refused | Unreachable):
+            return listed
+        entries, missing, _ = listed
+        return _issues(entries, missing)
 
     def known_issue(self, label: Label, number: int) -> Issue | None | Refused | Unreachable | NoKey:
         """Issue ``number`` z etykietą ``label`` (otwarte albo zamknięte) z ``labelled_issues``; ``None``: Skrzynka go
@@ -573,14 +577,15 @@ class KeyedBox:
         listed = self._labelled(label, include_closed=True)
         if isinstance(listed, NoKey | Refused | Unreachable):
             return listed
-        issues, complete = listed
-        found = next((issue for issue in issues if issue.number == number), None)
+        entries, missing, complete = listed
+        found = next((issue for issue in _issues(entries, missing) if issue.number == number), None)
         return found if found is not None or complete else Unreachable()
 
     def _labelled(
         self, label: Label, *, include_closed: bool
-    ) -> tuple[tuple[Issue, ...], bool] | Refused | Unreachable | NoKey:
-        """``labelled_issues`` i czy ta lista pokazuje każdy zapis etykiety ``label``: zapis nie byłby teraz wstrzymany."""
+    ) -> tuple[tuple[ListedIssue, ...], tuple[Issue, ...], bool] | Refused | Unreachable | NoKey:
+        """Lista Skrzynki, issue ``labelled_issues`` spoza niej i czy ta lista pokazuje każdy zapis etykiety ``label``:
+        zapis nie byłby teraz wstrzymany."""
 
         key = self._usable()
         if not isinstance(key, str):
@@ -595,22 +600,23 @@ class KeyedBox:
             notes = known or _Notes()
             complete = not self._held(label, self._clock(), notes)
         opened = [issue for _, of, issue in notes.opened if of == label]
-        numbers = {issue.number for issue in listed}
+        numbers = {entry.issue.number for entry in listed}
         missing = [issue for issue in opened if issue.number not in numbers]
         if missing and not include_closed:
             every = self._listed(key, label, include_closed=True)
             if not isinstance(every, Refused | Unreachable):
-                closed = {issue.number for issue in every if issue.closure is not None}
+                closed = {entry.issue.number for entry in every if entry.issue.closure is not None}
                 missing = [issue for issue in missing if issue.number not in closed]
-        return (*listed, *missing), complete
+        return listed, tuple(missing), complete
 
     def find_issue(self, label: Label, line: str, *, include_closed: bool) -> FindOutcome | NoKey:
-        """Najnowsze issue z etykietą ``label`` i wierszem ``line`` (odcisk problemu, token okresu)."""
+        """Najnowsze issue tego Stanowiska z etykietą ``label`` i wierszem ``line`` (odcisk problemu, token okresu)."""
 
-        issues = self.labelled_issues(label, include_closed=include_closed)
-        if isinstance(issues, NoKey | Refused | Unreachable):
-            return issues
-        return newest_with_line(issues, line)
+        listed = self._labelled(label, include_closed=include_closed)
+        if isinstance(listed, NoKey | Refused | Unreachable):
+            return listed
+        entries, missing, _ = listed
+        return newest_with_line((*(entry.issue for entry in entries if owns(self._prefix, entry.title)), *missing), line)
 
     def judge(self, *, wait_s: float) -> KeyJudgement:
         """Stan klucza teraz; gdy sprawdzenie jest należne, zleca je w tle i czeka na nie najwyżej ``wait_s``."""
@@ -658,13 +664,11 @@ class KeyedBox:
 
         self._listed(key, REPORT_LABEL, include_closed=False)
 
-    def _listed(self, key: str, label: Label, *, include_closed: bool) -> IssuesOutcome:
+    def _listed(self, key: str, label: Label, *, include_closed: bool) -> ListOutcome:
         asked_at = self._clock()
         outcome = self._box.labelled_issues(label, include_closed=include_closed, key=key)
         self._observe(key, asked_at, outcome)
-        if not isinstance(outcome, tuple):
-            return outcome
-        return tuple(issue for issue in outcome if owns(self._prefix, issue.title))
+        return outcome
 
     def _usable(self) -> str | NoKey | Refused:
         """Klucz do zapytania; ``Refused`` bez sieci, gdy Skrzynka odrzuciła ten klucz w ``REFUSED_KEPT_S``."""
@@ -712,6 +716,10 @@ _FILE_PREFIX: Final = "plik "
 _FILES_LIST: Final = "pliki archiwum"
 """Wysłanie i usunięcie pliku Archiwum widać na liście plików Archiwum (``archive``): rodzaj zapisu to nazwa pliku
 (``_file_kind``), a chwila listy jest wspólna dla wszystkich plików."""
+
+
+def _issues(listed: tuple[ListedIssue, ...], missing: tuple[Issue, ...]) -> tuple[Issue, ...]:
+    return (*(entry.issue for entry in listed), *missing)
 
 
 def _file_kind(name: str) -> str:

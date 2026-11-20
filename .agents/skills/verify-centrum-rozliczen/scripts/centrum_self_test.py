@@ -801,7 +801,7 @@ def _check_box_reads_while_put_in_place(errors: list[str]) -> None:
 
         def labelled() -> object:
             found = box.labelled_issues("zgloszenie", include_closed=False, key="k")
-            return [issue.number for issue in found] if isinstance(found, tuple) else found
+            return [entry.issue.number for entry in found] if isinstance(found, tuple) else found
 
         reads: dict[str, Callable[[], object]] = {
             "its comments": comments,
