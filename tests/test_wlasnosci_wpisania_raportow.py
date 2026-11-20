@@ -1974,6 +1974,7 @@ def test_wlasnosc_kazde_klikniecie_wpisania_raportow_trzyma_reguly_adr_0028_i_00
         ((ONE, "tak", "wymiana routera"),),
     )
 ).via("przegląd #1247 r2 W1: pożegnanie bez polskich liter trafiało do opisu")
+@example(("40000001 nie", ((ONE, "nie", ""),))).via("Wpis bez opisu wpisuje tylko SKUTECZNE")
 def test_wlasnosc_wpisy_raportu_napisane_jak_pisza_wykonawcy_trafiaja_do_swoich_komorek(
     body: tuple[str, tuple[tuple[str, str | None, str], ...]],
 ) -> None:

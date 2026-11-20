@@ -74,7 +74,6 @@ from ._model import (
     note_order,
     order_number,
 )
-from ._entries import EXAMPLE_NUMBERS
 from ._mails import JsonValue, WindowMails
 from ._memory import EnteringMemory, MemorySource, RegisterWindow, SavedState
 from ._reminders import (
@@ -104,7 +103,6 @@ __all__ = [
     "DEFAULT_REMINDERS",
     "DEFAULT_SCHEDULE",
     "DEFAULT_TEXT",
-    "EXAMPLE_NUMBERS",
     "OLD_VERSION_SCHEDULES",
     "SUBJECT_WORD",
     "AddBar",

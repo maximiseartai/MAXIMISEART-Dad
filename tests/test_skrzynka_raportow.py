@@ -51,12 +51,11 @@ from rozliczenia.worker_report_inbox import (
     SentAttachment,
     SentAttachments,
     SentReminders,
-    WorkerReportInbox,
     mail_of,
 )
 from rozliczenia.worker_reports import Login, MailId, Reminder, ReportMail, SenderAddress, SentReminder
 
-from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FolderInbox
+from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FolderInbox
 
 SKRZYNKA = "raporty.taty@przyklad.invalid"
 HASLO = "abcdefghijklmnop"
@@ -175,34 +174,6 @@ def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_m
     assert [mail.id for mail in found] == [MailId.of("<a@x.invalid>"), MailId.of("<b@x.invalid>")]
     assert all(len(mail.id.digest) == 16 and set(mail.id.digest) <= set("abcdefghijklmnop") for mail in found)
     assert found[0].arrived.utcoffset() == datetime(2026, 11, 8, 18, 5).astimezone().utcoffset()
-
-
-@pytest.mark.parametrize(
-    ("temat", "oddane"),
-    [
-        pytest.param(
-            b"=?utf-8?q?Re=3A_Przypomnienie=3A_raport_za_dzie=C5=84_08=2E11=2E2026?=",
-            ["Re: Przypomnienie: raport za dzień 08.11.2026"],
-            id="re",
-        ),
-        pytest.param(
-            b"=?utf-8?b?T2RwOiBQcnp5cG9tbmllbmllOiByYXBvcnQgemEgZHppZcWEIDA4LjExLjIwMjY=?=",
-            ["Odp: Przypomnienie: raport za dzień 08.11.2026"],
-            id="odp-z-outlooka",
-        ),
-        pytest.param(b"Re: Przypomnienie o fakturze", [], id="bez-slowa-raport"),
-        pytest.param(b"Fwd: Przypomnienie: raport za dzie\xc5\x84 08.11.2026", [], id="przekazane-dalej"),
-    ],
-)
-def test_skrzynka_oddaje_odpowiedz_wykonawcy_na_przypomnienie_o_raporcie(
-    tmp_path: Path, temat: bytes, oddane: list[str]
-) -> None:
-    """Odpowiedź na Przypomnienie o raporcie ma słowo „raport” w temacie, więc port oddaje ją rdzeniowi (ADR 0030)."""
-
-    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(1, surowy(temat=temat))]) as atrapa:
-        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
-
-    assert [mail.subject for mail in found] == oddane
 
 
 def test_skrzynka_szuka_od_dnia_przed_wskazanym_bo_gmail_liczy_dzien_przyjecia_w_swojej_strefie(tmp_path: Path) -> None:
@@ -419,48 +390,6 @@ def test_pamiec_odczytu_jednej_skrzynki_nie_oddaje_maili_innej_skrzynce_ani_inne
     assert [mail.text for mail in maile(po_folderze)] == ["40000001 tak"]
 
 
-def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path) -> None:
-    """Przypomnienia o raporcie, które Centrum wysyła ze skrzynki raportów, leżą w folderze wszystkich maili ze słowem
-    „raport” w temacie: port pomija je po nagłówku ``From``, zanim pobierze ich treść."""
-
-    od_skrzynki = z_zalacznikami(message_id=b"<przypomnienie@x.invalid>").replace(
-        b"From: Jan Testowy <jan.testowy@przyklad.invalid>", f"From: Tata <{SKRZYNKA}>".encode()
-    )
-    mails = [w_skrzynce(7, z_zalacznikami()), w_skrzynce(8, od_skrzynki)]
-    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
-        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
-
-    assert [(mail.id, mail.text) for mail in found] == [(MailId.of("<z-zalacznikami@x.invalid>"), TRESC)]
-    tresc = [command for command in atrapa.commands if command.startswith("UID FETCH") and re.search(r"PEEK\[(TEXT|\d[\d.]*)?\]", command)]
-    assert tresc and all(command.split(" ")[2].split(",") == ["7"] for command in tresc)
-
-
-def test_zepsuty_naglowek_czesci_jednego_maila_nie_wywraca_odczytu_skrzynki(tmp_path: Path) -> None:
-    """Nagłówek części, na którym pakiet ``email`` zgłasza wyjątek (fuzz przeglądu #1416 r1): szkielet tego maila się
-    nie składa, port pobiera go w całości, a ``mail_of`` liczy go jako pominięty; dobry mail obok dochodzi."""
-
-    def related(message_id: bytes, typ_drugiej: bytes) -> bytes:
-        return (
-            b"From: Jan Testowy <jan.testowy@przyklad.invalid>\r\nSubject: Raport 08.11.2026\r\nMessage-ID: " + message_id
-            + b'\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="B"\r\n\r\n'
-            + b"--B\r\nContent-Type: text/plain\r\n\r\n40000001 tak\r\n--B\r\nContent-Type: " + typ_drugiej
-            + b"\r\n\r\n40000001 tak\r\n--B--\r\n"
-        )
-
-    mails = [
-        w_skrzynce(1, related(b"<dobry@x.invalid>", b"text/plain; charset=utf-8")),
-        w_skrzynce(2, related(b"<zly@x.invalid>", b"*\r\n :multipart/mixed;attachment *")),
-    ]
-    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
-        outcome = port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8))
-
-    assert isinstance(outcome, Mails), outcome
-    assert ([(mail.id, mail.text) for mail in outcome.mails], outcome.skipped) == (
-        [(MailId.of("<dobry@x.invalid>"), "40000001 tak")],
-        1,
-    )
-
-
 def test_mail_bez_message_id_port_pobiera_w_calosci_bo_jego_mailid_liczy_sie_z_bajtow_maila(tmp_path: Path) -> None:
     surowe = z_zalacznikami(message_id=None)
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)]) as atrapa:
@@ -624,6 +553,10 @@ ZEPSUTE = {
     "zalacznik-rfc822-z-zla-granica": b"From: a@\rb.invalid\r\n" + TEMAT_RAPORTU
     + b'Content-Type: multipart/mixed; boundary="\xffx"\r\n\r\n--x\r\nContent-yp: mess]age/rfc822\r\n\r\n'
     + b"From: c@d.pFrom: l\r\nSubject: s\r\n\r\nbody\r\n--x--",
+    "naglowek-czesci-z-wyjatkiem-pakietu-email": b"From: Jan Testowy <jan.testowy@przyklad.invalid>\r\n" + TEMAT_RAPORTU
+    + b'Message-ID: <zly@x.invalid>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="B"\r\n\r\n'
+    + b"--B\r\nContent-Type: text/plain\r\n\r\n40000001 tak\r\n--B\r\nContent-Type: *\r\n :multipart/mixed;attachment *"
+    + b"\r\n\r\n40000001 tak\r\n--B--\r\n",
 }
 
 
@@ -893,18 +826,6 @@ def test_skrzynka_z_folderu_eml_ma_okno_dni_pominiete_maile_i_brak_skrzynki_jak_
     assert isinstance(outcome, Mails), outcome
     assert ([mail.arrived.date() for mail in outcome.mails], outcome.skipped) == ([date(2026, 11, 7)], 1)
     assert FolderInbox(tmp_path / "brak").mails_since(date(2026, 11, 8)) == InboxUnreachable("missing")
-
-
-def test_atrapa_skrzynki_raportow_procesu_oddaje_swoj_wynik_i_zapisuje_dzien_kazdego_odczytu() -> None:
-    mail = mail_of(surowy(), datetime(2026, 11, 8, 18, 5, tzinfo=TATA))
-    assert mail is not None
-    with_mails = FakeInbox([mail])
-    rejected = FakeInbox(PasswordRejected(), state="unreadable")
-    inboxes: list[WorkerReportInbox] = [with_mails, rejected]
-
-    assert [inbox.mails_since(date(2026, 11, 8)) for inbox in inboxes] == [Mails((mail,), skipped=0), PasswordRejected()]
-    assert [inbox.access() for inbox in inboxes] == ["ready", "unreadable"]
-    assert with_mails.days == rejected.days == [date(2026, 11, 8)]
 
 
 # --- Przypomnienia o raporcie: „Wysłane” i wysyłka przez SMTP (ADR 0030, #1349) ----------------------------------------

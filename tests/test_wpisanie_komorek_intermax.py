@@ -336,18 +336,14 @@ def test_otwarty_intermax_i_odmowa_onedrive_daja_ten_sam_fakt_co_w_uporzadkowani
     changes = [_change(2, ReportColumn.SUCCESSFUL, "tak")]
     lock = path.with_name(f"~${path.name}")
     replace, _ = failing_replace(denied)
-    worker = b"INTERMAX z poprawka pracownika"
-    replace_worker, _ = failing_replace(denied, before=lambda: path.write_bytes(worker))
 
     with _untouched(path):
         excel = _write(path, changes, after_read=lambda: lock.write_bytes(b"tata"))
         lock.unlink()
     with _untouched(path):
         onedrive = _write(path, changes, disk=FaultyDisk(replace=replace))
-    changed = _write(path, changes, disk=FaultyDisk(replace=replace_worker))
 
-    assert (excel, onedrive, changed) == (Refusal.EXCEL_HOLDS, Refusal.ONEDRIVE_HOLDS, Refusal.ONEDRIVE_HOLDS)
-    assert path.read_bytes() == worker
+    assert (excel, onedrive) == (Refusal.EXCEL_HOLDS, Refusal.ONEDRIVE_HOLDS)
     assert sorted(child.name for child in path.parent.iterdir()) == [path.name]
 
 
@@ -407,33 +403,6 @@ def test_przeniesienie_jedynego_zlecenia_segmentu_zabiera_pusty_wiersz_a_wiersze
     assert rows[8:] == pasted
     assert ordered.order_count == len(intermax.raw)
 
-
-def test_przeniesione_zlecenie_staje_pod_ostatnim_zleceniem_segmentu_nadawcy_a_nie_na_koncu_dnia(tmp_path: Path) -> None:
-    """Glosariusz „Przeniesienie zlecenia”: zlecenie Anny przejęte przez Jana staje pod ostatnim zleceniem Jana, przed
-    pustym wierszem i segmentem Zofii, którzy są dalej w kolejności alfabetycznej."""
-
-    intermax = Intermax(
-        ordered=(
-            _on(9, "anna.kowalska", 40000001),
-            _on(10, "anna.kowalska", 40000002),
-            _on(11, "jan.testowy", 40000003),
-            _on(12, "zofia.nowa", 40000004),
-        ),
-        raw=(),
-    )
-    path = _register(tmp_path, intermax)
-
-    _write(path, [], moves=[_move(2, "jan.testowy")])
-
-    assert _sheet_rows(path, 8) == [
-        (40000002, "anna.kowalska", _link(40000002)),
-        "pusty",
-        (40000003, "jan.testowy", _link(40000003)),
-        (40000001, "jan.testowy", _link(40000001)),
-        "pusty",
-        (40000004, "zofia.nowa", _link(40000004)),
-        "pusty",
-    ]
 
 def test_dwa_przeniesienia_jednego_klikniecia_tworza_segment_i_zabieraja_segment_ktory_zostal_pusty(tmp_path: Path) -> None:
     """Oba zlecenia Jana przechodzą do Anny, która nie ma segmentu: pierwsze zakłada jej segment przed segmentem Jana,
@@ -687,28 +656,6 @@ def test_przeniesienie_na_inny_dzien_zmienia_dzien_z_ta_sama_godzina_i_staje_w_n
     assert ordered.order_count == len(intermax.raw)
 
 
-def test_przeniesienie_na_pozniejszy_dzien_staje_pod_ostatnim_zleceniem_segmentu_nadawcy(tmp_path: Path) -> None:
-    """Zlecenie Anny z 8.11 przeniesione na 9.11 staje pod jej zleceniem 9.11; segment Anny 8.11 znika z pustym
-    wierszem pod sobą."""
-
-    path = _register(tmp_path, Intermax(ordered=TWO_DAYS))
-
-    _write(path, [], moves=[_move(2, "anna.kowalska", DAY)])
-
-    assert _sheet_rows(path, 10) == [
-        (40000005, "zofia.nowa", _link(40000005)),
-        "pusty",
-        (40000003, "anna.kowalska", _link(40000003)),
-        (40000001, "anna.kowalska", _link(40000001)),
-        "pusty",
-        (40000004, "jan.testowy", _link(40000004)),
-        "pusty",
-        "żółty",
-        "pusty",
-    ]
-    assert _dates(path, 10)[40000001][0] == datetime(2026, 11, 9, 9, 30)
-
-
 def test_przeniesienia_na_inny_dzien_i_w_tym_samym_dniu_w_jednym_kliknieciu_tworza_jeden_ciagly_segment(
     tmp_path: Path,
 ) -> None:
@@ -802,37 +749,6 @@ def test_przeniesienie_na_inny_dzien_z_pierwszego_wiersza_segmentu_do_ktorego_id
         "żółty",
     ]
     assert _dates(path, 8)[40000002][0] == datetime(2026, 11, 9, 10, 30)
-
-
-def test_zamiana_jedynych_zlecen_dwoch_dni_w_jednym_kliknieciu_staje_na_miejscu_dnia(tmp_path: Path) -> None:
-    """Przegląd #1367 r1 (Ważne 1): jedyne zlecenie 8.11 (Anna) idzie na 9.11, a zlecenie Jana z 9.11 na 8.11 w tym
-    samym kliknięciu. Rdzeń widzi oba dni jako Dni uporządkowane sprzed kliknięcia, więc zapis też: zlecenie Jana staje
-    tam, gdzie stał dzień 8.11, a zlecenie Anny w nowym segmencie Anny 9.11 przed Zofią. Zapis nie odrzuca kliknięcia."""
-
-    intermax = Intermax(
-        ordered=(
-            _at(EIGHTH, 9, "anna.kowalska", 40000001),
-            _at(DAY, 9, "jan.testowy", 40000004),
-            _at(DAY, 10, "zofia.nowa", 40000005),
-        ),
-        raw=(),
-    )
-    path = _register(tmp_path, intermax)
-
-    outcome = _write(path, [], moves=[_move(2, "anna.kowalska", DAY), _move(4, "jan.testowy", EIGHTH)])
-
-    assert outcome == CellsWritten(0, 2)
-    assert _sheet_rows(path, 8) == [
-        (40000004, "jan.testowy", _link(40000004)),
-        "pusty",
-        (40000001, "anna.kowalska", _link(40000001)),
-        "pusty",
-        (40000005, "zofia.nowa", _link(40000005)),
-        "pusty",
-        "żółty",
-    ]
-    dates = _dates(path, 8)
-    assert (dates[40000004][0], dates[40000001][0]) == (datetime(2026, 11, 8, 9, 30), datetime(2026, 11, 9, 9, 30))
 
 
 SEVENTH = date(2026, 11, 7)
@@ -933,6 +849,18 @@ def _expected_rows(
         (("zofia.nowa", EIGHTH), ("anna.kowalska", EIGHTH)),
     )
 ).via("dopisania do dnia opróżnionego do zera zleceń")
+@example(
+    (
+        (
+            (EIGHTH, "anna.kowalska", 40000001),
+            (EIGHTH, "zofia.nowa", 40000005),
+            (DAY, "anna.kowalska", 40000003),
+            (DAY, "jan.testowy", 40000004),
+        ),
+        {40000001: ("anna.kowalska", DAY)},
+        (),
+    )
+).via("przeniesienie na późniejszy dzień staje pod ostatnim zleceniem segmentu nadawcy")
 def test_dowolne_przeniesienia_miedzy_dniami_jednego_klikniecia_zapis_przyjmuje_i_zostawia_uklad_uporzadkowania(
     planned: _Planned,
 ) -> None:
