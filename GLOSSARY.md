@@ -839,7 +839,7 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
 Różnica Kontroli ilości w jednej komórce jednego Wiersza danych, przy której tata kliknął w podpowiedziach przy Regułach ilości „To był wyjątek”: jego wpis jest dobry dla tego zlecenia.
 Ta różnica nie wraca w podpowiedziach, także po zmianie reguły, dopóki tata nie zmieni wpisu ani treści wiersza; cofa ją „Cofnij” w Historii Ustawień.
-Nie zmienia Reguł ilości ani Kontroli ilości w Skrzynce Zgłoszeń.
+Nie zmienia Reguł ilości, podglądu ich zmiany ani Kontroli ilości w Skrzynce Zgłoszeń: te liczą każdą różnicę.
 _Avoid_: wyjątek od reguły (reguła zostaje bez zmian), pominięcie różnicy
 
 ## Powiadomienie

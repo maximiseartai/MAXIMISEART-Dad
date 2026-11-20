@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, time, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import shutil
 import threading
@@ -46,6 +47,7 @@ from tests.fixtures.centrum_processes import (
     write_dad_quantity_rules,
 )
 from tests.fixtures.bez_dostepu import without_reading
+from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.zegar_scienny import MOMENTS, STEP, wall_clock_from
 from atrapy import pliki_taty
@@ -477,12 +479,16 @@ def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_prz
     assert "| AS | 80 | 70 | 1 | `spawpg` |\n" in body
 
 
-def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy(tmp_path: Path) -> None:
+def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy_a_podglad_jak_roznice_regul(
+    tmp_path: Path,
+) -> None:
     technicolor: dict[str, CellValue] = {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1, "K": "instwewrg65m"}
     centrum = centrum_with(tmp_path, [{**technicolor, "AK": 2}, {**technicolor, "AK": 1}])
 
     run_to_end(centrum, dry_run=False)
+    preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
 
+    assert (preview["differences_before"], preview["differences_after"]) == (1, 1)
     body = sent_check(centrum).body
     assert "- Różnice w kolumnach Reguł ilości: 0\n" in body
     assert "- Wiersze z Kodami czynności: 2 (zgodne z legendą 1), różnice legendy: 1, wiersze z Błędem opisu: 0\n" in body
@@ -826,6 +832,22 @@ def test_podglad_nie_ma_adresu_numeru_zlecenia_umowy_wykonawcy_ani_daty_dziennej
 
     assert [marker for marker in (*FORBIDDEN, "ZNACZNIK-UMOWA") if marker in response] == []
     assert all(marker in response for marker in ("ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI"))
+
+
+def test_kolejny_podglad_nie_czyta_pliku_zbiorczego_od_nowa_dopoki_jego_znacznik_zapisu_sie_nie_zmieni(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    first = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    with reading(centrum.collective_file) as unchanged:
+        again = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+    saved = centrum.collective_file.stat()
+    os.utime(centrum.collective_file, ns=(saved.st_atime_ns, saved.st_mtime_ns + 1_000_000_000))
+    with reading(centrum.collective_file) as touched:
+        after_save = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    assert (again, unchanged.seen) == (first, set())
+    assert (after_save, touched.seen != set()) == (first, True)
 
 
 def test_podglad_bierze_cztery_najnowsze_okresy_po_przebiegu_rozliczen_od_najnowszego(tmp_path: Path) -> None:
