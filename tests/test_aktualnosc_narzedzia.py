@@ -708,6 +708,16 @@ def test_odmowa_z_powodu_limitu_githuba_mowi_kiedy_limit_sie_odnowi_a_bez_tokenu
     assert [asked.authorization for asked in api.asked] == authorizations
 
 
+@pytest.mark.parametrize("status", [403, 429])
+def test_po_odmowie_z_powodu_limitu_pytania_z_tokenem_reszta_sprawdzenia_idzie_bez_tokenu(status: int) -> None:
+    refused = Answer(status, {"message": "API rate limit exceeded"}, LIMIT)
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=refused) as api:
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert newest == GitHubReleases(NEWEST, "v0.2.0")
+    assert [asked.authorization for asked in api.asked] == [WITH_TOKEN, None, None, None]
+
+
 def test_odmowa_z_tokenem_z_nieczytelna_chwila_odnowienia_limitu_to_odmowa_tokenu_ponowiona_bez_niego() -> None:
     unreadable = Answer(403, {"message": "API rate limit exceeded"}, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "jutro"})
     with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=unreadable) as api:

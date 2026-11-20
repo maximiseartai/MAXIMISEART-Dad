@@ -68,8 +68,8 @@ zamiast każdej naprawy z osobna.
 - **Aktualność narzędzia.** Diagnoza i Konfiguracja pytają API GitHuba o listę
   tagów (`tags?per_page=100`, wszystkie strony, najwyżej 10) i o to, czy commit
   najwyższego Wydania leży na linii pierwszych rodziców `main` (najwyżej 5
-  Wydań po kolei). Pytanie to porównanie z `<czubek>~k` (`compare` ze stroną
-  bez commitów i plików, kilkanaście kB) dla czubka `main` ustalonego raz na
+  Wydań po kolei). Pytanie to porównanie z `<czubek>~k` (druga strona `compare`
+  po jednym commicie: najwyżej jeden commit i żadnego pliku, kilkanaście kB) dla czubka `main` ustalonego raz na
   sprawdzenie (`git/ref/heads/main`) i k wybranego wyszukiwaniem binarnym:
   Wydanie leży na linii, gdy jest jednym z `<czubek>~k`. Wyszukiwanie zaczyna
   się dopiero wtedy, gdy commit Wydania, przodek czubka, nie jest commitem
