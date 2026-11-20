@@ -153,7 +153,8 @@ def _odmowa(found: Sequence[str]) -> NoReturn:
 
     print(
         f"NA BOXIE ODMOWA | box nie zobaczy: {', '.join(found)}; ciężkie narzędzie repo nie biegnie na Macu, więc podaj ścieżkę"
-        " w repo, którą widzi git (wynik zabierze boatbox get), albo uruchom całość przez boatbox run z danymi na boxie",
+        " w repo, którą widzi git (wynik zabierze boatbox get), i rewizję z gałęzi, origin/* albo tagu (np. SHA zamiast @{…}),"
+        " albo uruchom całość przez boatbox run z danymi na boxie",
         file=sys.stderr,
         flush=True,
     )
