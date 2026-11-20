@@ -59,6 +59,7 @@ class Issue:
     number: int
     body: str
     closure: Closure | None = None
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -318,9 +319,9 @@ def _asset(entry: object) -> Asset | None:
 def _issue(entry: object) -> Issue | None:
     if not isinstance(entry, dict) or not isinstance(entry.get("number"), int):
         return None
-    body = entry.get("body")
+    body, title = entry.get("body"), entry.get("title")
     closure = _closure(entry) if entry.get("state") == "closed" else None
-    return Issue(entry["number"], body if isinstance(body, str) else "", closure)
+    return Issue(entry["number"], body if isinstance(body, str) else "", closure, title if isinstance(title, str) else "")
 
 
 def _closure(entry: dict[str, object]) -> Closure:

@@ -259,12 +259,18 @@ def issues_with(
     return box.labelled_issues("kontrola-ilosci", include_closed=include_closed, key=KEY), transport
 
 
-def test_otwarte_issue_z_etykieta_to_ich_numery_i_tresci() -> None:
+def test_otwarte_issue_z_etykieta_to_ich_numery_tytuly_i_tresci() -> None:
     outcome, transport = issues_with(
-        pages([{"number": 3, "body": "a\r\nb", "state": "open"}, {"number": 8, "body": None}, {"body": "bez numeru"}])
+        pages(
+            [
+                {"number": 3, "title": "ANDRZEJ Logi Uruchomienia 08_14_09_2026", "body": "a\r\nb", "state": "open"},
+                {"number": 8, "title": None, "body": None},
+                {"body": "bez numeru"},
+            ]
+        )
     )
 
-    assert outcome == (Issue(3, "a\r\nb"), Issue(8, ""))
+    assert outcome == (Issue(3, "a\r\nb", None, "ANDRZEJ Logi Uruchomienia 08_14_09_2026"), Issue(8, ""))
     [request] = transport.requests
     assert (request.method, request.url, request.body) == (
         "GET",

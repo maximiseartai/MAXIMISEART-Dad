@@ -135,7 +135,9 @@ def create_app(
     update_threads: Threading = threading,
     scope: Scope = SCOPES[Workstation.DAD],
 ) -> FastAPI:
-    work = CentrumWork(config=config, log=log, clock=clock, pause=pause, forbidden=empty_memory())
+    work = CentrumWork(
+        config=config, log=log, clock=clock, pause=pause, forbidden=empty_memory(), box_prefix=scope.box_prefix
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:

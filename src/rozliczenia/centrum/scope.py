@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
 
+from rozliczenia.centrum.box_prefix import BoxPrefix
+
 
 class CentrumFunction(enum.StrEnum):
     PERIODS = "periods"
@@ -40,6 +42,7 @@ class Workstation(enum.StrEnum):
 class Scope:
     workstation: Workstation
     functions: frozenset[CentrumFunction]
+    box_prefix: BoxPrefix | None
 
     def covers(self, part: Part) -> bool:
         return part is ALWAYS or part in self.functions
@@ -49,5 +52,5 @@ class Scope:
 
 
 SCOPES: Final[Mapping[Workstation, Scope]] = MappingProxyType(
-    {Workstation.DAD: Scope(Workstation.DAD, frozenset(CentrumFunction))}
+    {Workstation.DAD: Scope(Workstation.DAD, frozenset(CentrumFunction), None)}
 )

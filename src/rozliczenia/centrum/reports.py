@@ -12,6 +12,7 @@ from typing import Final, Literal
 from rozliczenia.client_data import ForbiddenValues, Outgoing, guarded, tool
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import report_messages
+from rozliczenia.centrum.box_prefix import titled
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.contract import runs as runs_contract
@@ -440,6 +441,7 @@ class Reports:
         self._commit = commit
         self._settings_changes = settings_changes
         self._forbidden = work.forbidden
+        self._prefix = work.box_prefix
         self._search_deadline_s = search_deadline_s
         self._cases = cases
         self._queue_directory = outbox.directory
@@ -492,7 +494,7 @@ class Reports:
             return self._cases.queued(fingerprint, self._box)
         case = Case(REPORT, fingerprint, preview.what, self._commit(), utc_now(), number=None)
         post = Post.of(
-            report_target(fingerprint, preview.title),
+            report_target(fingerprint, titled(self._prefix, preview.title)),
             period=preview.period,
             run_id=tool(uuid.uuid4().hex),
             blocks=[preview.body],

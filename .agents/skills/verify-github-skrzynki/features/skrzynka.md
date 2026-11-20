@@ -31,6 +31,9 @@ Skrzynka was on 2026-11-04.
 - `usuniete-issue`: comment, comments and edit of an issue Maks deleted → `Refused`.
 - `archiwum-brak`, `archiwum-w-pustym-repo`: `archive` of a tag → `None`; `open_archive` in the repository without a
   commit → `Rejected`, and still no Archiwum.
+- `tytuly-stanowisk`: two `logi-uruchomienia` issues, one titled as Dad's Centrum titles it and one with `ANDRZEJ ` in
+  front; `KeyedBox.labelled_issues` of each Stanowisko (`box_prefix.owns`) lists its own issue with the title GitHub
+  kept as sent, and not the other one.
 
 ## How to get to it (user POV)
 

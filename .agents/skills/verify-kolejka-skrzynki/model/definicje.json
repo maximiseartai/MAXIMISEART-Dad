@@ -3,10 +3,10 @@
     "cały plik": "ac48ffcda936f0d1"
   },
   "src/rozliczenia/centrum/keyed_box.py": {
-    "cały plik": "aff4a7d4508cb79c"
+    "cały plik": "74177306d23b6168"
   },
   "src/rozliczenia/centrum/report_box.py": {
-    "cały plik": "f661b97fb1765d97"
+    "cały plik": "ef1d8b1f331f6082"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
     "cały plik": "3f6c449f36c0031d"
@@ -28,6 +28,11 @@
   },
   "src/rozliczenia/centrum/run_comments.py": {
     "RunComments.diagnosed": "fa80c4589d0e3eb8",
-    "RunComments._progress": "e73266097c21cc13"
+    "RunComments._progress": "2c5b89f8aa20a7e5",
+    "RunComments._sent": "efbbccfe7f6da0ed"
+  },
+  "src/rozliczenia/centrum/box_prefix.py": {
+    "owns": "7778bf144672cfd9",
+    "prefix_of": "a9cd02b855836f60"
   }
 }

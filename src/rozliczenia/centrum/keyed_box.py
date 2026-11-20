@@ -62,6 +62,7 @@ from pathlib import Path
 from typing import Final, Literal, TypeVar
 
 from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.box_prefix import BoxPrefix, owns
 from rozliczenia.centrum.github import ANSWER_KEPT_S, NO_ANSWER_KEPT_S, sendable
 from rozliczenia.centrum.report_box import (
     Archive,
@@ -235,7 +236,13 @@ class KeyedBox:
     """
 
     def __init__(
-        self, box: ReportBox, key: Callable[[], str | None], *, clock: Callable[[], float], opening: NotesFile | None = None
+        self,
+        box: ReportBox,
+        key: Callable[[], str | None],
+        *,
+        clock: Callable[[], float],
+        opening: NotesFile | None = None,
+        prefix: BoxPrefix | None = None,
     ) -> None:
         """``_no_answer``: skrót klucza i chwila ostatniego pytania bez odpowiedzi; ``_remembered``: zapisy bez pliku
         ``opening``; ``_lists.listed_at``: chwila ostatniego pytania wątku o listę, na które przyszła odpowiedź;
@@ -243,6 +250,7 @@ class KeyedBox:
         ``_names``: nazwa każdego pliku Archiwum po jego id z ostatnich odpowiedzi ``archive``."""
 
         self._box = box
+        self._prefix = prefix
         self._key = key
         self._clock = clock
         self._lock = threading.Lock()
@@ -262,6 +270,7 @@ class KeyedBox:
             lambda: read_report_key(work.config),
             clock=work.clock,
             opening=NotesFile(work.config / OPENING_FILE, replace_atomically, work.log.box_notes_unavailable),
+            prefix=work.box_prefix,
         )
 
     def state(self) -> BoxState:
@@ -541,7 +550,8 @@ class KeyedBox:
         return outcome
 
     def labelled_issues(self, label: Label, *, include_closed: bool) -> IssuesOutcome | NoKey:
-        """Issue z etykietą ``label`` z listy Skrzynki i te, które ``KeyedBox`` założył w ``LIST_LAG_S``, a lista ich nie ma.
+        """Issue tego Stanowiska (``box_prefix.owns``) z etykietą ``label`` z listy Skrzynki i te, które ``KeyedBox``
+        założył w ``LIST_LAG_S``, a lista ich nie ma.
 
         Lista bez zamkniętych nie pokazuje ani issue, za którym nie nadążyła, ani issue, które Maks już zamknął, więc
         takie issue dołącza dopiero wtedy, gdy nie ma go zamkniętego na liście z zamkniętymi; bez jej odpowiedzi dołącza.
@@ -652,7 +662,9 @@ class KeyedBox:
         asked_at = self._clock()
         outcome = self._box.labelled_issues(label, include_closed=include_closed, key=key)
         self._observe(key, asked_at, outcome)
-        return outcome
+        if not isinstance(outcome, tuple):
+            return outcome
+        return tuple(issue for issue in outcome if owns(self._prefix, issue.title))
 
     def _usable(self) -> str | NoKey | Refused:
         """Klucz do zapytania; ``Refused`` bez sieci, gdy Skrzynka odrzuciła ten klucz w ``REFUSED_KEPT_S``."""

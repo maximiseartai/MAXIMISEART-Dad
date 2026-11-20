@@ -121,7 +121,7 @@ class Issues:
 
     def listed(self, label: Label, *, include_closed: bool) -> tuple[Issue, ...]:
         return tuple(
-            Issue(issue.number, issue.text, issue.closure)
+            Issue(issue.number, issue.text, issue.closure, issue.title)
             for issue in self.issues
             if issue.label == label
             and (include_closed or issue.closure is None)

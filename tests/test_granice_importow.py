@@ -122,6 +122,7 @@ PURE_STDLIB = frozenset({"__future__", "collections", "collections.abc", "datacl
 PURE_VERSIONS = {
     "rozliczenia.centrum.contract": frozenset({"runs"}),
     "rozliczenia.centrum.catalog": frozenset({"declaration_of"}),
+    "rozliczenia.centrum.box_prefix": frozenset({"BoxPrefix", "tagged", "titled"}),
     "rozliczenia.centrum.outbox": frozenset({"ArchiveFile", "PeriodThread", "Post", "Rank", "Target"}),
     "rozliczenia.centrum.report_box": frozenset({"Label"}),
     "rozliczenia.centrum.version": frozenset({"short_commit"}),

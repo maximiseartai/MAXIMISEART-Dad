@@ -19,6 +19,7 @@ from typing import Any, Final
 
 import pytest
 
+from rozliczenia.centrum.box_prefix import BoxPrefix
 from rozliczenia.centrum.github import NO_ANSWER_KEPT_S
 from rozliczenia.centrum.keyed_box import (
     ACCEPTED_KEPT_S,
@@ -604,3 +605,31 @@ def test_proces_konczy_sie_mimo_sprawdzenia_klucza_ktore_czeka_na_skrzynke() -> 
         child.stdout.close()
 
     assert (waiting, exit_code) == ("czeka\n", 0)
+
+
+TYTULY_SPRAW: Final = [
+    pytest.param("Logi Uruchomienia 08_14_09_2026", "tata", id="logi-okresu-taty"),
+    pytest.param("ANDRZEJ Logi Uruchomienia 08_14_09_2026", "andrzej", id="logi-okresu-andrzeja"),
+    pytest.param("ANDRZEJ INTERMAX_OTWARTY: INTERMAX jest otwarty", "andrzej", id="zgloszenie-andrzeja"),
+    pytest.param("Andrzej prosi o nowy kod czynności", "tata", id="uwaga-taty-o-andrzeju-bez-wielkich-liter"),
+    pytest.param("ANDRZEJOWI nie działa przycisk", "tata", id="prefiks-na-poczatku-dluzszego-slowa"),
+    pytest.param("ANDRZEJ: nie działa przycisk", "tata", id="prefiks-sklejony-z-dwukropkiem"),
+    pytest.param("ANDRZEJ", "tata", id="sam-prefiks-bez-tytulu"),
+    pytest.param("Pytanie od ANDRZEJ o kopię", "tata", id="prefiks-w-srodku-tytulu"),
+    pytest.param("ANDRZEJ nie może otworzyć INTERMAX", "andrzej", id="granica-uwaga-taty-zaczeta-od-ANDRZEJ-to-sprawa-andrzeja"),
+]
+
+
+def _lista_stanowiska(box: FakeReportBox, prefix: BoxPrefix | None) -> list[int]:
+    listed = KeyedBox(box, lambda: KEY, clock=ManualClock(), prefix=prefix).labelled_issues("uwaga-taty", include_closed=True)
+    assert isinstance(listed, tuple), listed
+    return [issue.number for issue in listed]
+
+
+@pytest.mark.parametrize(("tytul", "czyja"), TYTULY_SPRAW)
+def test_lista_spraw_stanowiska_ma_tylko_issue_z_jego_prefiksem_na_poczatku_tytulu(tytul: str, czyja: str) -> None:
+    box = FakeReportBox(issues=[BoxIssue(7, "uwaga-taty", tytul, "treść")])
+
+    widzi = {"tata": _lista_stanowiska(box, None), "andrzej": _lista_stanowiska(box, BoxPrefix.ANDRZEJ)}
+
+    assert widzi == {stanowisko: [7] if stanowisko == czyja else [] for stanowisko in widzi}

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Final, Literal, assert_never, final, get_args
 
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.process_run import RunResult
+from rozliczenia.centrum.box_prefix import BoxPrefix, tagged, titled
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, JournalRead, LeftJournal, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Target
@@ -216,7 +217,7 @@ class LogsPost(metaclass=WithoutSubclasses, refusal=_NO_POST_SUBCLASSES):
         return self.__post.to_json()
 
 
-def post_of(version: CommentVersion) -> LogsPost:
+def post_of(version: CommentVersion, *, prefix: BoxPrefix | None = None) -> LogsPost:
     if not any(type(version) is kind for kind in get_args(CommentVersion)):
         raise TypeError(f"Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie {type(version).__name__}.")
     start: StartFacts
@@ -225,10 +226,12 @@ def post_of(version: CommentVersion) -> LogsPost:
             start, comment, archive = progress.started, exact_text(text).text, None
         case OwnLogs(logs=logs, templates=templates):
             checked = exact_logs(logs)
-            start, comment, archive = checked.record.start, summary_markdown(checked), _archive_file(checked, templates)
+            start = checked.record.start
+            comment, archive = summary_markdown(checked, prefix=prefix), _archive_file(checked, prefix, templates)
         case StandInLogs(logs=logs):
             checked = exact_logs(logs)
-            start, comment, archive = checked.record.start, summary_markdown(checked), _archive_file(checked)
+            start = checked.record.start
+            comment, archive = summary_markdown(checked, prefix=prefix), _archive_file(checked, prefix)
         case WithoutLogsVersion(final=final, text=text):
             start, comment, archive = final.journal.started, exact_text(text).text, None
         case _:
@@ -239,13 +242,13 @@ def post_of(version: CommentVersion) -> LogsPost:
             label=LABEL,
             line=tool(f"- Logi Uruchomienia okresu: {period}"),
             closed="reuse",
-            title=tool(f"Logi Uruchomienia {period}"),
+            title=titled(prefix, tool(f"Logi Uruchomienia {period}")),
         ),
         period=period,
         run_id=tool(tool_text("RunLog.run_id", start.run_id)),
         header=tool(
             f"Logi Uruchomień okresu {period} z Centrum rozliczeń taty. Każde Uruchomienie to jeden komentarz: "
-            f"podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu (Release `logi-{period}`)."
+            f"podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu (Release `{_tag(prefix, period)}`)."
         ),
         parts=(tool(comment + "\n"),),
         archive=archive,
@@ -302,12 +305,16 @@ def _orders_done(progress: PricingProgress) -> str | None:
     return f"{len(progress.done)} z {progress.total} skończone" + (f" ({outcomes})" if outcomes else "")
 
 
-def _archive_file(logs: GuardedLogs, templates: tuple[ArchivedTemplate, ...] = ()) -> ArchiveFile:
+def _tag(prefix: BoxPrefix | None, period: str) -> Outgoing:
+    return tagged(prefix, tool(f"logi-{period}"))
+
+
+def _archive_file(logs: GuardedLogs, prefix: BoxPrefix | None, templates: tuple[ArchivedTemplate, ...] = ()) -> ArchiveFile:
     record = logs.record
     period = record.period
     return ArchiveFile(
-        tag=tool(f"logi-{period}"),
-        title=tool(f"Logi Uruchomień {period}"),
+        tag=_tag(prefix, period),
+        title=titled(prefix, tool(f"Logi Uruchomień {period}")),
         description=tool(
             f"Pełne Logi Uruchomień okresu {period} z Centrum rozliczeń taty: jeden plik na Uruchomienie, nazwany jak "
             "plik Logów na komputerze taty i spakowany gzipem, a obok Wzorce taty, którymi liczyły, każda wersja raz "
@@ -319,11 +326,11 @@ def _archive_file(logs: GuardedLogs, templates: tuple[ArchivedTemplate, ...] = (
     )
 
 
-def summary_markdown(logs: GuardedLogs) -> str:
+def summary_markdown(logs: GuardedLogs, *, prefix: BoxPrefix | None = None) -> str:
     record = logs.record
     commit = "nieznany" if record.tool.commit is None else short_commit(record.tool.commit)
     diagnosis = "" if record.diagnosis is None else f"- Diagnoza: {_diagnosis(record.diagnosis)}\n"
-    archive = _archive_file(logs)
+    archive = _archive_file(logs, prefix)
     return (
         _comment_title(record)
         + f"- Wynik: {_result(record)}\n"

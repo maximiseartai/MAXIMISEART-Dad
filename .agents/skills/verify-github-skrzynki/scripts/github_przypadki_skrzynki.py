@@ -19,6 +19,7 @@ from typing import Final, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
+from rozliczenia.centrum.box_prefix import BoxPrefix
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.report_box import (
@@ -410,6 +411,7 @@ def _prepare_closed(live: SkrzynkaLive, earlier: Facts) -> Facts:
     live.settle("zgloszenie", "open", {live.number("zalozenie")}, exact=True)
     return {
         "otwarte": live.number("zalozenie"),
+        "tytul_otwartego": opened["tytul"],
         "tresc_otwartego": text(opened),
         CAUGHT_UP: live.settle("zgloszenie", "all", every),
         **numbers,
@@ -434,7 +436,7 @@ def _judge_closed(facts: Facts, outcome: object) -> list[str]:
         _int(facts, "nie_planowane"),
         _int(facts, "zrobione"),
     )
-    problems = _expect(only_open, (Issue(opened, str(facts["tresc_otwartego"])),))
+    problems = _expect(only_open, (Issue(opened, str(facts["tresc_otwartego"]), None, str(facts["tytul_otwartego"])),))
     if not isinstance(every, tuple) or sorted(_numbers(every) or []) != sorted([opened, not_planned, done]):
         return [
             *problems,
@@ -615,6 +617,40 @@ LIMIT_SOURCE: Final = "tests/test_github_skrzynki.py (pomiar #332: 65 536 znakó
 
 def _is(expected: object) -> Callable[[Facts, object], list[str]]:
     return lambda facts, outcome: _expect(outcome, expected)
+
+
+WORKSTATIONS: Final[dict[str, BoxPrefix | None]] = {"tata": None, "andrzej": BoxPrefix.ANDRZEJ}
+
+
+def _prepare_workstations(live: SkrzynkaLive, earlier: Facts) -> Facts:
+    titles = {"tata": _title(live, "logi-taty"), "andrzej": f"{BoxPrefix.ANDRZEJ} {_title(live, 'logi-andrzeja')}"}
+    body = f"{live.marker}\n\n- Logi Uruchomienia okresu: verify-{live.run}\n"
+    numbers = {name: live.open("logi-uruchomienia", title, body) for name, title in titles.items()}
+    return {"tytuly": titles, "numery": numbers, CAUGHT_UP: live.settle("logi-uruchomienia", "open", set(numbers.values()))}
+
+
+def _workstations(client: Client, facts: Facts) -> object:
+    return {
+        name: KeyedBox(client.box, lambda: client.key, clock=time.monotonic, prefix=prefix).labelled_issues(
+            "logi-uruchomienia", include_closed=False
+        )
+        for name, prefix in WORKSTATIONS.items()
+    }
+
+
+def _judge_workstations(facts: Facts, outcome: object) -> list[str]:
+    titles, numbers = cast(dict[str, str], facts["tytuly"]), cast(dict[str, int], facts["numery"])
+    lists = cast(dict[str, object], outcome)
+    problems: list[str] = []
+    for name, listed in lists.items():
+        if not isinstance(listed, tuple):
+            problems.append(f"lista Stanowiska {name}: {listed}")
+            continue
+        seen = {issue.number: issue.title for issue in listed}
+        if seen.get(numbers[name]) != titles[name]:
+            problems.append(f"lista Stanowiska {name}: issue {numbers[name]} z tytułem {seen.get(numbers[name])!r}, oczekiwane {titles[name]!r}")
+        problems += [f"lista Stanowiska {name} ma issue {numbers[other]} Stanowiska {other}" for other in WORKSTATIONS if other != name and numbers[other] in seen]
+    return problems
 
 
 CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
@@ -817,6 +853,14 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
         _prepare_deleted,
         _deleted,
         _judge_deleted,
+    ),
+    Case(
+        "tytuly-stanowisk",
+        "lista każdego Stanowiska ma swoje issue Logów okresu z tytułem bez zmian, a issue drugiego Stanowiska nie ma",
+        "GLOSSARY.md: Skrzynka Zgłoszeń, prefiks ANDRZEJ w tytule (spec #2439); tests/test_klucz_zgloszen.py: test_lista_spraw_stanowiska_ma_tylko_issue_z_jego_prefiksem_na_poczatku_tytulu",
+        _prepare_workstations,
+        _workstations,
+        _judge_workstations,
     ),
 )
 
