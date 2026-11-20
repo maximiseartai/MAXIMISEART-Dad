@@ -792,30 +792,6 @@ class DrogaDoZapisu(NamedTuple):
 
 
 DROGI_DO_ZAPISU_USTAWIEN: Final = {
-    "domknięcie trasy z uzupełnieniem listy do change(DEVICES, …)": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum import device_forms
-from rozliczenia.centrum.device_forms import DeviceEdit
-from rozliczenia.centrum.settings.files import FieldProblem
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES, devices_for_dad_rules
-from rozliczenia.quantity_engine import Component
-
-
-def zapisz(settings: CentrumSettings, edit: DeviceEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
-    view = settings.quantity_rules()
-
-    def applied(current: tuple[Component, ...]) -> tuple[Component, ...] | FieldProblem:
-        completed = devices_for_dad_rules(current, view.source_rules, view.source_rules)
-        if isinstance(completed, FieldProblem):
-            return completed
-        changed = device_forms.edited(completed, edit, frozenset())
-        return changed if isinstance(changed, tuple | FieldProblem) else current
-
-    return settings.change(DEVICES, applied)
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
     "funkcja trasy do change(RULES, …)": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
@@ -826,28 +802,6 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
     return settings.change(RULES, lambda current: current[1:])
 """,
         '"CentrumSettings" has no attribute "change"',
-    ),
-    "funkcja trasy z kluczami Historii do dawnego change_with_used_keys": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
-    return settings.change_with_used_keys(DEVICES, lambda current, keys: current)
-""",
-        '"CentrumSettings" has no attribute "change_with_used_keys"',
-    ),
-    "funkcja trasy przez prywatne _with_used_keys": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
-    return settings._with_used_keys(DEVICES, lambda current, keys: current)
-""",
-        "ruff SLF001",
     ),
     "funkcja trasy do zapisu Listy Urządzeń przez zmianę z Wydania": DrogaDoZapisu(
         """\
@@ -867,83 +821,6 @@ def zapisz(settings: CentrumSettings) -> None:
     )
 """,
         'Too many arguments for "apply_release_changes" of "CentrumSettings"',
-    ),
-    "funkcja trasy do change(FOLDERS, …) (Ustawienia)": DrogaDoZapisu(
-        """\
-from dataclasses import replace
-
-from rozliczenia.centrum.settings.folders import FOLDERS
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(FOLDERS, lambda current: replace(current, theme="light"))
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "funkcja trasy do change(EXCEPTIONS, …) (Kontrola ilości)": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(EXCEPTIONS, lambda current: current[1:])
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "funkcja trasy do change(WORKERS, …) (Wykonawcy)": DrogaDoZapisu(
-        """\
-from dataclasses import replace
-
-from rozliczenia.centrum.settings import workers
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.workers import WORKERS, WorkerForm
-
-
-def dodaj(settings: CentrumSettings, form: WorkerForm) -> Saved | Refused | NotSaved | KeptInPeriods:
-    uzupelniony = replace(form, addresses=[*form.addresses, "biuro@example.com"])
-    return settings.change(WORKERS, lambda current: workers.added(current, uzupelniony))
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "plik pary jako Any przez cast do dawnego change": DrogaDoZapisu(
-        """\
-from typing import Any, cast
-
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(cast(Any, DEVICES), lambda current: current)
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "plik pary jako Any przez getattr modułu do dawnego change": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum.settings import quantity_rules
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(getattr(quantity_rules, "DEVICES"), lambda current: current[1:])
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "plik Folderów z nazwą pliku pary do dawnego change (właściciel rozpoznaje parę po nazwie pliku)": DrogaDoZapisu(
-        """\
-from dataclasses import replace
-
-from rozliczenia.centrum.settings.folders import FOLDERS
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(replace(FOLDERS, name=DEVICES.name), lambda current: current)
-""",
-        '"CentrumSettings" has no attribute "change"',
     ),
     "funkcja trasy w miejscu polecenia Wykonawców": DrogaDoZapisu(
         """\

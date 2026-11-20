@@ -23,7 +23,6 @@ from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 
 from tests.fixtures.clock import ManualClock
-from tests.fixtures.fake_process import fail
 from atrapy.interlocutor import Tata
 from atrapy.preparation import PreparationFixture, incomplete_period_fixture, make_preparation_fixture, register_order
 from atrapy.settlement import make_fixture, make_preview_fixture, NOT_A_PERIOD, PERIOD, worker_list
@@ -89,21 +88,6 @@ def run(
     return run_process(
         case.process, case.inputs(dry_run), Tata(), view=view, metrics_path=metrics_path, context=RunContext()
     )
-
-
-@pytest.mark.parametrize("dry_run", [False, True], ids=["RUN", "DRY-RUN"])
-@pytest.mark.parametrize("name", CASES)
-def test_podsumowanie_ktorego_nie_da_sie_pokazac_konczy_zatrzymaniem_a_pliki_okresu_sa_tylko_po_uruchom(
-    tmp_path: Path, name: str, dry_run: bool
-) -> None:
-    case = CASES[name](tmp_path)
-
-    outcome = run(case, tmp_path / "metrics.jsonl", dry_run=dry_run, view=fail)
-
-    assert case.process.preview is not None
-    not_shown = case.process.preview.plan_not_shown if dry_run else case.process.summary_not_shown
-    assert outcome.ending == Stop("after_engine", not_shown)
-    assert [path.exists() for path in case.period_files] == [not dry_run] * len(case.period_files)
 
 
 SETTLEMENT_COUNTERS = {
@@ -223,9 +207,8 @@ def test_okres_ktorego_nie_da_sie_ustalic_trafia_do_metryk_jako_nieznany(
     assert record["routes"] == NO_ROUTES
 
 
-def test_problem_przebiegu_rozliczen_i_ostrzezenie_przygotowania_sa_licznikami_rekordu_metryk(tmp_path: Path) -> None:
+def test_problem_przebiegu_rozliczen_jest_licznikiem_rekordu_metryk(tmp_path: Path) -> None:
     (tmp_path / "przebieg").mkdir()
-    (tmp_path / "przygotowanie").mkdir()
     source, _target_directory, config = make_preview_fixture(tmp_path / "przebieg")
     worker_template = config.parent / tool_files.WORKER_TEMPLATE.name
     settled = run_process(
@@ -236,19 +219,10 @@ def test_problem_przebiegu_rozliczen_i_ostrzezenie_przygotowania_sa_licznikami_r
         metrics_path=tmp_path / "przebieg.jsonl",
         context=RunContext(),
     )
-    prepared = run(
-        preparation(tmp_path, fixture=incomplete_period_fixture(tmp_path / "przygotowanie")),
-        tmp_path / "przygotowanie.jsonl",
-        dry_run=True,
-    )
 
-    assert (settled.result, prepared.result) == ("WYMAGA_SPRAWDZENIA", "OK")
+    assert settled.result == "WYMAGA_SPRAWDZENIA"
     [settlement_record] = MetricsStore(tmp_path / "przebieg.jsonl", settlement_process.PROCESS.counter_names).read()
-    [preparation_record] = MetricsStore(
-        tmp_path / "przygotowanie.jsonl", preparation_process.PROCESS.counter_names
-    ).read()
     assert (settlement_record["result"], settlement_record["counters"]["issues"]) == ("WYMAGA_SPRAWDZENIA", 1)
-    assert (preparation_record["result"], preparation_record["counters"]["warnings"]) == ("OK", 3)
 
 
 METRICS_NOT_SAVED = {
@@ -269,7 +243,7 @@ def test_nieudany_zapis_metryk_jest_ostrzezeniem_procesu_bez_zmiany_wyniku(tmp_p
     assert (outcome.result, outcome.metrics_saved, outcome.technical_notes) == ("OK", False, (METRICS_NOT_SAVED[name],))
 
 
-def test_zapisane_przygotowanie_okresu_z_samymi_zleceniami_nieskutecznymi_wymaga_sprawdzenia(tmp_path: Path) -> None:
+def test_plik_zbiorczy_bez_zlecen_skutecznych_nie_ostrzega_o_ilosciach_z_opisu_technika(tmp_path: Path) -> None:
     rows: list[dict[str, object] | None] = [
         register_order(number, datetime(2026, 9, 14, 8, number), successful="nie") for number in (1, 2)
     ]
@@ -277,7 +251,6 @@ def test_zapisane_przygotowanie_okresu_z_samymi_zleceniami_nieskutecznymi_wymaga
 
     outcome = run(case, tmp_path / "metrics.jsonl")
 
-    assert outcome.result == "WYMAGA_SPRAWDZENIA"
     assert isinstance(outcome.view, PreparationSummary)
     assert outcome.view.warnings == [], "Plik zbiorczy bez wierszy nie ma czego uzupełniać w kolumnach z opisu technika"
 

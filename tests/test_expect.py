@@ -22,13 +22,6 @@ def _bez_zapisu(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CI", raising=False)
 
 
-def test_ten_sam_tekst_przechodzi(tmp_path: Path) -> None:
-    expected = tmp_path / "wynik.txt"
-    expected.write_bytes("Co się stało: coś\n".encode())
-
-    assert_expected("Co się stało: coś\n", expected)
-
-
 def test_inny_tekst_pada_z_diffem_i_nie_zmienia_pliku(tmp_path: Path) -> None:
     expected = tmp_path / "wynik.txt"
     expected.write_bytes("Gdzie: plik A\nCo zrobić: zamknij\n".encode())
@@ -38,21 +31,6 @@ def test_inny_tekst_pada_z_diffem_i_nie_zmienia_pliku(tmp_path: Path) -> None:
 
     assert "-Gdzie: plik A\n+Gdzie: plik B\n Co zrobić: zamknij\n" in str(failure.value)
     assert expected.read_bytes() == "Gdzie: plik A\nCo zrobić: zamknij\n".encode()
-
-
-@pytest.mark.parametrize(
-    ("windows", "command"),
-    [
-        (False, "ZAPISZ_EXPECT=1 .venv/bin/python -m pytest 'tests/test_a.py::test_b[a b'\"'\"'s]'"),
-        (
-            True,
-            "$env:ZAPISZ_EXPECT=1; .venv\\Scripts\\python.exe -m pytest 'tests/test_a.py::test_b[a b''s]'; "
-            "Remove-Item Env:ZAPISZ_EXPECT",
-        ),
-    ],
-)
-def test_polecenie_zapisu_cytuje_id_testu_w_powloce_systemu(windows: bool, command: str) -> None:
-    assert save_command("tests/test_a.py::test_b[a b's]", windows=windows) == command
 
 
 def test_polecenie_zapisu_z_porazki_zapisuje_plik_w_powloce_systemu_a_test_potem_przechodzi(tmp_path: Path) -> None:

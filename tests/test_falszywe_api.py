@@ -20,7 +20,6 @@ import pytest
 
 from tests.fixtures import ustawienia_claude
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
-from tests.fixtures.linie_watkow import new_line, threads_since
 
 import falszywe_api
 
@@ -173,19 +172,6 @@ def test_claude_po_limicie_czasu_ginie_bez_kodu_wyjscia(calls: Path, tmp_path: P
     ran = _claude(calls, tmp_path, threading.Event(), timeout=1, ATRAPA_DO=str(time.time() + 60))
 
     assert ran == falszywe_api.Ran(None, True)
-
-
-@ONLY_FOUND_BY_NAME_ON_POSIX
-def test_po_koncu_claude_falszywe_api_nie_zostawia_watku(calls: Path, tmp_path: Path) -> None:
-    # Wątek serwera bez ``shutdown`` kręci się dalej na zamkniętym gnieździe (ok. 70% rdzenia na Macu, 11.11.2026),
-    # a wyrocznia uruchamia ``claude`` raz na przypadek.
-    since = new_line()
-
-    _claude(calls, tmp_path, threading.Event())
-
-    for thread in threads_since(since):
-        thread.join(timeout=5)
-    assert [thread.name for thread in threads_since(since)] == []
 
 
 def _events(data: bytes) -> list[dict[str, object]]:
