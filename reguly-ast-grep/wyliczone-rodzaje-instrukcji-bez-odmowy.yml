@@ -30,4 +30,4 @@ rule:
         kind: for_statement
         has:
           field: right
-          regex: '\bbody(\[[^\]]*\])?$'
+          regex: '\bbody\b'
