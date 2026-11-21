@@ -1,17 +1,21 @@
-"""Sekwencer etapów: tylko zachowanie, którego poprawne procesy nie mogą wywołać.
-
-Pełne przebiegi z prawdziwą projekcją postępu jako obserwatorem są w testach
-Przebiegu rozliczeń i Przygotowania pliku zbiorczego.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
 
 import pytest
 
-from rozliczenia.domain import PhaseFailed, ProgressEvent, ProgressProtocolError, StepReached
+from rozliczenia.domain import (
+    PhaseEnded,
+    PhaseFailed,
+    PhaseStarted,
+    ProgressEvent,
+    ProgressPhase,
+    ProgressProtocolError,
+    StepReached,
+)
 from rozliczenia.phase_runner import PhaseRunner
+
+from tests.fixtures.clock import ManualClock
 
 
 def fail() -> None:
@@ -158,3 +162,61 @@ def test_zapisywanie_bez_szablonow_pracownika_z_planu_jest_bledem_kodu() -> None
         runner.save(lambda: None)
 
     assert isinstance(events[-1], PhaseFailed)
+
+
+def test_obserwator_ktory_pada_jest_odlaczony_do_konca_uruchomienia_a_etapy_ida_dalej() -> None:
+    seen: list[ProgressEvent] = []
+
+    def failing(event: ProgressEvent) -> None:
+        seen.append(event)
+        raise RuntimeError("obserwator nie działa")
+
+    runner = PhaseRunner(failing)
+    run_whole(runner)
+
+    assert [type(event) for event in seen] == [PhaseStarted]
+    assert set(runner.durations_ms()) == set(ProgressPhase)
+
+
+def test_przerwany_etap_ma_czas_do_przerwania() -> None:
+    clock = ManualClock()
+    runner = PhaseRunner(None, clock=clock)
+    runner.check(lambda: clock.advance(0.05))
+
+    def read() -> None:
+        clock.advance(0.025)
+        fail()
+
+    with pytest.raises(RuntimeError):
+        runner.read(read)
+
+    assert dict(runner.durations_ms()) == {ProgressPhase.CHECKING: 50, ProgressPhase.READING: 25}
+
+
+def test_czas_uruchomienia_liczy_sie_od_utworzenia_sekwencera() -> None:
+    clock = ManualClock()
+    events: list[ProgressEvent] = []
+    runner = PhaseRunner(events.append, clock=clock)
+    clock.advance(0.1)
+
+    runner.check(lambda: clock.advance(0.05))
+
+    assert [(type(event), event.elapsed_ms) for event in events][:2] == [(PhaseStarted, 100), (PhaseEnded, 150)]
+
+
+@pytest.mark.parametrize(
+    "orders",
+    [{"done": -1, "total": 1}, {"done": 0, "total": -1}, {"done": True, "total": 1}],
+    ids=["ujemne-zrobione", "ujemna-suma", "prawda-zamiast-liczby"],
+)
+def test_krok_zapisywania_z_liczba_zlecen_inna_niz_nieujemna_calkowita_jest_bledem_kodu(orders: dict[str, int]) -> None:
+    events: list[ProgressEvent] = []
+    runner = PhaseRunner(events.append)
+    runner.check(lambda: None)
+    runner.read(lambda: None)
+    runner.plan(lambda: None, issue_count=lambda _planned: 0)
+
+    with pytest.raises(ProgressProtocolError):
+        runner.save(lambda: runner.step("Zlecenia", worker="adrian.testowy", **orders))
+
+    assert not any(isinstance(event, StepReached) for event in events)

@@ -1,5 +1,3 @@
-"""Zegar jednego Uruchomienia procesu: jedyna pauza Uruchomienia."""
-
 from __future__ import annotations
 
 import time
@@ -8,14 +6,6 @@ from contextlib import contextmanager
 
 
 class RunClock:
-    """Zegar Uruchomienia w sekundach bez czasu czekania na tatę.
-
-    W trakcie ``hold()`` ``now()`` stoi i po wyjściu rusza od tej samej wartości; zagnieżdżone ``hold()`` liczy się raz.
-    Rdzeń (``Czas uruchomienia``), sekwencer etapów (czasy etapów, ``elapsed_ms`` Zdarzeń przebiegu) i ślad zleceń
-    efenix czytają ten sam zegar, więc jedno ``hold()`` (Decyzja taty, czekanie na logowanie w efenix) wstrzymuje
-    wszystkie naraz. ``raw``: zegar w sekundach, który biegnie także w czasie czekania.
-    """
-
     def __init__(self, raw: Callable[[], float] = time.perf_counter) -> None:
         self._raw = raw
         self._held_s = 0.0

@@ -1,5 +1,3 @@
-"""Sekwencer etapów: protokół etapów procesu, Zdarzenia przebiegu i pomiar czasów."""
-
 from __future__ import annotations
 
 import time
@@ -44,37 +42,6 @@ def _count(value: int, label: str) -> int:
 
 
 class PhaseRunner:
-    """Właściciel protokołu etapów jednego uruchomienia procesu.
-
-    Proces wywołuje cztery etapy w stałej kolejności: ``check``, ``read``,
-    ``plan`` i ``save``. Sekwencer wysyła ``PhaseStarted``, ``PhaseEnded`` albo
-    jedno ``PhaseFailed`` każdego etapu oraz zdarzenia pośrednie:
-    ``IssueCountReady`` po Odczycie danych i ``PlanReady`` po Planowaniu.
-    W Zapisywaniu ``each_template`` prowadzi po kolei Szablony pracownika
-    Wykonawców z planu i wysyła ich zdarzenia, a proces bez Szablonów (Wycena w
-    efenix) zgłasza swoje kroki Zapisywania przez ``step``.
-
-    Funkcje liczące są czystymi funkcjami wyniku etapu; sekwencer wywołuje je
-    przed END. Liczba problemów jest łączna dla uruchomienia, a pominięta w
-    Planowaniu oznacza wartość z Odczytu danych.
-
-    Sekwencer jest jedynym nadawcą Zdarzeń przebiegu i jedynym miejscem, które
-    sprawdza kolejność etapów. Pomyłka to ``ProgressProtocolError`` w miejscu
-    wywołania, także bez obserwatora.
-
-    Przerwany etap kończy uruchomienie: kolejnego etapu już nie ma, a jego
-    wywołanie to ``ProgressProtocolError``. Zapisywanie przerwane wyjątkiem
-    Szablonu pracownika ma jedno FAILED, ``WorkerFailed`` tego Szablonu: drugiego
-    FAILED etapu (``PhaseFailed``) sekwencer już nie wysyła.
-
-    Zegar uruchomienia startuje przy utworzeniu. Awaria obserwatora odłącza go
-    do końca uruchomienia i nie zmienia wyniku etapów. Czas etapu jest
-    zapisywany także po przerwaniu. ``clock`` to zegar w sekundach, z którego
-    sekwencer liczy wszystkie czasy: w Uruchomieniu zegar Uruchomienia
-    (``run_clock.RunClock.now``), który stoi w czasie czekania na tatę, więc
-    ten czas nie wlicza się do czasów etapów ani do ``elapsed_ms`` zdarzeń.
-    """
-
     def __init__(self, observer: ProgressObserver | None, *, clock: Callable[[], float] = time.perf_counter) -> None:
         self._observer = observer
         self._clock = clock
@@ -112,8 +79,6 @@ class PhaseRunner:
         templates: Callable[[ResultT], Sequence[str]] = _no_templates,
         issue_count: Callable[[ResultT], int],
     ) -> ResultT:
-        """``templates``: Wykonawcy Szablonów pracownika po kolei."""
-
         def record_counts(result: ResultT) -> None:
             self._record_issue_count(issue_count(result))
             self._templates = tuple(templates(result))
@@ -165,8 +130,6 @@ class PhaseRunner:
         return results
 
     def step(self, label: str, *, worker: str | None = None, done: int = 0, total: int = 0) -> None:
-        """W trwającym Zapisywaniu wysyła ``StepReached``: krok ``label``, Wykonawca i ``done`` z ``total`` zleceń."""
-
         if self._active_phase is not ProgressPhase.SAVING:
             raise ProgressProtocolError("Krok Zapisywania zgłasza się tylko w trakcie Zapisywania.")
         self._emit(
@@ -180,13 +143,9 @@ class PhaseRunner:
         )
 
     def elapsed_ms(self) -> int:
-        """Czas od rozpoczęcia uruchomienia, bez czasu wstrzymania."""
-
         return self._ms_since(self._run_started)
 
     def phase_elapsed_ms(self) -> int:
-        """Czas od rozpoczęcia bieżącego (ostatniego) etapu."""
-
         return self._ms_since(self._phase_started)
 
     def durations_ms(self) -> Mapping[ProgressPhase, int]:
