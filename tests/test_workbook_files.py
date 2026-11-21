@@ -14,6 +14,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from types import MappingProxyType
 from typing import IO, Any, cast
 
 import pytest
@@ -21,7 +22,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
-from openpyxl.styles import Color, Font, PatternFill
+from openpyxl.styles import Color, Font, PatternFill, Protection
 from openpyxl.styles.fills import Fill
 from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import column_index_from_string, get_column_letter
@@ -33,6 +34,7 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
 from rozliczenia.collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, INPUT_COLUMNS, LOOK_COLUMNS
 from rozliczenia.highlights import Highlights
+from rozliczenia.hyperlinks import Hyperlink
 from rozliczenia.register_columns import TARGET_HEADERS
 from rozliczenia.workbook_files import (
     DataRow,
@@ -180,8 +182,42 @@ OPENINGS: dict[str, Callable[[Path], object]] = {
 }
 
 
+def broken_sheet_compression(path: Path) -> None:
+    data = bytearray(path.read_bytes())
+    with zipfile.ZipFile(path) as archive:
+        info = archive.getinfo("xl/worksheets/sheet1.xml")
+    assert info.compress_type == zipfile.ZIP_DEFLATED
+    name_length, extra_length = struct.unpack("<HH", data[info.header_offset + 26 : info.header_offset + 30])
+    start = info.header_offset + 30 + name_length + extra_length
+    data[start : start + 8] = b"\xff" * 8
+    path.write_bytes(bytes(data))
+
+
+def without_workbook_part(path: Path) -> None:
+    kept = BytesIO()
+    with zipfile.ZipFile(path) as archive, zipfile.ZipFile(kept, "w", zipfile.ZIP_DEFLATED) as copied:
+        assert "xl/workbook.xml" in archive.namelist()
+        for info in archive.infolist():
+            if info.filename != "xl/workbook.xml":
+                copied.writestr(info, archive.read(info))
+    path.write_bytes(kept.getvalue())
+
+
+def bad_number_in_first_quantity(path: Path) -> None:
+    def change(name: str, data: bytes) -> bytes:
+        if name != "xl/worksheets/sheet1.xml":
+            return data
+        changed, count = re.subn(rb'(<c r="N18"[^>]*>)<v>0</v>', rb"\1<v>x</v>", data)
+        assert count == 1
+        return changed
+
+    rewrite_parts(path, change)
+
+
 DAMAGES: dict[str, Callable[[Path], None]] = {
     "nie-zip": not_a_zip,
+    "zepsuta-kompresja-arkusza": broken_sheet_compression,
+    "bez-workbook-xml": without_workbook_part,
     "uciety-xml-arkusza": cut_sheet_after_data_rows,
     "xml-arkusza-uciety-za-wierszami-danych": cut_sheet_after_sheet_data,
     "zepsuty-pusty-wiersz-danych": break_empty_data_row,
@@ -241,14 +277,21 @@ def _wrong_checksum(path: Path, part: str) -> None:
 
 @pytest.mark.parametrize("route", [Route.COPY, Route.OPENPYXL], ids=["kopia", "openpyxl"])
 @pytest.mark.parametrize("opening", [_check_template, _plan_template])
-def test_wzorzec_pliku_zbiorczego_z_zla_suma_kontrolna_czesci_arkusza_jest_nieczytelny_na_obu_drogach(
-    tmp_path: Path, opening: Callable[[Path], None], route: Route
+@pytest.mark.parametrize(
+    "damage",
+    [
+        pytest.param(lambda path: _wrong_checksum(path, "xl/worksheets/sheet1.xml"), id="zla-suma-kontrolna-arkusza"),
+        pytest.param(bad_number_in_first_quantity, id="zla-liczba-w-ilosci-uslug"),
+    ],
+)
+def test_wzorzec_pliku_zbiorczego_z_uszkodzonym_arkuszem_jest_nieczytelny_na_obu_drogach(
+    tmp_path: Path, opening: Callable[[Path], None], route: Route, damage: Callable[[Path], None]
 ) -> None:
     path = write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
     if route is Route.OPENPYXL:
         refused_by_copy(path)
     assert TemplateFile.collective_file(path).create(tmp_path / "Plik zbiorczy.xlsx", []) is route
-    _wrong_checksum(path, "xl/worksheets/sheet1.xml")
+    damage(path)
 
     with pytest.raises(WorkbookError) as raised:
         opening(path)
@@ -284,8 +327,8 @@ def test_numer_stylu_poza_komorka_i_wierszem_nie_czyni_wzorca_nieczytelnym(tmp_p
 
 
 _OUTSIDE_STYLES = {
-    "wiersza": (rb'<row r="([0-9]+)"', rb'<row r="\1" s="%d" customFormat="1"'),
-    "kolumny": (rb'(<col [^>]*?)style="[0-9]+"', rb'\1style="%d"'),
+    "wiersza": (rb'<row r="([0-9]+)"', rb'<row r="\1" s="%b" customFormat="1"'),
+    "kolumny": (rb'(<col [^>]*?)style="[0-9]+"', rb'\1style="%b"'),
 }
 
 
@@ -311,13 +354,14 @@ def _cell_style_count(path: Path) -> int:
         pytest.param(lambda count: count + 1, id="o-jeden-dalej"),
         pytest.param(lambda count: 10 ** len(str(count)), id="pierwszy-o-cyfre-dluzszy"),
         pytest.param(lambda count: 99999, id="daleko"),
+        pytest.param(lambda count: f"00{count}", id="z-zerami-na-poczatku"),
     ],
 )
 @pytest.mark.parametrize("opening", [_check_template, _plan_template])
 def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(
     tmp_path: Path,
     opening: Callable[[Path], None],
-    outside: Callable[[int], int],
+    outside: Callable[[int], int | str],
     styled: str,
     make: Callable[[Path], Path],
     route: Route,
@@ -325,7 +369,7 @@ def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(
     path = make(tmp_path / "Skoroszyt.xlsx")
     assert TemplateFile.collective_file(path).create(tmp_path / "Plik zbiorczy.xlsx", []) is route
     pattern, replacement = _OUTSIDE_STYLES[styled]
-    style = outside(_cell_style_count(path))
+    style = str(outside(_cell_style_count(path))).encode("ascii")
     rewrite_parts(
         path,
         lambda name, data: (
@@ -354,6 +398,44 @@ def test_planowanie_czyta_wzorzec_pliku_zbiorczego_zmieniony_po_sprawdzaniu(tmp_
         template.plan(1)
 
     assert raised.value.problem is Problem.LAYOUT
+
+
+def test_kolejne_rozliczenia_pracownikow_powstaja_z_bajtow_wzorca_przeczytanych_przy_pierwszym(tmp_path: Path) -> None:
+    template_path = write_synthetic_templates(tmp_path / "wzorce") / WORKER_TEMPLATE
+    template = TemplateFile.worker_settlement(template_path)
+    template.check()
+    template.create(tmp_path / "Rozliczenie - Pierwszy.xlsx", [_data_row(_row(A="syntetyczne miasto 1"))])
+    not_a_zip(template_path)
+
+    route = template.create(tmp_path / "Rozliczenie - Drugi.xlsx", [_data_row(_row(A="syntetyczne miasto 2"))])
+
+    assert route is Route.COPY
+    saved = load_workbook(tmp_path / "Rozliczenie - Drugi.xlsx")
+    try:
+        assert active_worksheet(saved)["A18"].value == "syntetyczne miasto 2"
+    finally:
+        saved.close()
+
+
+def test_planowanie_zglasza_to_samo_scalenie_wierszy_danych_na_obu_drogach(tmp_path: Path) -> None:
+    def first_merge(route: Route) -> object:
+        (tmp_path / route.name).mkdir()
+        path = write_collective_template(tmp_path / route.name / tool_files.COLLECTIVE_TEMPLATE.name)
+        workbook = load_workbook(path, keep_links=True)
+        try:
+            for merged in ("U18:V18", "N18:O18", "AF18:AG18", "AA18:AB18"):
+                active_worksheet(workbook).merge_cells(merged)
+            workbook.save(path)
+        finally:
+            workbook.close()
+        if route is Route.OPENPYXL:
+            refused_by_copy(path)
+        assert TemplateFile.collective_file(path).create(tmp_path / route.name / "Plik zbiorczy.xlsx", []) is route
+        with pytest.raises(WorkbookError) as raised:
+            TemplateFile.collective_file(path).plan(1)
+        return raised.value.fault
+
+    assert first_merge(Route.COPY) == first_merge(Route.OPENPYXL)
 
 
 @pytest.mark.parametrize("opening", OPENINGS)
@@ -471,6 +553,36 @@ def test_naglowek_wykonawca_nie_zalezy_od_wielkosci_liter_i_spacji(tmp_path: Pat
 
     _check_template(path)
     assert len(read_data_rows(path, DadFiles()).rows) == 3
+
+
+def _worker_template(path: Path) -> Path:
+    write_template(path)
+    return path
+
+
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+@pytest.mark.parametrize(
+    ("make", "template"),
+    [
+        pytest.param(write_collective_template, TemplateFile.collective_file, id="wzorzec-pliku-zbiorczego"),
+        pytest.param(_worker_template, TemplateFile.worker_settlement, id="wzorzec-rozliczenia-pracownika"),
+    ],
+)
+def test_naglowek_wykonawca_z_przebiegow_tekstu_bez_transkrypcji_fonetycznej(
+    tmp_path: Path, make: Callable[[Path], Path], template: Callable[[Path], TemplateFile], copied: bool
+) -> None:
+    path = make(tmp_path / "Wzorzec.xlsx")
+    replace_cells(
+        path,
+        {
+            "H17": '<c r="H17" t="inlineStr"><is><r><t>WYKO</t></r><r><rPr><b/></rPr><t>NAWCA</t></r>'
+            '<rPh sb="0" eb="4"><t>ウィコ</t></rPh></is></c>'
+        },
+    )
+    (marked_for_copy if copied else refused_by_copy)(path)
+
+    template(path).check()
+    assert template(path).create(tmp_path / "Plik z Wzorca.xlsx", []) is (Route.COPY if copied else Route.OPENPYXL)
 
 
 def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_a_at(tmp_path: Path) -> None:
@@ -707,7 +819,7 @@ def calculation_flags(path: Path) -> dict[str, str | None]:
         "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}calcPr"
     )
     assert calculation is not None
-    return {name: calculation.get(name) for name in ("calcMode", "fullCalcOnLoad", "forceFullCalc")}
+    return {name: calculation.get(name) for name in ("calcMode", "fullCalcOnLoad", "forceFullCalc", "calcId")}
 
 
 def test_rozliczenie_pracownika_z_wzorca_zachowuje_wspolne_formuly_calcchain_i_flagi_przeliczania(tmp_path: Path) -> None:
@@ -726,7 +838,12 @@ def test_rozliczenie_pracownika_z_wzorca_zachowuje_wspolne_formuly_calcchain_i_f
     assert shared_formula_masters(target_path) == shared_formula_masters(template_path)
     assert len(shared_formula_masters(template_path)) > 4
     assert zip_part(target_path, "xl/calcChain.xml") == zip_part(template_path, "xl/calcChain.xml")
-    assert calculation_flags(target_path) == {"calcMode": "auto", "fullCalcOnLoad": "1", "forceFullCalc": "1"}
+    assert calculation_flags(target_path) == {
+        "calcMode": "auto",
+        "fullCalcOnLoad": "1",
+        "forceFullCalc": "1",
+        "calcId": calculation_flags(template_path)["calcId"],
+    }
     assert external_link_parts(target_path) == external_link_parts(template_path)
     saved = load_workbook(target_path)
     try:
@@ -797,6 +914,7 @@ VALUE_ROWS: list[ExcelRow] = [
         P=Decimal("2.5"),
         Q=time(13, 45),
         R=False,
+        S="x" * 32767 + "za limitem openpyxl",
         AT="zażółć gęślą jaźń\nnowa linia",
     ),
     _row(A="tylko miasto"),
@@ -832,6 +950,7 @@ def test_rozliczenie_pracownika_ma_wartosci_kazdego_typu_jak_plik_z_wzorca(tmp_p
         assert (written["I18"].value, written["J18"].value, written["R18"].value) == (1.234567890123457e16, True, False)
         assert (written["O18"].value, written["P18"].value) == (1.25, 2.5)
         assert written["AT18"].value == "zażółć gęślą jaźń\nnowa linia"
+        assert written["S18"].value == "x" * 32767
         assert (written["N18"].value, written["N19"].value, written["N20"].value) == (None, None, 3)
         assert written["A20"].value == "wiersz poza Wzorcem"
     finally:
@@ -1173,6 +1292,98 @@ def _register_row() -> RegisterRow:
     return register_row({header: f"syntetyczne {header}" for header in TARGET_HEADERS})
 
 
+def test_styl_wzorca_z_ochrona_dostaje_wyrownanie_wygladu_przed_ochrona(tmp_path: Path) -> None:
+    template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
+    write_template(template_path)
+    workbook = load_workbook(template_path)
+    try:
+        active_worksheet(workbook)["A18"].protection = Protection(locked=False)
+        workbook.save(template_path)
+    finally:
+        workbook.close()
+    assert re.search(r"<xf\b[^>]*>\s*<protection\b", zip_part(template_path, "xl/styles.xml"))
+    target = tmp_path / "Rozliczenie - Wykonawca.xlsx"
+
+    route = TemplateFile.worker_settlement(template_path).create(target, [_data_row(_row(A="syntetyczne miasto"))])
+
+    assert route is Route.COPY
+    main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    cell_styles = ET.fromstring(zip_part(target, "xl/styles.xml")).find(f"{main}cellXfs")
+    assert cell_styles is not None
+    children = [[child.tag.removeprefix(main) for child in xf] for xf in cell_styles.iter(f"{main}xf")]
+    assert ["alignment", "protection"] in children
+    assert all(found in ([], ["alignment"], ["protection"], ["alignment", "protection"]) for found in children), children
+    saved = load_workbook(target)
+    try:
+        written = active_worksheet(saved)["A18"]
+        assert (written.alignment.horizontal, written.protection.locked) == ("left", False)
+    finally:
+        saved.close()
+
+
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+def test_wypelnienie_bez_liczby_zostawia_wartosc_komorki_wzorca(tmp_path: Path, copied: bool) -> None:
+    template_path = (marked_for_copy if copied else refused_by_copy)(
+        write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
+    )
+    assert re.search(r'<c r="AF18"[^>]*><v>0</v></c>', zip_part(template_path, "xl/worksheets/sheet1.xml"))
+    green = PatternFill(fill_type="solid", fgColor="FF92D050")
+    row = replace(_register_row(), quantities={"N": 2}, fills={"AF": green})
+    target = tmp_path / "Plik zbiorczy.xlsx"
+
+    route = TemplateFile.collective_file(template_path).create(target, [row])
+
+    assert route is (Route.COPY if copied else Route.OPENPYXL)
+    saved = load_workbook(target)
+    try:
+        sheet = active_worksheet(saved)
+        assert (sheet["N18"].value, sheet["AF18"].value, sheet["AF18"].fill.fgColor.rgb) == (2, 0, "FF92D050")
+    finally:
+        saved.close()
+
+
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+def test_hiperlacze_komorki_bez_wartosci_nie_staje_sie_jej_wartoscia(tmp_path: Path, copied: bool) -> None:
+    template_path = (marked_for_copy if copied else refused_by_copy)(
+        write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
+    )
+    row = _register_row()
+    header = TARGET_HEADERS[5]
+    row = replace(
+        row,
+        cells=MappingProxyType({**row.cells, header: row.cells[header]._replace(value=None, hyperlink=Hyperlink("https://przyklad.invalid/zlecenie"))}),
+    )
+    target = tmp_path / "Plik zbiorczy.xlsx"
+
+    route = TemplateFile.collective_file(template_path).create(target, [row])
+
+    assert route is (Route.COPY if copied else Route.OPENPYXL)
+    sheet = zip_part(target, "xl/worksheets/sheet1.xml")
+    linked = re.findall(r'<hyperlink\b[^>]*\sref="([A-Z]+18)"', sheet)
+    assert len(linked) == 1
+    cell = re.search(r'<c r="' + linked[0] + r'"[^>]*?(?:/>|>(.*?)</c>)', sheet, re.S)
+    assert cell is not None and not re.search(r"<v>|<is>", cell.group(1) or "")
+
+
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+def test_nazwy_pozycji_cennika_to_naglowek_wzorca_pliku_zbiorczego_w_n_ap(tmp_path: Path, copied: bool) -> None:
+    template_path = write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
+    workbook = load_workbook(template_path, keep_links=True)
+    try:
+        active_worksheet(workbook)["N17"] = "syntetyczna pozycja N"
+        active_worksheet(workbook)["AP17"] = "syntetyczna pozycja AP"
+        workbook.save(template_path)
+    finally:
+        workbook.close()
+    (marked_for_copy if copied else refused_by_copy)(template_path)
+    template = TemplateFile.collective_file(template_path)
+
+    prices = template.price_list()
+
+    assert template.create(tmp_path / "Plik zbiorczy.xlsx", []) is (Route.COPY if copied else Route.OPENPYXL)
+    assert (prices["N"], prices["O"], prices["AP"]) == ("syntetyczna pozycja N", "", "syntetyczna pozycja AP")
+
+
 @pytest.mark.parametrize("by_copy", [True, False], ids=["kopia", "openpyxl"])
 def test_naglowek_docelowy_pliku_zbiorczego_jest_szukany_tylko_w_a_k(tmp_path: Path, by_copy: bool) -> None:
     template_path = write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
@@ -1238,7 +1449,7 @@ def test_rozliczenie_wewnetrzne_przelicza_formuly_przy_otwarciu_bez_wymuszonego_
         template_path,
         lambda name, data: re.sub(rb"<calcPr\b[^>]*/>", b'<calcPr calcId="191029"/>', data) if name == "xl/workbook.xml" else data,
     )
-    assert calculation_flags(template_path) == dict.fromkeys(("calcMode", "fullCalcOnLoad", "forceFullCalc"))
+    assert calculation_flags(template_path) == {**dict.fromkeys(("calcMode", "fullCalcOnLoad", "forceFullCalc")), "calcId": "191029"}
     if not copied:
         refused_by_copy(template_path)
     target = tmp_path / "Rozliczenie wewnętrzne.xlsx"
@@ -1246,7 +1457,7 @@ def test_rozliczenie_wewnetrzne_przelicza_formuly_przy_otwarciu_bez_wymuszonego_
     route = TemplateFile.internal_settlement(template_path).create(target, [_register_row()])
 
     assert route is (Route.COPY if copied else Route.OPENPYXL)
-    assert calculation_flags(target) == {"calcMode": None, "fullCalcOnLoad": "1", "forceFullCalc": None}
+    assert calculation_flags(target) == {"calcMode": None, "fullCalcOnLoad": "1", "forceFullCalc": None, "calcId": "191029"}
 
 
 def test_plik_zbiorczy_z_kopii_ma_wymiar_arkusza_z_wpisanymi_iloscami_uslug(tmp_path: Path) -> None:
@@ -1286,6 +1497,38 @@ def test_wzorzec_rozliczenia_pracownika_z_wartoscia_w_wierszu_danych_nie_daje_pl
 
     assert (raised.value.problem, raised.value.fault) == (Problem.HAS_DATA, None)
     assert not target.exists()
+
+
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+@pytest.mark.parametrize(
+    ("cell", "has_data"),
+    [
+        pytest.param('<c r="A19" t="inlineStr"><is><t>wpis taty</t></is></c>', True, id="tekst-w-komorce"),
+        pytest.param('<c r="A19"><v></v></c>', False, id="pusta-wartosc"),
+        pytest.param('<c r="A19"><f>1+1</f><v>2</v></c>', False, id="formula"),
+    ],
+)
+def test_dane_wierszy_danych_wzorca_rozliczenia_pracownika_to_wartosc_bez_formuly_na_obu_drogach(
+    tmp_path: Path, cell: str, has_data: bool, copied: bool
+) -> None:
+    template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
+    write_template(template_path)
+    workbook = load_workbook(template_path)
+    try:
+        active_worksheet(workbook)["A19"] = "do podmiany"
+        workbook.save(template_path)
+    finally:
+        workbook.close()
+    replace_cells(template_path, {"A19": cell})
+    (marked_for_copy if copied else refused_by_copy)(template_path)
+    template = TemplateFile.worker_settlement(template_path)
+
+    if has_data:
+        with pytest.raises(WorkbookError) as raised:
+            template.check()
+        assert (raised.value.problem, raised.value.fault) == (Problem.HAS_DATA, None)
+    else:
+        template.check()
 
 
 def _worker_template_with_merge(tmp_path: Path, merged: str, *, copied: bool) -> Path:

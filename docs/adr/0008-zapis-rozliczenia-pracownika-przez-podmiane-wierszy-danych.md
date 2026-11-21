@@ -451,3 +451,30 @@ pliki okresu z obu dróg zapisu, także dla Wzorca z nagłówkiem docelowym za K
 albo powtórzonym za K, a
 `tests/test_workbook_files.py` sprawdza flagi przeliczania Rozliczenia
 wewnętrznego na obu drogach.
+
+## Szczegóły kopii zapisane 2026-11-21
+
+Te powody kształtu `template_copy.py` stały dotąd tylko w jego docstringach; decyzja
+się nie zmienia.
+
+- Kawałki kompresji arkusza powstają przy pierwszej kopii, nie przy wczytaniu Wzorca,
+  bo Sprawdzanie i Planowanie ich nie potrzebują. Kawałek ma 64 wiersze
+  (`_ROWS_PER_CHUNK`): mniejszy to mniej kompresji przy każdej kopii, ale nieco gorszy
+  stopień kompresji całego arkusza. W pliku okresu przedostatni kawałek zaczyna się od
+  `autoFilter`, który zmienia się w każdej kopii, a ostatni w miejscu bloku
+  `<hyperlinks>`. Kawałki kompresują się równolegle w wątkach, bo zlib kompresuje bez
+  blokady GIL.
+- Kopia szuka w arkuszu wyrażeniami, które zaczynają się stałym tekstem, a Pythona
+  uruchamia tylko dla tego, co znalazły: styl spoza stylów skoroszytu najpierw wśród
+  wszystkich `s="N"` i `style="N"`, a dokładnie w znacznikach `c`, `row` i `col` tylko
+  wtedy, gdy coś znalazła (albo przy zerze stylów skoroszytu); formuły i dane wejściowe
+  tylko w komórkach z treścią w kolumnach Wiersza danych i Ilości usług, z literami
+  kolumn jako klasą ostatnich liter dla każdego przedrostka (np. `[ABC]|A[AB]`), bo
+  alternatywa wszystkich liter sprawdza każdą po kolei i jest wolniejsza od przejrzenia
+  każdej komórki. Scalenia i miejsce bloku `<hyperlinks>` pochodzą z parsowania samego
+  ogona arkusza za `sheetData` z deklaracjami przestrzeni nazw z korzenia, bo ogon jest
+  mały.
+- `fullCalcOnLoad="1"` każe Excelowi przeliczyć formuły przy otwarciu, jak w każdym
+  pliku zapisanym przez openpyxl, który nie zapisuje wyników formuł;
+  `calcMode="auto"` i `forceFullCalc="1"` dodają tryb automatyczny i pełne przeliczenie
+  przy każdym przeliczeniu.

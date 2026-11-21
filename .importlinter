@@ -82,3 +82,14 @@ allow_indirect_imports = False
 broken_contract_guidance =
     Otwarcie skoroszytu zgłasza powód jako WorkbookError (Problem i przy złym układzie LayoutFault), a proces tłumaczy go
     na Komunikat ze swojego katalogu (workbook_messages, *_messages): przenieś treść do katalogu procesu.
+
+[importlinter:contract:kopia-wzorca]
+name = Kopię Wzorca importuje tylko template_file
+type = protected
+protected_modules =
+    rozliczenia.template_copy
+allowed_importers =
+    rozliczenia.template_file
+broken_contract_guidance =
+    Kopia Wzorca (template_copy) jest szczegółem TemplateFile: plik z Wzorca twórz przez TemplateFile.worker_settlement,
+    collective_file albo internal_settlement, który sam wybiera kopię albo drogę przez openpyxl (ADR 0008).
