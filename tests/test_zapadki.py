@@ -757,6 +757,8 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "stosunek-czasow-sciany": "licz kroki budżetu (węzły, wywołania), nie zegar",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
     "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
+    "linter-sam-wybiera-pliki": "podaj listę plików po \"--\" i --no-ignore",
+    "rozmiar-z-bajtow-checkoutu": "rozmiar pliku repozytorium bierz z obiektu gita",
 }
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
@@ -2389,6 +2391,8 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "follow-symlinks-tylko-posix": (("tests",), ".py"),
     "komentarz-przez-startswith": (("tools",), ".py"),
     "pytest-current-test-poza-testami": (("tools",), ".py"),
+    "linter-sam-wybiera-pliki": (("tools",), ".py"),
+    "rozmiar-z-bajtow-checkoutu": (("tools",), ".py"),
 }
 _SYS = "import sys\n\n"
 _BOX = "import box_boat\n\n\ndef infra(wyjscie: str) -> bool:\n    return "
@@ -2397,6 +2401,8 @@ _DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
 _OS = "import os\n\n"
 _LINIA = "def komentarz(linia: str) -> bool:\n    return "
 _PATTERN = "import re\n\nLINE = "
+_LINT = "def lint(program: str, files: list[str], ignored: list[str]) -> list[str]:\n"
+_SIZE = "from pathlib import Path\n\n\ndef size(paths: list[Path]) -> int:\n"
 _LITERAL = "def literal(word: str) -> bool:\n"
 _SHLEX = "import shlex\n\n\ndef words(command: str) -> list[str]:\n"
 _PROGRAM = "def python(word: str) -> bool:\n"
@@ -2783,6 +2789,39 @@ _PROBKI_REGUL_POWROTOW: Final = [
         [],
         id="pytest-version-przechodzi",
     ),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, "--ignore-pattern=dist", "--format", "json"]\n', [2], id="flaga-wyboru-plikow-bez-listy"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return (program, "--ignore-pattern", "dist")\n', [2], id="flaga-wyboru-plikow-w-krotce"),
+    pytest.param(
+        "linter-sam-wybiera-pliki",
+        f"{_LINT}" + '    return [program, "-A", "all"] + [f"--ignore-pattern={pattern}" for pattern in ignored] + ["--format", "json"]\n',
+        [2],
+        id="flagi-wyboru-plikow-w-sumie-list",
+    ),
+    pytest.param(
+        "linter-sam-wybiera-pliki",
+        f"{_LINT}" + '    rule_only = [program, "--ignore-pattern", "dist"]\n    return [*rule_only, "--", *files]\n',
+        [],
+        id="argv-w-dwoch-listach-z-separatorem-przechodzi",
+    ),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, *(f"--ignore-pattern={pattern}" for pattern in ignored)]\n', [2], id="flagi-wyboru-plikow-z-generatora"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [[program, "--ignore-pattern", "dist"], files]\n', [2], id="flaga-wyboru-plikow-w-liscie-zagniezdzonej"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, "--ignore-pattern", "dist", "--", *files]\n', [], id="flaga-z-lista-plikow-po-separatorze-przechodzi"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [[program, "--", *files], [program, "--ignore-pattern", "dist", "--", *files]]\n', [], id="lista-argv-z-listami-plikow-przechodzi"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return len(paths[0].read_bytes())\n', [5], id="dlugosc-bajtow-z-dysku"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return sum(len(path.read_bytes().replace(b"\\r\\n", b"\\n")) for path in paths)\n', [5], id="dlugosc-bajtow-po-zamianie-crlf"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    return sum(map(len, (path.read_bytes() for path in paths)))\n", [5], id="dlugosc-bajtow-przez-map"),
+    pytest.param(
+        "rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    return sum(len(data) for data in map(Path.read_bytes, paths))\n", [5], id="dlugosc-bajtow-z-generatora-po-map"
+    ),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    data = paths[0].read_text()\n    return len(data)\n", [], id="dlugosc-tekstu-w-zmiennej-przechodzi"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    return len(paths[0].read_bytes().splitlines())\n", [], id="liczba-linii-bajtow-przechodzi"),
+    pytest.param(
+        "rozmiar-z-bajtow-checkoutu",
+        "import hashlib\nfrom pathlib import Path\n\n\ndef digests(paths: list[Path]) -> list[object]:\n    return list(map(hashlib.sha256, (path.read_bytes() for path in paths)))\n",
+        [],
+        id="skrot-bajtow-przez-map-przechodzi",
+    ),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return len(paths)\n', [], id="liczba-plikow-przechodzi"),
 ]
 
 
@@ -2797,6 +2836,11 @@ def _probki_w_zakresie(root: Path, rule: str, probki: dict[str, str]) -> dict[st
     for opis, plik in pliki.items():
         plik.write_text(probki[opis], encoding="utf-8")
     return pliki
+
+
+@pytest.mark.parametrize(("rule", "text", "lines"), _PROBKI_REGUL_POWROTOW)
+def test_probka_reguly_powrotu_jest_kodem_pythona(rule: str, text: str, lines: list[int]) -> None:
+    compile(text, f"{rule}.py", "exec")
 
 
 @needs_ast_grep
@@ -2874,6 +2918,18 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
     },
     "pytest-current-test-poza-testami": {
         "nazwa zmiennej sklejona z części": f'{_OS}W_TESCIE = "PYTEST_" + "CURRENT_TEST" in os.environ\n',
+    },
+    "linter-sam-wybiera-pliki": {
+        "katalog jako cel bez flagi wyboru plików": _LINT + '    return [program, "frontend"]\n',
+        "argv na poziomie modułu": 'PROGRAM = "oxlint"\nARGV = [PROGRAM, "--ignore-pattern=dist"]\n',
+        "argv składany przez append": _LINT + '    argv = [program]\n    argv.append("--ignore-pattern=dist")\n    return argv\n',
+        "plik ignore zamiast wzorca": _LINT + '    return [program, "--ignore-path", ".eslintignore", "frontend"]\n',
+    },
+    "rozmiar-z-bajtow-checkoutu": {
+        "rozmiar ze stat": _SIZE + "    return paths[0].stat().st_size\n",
+        "bajty w zwykłej zmiennej przed len": _SIZE + "    data = paths[0].read_bytes()\n    return len(data)\n",
+        "rozmiar z os.path.getsize": "import os\n\n\ndef size(path: str) -> int:\n    return os.path.getsize(path)\n",
+        "odczyt bajtów przez open": _SIZE + '    with open(paths[0], "rb") as plik:\n        return len(plik.read())\n',
     },
 }
 
