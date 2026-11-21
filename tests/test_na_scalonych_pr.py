@@ -598,11 +598,6 @@ def test_chroniony_wlasciciel_to_plik_wskazany_wprost_przez_konfiguracje_regul_d
 
 BANNED = '[lint.flake8-tidy-imports.banned-api]\n"{name}".msg = "użyj właściciela"\n'
 RULE_FILE = "reguly-ast-grep/regula.yml"
-IMPORTED = "from pakiet.inny import WARTOSC\n\n"
-
-
-def _banning(name: str) -> dict[str, str]:
-    return {"ruff.toml": BANNED.format(name=f"pakiet.modul.{name}")}
 
 
 @pytest.mark.parametrize(
@@ -615,23 +610,10 @@ def _banning(name: str) -> dict[str, str]:
         pytest.param(_exempt(), "ruff.toml", False, id="ruff-toml-bez-banned-api"),
         pytest.param({"src/ruff.toml": BANNED.format(name="os.name")}, "src/ruff.toml", True, id="ruff-toml-katalogu-z-banned-api"),
         pytest.param({"src/ruff.toml": RUFF_EXEMPT.format(pattern=OWNER, code="TID251")}, OWNER, False, id="zwolnienie-tid251-w-ruff-toml-katalogu"),
-        pytest.param({"src/ruff.toml": BANNED.format(name="pakiet.modul.WARTOSC")}, OWNER, True, id="modul-nazwy-zakazanej-w-ruff-toml-katalogu"),
-        pytest.param({"ruff.toml": BANNED.format(name="pakiet.modul.WARTOSC")}, OWNER, True, id="modul-ktory-definiuje-nazwe-zakazana"),
-        pytest.param({"ruff.toml": BANNED.format(name="pakiet.modul.INNA")}, OWNER, False, id="modul-bez-definicji-nazwy-zakazanej"),
-        pytest.param({**_banning("WARTOSC"), OWNER: "def WARTOSC() -> int:\n    return 1\n"}, OWNER, True, id="nazwa-zakazana-z-def"),
-        pytest.param({**_banning("WARTOSC"), OWNER: "class WARTOSC:\n    pass\n"}, OWNER, True, id="nazwa-zakazana-z-class"),
-        pytest.param({**_banning("WARTOSC"), OWNER: "WARTOSC: int = 1\n"}, OWNER, True, id="nazwa-zakazana-z-przypisania-z-typem"),
-        pytest.param({**_banning("WARTOSC"), OWNER: f"{IMPORTED}WARTOSC.update(a=1)\n"}, OWNER, False, id="uzycie-nazwy-zakazanej-po-imporcie"),
-        pytest.param({**_banning("WARTOSC"), OWNER: f"{IMPORTED}WARTOSC[0] = 2\n"}, OWNER, False, id="przypisanie-do-elementu-nazwy-zakazanej"),
-        pytest.param({**_banning("WARTOSC"), OWNER: '"""Moduł.\n\nWARTOSC daje pakiet.inny.\n"""\n'}, OWNER, False, id="nazwa-zakazana-na-poczatku-linii-docstringu"),
-        pytest.param({**_banning("WARTOSC"), OWNER: "def f() -> None:\n    WARTOSC = 1\n"}, OWNER, False, id="nazwa-zakazana-przypisana-w-funkcji"),
-        pytest.param({**_banning("WARTOSC"), OWNER: "WARTOSC = (\n"}, OWNER, False, id="modul-ktorego-python-nie-wczyta"),
-        pytest.param({**_banning("WARTOSC"), OWNER: "try:\n    WARTOSC = 1\nexcept ImportError:\n    pass\n"}, OWNER, True, id="nazwa-zakazana-przypisana-w-try-modulu"),
-        pytest.param({"ruff.toml": BANNED.format(name="pakiet.modul")}, "src/pakiet/__init__.py", False, id="pakiet-zakazanego-modulu"),
         pytest.param({**_ignoring(OWNER), "ruff.toml": BANNED.format(name="os.name")}, "tests/test_inne.py", False, id="plik-spoza-regul-i-zakazow"),
     ],
 )
-def test_chroniony_wlasciciel_to_tez_sama_regula_lint_i_modul_nazwy_zakazanej(tmp_path: Path, config: dict[str, str], path: str, owned: bool) -> None:
+def test_chroniony_wlasciciel_to_tez_sama_regula_lint(tmp_path: Path, config: dict[str, str], path: str, owned: bool) -> None:
     root = repository(tmp_path / "repo", {OWNER: "WARTOSC = 1\n", "src/pakiet/__init__.py": "", "tests/test_inne.py": "", **config}, tools=())
     commit(root, "drzewo")
 

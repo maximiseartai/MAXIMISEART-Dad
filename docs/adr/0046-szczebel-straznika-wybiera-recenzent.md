@@ -53,7 +53,6 @@ Decyzje autora PR ticketu #2461:
 Decyzje autora PR poprawek po #2461 (spec #2448):
 
 - **Luka w samej regule lint to `test`.** Ważne, którego `Gdzie` to plik reguły ast-grep albo `ruff.toml` z `banned-api` (luka we wzorcu albo w zasięgu zakazu), ma szczebel `test`, bo `mypy`, `ruff` ani `ast-grep <id>` nie udowodni luki w regule: dowód przywraca plik reguły z drzewa `FAIL` i nie ma złego kodu, który by odpalił. Plik reguły i `ruff.toml` z zakazami są więc chronionymi właścicielami: test ich próbek (`tests/test_zapadki.py`, `tests/test_zakazy_ruff.py`) pada na mutacji recenzenta, a słabszą regułę ast-grep odrzuca też warunek 6 `tools/scal_pr.py`. Wątek, który już ma `lint`, zmienia szczebel punktem `Mechanizm W<n> r<k>:`.
-- **Moduł nazwy zakazanej.** Moduł, który definiuje nazwę z `banned-api`, jest chronionym właścicielem, bo zakaz kieruje do niego resztę kodu (`refusal._refused`), a zwolnienia w `per-file-ignores` nie potrzebuje ani nie może mieć.
 
 ## Wdrożenie
 

@@ -11,7 +11,6 @@ from typing import Any
 import yaml
 
 import repo
-import rozjazd_modelu
 
 ZASADY = """Chroniony właściciel (ADR 0046, „Właściciel”): plik, który konfiguracja reguł w drzewie (HEAD PR scalony z bazą)
 wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a szczebel ``test`` zamyka test na nim:
@@ -19,7 +18,6 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 | Źródło | Właściciel |
 |---|---|
 | zakaz ``TID251`` | plik z ``TID251`` w ``[lint.per-file-ignores]`` ``ruff.toml`` korzenia; że ma wiersz ``OWNERS`` z nazwami, których jest właścicielem, pilnuje ``tests/test_zakazy_ruff.py`` w Required CI tego drzewa |
-| nazwa w ``banned-api`` każdego ``ruff.toml`` | moduł, który ją definiuje (funkcja, klasa albo przypisanie w zakresie modułu, także w jego ``if`` i ``try``: ``rozjazd_modelu.definiuje``), jako ``<katalog importu>/<moduł>.py`` albo ``…/__init__.py`` z katalogów ``src`` i ``repo.IMPORT_ROOTS``: zakaz kieruje do niego resztę kodu |
 | sama reguła | każdy ``ruff.toml`` z ``banned-api`` (korzenia i katalogu, który go rozszerza) i każdy plik reguły ast-grep z ``ruleDirs``, który ma ``id``: lukę we wzorcu albo zasięgu zamyka test jego próbek (``tests/test_zakazy_ruff.py``, ``tests/test_zapadki.py``), a słabszą regułę ast-grep odrzuca też warunek 6 ``tools/scal_pr.py`` |
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
@@ -36,9 +34,8 @@ CONTRACT = "importlinter:contract:"
 ALLOWED = "allowed_importers"
 PACKAGES = "src"
 AST_GREP = "sgconfig.yml"
-IMPORT_ROOTS = (PACKAGES, *repo.IMPORT_ROOTS)
 SOURCES = (
-    f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, moduł nazwy z banned-api, {ALLOWED} kontraktu w {IMPORT_CONTRACTS}, "
+    f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, {ALLOWED} kontraktu w {IMPORT_CONTRACTS}, "
     f"ignores: reguły ast-grep z ruleDirs {AST_GREP}, sam plik takiej reguły albo {RUFF} z banned-api, także katalogu"
 )
 _BRACES = re.compile(r"\{([^{}]*)\}")
@@ -83,15 +80,8 @@ def _banned(tree: _Tree) -> set[str]:
         ignores = lint.get("per-file-ignores", {}) if config == RUFF else {}
         names = lint.get("flake8-tidy-imports", {}).get("banned-api", {})
         found |= {path for pattern, codes in ignores.items() if isinstance(codes, list) and BAN in codes for path in _paths(pattern)}
-        found |= {path for name in names for path in _defining(tree, name)} | ({config} if names else set())
+        found |= {config} if names else set()
     return found
-
-
-def _defining(tree: _Tree, banned: str) -> Iterator[str]:
-    module, _, name = banned.rpartition(".")
-    stem = module.replace(".", "/")
-    candidates = (f"{root}/{stem}{suffix}".removeprefix("./") for root in IMPORT_ROOTS for suffix in (".py", "/__init__.py"))
-    yield from (path for path in candidates if rozjazd_modelu.definiuje(tree.read(path), name))
 
 
 def _importers(tree: _Tree) -> set[str]:
