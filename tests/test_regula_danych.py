@@ -1,15 +1,11 @@
-"""Reguła danych (ADR 0025) na interfejsie ``client_data``: które wartości strażnik zna i jak je maskuje.
-
-Strażnika wołają cztery wysyłki Centrum (Logi, Zgłoszenie, Kontrola ilości, Uwaga taty), więc macierz reguły jest tu raz,
-a każda wysyłka ma swój test przez HTTP API. Położenie wartości w tekście, wielkość liter i znaki między jej słowami
-sprawdzają własności w ``test_wlasnosci_dopasowania_tekstu.py``. Wartości są syntetyczne.
-"""
-
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import time
 from pathlib import Path
-from typing import Final, SupportsIndex
+import sys
+from types import FrameType
+from typing import Any, Final, SupportsIndex
 
 import pytest
 
@@ -18,9 +14,14 @@ from rozliczenia.client_data import (
     ForbiddenColumn,
     ForbiddenValues,
     Guarded,
+    LogsText,
+    Outgoing,
+    WithoutSubclasses,
     empty_memory,
     guarded,
     guarded_number,
+    logs_text,
+    remembered,
     tool,
 )
 from tests.fixtures.formy_telefonu import CELL_FORMS, PhoneForm
@@ -44,6 +45,113 @@ def test_wartosc_krotsza_niz_piec_znakow_nie_jest_zakazana_a_piec_znakow_juz_jes
     assert wynik == Guarded(tool("Lipa kwitnie przy drodze na [adres]"), (ADDRESS_NOTE,))
 
 
+@pytest.mark.parametrize(
+    "wartosc",
+    [pytest.param("„Lipa", id="znak-przed-pierwszym-slowem"), pytest.param("Bo\n\n\nC", id="odstepy-miedzy-slowami")],
+)
+def test_dlugosc_wartosci_liczy_sie_od_pierwszego_slowa_po_zwinieciu_odstepow(wartosc: str) -> None:
+    forbidden = empty_memory()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, wartosc)
+
+    assert guarded(forbidden, "Lipa i Bo C przy drodze", "tekst") == Guarded(tool("Lipa i Bo C przy drodze"), ())
+
+
+@pytest.mark.parametrize(
+    ("tekst", "wynik"),
+    [
+        pytest.param("ul. Syntetyczna Długa Boczna Lipowa 5", "[ulica]", id="nazwa-czterech-slow"),
+        pytest.param(
+            "ul. Syntetyczna Długa Boczna Cicha Lipowa 5",
+            "ul. Syntetyczna Długa Boczna Cicha Lipowa 5",
+            id="granica-nazwa-pieciu-slow",
+        ),
+    ],
+)
+def test_wzmianka_ulicy_ma_nazwe_najwyzej_czterech_slow(tekst: str, wynik: str) -> None:
+    assert guarded(empty_memory(), f"klient {tekst}, dzwonić", "tekst") == Guarded(tool(f"klient {wynik}, dzwonić"), ())
+
+
+@pytest.mark.parametrize("liczba", [pytest.param(48012.75, id="czesc-ulamkowa"), pytest.param(-48012, id="minus")])
+def test_liczba_z_zakazana_wartoscia_staje_sie_cala_maska_bez_zadnej_cyfry(liczba: float) -> None:
+    forbidden = empty_memory()
+    forbidden.remember_value(ForbiddenColumn.ORANGE, 48012)
+
+    assert guarded_number(forbidden, liczba, "tekst") == Guarded(tool("[numer Orange]"), (ORANGE_NOTE,))
+
+
+def test_liczba_wartosci_pamieci_rosnie_z_kazda_nowa_wartoscia_a_powtorzona_jej_nie_zmienia() -> None:
+    forbidden = empty_memory()
+    counts = []
+
+    for column, value in (
+        (ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5"),
+        (ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5 m 7"),
+        (ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5"),
+        (ForbiddenColumn.ORANGE, "syntetyczna lipowa 5"),
+    ):
+        forbidden.remember_value(column, value)
+        counts.append(remembered(forbidden))
+
+    assert counts == [1, 2, 2, 2]
+
+
+def _kroki_straznika(forbidden: ForbiddenValues, tekst: str) -> int:
+    kroki = 0
+
+    def sledz(frame: FrameType, _event: str, _arg: object) -> Callable[..., Any] | None:
+        nonlocal kroki
+        if frame.f_code.co_filename != guarded.__code__.co_filename:
+            return None
+        kroki += 1
+        return sledz
+
+    poprzedni = sys.gettrace()
+    sys.settrace(sledz)
+    try:
+        guarded(forbidden, tekst, "tekst")
+    finally:
+        sys.settrace(poprzedni)
+    return kroki
+
+
+def test_kroki_straznika_nie_zaleza_od_liczby_zapamietanych_wartosci() -> None:
+    tekst = "klient Syntetyczna Lipowa 5 dzwonić po 16, " * 20
+    mala, duza = empty_memory(), empty_memory()
+    for pamiec in (mala, duza):
+        pamiec.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5")
+    for numer in range(1000):
+        duza.remember_value(ForbiddenColumn.ADDRESS, f"Inna{numer} Ulica 7")
+
+    assert guarded(duza, tekst, "tekst") == guarded(mala, tekst, "tekst")
+    assert _kroki_straznika(duza, tekst) == _kroki_straznika(mala, tekst)
+
+
+@pytest.mark.parametrize(
+    ("typ", "odmowa"),
+    [pytest.param(Outgoing, "guarded albo tool", id="Outgoing"), pytest.param(LogsText, "logs_text", id="LogsText")],
+)
+def test_tekst_do_wysylki_i_plik_logow_bez_dowodu_modulu_to_type_error(typ: type[Outgoing | LogsText], odmowa: str) -> None:
+    with pytest.raises(TypeError, match=odmowa):
+        typ("Syntetyczna Lipowa 5", object())
+
+
+@pytest.mark.parametrize(("dowod", "typ"), [pytest.param(tool, Outgoing, id="tool"), pytest.param(logs_text, LogsText, id="logs_text")])
+def test_tekst_narzedzia_i_plik_logow_wychodza_znak_w_znak_bez_maskowania(dowod: Callable[[str], str], typ: type) -> None:
+    tekst = "Uruchomienie 600123456, ul. Lipowa 5"
+
+    wynik = dowod(tekst)
+
+    assert (type(wynik), str.__str__(wynik)) == (typ, tekst)
+    assert guarded(empty_memory(), tekst, "tekst").text == "Uruchomienie [telefon], [ulica]"
+
+
+def test_klasa_bez_podklas_bez_odmowy_w_naglowku_to_type_error() -> None:
+    with pytest.raises(TypeError, match="podaje odmowę"):
+
+        class BezOdmowy(metaclass=WithoutSubclasses):
+            pass
+
+
 def test_z_dwoch_wartosci_od_tego_samego_slowa_maskowana_jest_cala_dluzsza() -> None:
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5")
@@ -65,7 +173,6 @@ def test_numer_orange_ktory_excel_czyta_jako_liczbe_ulamkowa_jest_zamaskowany_w_
 
 
 def test_liczba_z_czescia_ulamkowa_z_zakazanej_kolumny_jest_zamaskowana_razem_z_czescia_ulamkowa() -> None:
-    # Tylko liczba całkowita zapisana jako ułamek traci część po przecinku (``shown``); inna zostaje w zapisie Excela.
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ORANGE, 48012.75)
 
@@ -75,7 +182,6 @@ def test_liczba_z_czescia_ulamkowa_z_zakazanej_kolumny_jest_zamaskowana_razem_z_
 
 
 def test_godzina_z_zakazanej_kolumny_nie_jest_zakazana_wartoscia() -> None:
-    # Godzina, jak data, nie wskazuje klienta, a zamaskowałaby każdą tę samą godzinę w Logach.
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, time(8, 30))
 
@@ -105,10 +211,6 @@ def test_wyrocznia_wycieku_w_testach_widzi_numer_zlecenia_tak_jak_straznik() -> 
 
 @pytest.mark.parametrize("form", CELL_FORMS, ids=[form.form for form in CELL_FORMS])
 def test_kazda_forma_telefonu_z_tabeli_adr_0025_wychodzi_tak_jak_mowi_tabela(form: PhoneForm) -> None:
-    """Telefon jest ``[telefon]`` w komórce z tekstem, w wolnym tekście i w komórce, którą Excel trzyma jako liczbę
-    (także z ``+48`` albo ``0048`` zgubionym przez format General), znane granice wychodzą bez maski, a ilość, kwota,
-    ``NUMER ZL.`` i data wychodzą bez zmian; uwagi technicznej telefon nie daje (ADR 0025)."""
-
     forbidden = empty_memory()
     wynik: Guarded | None
     expected: Guarded | None
@@ -124,8 +226,6 @@ def test_kazda_forma_telefonu_z_tabeli_adr_0025_wychodzi_tak_jak_mowi_tabela(for
     assert wynik == expected, form.why
 
 
-# Drogi do strażnika z pamięcią, która nie jest pamięcią pracy Centrum (przegląd #1660, W2) → zgłoszenie mypy albo ruff,
-# które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
 DROGI_DO_PUSTEJ_PAMIECI: Final = {
     "pamięć świeżego uchwytu plików taty": (
         """from rozliczenia.client_data import guarded
@@ -183,8 +283,6 @@ def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
     ),
 }
 
-# Znane luki pustej pamięci (tests/fixtures/znane_luki.py): postaci, które dają strażnika bez pamięci pracy Centrum, a
-# mypy i ruff ich nie łapią.
 ZNANE_LUKI_PAMIECI: Final = {
     "cast pamięci uchwytu": """from typing import cast
 
@@ -222,8 +320,6 @@ def test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luk
 
 _KOMORKA: Final = "Syntetyczna Lipowa 5"
 
-# Podklasa pamięci i podmiana jej metody w biegu (przegląd #1688, runda 2, W1): uwagi techniczne i maskowanie dają tylko
-# client_data.guarded i guarded_number. Moduł każdej próbki robi przy wczytaniu podklasę albo podmienia metodę pamięci.
 _PAMIEC_W_BIEGU: Final = f"""import types
 from typing import Any
 
@@ -284,8 +380,6 @@ def test_metody_pamieci_nie_da_sie_podmienic_na_obiekcie(kod: str, tmp_path: Pat
         modul(plik)
 
 
-# Podklasa pamięci z własnymi uwagami technicznymi i odbiorca, który woła strażnika na pamięci obok guarded (przegląd
-# #1704, runda 2, W1) → zgłoszenie mypy, które każdą odrzuca w nowym module src/rozliczenia/centrum.
 DROGI_DO_UWAG: Final = {
     "podklasa ForbiddenValues": (
         f"""from rozliczenia.client_data import ForbiddenValues, Guarded, guarded
@@ -317,9 +411,6 @@ def wyciek(pamiec: ForbiddenValues, liczba: int) -> Guarded | None:
     ),
 }
 
-# Pamięć, której typ nie jest dokładnie ForbiddenValues, u odbiorcy pamięci (przegląd #1704, runda 1, W1): moduł próbki
-# ma ``wyciek(pamiec, komorka)``, które daje odbiorcy taki obiekt, a właściciel (client_data.guarded) odmawia go tuż
-# przed wywołaniem strażnika.
 _ATRAPA_PAMIECI: Final = """
 
 class Atrapa:
@@ -455,8 +546,6 @@ def test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straz
         modul(plik).wyciek(empty_memory(), _KOMORKA)
 
 
-# Znane luki uwag technicznych (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, którego ``wyciek(pamiec,
-# komorka)`` daje tekst z wartością komórki (bez maski albo w uwadze technicznej), a ruff, mypy i bieg go nie zatrzymują.
 ZNANE_LUKI_UWAG: Final = {
     'podmiana metody na klasie: setattr(ForbiddenValues, "remember_value", …)': """from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
@@ -528,8 +617,6 @@ def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
 
 
 def _wyciek_w_biegu(plik: Path) -> list[str]:
-    """Zgłoszenie biegu próbki: wyjątek albo tekst bez wartości komórki, czyli próbka nie daje uwagi spoza strażnika."""
-
     try:
         tekst = modul(plik).wyciek(empty_memory(), _KOMORKA)
     except (TypeError, AttributeError) as odmowa:
@@ -538,17 +625,11 @@ def _wyciek_w_biegu(plik: Path) -> list[str]:
 
 
 class _Udawany(str):
-    """Tekst, którego wycinek daje wartość komórki, choć jego znaki jej nie mają."""
-
     def __getitem__(self, key: SupportsIndex | slice, /) -> str:
         return _KOMORKA
 
 
 def test_straznik_czyta_znaki_tekstu_raz_wiec_podklasa_str_z_wlasnym_wycinkiem_nie_daje_komorki() -> None:
-    """Strażnik szuka wartości w znakach tekstu, a sklejał wynik z wycinków, więc podklasa ``str`` z własnym wycinkiem
-    dawała do wysyłki to, czego strażnik nie widział; teraz kopiuje znaki do ``str`` (``str.__str__``) przed sprawdzeniem
-    (#1551, przegląd #1723)."""
-
     pamiec = empty_memory()
     pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
 

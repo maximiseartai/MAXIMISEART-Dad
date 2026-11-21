@@ -166,7 +166,9 @@ telefony na okres.
   zlecenia z zamkniętego słownika `URZĄDZENIA` (`order_kind`: „Usterka”,
   „Usterka hurt”, „Instalacja hurt”), bo nie wskazuje klienta, a wiersz w obu
   położeniach daje ją pamięci jako `ADRES` i maska w Kopii wejścia gubiła w
-  odtworzeniu rodzaj zlecenia i Wpis INTERMAX.
+  odtworzeniu rodzaj zlecenia i Wpis INTERMAX. Pomijana jest też godzina z
+  komórki zakazanej kolumny: nie wskazuje klienta, a zamaskowałaby tę samą
+  godzinę w każdym miejscu Logów.
 - **Zgoda taty.** Tata wie, że wysyłki do prywatnej Skrzynki Zgłoszeń będą
   niosły numery zleceń, Wykonawców, miasta i opisy techników, i zgodził się
   na to z Maksem (grilling 4.11.2026).
