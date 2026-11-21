@@ -1,6 +1,6 @@
 {
   "src/rozliczenia/template_copy.py": {
-    "cały plik": "49bcc356c8483681"
+    "cały plik": "15c469e57ec7264f"
   },
   "src/rozliczenia/row_look.py": {
     "cały plik": "7e42facaf3def33a"
@@ -29,7 +29,7 @@
   },
   "src/rozliczenia/template_file.py": {
     "TemplateFile": "18666b42a71623d6",
-    "_Rules": "0bf95520d546ad69",
+    "_Rules": "72f205b7b3187aa6",
     "_WORKER_SETTLEMENT": "454a0b42cc644edc",
     "_ensure_unmerged": "e237572ec3b4b931",
     "_last_written_column": "1ac5d8677c49655f",
