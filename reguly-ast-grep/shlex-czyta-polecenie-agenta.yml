@@ -4,7 +4,8 @@ severity: error
 message: >-
   hook czyta polecenie agenta słowami shlex: shlex dokleja słowo znak po znaku (czas kwadratowy w długości słowa, więc
   skrypt -c albo napis rzędu 1 MB przekracza limit 10 s hooka) i ma inną gramatykę niż bash; słowa polecenia czytaj
-  czytnikiem hooka w czasie liniowym (_words i _quoted w tools/hooks/czekanie.py, _Scan w tools/hooks/zabijanie.py)
+  czytnikiem hooka w czasie liniowym (QUOTED i unquoted z tools/lib/slowa_powloki.py, _Scan w
+  tools/hooks/zabijanie.py)
 files:
   - tools/hooks/**/*.py
 metadata:
