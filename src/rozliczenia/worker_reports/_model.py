@@ -852,6 +852,9 @@ class RefusedMove:
 
     @property
     def shown(self) -> date:
+        """Dzień, w którym tata widzi problem: dzień otwarty, czyli dzień z tematu, a gdy ten jest w okresie z Plikiem
+        zbiorczym, dzień zlecenia."""
+
         return self.order_day if self.bar is MoveBar.CLOSED_TARGET else self.day
 
 
