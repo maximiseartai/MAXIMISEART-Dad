@@ -2,10 +2,10 @@ id: zwolnienie-wezlow-po-nazwie-celu
 language: python
 severity: error
 message: >-
-  zbiór zwolnionych węzłów (id(węzeł), id(węzeł.value), także set() albo frozenset() z generatora) wybrany po nazwie
-  celu przypisania sprawdzonej w warunku z nazwą wpisaną w kod (["OPIS"], STALE_PROZY, .startswith("OPIS"),
-  re.match("OPIS", …)): wyjątek dla jednej stałej zwalnia każde przypisanie tej nazwy w każdym module i na każdej
-  głębokości; zwalniaj tekst przez jego właściciela (kod, który go czyta), nie przez nazwę zmiennej
+  zbiór zwolnionych węzłów (id(...) w wyrażeniu zbioru albo w set() i frozenset() z generatora), które czyta nazwę celu
+  przypisania (.targets, .target przy ast.Assign albo ast.AnnAssign), a w warunku if ma nazwę wpisaną w kod (["OPIS"],
+  STALE_PROZY): wyjątek dla jednej stałej zwalnia każde przypisanie tej nazwy w każdym module i na każdej głębokości;
+  zwalniaj tekst przez jego właściciela (kod, który go czyta), nie przez nazwę zmiennej
 files:
   - tests/**/*.py
   - tools/**/*.py
@@ -15,9 +15,9 @@ metadata:
     - 2261/W1/r1
     - 2261/W2/r1
 rule:
-  # Zbiór id(...) z wyrażenia zbioru albo z generatora w set()/frozenset(), którego warunek (if) czyta nazwę celu
-  # przypisania (.targets, a .target przy isinstance z ast.Assign albo ast.AnnAssign) i nazwę wpisaną w kod (napis albo
-  # stała WIELKIMI LITERAMI), w dowolnym porównaniu, wywołaniu albo wzorcu re.
+  # Zbiór id(...) z wyrażenia zbioru albo z generatora w set()/frozenset(), które czyta nazwę celu przypisania (.targets,
+  # a .target przy ast.Assign albo ast.AnnAssign), także w zagnieżdżonym for, a któryś jego warunek (if) ma nazwę
+  # wpisaną w kod (napis albo stała WIELKIMI LITERAMI).
   any:
     - kind: set_comprehension
     - kind: generator_expression
@@ -32,24 +32,23 @@ rule:
         pattern: id($X)
     - has:
         kind: if_clause
-        all:
-          - has:
-              stopBy: end
-              matches: nazwa-wpisana
-          - any:
-              - has:
-                  stopBy: end
-                  kind: attribute
-                  regex: '\.targets(\[[^\]]*\])?(\.id)?$'
-              - all:
-                  - has:
-                      stopBy: end
-                      kind: attribute
-                      regex: '\.target(\.id)?$'
-                  - has:
-                      stopBy: end
-                      kind: attribute
-                      regex: '^ast\.(Ann)?Assign$'
+        has:
+          stopBy: end
+          matches: nazwa-wpisana
+    - any:
+        - has:
+            stopBy: end
+            kind: attribute
+            regex: '\.targets(\[[^\]]*\])?(\.id)?$'
+        - all:
+            - has:
+                stopBy: end
+                kind: attribute
+                regex: '\.target(\.id)?$'
+            - has:
+                stopBy: end
+                kind: attribute
+                regex: '^ast\.(Ann)?Assign$'
 utils:
   nazwa-wpisana:
     any:

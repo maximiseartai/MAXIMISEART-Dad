@@ -2839,14 +2839,14 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
         f'{_EXEMPT}        id(node.value)\n        for node in tree.body\n'
-        '        if isinstance(node, ast.Assign) and [ast.unparse(target) for target in node.targets] == ["OPIS"]\n    }}\n',
+        '        if isinstance(node, ast.Assign) and [ast.unparse(target) for target in node.targets] == ["OPIS"]\n    }\n',
         [7],
         id="zwolnienie-po-napisie-nazwy-celu",
     ),
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
         f"{_EXEMPT}        id(node.value)\n        for node in ast.walk(tree)\n"
-        "        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) in STALE\n    }}\n",
+        "        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) in STALE\n    }\n",
         [7],
         id="zwolnienie-po-stalej-nazw-celu",
     ),
@@ -2859,7 +2859,7 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
         f'{_EXEMPT}        id(node.value)\n        for node in ast.walk(tree)\n'
-        '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]).startswith("OPIS")\n    }}\n',
+        '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]).startswith("OPIS")\n    }\n',
         [7],
         id="zwolnienie-po-przedrostku-nazwy-celu",
     ),
@@ -2913,7 +2913,7 @@ _PROBKI_REGUL_POWROTOW: Final = [
     ),
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
-        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]).endswith("_OPIS")\n    }}\n',
+        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]).endswith("_OPIS")\n    }\n',
         [7],
         id="zwolnienie-po-przyrostku-nazwy-celu",
     ),
@@ -2931,19 +2931,31 @@ _PROBKI_REGUL_POWROTOW: Final = [
     ),
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
-        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]).startswith(("OPIS", "TEKST"))\n    }}\n',
+        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]).startswith(("OPIS", "TEKST"))\n    }\n',
         [7],
         id="zwolnienie-po-przedrostkach-w-krotce",
     ),
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
-        f"import re\n{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and re.match("OPIS", ast.unparse(node.targets[0]))\n    }}\n',
+        f"import re\n{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and re.match("OPIS", ast.unparse(node.targets[0]))\n    }\n',
         [8],
         id="zwolnienie-po-wzorcu-re-na-nazwie-celu",
     ),
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
-        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and "OPIS" in ast.unparse(node.targets[0])\n    }}\n',
+        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign)\n        for target in node.targets\n        if ast.unparse(target) == "OPIS"\n    }\n',
+        [7],
+        id="zwolnienie-po-celu-z-zagniezdzonego-for",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        f"{_EXEMPT}{_SEL}" "        if isinstance(node, ast.AnnAssign)\n        if node.target.id in STALE\n    }\n",
+        [7],
+        id="zwolnienie-w-dwoch-warunkach-if",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and "OPIS" in ast.unparse(node.targets[0])\n    }\n',
         [7],
         id="zwolnienie-po-podnapisie-nazwy-celu",
     ),
@@ -2969,7 +2981,7 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
         f"{_EXEMPT}        node.lineno\n        for node in ast.walk(tree)\n"
-        '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "OPIS"\n    }}\n',
+        '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "OPIS"\n    }\n',
         [],
         id="zbior-numerow-linii-zamiast-id-przechodzi",
     ),
@@ -3011,7 +3023,7 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
         f"{_EXEMPT}        id(node.value)\n        for node in ast.walk(tree)\n"
-        "        if isinstance(node, ast.Assign) and len(node.targets) == 1\n    }}\n",
+        "        if isinstance(node, ast.Assign) and len(node.targets) == 1\n    }\n",
         [],
         id="zwolnienie-po-liczbie-celow-przechodzi",
     ),
@@ -3041,6 +3053,11 @@ def _probki_w_zakresie(root: Path, rule: str, probki: dict[str, str]) -> dict[st
     for opis, plik in pliki.items():
         plik.write_text(probki[opis], encoding="utf-8")
     return pliki
+
+
+@pytest.mark.parametrize(("rule", "text", "lines"), _PROBKI_REGUL_POWROTOW)
+def test_probka_reguly_powrotu_jest_kodem_pythona(rule: str, text: str, lines: list[int]) -> None:
+    compile(text, f"{rule}.py", "exec")
 
 
 @needs_ast_grep
@@ -3145,6 +3162,9 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "wzorzec w stałej poza wywołaniem re": f'{_PATTERN}r"#\\s*noqa"\nFOUND = re.compile(LINE)\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"#\\s*noqa")\n',
         "wzorzec sklejony z kilku literałów": f'{_PATTERN}re.compile(r"#\\s*" + "noqa")\n',
+        "wzorzec z sąsiednich literałów w jednej linii": f'{_PATTERN}re.compile(r"#\\s*" r"noqa")\n',
+        "wzorzec z literałów w kolejnych liniach": f'{_PATTERN}re.compile(\n    r"#\\s*"\n    r"(?:noqa|type:\\s*ignore)"\n)\n',
+        "znacznik # zapisany ucieczką": f'{_PATTERN}re.compile(r"\\x23\\s*noqa")\n',
     },
 }
 

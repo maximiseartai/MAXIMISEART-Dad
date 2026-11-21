@@ -2,10 +2,10 @@ id: postac-tlumienia-poza-wlascicielem
 language: python
 severity: error
 message: >-
-  wzorzec re z postacią tłumienia ruff albo mypy (noqa, ruff:, flake8:, type: ignore) przepisany poza jej
-  właścicielem: ręczna kopia gubi postacie, które narzędzie czyta (# NOQA: KOD, # flake8: noqa, komentarz typu
-  # type: list[int]); weź RUFF z tests/test_granice_wyjatkow.py, a type: ignore z ast.parse(..., type_comments=True);
-  dyrektywę # mypy: pilnuje reguła dyrektywa-mypy-recznie
+  jeden literał wzorca re z # i dalej postacią tłumienia ruff albo mypy (noqa, ruff:, flake8:, type…:…ignore) przepisuje
+  postać tłumienia poza jej właścicielem: ręczna kopia gubi postacie, które narzędzie czyta (# NOQA: KOD, # flake8: noqa,
+  komentarz typu # type: list[int]); weź RUFF z tests/test_granice_wyjatkow.py, a type: ignore z ast.parse(...,
+  type_comments=True); dyrektywę # mypy: pilnuje reguła dyrektywa-mypy-recznie
 files:
   - "**/*.py"
 ignores:
