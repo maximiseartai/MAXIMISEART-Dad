@@ -733,6 +733,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "historia-w-docstringu": "historię zmiany zostaw w opisie PR,",
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
+    "komunikat-boxa-podlancuchem": "bierz własność box_boat.WLASNOSC z junit",
     "dyrektywa-mypy-recznie": "użyj mypy.util.get_mypy_comments",
     "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
     "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
@@ -742,12 +743,15 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "reszta-tekstu-od-kazdego-trafienia": "czytaj tekst raz od początku do końca",
     "shlex-czyta-polecenie-agenta": "słowa polecenia czytaj czytnikiem hooka w czasie liniowym",
     "znak-powloki-jako-test-literalu": "sprawdzaj pełnym dopasowaniem postaci literału",
+    "krok-mypy-ruff-poza-krokami": "weź krok z kroki_lokalne.static_steps",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
     "pytest-current-test-poza-testami": "sesję pytest rozpoznaje PYTEST_VERSION",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "stanowisko-z-tytulu": "weź ze znaku Stanowiska w treści",
+    "stosunek-czasow-sciany": "licz kroki budżetu (węzły, wywołania), nie zegar",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
     "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
 }
@@ -812,12 +816,15 @@ REGULY_CALEGO_DRZEWA: Final = (
     "historia-w-docstringu",
     "komentarz-przez-startswith",
     "komentarz-w-src",
+    "komunikat-boxa-podlancuchem",
     "kotwica-konca-linii",
+    "krok-mypy-ruff-poza-krokami",
     "lokator-tytulu-okna",
     "odczyt-docstringu",
     "pytest-current-test-poza-testami",
     "regula-w-trasie",
     "stan-pliku-poza-file-state",
+    "stosunek-czasow-sciany",
     "watki-workera",
     "wlasna-wyrocznia-numeru",
 )
@@ -2370,11 +2377,17 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "program-wzorcem-ze-sciezka": (("tools", "hooks"), ".py"),
     "break-skryptu-pythona-to-czekanie": (("tools", "hooks"), ".py"),
     "reszta-tekstu-od-kazdego-trafienia": (("tools",), ".py"),
+    "krok-mypy-ruff-poza-krokami": (("tools",), ".py"),
+    "komunikat-boxa-podlancuchem": (("tools",), ".py"),
+    "stosunek-czasow-sciany": (("tests",), ".py"),
     "dyrektywa-mypy-recznie": (("tests",), ".py"),
     "follow-symlinks-tylko-posix": (("tests",), ".py"),
     "komentarz-przez-startswith": (("tools",), ".py"),
     "pytest-current-test-poza-testami": (("tools",), ".py"),
 }
+_SYS = "import sys\n\n"
+_BOX = "import box_boat\n\n\ndef infra(wyjscie: str) -> bool:\n    return "
+_ZEGAR = "import time\n\n\ndef test_stosunek() -> None:\n    start = time.perf_counter()\n    srodek = time.perf_counter()\n"
 _DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
 _OS = "import os\n\n"
 _LINIA = "def komentarz(linia: str) -> bool:\n    return "
@@ -2387,6 +2400,21 @@ _WORDS = "import re\n\nWORD = re.compile(r'[a-z]+')\n\n\ndef rests(text: str) ->
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
 # (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
 _PROBKI_REGUL_POWROTOW: Final = [
+    pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--no-incremental"]\n', [3], id="mypy-w-liscie-polecenia"),
+    pytest.param("krok-mypy-ruff-poza-krokami", f"{_SYS}POLECENIE = (sys.executable, '-m', 'ruff', 'check')\n", [3], id="ruff-w-krotce-polecenia"),
+    pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "pytest", "-q"]\n', [], id="pytest-w-liscie-przechodzi"),
+    pytest.param("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', [], id="nazwy-narzedzi-bez-polecenia-przechodza"),
+    pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--strict", "format"]\n', [3], id="mypy-z-opcjami"),
+    pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "ruff", "format", "--check"]\n', [], id="ruff-format-przechodzi"),
+    pytest.param("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT in wyjscie\n", [5], id="komunikat-boxa-in"),
+    pytest.param("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT not in wyjscie\n", [5], id="komunikat-boxa-not-in"),
+    pytest.param("komunikat-boxa-podlancuchem", "from box_boat import KOMUNIKAT\n\n\ndef infra(wyjscie: str) -> bool:\n    return KOMUNIKAT in wyjscie\n", [5], id="komunikat-boxa-z-from-importu"),
+    pytest.param("komunikat-boxa-podlancuchem", "import box_boat\n\n\ndef komunikat() -> str:\n    return box_boat.KOMUNIKAT\n", [], id="komunikat-boxa-bez-porownania-przechodzi"),
+    pytest.param("komunikat-boxa-podlancuchem", f'{_BOX}"OK" in wyjscie\n', [], id="inny-napis-w-wyjsciu-przechodzi"),
+    pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / (srodek - start) < 2\n", [7], id="stosunek-perf-counter"),
+    pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.monotonic() - start) / (time.monotonic() - srodek) < 2\n", [7], id="stosunek-monotonic"),
+    pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert time.perf_counter() - srodek < start\n", [], id="roznica-bez-stosunku-przechodzi"),
+    pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / 2 < start\n", [], id="dzielenie-przez-stala-przechodzi"),
     pytest.param(
         "kotwica-konca-linii",
         f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n',
@@ -2812,6 +2840,19 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "wycinek w lambdzie map": f"{_WORDS}    return list(map(lambda found: text[found.end() :], WORD.finditer(text)))\n",
         "koniec wycinka zapisany wprost": f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.end() : len(text)])\n    return rests\n",
         "pętla while po next": f"{_WORDS}    rests = []\n    found_all = WORD.finditer(text)\n    while (found := next(found_all, None)) is not None:\n        rests.append(text[found.end() :])\n    return rests\n",
+    },
+    "krok-mypy-ruff-poza-krokami": {
+        "program bez -m": 'POLECENIE = ["mypy", "--no-incremental"]\n',
+        "narzędzie w zmiennej": f'{_SYS}NARZEDZIE = "mypy"\nPOLECENIE = [sys.executable, "-m", NARZEDZIE]\n',
+        "polecenie w jednym napisie": 'POLECENIE = "python -m mypy --no-incremental"\n',
+    },
+    "komunikat-boxa-podlancuchem": {
+        "tekst komunikatu w literale": 'def infra(wyjscie: str) -> bool:\n    return "BOX: boat przeniósł katalog repo" in wyjscie\n',
+        "szukanie przez find": f"{_BOX}wyjscie.find(box_boat.KOMUNIKAT) >= 0\n",
+    },
+    "stosunek-czasow-sciany": {
+        "stosunek zapisany mnożeniem": f"{_ZEGAR}    assert time.perf_counter() - srodek < 2 * (srodek - start)\n",
+        "czasy w nazwanych zmiennych": f"{_ZEGAR}    pierwszy = srodek - start\n    drugi = time.perf_counter() - srodek\n    assert drugi / pierwszy < 2\n",
     },
     "dyrektywa-mypy-recznie": {
         "wzorzec w stałej poza wywołaniem": 'DYREKTYWA = "# mypy:"\n\n\ndef dyrektywa(linia: str) -> bool:\n    return linia.startswith(DYREKTYWA)\n',
@@ -3240,6 +3281,96 @@ def test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff(t
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
+_TITLE_RULE = "stanowisko-z-tytulu"
+_IN_CASES = "def workstation_of(title, issue, entry, body, prefixes):\n"
+_PROBKI_STANOWISKA_Z_TYTULU: Final[list[tuple[str, list[int]]]] = [
+    (f'{_IN_CASES}    return next((name for prefix, name in prefixes.items() if title.startswith(f"{{prefix}} ")), "taty")\n', [2]),
+    (f'{_IN_CASES}    return issue["title"].startswith("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return entry.title.removeprefix("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return str(issue.get("title", "")).startswith(prefixes)\n', [2]),
+    (f'{_IN_CASES}    return (entry.title\n        .startswith("ANDRZEJ "))\n', [2]),
+    (f'{_IN_CASES}    return entry.Tytul.startswith("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return body.splitlines()[-1].startswith("<!-- ")\n', []),
+    (f"{_IN_CASES}    return title.split()\n", []),
+    (f'{_IN_CASES}    return issue["body"].startswith("- Logi Uruchomienia okresu: ")\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_STANOWISKA_Z_TYTULU)
+def test_regula_stanowiska_z_tytulu_zglasza_poczatek_tytulu_a_nie_tresc_sprawy(tmp_path: Path, text: str, lines: list[int]) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tools" / "lib").mkdir(parents=True)
+    (tmp_path / "tools" / "lib" / "sprawy.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_TITLE_RULE, tmp_path, base) == [("tools/lib/sprawy.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_stanowiska_z_tytulu_zglasza_src_i_tools_poza_wlascicielem_prefiksu(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    paths = (
+        "src/rozliczenia/centrum/box_prefix.py",
+        "src/rozliczenia/centrum/box_prefix_kopia.py",
+        "tools/lib/naprawia.py",
+        "tests/test_skrzynki.py",
+        ".agents/skills/verify-skrzynki/scripts/sprawy.py",
+    )
+    for path in paths:
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text('def owns(title):\n    return title.startswith("ANDRZEJ ")\n', encoding="utf-8")
+
+    assert _findings_of(_TITLE_RULE, tmp_path, base) == [("src/rozliczenia/centrum/box_prefix_kopia.py", 2), ("tools/lib/naprawia.py", 2)]
+
+
+ZNANE_LUKI_STANOWISKA_Z_TYTULU: Final[dict[str, str]] = {
+    "tytuł pod inną nazwą": """\
+def workstation_of(issue: dict[str, str]) -> bool:
+    heading = issue["name"]
+    return heading.startswith("ANDRZEJ ")
+""",
+    "str.startswith z tytułem w argumencie": """\
+def workstation_of(title: str) -> bool:
+    return str.startswith(title, "ANDRZEJ ")
+""",
+    "wycinek początku tytułu": """\
+def workstation_of(title: str) -> bool:
+    return title[:8] == "ANDRZEJ "
+""",
+    "pierwsze słowo po split": """\
+def workstation_of(title: str) -> bool:
+    return title.split(" ", 1)[0] == "ANDRZEJ"
+""",
+    "wyrażenie regularne": """\
+import re
+
+
+def workstation_of(title: str) -> bool:
+    return re.match("ANDRZEJ ", title) is not None
+""",
+    "operator in": """\
+def workstation_of(title: str) -> bool:
+    return "ANDRZEJ " in title
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_stanowiska_z_tytulu_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tools" / "lib").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_STANOWISKA_Z_TYTULU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tools" / "lib" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanowiska_z_tytulu_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
 _ORACLE_RULE = "wlasna-wyrocznia-numeru"
 _IN_TEST = "import re\n\n\ndef test_bez_numeru(text, number, texts, order, line):\n"
 # Tekst dodanego pliku ``tests/`` → linie, które reguła ``wlasna-wyrocznia-numeru`` zgłasza: własna wyrocznia numeru
@@ -3648,3 +3779,43 @@ def test_regula_z_zapadki_na_calym_drzewie_zglasza_plik_przeniesiony_spoza_ignor
 
     assert [(finding.path, finding.line) for finding in whole_tree_rules(tmp_path) if finding.rule == rule] == [(new, line)]
     assert _findings_of(rule, tmp_path, base) == []
+
+
+def _ci_step_output(root: Path, step: str, node: str, files: Mapping[str, str]) -> str:
+    import yaml
+
+    copied = (Path(__file__), *(ROOT / "tools" / "lib" / name for name in ("odpalenia_ast_grep.py", "repo.py", "potomne.py")), AST_GREP_CONFIG, ROOT / "ruff.toml", ROOT / "tests" / "ruff.toml")
+    _committed(root, {path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8") for path in (*copied, *ast_grep_rules(AST_GREP_CONFIG))})
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(text.encode("utf-8"))
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "zmiana")
+    [found] = [one for one in yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]["ruff-mypy"]["steps"] if one.get("name") == step]
+    program, *options = [word for word in str(found["run"]).split() if not word.startswith("tests/")]
+    assert program == "python", found
+    environment = {**os.environ, **found.get("env", {}), "CI": "true", "PYTHONPATH": str(root / "tools" / "lib"), "PYTHONUTF8": "1"}
+    printed = subprocess.run([sys.executable, *options, node], cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=300, check=False)
+    assert printed.returncode == 1, printed.stdout + printed.stderr
+    return printed.stdout
+
+
+@needs_ast_grep
+def test_krok_regul_na_liniach_dodanych_drukuje_linie_odpalenia_kazdej_reguly_takze_przy_dlugiej_sciezce(tmp_path: Path) -> None:
+    files = {
+        "tools/a.py": "NAZWA = str.__doc__\n",
+        ".agents/skills/verify-centrum-rozliczen/scripts/check_centrum_wycena_w_efenix_mutations_bardzo_dlugiej_nazwy.py": "WARTOSC = 1  # komentarz obok kodu\n",
+    }
+    printed = _ci_step_output(tmp_path, "ast-grep rules on the added lines of the repository", "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo", files)
+
+    assert sorted(set(odpalenia_ast_grep.FIRED_LINE.findall(printed))) == ["komentarz-poza-src", "odczyt-docstringu"], printed
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_krok_regul_calego_drzewa_drukuje_linie_failed_testu_ktory_padl_na_noqa_przy_zakazanej_nazwie(tmp_path: Path) -> None:
+    import ponow_ci
+
+    node = "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff"
+    printed = _ci_step_output(tmp_path, "Weed rules of the whole tree", node, {"tools/linia.py": "import os\n\nSYSTEM = os.name  # noqa: TID251 - próbka\n"})
+
+    assert [found[1] for found in ponow_ci.TEST_LINE.finditer(printed)] == [node], printed

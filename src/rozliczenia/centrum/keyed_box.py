@@ -62,6 +62,7 @@ from pathlib import Path
 from typing import Final, Literal, TypeVar
 
 from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.box_prefix import owns, stamped
 from rozliczenia.centrum.github import ANSWER_KEPT_S, NO_ANSWER_KEPT_S, sendable
 from rozliczenia.centrum.report_box import (
     Archive,
@@ -73,6 +74,8 @@ from rozliczenia.centrum.report_box import (
     Issue,
     IssuesOutcome,
     Label,
+    ListedIssue,
+    ListOutcome,
     OpenArchiveOutcome,
     Refused,
     Rejected,
@@ -86,6 +89,7 @@ from rozliczenia.centrum.report_box import (
     newest_with_line,
 )
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.work import CentrumWork
 
 REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
@@ -235,7 +239,13 @@ class KeyedBox:
     """
 
     def __init__(
-        self, box: ReportBox, key: Callable[[], str | None], *, clock: Callable[[], float], opening: NotesFile | None = None
+        self,
+        box: ReportBox,
+        key: Callable[[], str | None],
+        *,
+        clock: Callable[[], float],
+        opening: NotesFile | None = None,
+        prefix: BoxPrefix | None = None,
     ) -> None:
         """``_no_answer``: skrót klucza i chwila ostatniego pytania bez odpowiedzi; ``_remembered``: zapisy bez pliku
         ``opening``; ``_lists.listed_at``: chwila ostatniego pytania wątku o listę, na które przyszła odpowiedź;
@@ -243,6 +253,7 @@ class KeyedBox:
         ``_names``: nazwa każdego pliku Archiwum po jego id z ostatnich odpowiedzi ``archive``."""
 
         self._box = box
+        self._prefix = prefix
         self._key = key
         self._clock = clock
         self._lock = threading.Lock()
@@ -262,6 +273,7 @@ class KeyedBox:
             lambda: read_report_key(work.config),
             clock=work.clock,
             opening=NotesFile(work.config / OPENING_FILE, replace_atomically, work.log.box_notes_unavailable),
+            prefix=work.box_prefix,
         )
 
     def state(self) -> BoxState:
@@ -293,14 +305,15 @@ class KeyedBox:
         if ready is None:
             return Unreachable()
         asked_at, write, before = ready
-        outcome = self._box.open_issue(label, title, body, key=key)
+        sent_body = stamped(self._prefix, body)
+        outcome = self._box.open_issue(label, title, sent_body, key=key)
         self._observe(key, asked_at, outcome)
         sent = outcome.number if isinstance(outcome, Sent) else None
         self._settled(
             label,
             write,
             before,
-            None if sent is None else lambda notes, at: notes.opened.append((at, label, Issue(sent, body))),
+            None if sent is None else lambda notes, at: notes.opened.append((at, label, Issue(sent, sent_body))),
             refused=isinstance(outcome, Refused | Rejected),
         )
         return outcome
@@ -548,7 +561,10 @@ class KeyedBox:
         """
 
         listed = self._labelled(label, include_closed=include_closed)
-        return listed if isinstance(listed, NoKey | Refused | Unreachable) else listed[0]
+        if isinstance(listed, NoKey | Refused | Unreachable):
+            return listed
+        entries, missing, _ = listed
+        return _issues(entries, missing)
 
     def known_issue(self, label: Label, number: int) -> Issue | None | Refused | Unreachable | NoKey:
         """Issue ``number`` z etykietą ``label`` (otwarte albo zamknięte) z ``labelled_issues``; ``None``: Skrzynka go
@@ -563,14 +579,15 @@ class KeyedBox:
         listed = self._labelled(label, include_closed=True)
         if isinstance(listed, NoKey | Refused | Unreachable):
             return listed
-        issues, complete = listed
-        found = next((issue for issue in issues if issue.number == number), None)
+        entries, missing, complete = listed
+        found = next((issue for issue in _issues(entries, missing) if issue.number == number), None)
         return found if found is not None or complete else Unreachable()
 
     def _labelled(
         self, label: Label, *, include_closed: bool
-    ) -> tuple[tuple[Issue, ...], bool] | Refused | Unreachable | NoKey:
-        """``labelled_issues`` i czy ta lista pokazuje każdy zapis etykiety ``label``: zapis nie byłby teraz wstrzymany."""
+    ) -> tuple[tuple[ListedIssue, ...], tuple[Issue, ...], bool] | Refused | Unreachable | NoKey:
+        """Lista Skrzynki, issue ``labelled_issues`` spoza niej i czy ta lista pokazuje każdy zapis etykiety ``label``:
+        zapis nie byłby teraz wstrzymany."""
 
         key = self._usable()
         if not isinstance(key, str):
@@ -585,22 +602,23 @@ class KeyedBox:
             notes = known or _Notes()
             complete = not self._held(label, self._clock(), notes)
         opened = [issue for _, of, issue in notes.opened if of == label]
-        numbers = {issue.number for issue in listed}
+        numbers = {entry.issue.number for entry in listed}
         missing = [issue for issue in opened if issue.number not in numbers]
         if missing and not include_closed:
             every = self._listed(key, label, include_closed=True)
             if not isinstance(every, Refused | Unreachable):
-                closed = {issue.number for issue in every if issue.closure is not None}
+                closed = {entry.issue.number for entry in every if entry.issue.closure is not None}
                 missing = [issue for issue in missing if issue.number not in closed]
-        return (*listed, *missing), complete
+        return listed, tuple(missing), complete
 
     def find_issue(self, label: Label, line: str, *, include_closed: bool) -> FindOutcome | NoKey:
-        """Najnowsze issue z etykietą ``label`` i wierszem ``line`` (odcisk problemu, token okresu)."""
+        """Najnowsze issue tego Stanowiska z etykietą ``label`` i wierszem ``line`` (odcisk problemu, token okresu)."""
 
-        issues = self.labelled_issues(label, include_closed=include_closed)
-        if isinstance(issues, NoKey | Refused | Unreachable):
-            return issues
-        return newest_with_line(issues, line)
+        listed = self._labelled(label, include_closed=include_closed)
+        if isinstance(listed, NoKey | Refused | Unreachable):
+            return listed
+        entries, missing, _ = listed
+        return newest_with_line((*(entry.issue for entry in entries if owns(self._prefix, entry.title)), *missing), line)
 
     def judge(self, *, wait_s: float) -> KeyJudgement:
         """Stan klucza teraz; gdy sprawdzenie jest należne, zleca je w tle i czeka na nie najwyżej ``wait_s``."""
@@ -648,7 +666,7 @@ class KeyedBox:
 
         self._listed(key, REPORT_LABEL, include_closed=False)
 
-    def _listed(self, key: str, label: Label, *, include_closed: bool) -> IssuesOutcome:
+    def _listed(self, key: str, label: Label, *, include_closed: bool) -> ListOutcome:
         asked_at = self._clock()
         outcome = self._box.labelled_issues(label, include_closed=include_closed, key=key)
         self._observe(key, asked_at, outcome)
@@ -700,6 +718,10 @@ _FILE_PREFIX: Final = "plik "
 _FILES_LIST: Final = "pliki archiwum"
 """Wysłanie i usunięcie pliku Archiwum widać na liście plików Archiwum (``archive``): rodzaj zapisu to nazwa pliku
 (``_file_kind``), a chwila listy jest wspólna dla wszystkich plików."""
+
+
+def _issues(listed: tuple[ListedIssue, ...], missing: tuple[Issue, ...]) -> tuple[Issue, ...]:
+    return (*(entry.issue for entry in listed), *missing)
 
 
 def _file_kind(name: str) -> str:

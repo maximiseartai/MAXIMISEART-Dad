@@ -25,17 +25,17 @@
     "ReportHandle._delivered": "a75dc87bd31fd1dd",
     "ReportHandle._done": "0e070b0ed9b7a49c",
     "ReportHandle._show": "34463b95f4c705c0",
-    "Reports.__init__": "d6c8179525aa017d",
+    "Reports.__init__": "552101deb8eea536",
     "Reports.handle": "173cb2702668736a",
     "Reports._heard": "fd2b20d0d13b6f59",
-    "Reports._queue": "39ef563e08130855",
+    "Reports._queue": "5c5a9628d6190bb9",
     "Reports._pending": "933676e05a1deb0a",
-    "Reports._ask_box": "4c83cf0063edb74b",
+    "Reports._ask_box": "f7b02a8b112bc352",
     "Reports._state_of": "24c4c28b21c8ac02",
     "Reports._preview": "31448fc839f60738"
   },
   "src/rozliczenia/centrum/dad_notes.py": {
-    "send": "e833b7e306b44d69"
+    "send": "07dfc62a5dffbabd"
   },
   "src/rozliczenia/centrum/case_delivery.py": {
     "case_outbox": "76216dc98861aa5c",

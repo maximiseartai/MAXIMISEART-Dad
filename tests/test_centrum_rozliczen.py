@@ -455,7 +455,7 @@ def _trasy(app: FastAPI) -> frozenset[str]:
 
 
 def _zakres(functions: Iterable[str]) -> Scope:
-    return Scope(Workstation.DAD, frozenset(CentrumFunction(function) for function in functions))
+    return Scope(Workstation.DAD, frozenset(CentrumFunction(function) for function in functions), None)
 
 
 def _adres(trasa: str) -> tuple[str, str]:

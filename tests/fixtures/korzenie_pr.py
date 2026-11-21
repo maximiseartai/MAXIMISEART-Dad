@@ -146,13 +146,14 @@ SKILL = {
         "# Przegląd", "", "## Co jest porażką", "", "- Nowy punkt z przykładem #1457.", "- Punkt bez przykładu.", f"- Nowy punkt z przykładem #{FEATURE}.", "", "## Dowody", "", "Tekst.", ""
     ),
 }
-# Treści werdyktów pod dwiema pierwszymi liniami: punkt rozstrzygnięcia kodu w „## Sprawdzone” (decyzja Q25).
 WERDYKTY = {
     "rozstrzyga-w1-r1": _lines("## Sprawdzone", "- Korzeń W1 r1: R-DRUGA-DROGA - druga droga, nie brak testu.", "- diff"),
     "rozstrzyga-nowym-kodem": _lines("## Sprawdzone", "- Korzeń W1 r1: NOWY R-NOWY-KOD - opis kodu spoza listy.", "- diff"),
     "rozstrzyga-kodem-spoza-listy": _lines("## Sprawdzone", "- Korzeń W1 r1: R-NIE-MA - kod spoza listy.", "- diff"),
     "rozstrzygniecie-bez-rundy": _lines("## Sprawdzone", "- Korzeń W1: R-DRUGA-DROGA - bez rundy.", "- diff"),
     "wazne-bez-korzenia": "- Ważne: brak testu, opisane prozą.",
+    "szczebel-w1-r1-test": _lines("## Sprawdzone", "- Mechanizm W1 r1: test - reguła ast-grep alarmuje w ponad 10% PR-ów.", "- diff"),
+    "szczebel-w1-r1-lint": _lines("## Sprawdzone", "- Mechanizm W1 r1: lint - zakaz nazwy łapie każdą kopię.", "- diff"),
 }
 
 

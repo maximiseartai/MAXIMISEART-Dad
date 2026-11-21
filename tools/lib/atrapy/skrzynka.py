@@ -39,6 +39,7 @@ from rozliczenia.centrum.report_box import (
     Closure,
     Issue,
     Label,
+    ListedIssue,
     Refused,
     Rejected,
     Removed,
@@ -119,9 +120,9 @@ class Issues:
                 return issue
         return Refused()
 
-    def listed(self, label: Label, *, include_closed: bool) -> tuple[Issue, ...]:
+    def listed(self, label: Label, *, include_closed: bool) -> tuple[ListedIssue, ...]:
         return tuple(
-            Issue(issue.number, issue.text, issue.closure)
+            ListedIssue(Issue(issue.number, issue.text, issue.closure), issue.title)
             for issue in self.issues
             if issue.label == label
             and (include_closed or issue.closure is None)

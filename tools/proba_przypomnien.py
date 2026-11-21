@@ -140,7 +140,7 @@ def _entering(config: Path) -> FileReportState:
     odczytu: próba nie zapisuje pamięci, więc dziennik Centrum nie dostaje od niej żadnej linii."""
 
     log = CentrumLog(tool_files.LOG_PATH, append=lambda _line: None)
-    return FileReportState.of_work(CentrumWork(config, log, SYSTEM_CLOCK, time.sleep, empty_memory()))
+    return FileReportState.of_work(CentrumWork(config, log, SYSTEM_CLOCK, time.sleep, empty_memory(), None))
 
 
 def _sample(read: DueReminders, reminders: ReminderSettings, now: datetime, target: SenderAddress) -> Reminder:

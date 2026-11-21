@@ -21,15 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _leaves(execute: Callable[[Choices], tuple[int, ...]], budget: dict[str, int] | None = None) -> list[tuple[int, ...]]:
-    """Harmonogramy drzewa testu, najwyżej 20: przejście, które się nie kończy, daje listę inną od oczekiwanej, a nie
-    zawieszony test."""
-
     return list(islice(schedules(execute, budget), 20))
 
 
 def test_przejscie_drzewa_odwiedza_kazdy_harmonogram_raz_w_glab() -> None:
-    """Drzewo o szerokości zależnej od wcześniejszego wyboru: każdy liść raz, w kolejności w głąb, od pierwszych opcji."""
-
     def execute(choices: Choices) -> tuple[int, ...]:
         first = choices.choose(3)
         second = choices.choose(first + 1)
@@ -49,7 +44,6 @@ def test_harmonogram_powtarza_prefiks_az_do_nowego_wyboru() -> None:
             choices.choose(2)
         return tuple(replayed)
 
-    # Prefiksy kolejnych harmonogramów drzewa 2×2×2: [], [0,0,1], [0,1], [0,1,1], [1], [1,0,1], [1,1], [1,1,1].
     assert _leaves(execute) == [(0, 0, 0), (1, 1, 1), (1, 1, 0), (1, 1, 1), (1, 0, 0), (1, 1, 1), (1, 1, 0), (1, 1, 1)]
 
 
@@ -71,8 +65,6 @@ class _Watek(Thread):
 
 
 class _Przeplot(Interleaving[_Watek]):
-    """``Interleaving`` z limitem przełączeń: ``settle``, które przełącza wątki bez końca, pada zamiast wisieć."""
-
     switches = 0
 
     def _switch(self, thread: _Watek) -> None:
@@ -131,9 +123,6 @@ def test_watek_zalozony_przez_watek_modelu_konczy_sie_w_eksploratorze_a_zakladaj
 
 
 def test_wynik_kroku_daje_tylko_release_eksploratora() -> None:
-    """Wątek przełączony bez ``release`` nie dostaje wyniku poprzedniego kroku: taki błąd eksploratora pada od razu,
-    zamiast powtórzyć krok, którego eksplorator nie wybrał."""
-
     interleaving = _Przeplot()
     thread = _Watek("a")
 

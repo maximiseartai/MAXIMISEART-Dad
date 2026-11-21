@@ -26,7 +26,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, REPORT, Case, Da
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY, case_outbox
 from rozliczenia.centrum.outbox import PART_LIMIT, QUEUE_DIRECTORY, QUEUE_THREAD, RETRY_S, Outbox, Post
 from rozliczenia.centrum.report_issue import fingerprint_line
-from rozliczenia.centrum.report_box import IssuesOutcome, Label, Refused, Unreachable
+from rozliczenia.centrum.report_box import Label, ListOutcome, Refused, Unreachable
 from rozliczenia.centrum.reports import (
     SEARCH_DEADLINE_S,
     NoPreview,
@@ -905,7 +905,7 @@ class FirstSearchHeld(FakeReportBox):
     first_asked: threading.Event = field(default_factory=threading.Event)
     first_search: threading.Event = field(default_factory=threading.Event)
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         if not self.first_asked.is_set():
             self.first_asked.set()
             self.first_search.wait()

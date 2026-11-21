@@ -14,4 +14,4 @@ def centrum_work(config: Path, log: CentrumLog, clock: ManualClock | None = None
     """Praca Centrum testu modułu bez aplikacji: pliki stanu w ``config``, dziennik ``log`` i zegar, który stoi."""
 
     clock = clock or ManualClock()
-    return CentrumWork(config=config, log=log, clock=clock, pause=clock.pause, forbidden=empty_memory())
+    return CentrumWork(config=config, log=log, clock=clock, pause=clock.pause, forbidden=empty_memory(), box_prefix=None)

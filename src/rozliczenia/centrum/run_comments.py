@@ -15,6 +15,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.comment_versions import (
     LABEL,
+    CommentVersion,
     Drop,
     LogsPost,
     OwnLogs,
@@ -197,6 +198,7 @@ class RunComments:
         self._disk = disk
         self._queue = queue
         self._forbidden = work.forbidden
+        self._prefix = work.box_prefix
         self._clock = work.clock
         self._log = work.log
         self._records = records
@@ -230,7 +232,7 @@ class RunComments:
                 return False
             if progress is not None:
                 text = guard_text(progress_markdown(progress, elapsed_s=elapsed_s), _PROGRESS_PLACE, self._forbidden)
-                self._queue.post(post_of(ProgressVersion(progress, text)))
+                self._sent(ProgressVersion(progress, text))
             return True
 
     def run_ended(self, run: EndedRun) -> None:
@@ -261,6 +263,9 @@ class RunComments:
             self._log.unexpected_failure(failure, where=where)
             return None
 
+    def _sent(self, version: CommentVersion) -> bool:
+        return self._queue.post(post_of(version, prefix=self._prefix))
+
     def link(self, run_id: str) -> str | None:
         return self._queue.delivered(run_id, LABEL)
 
@@ -281,7 +286,7 @@ class RunComments:
         try:
             self._disk.write(version.logs)
         finally:
-            accepted(self._queue.post(post_of(version)))
+            accepted(self._sent(version))
 
     def close_left_behind(self) -> LeftBehindClosed:
         for left in self._disk.left_behind():
@@ -312,7 +317,7 @@ class RunComments:
             pending, self._pending = self._pending, []
         for key, version in pending:
             try:
-                if journal_after(version, accepted=self._queue.post(post_of(version))) == "usuń":
+                if journal_after(version, accepted=self._sent(version)) == "usuń":
                     self._disk.remove_journal(key)
             except Exception as failure:
                 self._log.unexpected_failure(failure, where=_LEFT_BEHIND)
