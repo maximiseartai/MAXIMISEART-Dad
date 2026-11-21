@@ -1,6 +1,6 @@
 {
   "zmierzono": {
-    "data": "2026-10-20",
+    "data": "2026-11-21",
     "powtorzenia": 5,
     "profile": [
       "4x",
@@ -13,56 +13,66 @@
     "bundle_wzgledny": 0.02
   },
   "bundle_bajty": {
-    "js": 724723,
-    "css": 104520
+    "js": 1019427,
+    "css": 140069
   },
   "scenariusze": {
     "okresy/zimny-start": {
       "mediana_ms": {
-        "4x": 349,
-        "6x": 562
+        "4x": 293,
+        "6x": 476
       },
       "zapytania_api": {
         "GET /api/metrics": 1,
         "GET /api/notifications": 1,
         "GET /api/periods": 1,
         "GET /api/runs/events": 1,
+        "GET /api/scope": 1,
         "GET /api/settings": 1,
+        "GET /api/tool-update": 1,
         "POST /api/view-timings": 1
       }
     },
     "uruchomienia/zimny-start": {
       "mediana_ms": {
-        "4x": 257,
-        "6x": 400
+        "4x": 355,
+        "6x": 569
       },
       "zapytania_api": {
+        "GET /api/intermax": 1,
+        "GET /api/intermax/days": 1,
         "GET /api/notifications": 1,
         "GET /api/runs/events": 1,
         "GET /api/runs/setup": 1,
+        "GET /api/scope": 1,
         "GET /api/settings": 1,
+        "GET /api/tool-update": 1,
         "POST /api/view-timings": 1
       }
     },
     "metryki/zimny-start": {
       "mediana_ms": {
-        "4x": 251,
-        "6x": 402
+        "4x": 334,
+        "6x": 549
       },
       "zapytania_api": {
         "GET /api/metrics": 1,
         "GET /api/notifications": 1,
         "GET /api/runs/events": 1,
+        "GET /api/scope": 1,
         "GET /api/settings": 1,
+        "GET /api/tool-update": 1,
         "POST /api/view-timings": 1
       }
     },
     "menu/1/uruchomienia": {
       "mediana_ms": {
-        "4x": 133,
-        "6x": 192
+        "4x": 167,
+        "6x": 217
       },
       "zapytania_api": {
+        "GET /api/intermax": 1,
+        "GET /api/intermax/days": 1,
         "GET /api/notifications": 1,
         "GET /api/runs/setup": 1,
         "POST /api/view-timings": 1
@@ -76,8 +86,8 @@
     },
     "menu/1/metryki": {
       "mediana_ms": {
-        "4x": 62,
-        "6x": 92
+        "4x": 88,
+        "6x": 112
       },
       "zapytania_api": {
         "GET /api/metrics": 1,
@@ -93,8 +103,8 @@
     },
     "menu/1/okresy": {
       "mediana_ms": {
-        "4x": 80,
-        "6x": 123
+        "4x": 55,
+        "6x": 71
       },
       "zapytania_api": {
         "GET /api/metrics": 1,
@@ -111,10 +121,12 @@
     },
     "menu/2/uruchomienia": {
       "mediana_ms": {
-        "4x": 65,
-        "6x": 84
+        "4x": 54,
+        "6x": 68
       },
       "zapytania_api": {
+        "GET /api/intermax": 1,
+        "GET /api/intermax/days": 1,
         "GET /api/notifications": 1,
         "GET /api/runs/setup": 1,
         "POST /api/view-timings": 1
@@ -128,8 +140,8 @@
     },
     "menu/2/metryki": {
       "mediana_ms": {
-        "4x": 55,
-        "6x": 66
+        "4x": 64,
+        "6x": 84
       },
       "zapytania_api": {
         "GET /api/metrics": 1,
@@ -145,8 +157,8 @@
     },
     "menu/2/okresy": {
       "mediana_ms": {
-        "4x": 71,
-        "6x": 108
+        "4x": 55,
+        "6x": 67
       },
       "zapytania_api": {
         "GET /api/metrics": 1,
@@ -163,8 +175,8 @@
     },
     "okresy/motyw-jasny": {
       "mediana_ms": {
-        "4x": 112,
-        "6x": 176
+        "4x": 56,
+        "6x": 72
       },
       "zapytania_api": {
         "PUT /api/settings/theme": 1
@@ -172,8 +184,8 @@
     },
     "okresy/motyw-ciemny": {
       "mediana_ms": {
-        "4x": 80,
-        "6x": 136
+        "4x": 56,
+        "6x": 72
       },
       "zapytania_api": {
         "PUT /api/settings/theme": 1
@@ -181,8 +193,8 @@
     },
     "okresy/powrot-do-karty": {
       "mediana_ms": {
-        "4x": 18,
-        "6x": 19
+        "4x": 23,
+        "6x": 23
       },
       "zapytania_api": {
         "GET /api/metrics": 1,
@@ -193,50 +205,50 @@
     },
     "metryki/proces-przebieg": {
       "mediana_ms": {
-        "4x": 16,
-        "6x": 24
+        "4x": 48,
+        "6x": 64
       },
       "zapytania_api": {}
     },
     "metryki/proces-przygotowanie": {
-      "mediana_ms": {
-        "4x": 16,
-        "6x": 24
-      },
-      "zapytania_api": {}
-    },
-    "metryki/tryb-dry-run": {
-      "mediana_ms": {
-        "4x": 16,
-        "6x": 24
-      },
-      "zapytania_api": {}
-    },
-    "metryki/tryb-run": {
-      "mediana_ms": {
-        "4x": 16,
-        "6x": 24
-      },
-      "zapytania_api": {}
-    },
-    "metryki/zakladka-tabela": {
       "mediana_ms": {
         "4x": 24,
         "6x": 32
       },
       "zapytania_api": {}
     },
+    "metryki/tryb-dry-run": {
+      "mediana_ms": {
+        "4x": 24,
+        "6x": 32
+      },
+      "zapytania_api": {}
+    },
+    "metryki/tryb-run": {
+      "mediana_ms": {
+        "4x": 24,
+        "6x": 40
+      },
+      "zapytania_api": {}
+    },
+    "metryki/zakladka-tabela": {
+      "mediana_ms": {
+        "4x": 24,
+        "6x": 40
+      },
+      "zapytania_api": {}
+    },
     "metryki/zakladka-wykres": {
       "mediana_ms": {
         "4x": 24,
-        "6x": 24
+        "6x": 32
       },
       "zapytania_api": {}
     },
     "metryki/powrot-do-karty": {
       "mediana_ms": {
-        "4x": 8,
-        "6x": 9
+        "4x": 14,
+        "6x": 14
       },
       "zapytania_api": {
         "GET /api/metrics": 1,
@@ -246,8 +258,8 @@
     },
     "uruchomienia/zakladka-historia": {
       "mediana_ms": {
-        "4x": 24,
-        "6x": 40
+        "4x": 32,
+        "6x": 56
       },
       "zapytania_api": {
         "GET /api/metrics": 1
@@ -255,10 +267,12 @@
     },
     "uruchomienia/zakladka-uruchomienie": {
       "mediana_ms": {
-        "4x": 24,
-        "6x": 40
+        "4x": 32,
+        "6x": 56
       },
       "zapytania_api": {
+        "GET /api/intermax": 1,
+        "GET /api/intermax/days": 1,
         "GET /api/runs/setup": 1
       }
     },
@@ -276,37 +290,10 @@
       },
       "zapytania_api": {}
     },
-    "okresy/ponowne-otwarcie": {
-      "mediana_ms": {
-        "4x": 372,
-        "6x": 556
-      },
-      "zapytania_api": {
-        "GET /api/metrics": 1,
-        "GET /api/notifications": 1,
-        "GET /api/periods": 1,
-        "GET /api/runs/events": 1,
-        "GET /api/settings": 1,
-        "POST /api/view-timings": 1
-      }
-    },
-    "metryki/ponowne-otwarcie": {
-      "mediana_ms": {
-        "4x": 263,
-        "6x": 399
-      },
-      "zapytania_api": {
-        "GET /api/metrics": 1,
-        "GET /api/notifications": 1,
-        "GET /api/runs/events": 1,
-        "GET /api/settings": 1,
-        "POST /api/view-timings": 1
-      }
-    },
     "uzupelnienie/pytanie-o-zapis": {
       "mediana_ms": {
         "4x": 4,
-        "6x": 3
+        "6x": 4
       },
       "zapytania_api": {
         "GET /api/periods/06_12_10_2026/collective-file-version": 3
@@ -314,12 +301,43 @@
     },
     "uzupelnienie/zmiana-pliku": {
       "mediana_ms": {
-        "4x": 52,
-        "6x": 51
+        "4x": 70,
+        "6x": 75
       },
       "zapytania_api": {
         "GET /api/periods/06_12_10_2026/collective-file-version": 1,
         "GET /api/periods/06_12_10_2026/quantities-to-fill": 1
+      }
+    },
+    "okresy/ponowne-otwarcie": {
+      "mediana_ms": {
+        "4x": 321,
+        "6x": 499
+      },
+      "zapytania_api": {
+        "GET /api/metrics": 1,
+        "GET /api/notifications": 1,
+        "GET /api/periods": 1,
+        "GET /api/runs/events": 1,
+        "GET /api/scope": 1,
+        "GET /api/settings": 1,
+        "GET /api/tool-update": 1,
+        "POST /api/view-timings": 1
+      }
+    },
+    "metryki/ponowne-otwarcie": {
+      "mediana_ms": {
+        "4x": 356,
+        "6x": 543
+      },
+      "zapytania_api": {
+        "GET /api/metrics": 1,
+        "GET /api/notifications": 1,
+        "GET /api/runs/events": 1,
+        "GET /api/scope": 1,
+        "GET /api/settings": 1,
+        "GET /api/tool-update": 1,
+        "POST /api/view-timings": 1
       }
     }
   }
