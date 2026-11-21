@@ -269,16 +269,12 @@ def _file_of(module: str, root: Path = SRC) -> str | None:
 
 
 def _modules_loaded(module: str) -> Iterator[str]:
-    """``module`` i pakiety nad nim: import modułu wczytuje każdy z nich."""
-
     parts = module.split(".")
     for end in range(1, len(parts) + 1):
         yield ".".join(parts[:end])
 
 
 def _from_module(node: ast.ImportFrom, file: str) -> str:
-    """Moduł importu ``from … import`` w pliku ``file`` (``rozliczenia/…``), także względnego."""
-
     base = node.module or ""
     if not node.level:
         return base
@@ -715,8 +711,6 @@ def _is_workbook(module: str) -> bool:
 
 
 def _workbook_chains(file: str, root: Path = SRC) -> set[str]:
-    """Łańcuchy importów od pliku ``file`` do warstwy skoroszytu (``_chains``)."""
-
     return _chains(file, _is_workbook, root)
 
 
@@ -916,7 +910,6 @@ def test_wpisy_procesow_czyta_tylko_katalog_procesow() -> None:
     )
 
 
-# Moduły z funkcją ``replace``, która kopiuje dataclassę z podmienionymi polami.
 _COPYING_MODULES: typing.Final = frozenset({"dataclasses", "copy"})
 
 
@@ -1894,8 +1887,6 @@ SRC_PACKAGE: typing.Final = "rozliczenia"
 
 
 def _private(name: str) -> bool:
-    """Prywatna nazwa: ``_x`` i ``__dict__``, ale nie dunder i nie sam separator ``_``."""
-
     return (
         name.startswith("_") and name.strip("_") != "" and not (name.startswith("__") and name.endswith("__"))
     ) or name == "__dict__"
@@ -2159,8 +2150,6 @@ SLF001_PROBE: typing.Final = "def owner_field(owner: object) -> object:\n    ret
 
 
 def _ruff_settings(path: str, cwd: Path) -> str:
-    """Efektywna konfiguracja ruff dla pliku ``path`` (``ruff check --show-settings``) z katalogu ``cwd``."""
-
     result = subprocess.run(
         [sys.executable, "-m", "ruff", "check", "--no-cache", "--show-settings", path],
         capture_output=True,
