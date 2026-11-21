@@ -3309,6 +3309,16 @@ def test_wpis_straznika_przeniesionego_scala_sie_tylko_z_dowodem_ok_takze_w_pr_b
         assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {refusal}"), last
 
 
+def test_status_pr_z_nowym_wpisem_straznika_przeniesionego_bierze_warunek_5_z_joba_dowodu(tmp_path: Path) -> None:
+    github, head = _guard_pull(tmp_path, "bez-sekcji", PASS_ON_OLD, changed={strazniki_przeniesione.PLIK: MOVED_ENTRY})
+    refused = {"numer": 1, "sha": head, "pominiety": False, "przyczyny": [{"tekst": "strażnik: Ważne 1480/W1/r1 nie przeszedł", "oczekuje": False}]}
+
+    answered = _run_from(github, github.checkout, "1", "--status", environment={**RUN, scal_pr.GUARD_JOB: "success", scal_pr.GUARD_PROOFS: json.dumps(refused)})
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | strażnik: Ważne 1480/W1/r1 nie przeszedł"
+
+
 def test_wazne_z_tym_samym_straznikiem_maja_jeden_dowod(tmp_path: Path) -> None:
     github, head = _guard_pull(tmp_path, "dwa-z-tym-samym-straznikiem", FAIL_TWO_SAME)
 

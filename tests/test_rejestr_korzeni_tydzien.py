@@ -1187,6 +1187,9 @@ straznik = "mypy"
 
 ["1479/W1/r1"]
 straznik = "ruff"
+
+["1483/W1/r1"]
+straznik = "mypy"
 '''
 
 
@@ -1210,7 +1213,7 @@ def test_ponowny_dowod_i_odpalenia_biora_straznika_wpisu_przeniesionego_z_main_z
         ["--straznik", "mypy", "--z-commita", week_end, "--wazne", "1481/W1/r1"],
         ["--straznik", "mypy", "--z-commita", week_end, "--wazne", "1482/W1/r1"],
     ]
-    assert _rows(text, "Ponowny dowód strażników") == [f"| #1479 | ruff | W1 r1 | {tydzien.REPROOF_STRAY} |"], text
+    assert _rows(text, "Ponowny dowód strażników") == [f"| #1479 | ruff | W1 r1 | {tydzien.REPROOF_STRAY} |", f"| #1483 | mypy | W1 r1 | {tydzien.REPROOF_STRAY} |"], text
     assert _rows(text, "Odpalenia strażników") == [f"| #1490 | pytest {MOVED_NODE} | #1480 W1 r1 |"], text
     assert _rows(text, "Strażniki")[1] == "| Od wdrożenia 2026-10-15 | 3 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 1 | 0 | 33% |", text
 
