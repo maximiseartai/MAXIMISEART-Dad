@@ -3320,20 +3320,36 @@ def test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff(t
 
 _PERIOD_NAME_RULE = "nazwa-pliku-okresu-poza-folderem-okresu"
 _IN_NAMES = "def names(token, worker, period):\n"
+_TEMPLATE = "from string import Template\n\n\ndef names(token, worker):\n"
 _PROBKI_NAZW_PLIKOW_OKRESU: Final = [
-    pytest.param(f'{_IN_NAMES}    return f"Rozliczenie {{period.token}} - zbiorcze.xlsx"\n', [2], id="plik-zbiorczy-z-f-stringu"),
-    pytest.param(f'{_IN_NAMES}    return "Rozliczenie {{token}} - zbiorcze.xlsx".format(token=token)\n', [2], id="plik-zbiorczy-z-format"),
-    pytest.param(f'{_IN_NAMES}    return "Rozliczenie " + token + " - zbiorcze.xlsx"\n', [2, 2], id="plik-zbiorczy-sklejony-z-tokenem"),
-    pytest.param(f'{_IN_NAMES}    return f"Rozliczenie wew. {{token}}.xlsx"\n', [2], id="rozliczenie-wewnetrzne"),
-    pytest.param(f'{_IN_NAMES}    return f"Rozliczenie pracowników {{token}}"\n', [2], id="folder-rozliczen-pracownikow"),
-    pytest.param(f'{_IN_NAMES}    return f"Rozliczenie {{token}} - {{worker}}.xlsx"\n', [2], id="rozliczenie-pracownika"),
+    pytest.param(f'{_IN_NAMES}    return f"Rozliczenie {{period.token}} - zbiorcze.xlsx"\n', [2], id="plik-zbiorczy-f-string"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie {{}} - zbiorcze.xlsx".format(token)\n', [2], id="plik-zbiorczy-format"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie %s - zbiorcze.xlsx" % token\n', [2], id="plik-zbiorczy-procent"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie " + token + " - zbiorcze.xlsx"\n', [2, 2], id="plik-zbiorczy-sklejany"),
+    pytest.param(f'{_IN_NAMES}    return token + " - zbiorcze.xlsx"\n', [2], id="plik-zbiorczy-sam-koniec-nazwy"),
+    pytest.param(f'{_IN_NAMES}    return "".join(("Rozliczenie ", token, " - zbiorcze", ".xlsx"))\n', [2, 2], id="plik-zbiorczy-join"),
+    pytest.param(f'{_IN_NAMES}    return f"Rozliczenie wew. {{token}}.xlsx"\n', [2], id="rozliczenie-wewnetrzne-f-string"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie wew. %s.xlsx" % token\n', [2], id="rozliczenie-wewnetrzne-procent"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie wew. " + token + ".xlsx"\n', [2], id="rozliczenie-wewnetrzne-sklejane"),
+    pytest.param(f'{_IN_NAMES}    return f"Rozliczenie pracowników {{token}}"\n', [2], id="folder-rozliczen-pracownikow-f-string"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie pracowników %s" % token\n', [2], id="folder-rozliczen-pracownikow-procent"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie pracowników " + token\n', [2], id="folder-rozliczen-pracownikow-sklejany"),
+    pytest.param(f'{_IN_NAMES}    return f"Rozliczenie {{token}} - {{worker}}.xlsx"\n', [2], id="rozliczenie-pracownika-f-string"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie %s - %s.xlsx" % (token, worker)\n', [2], id="rozliczenie-pracownika-procent"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie {{}} - {{}}.xlsx".format(token, worker)\n', [2], id="rozliczenie-pracownika-format"),
+    pytest.param(f'{_TEMPLATE}    return Template("Rozliczenie $token - $worker.xlsx").substitute(token=token, worker=worker)\n', [5], id="rozliczenie-pracownika-template"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie " + token + " - " + worker + ".xlsx"\n', [2], id="rozliczenie-pracownika-sklejane"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie" + " " + token + " - " + worker + ".xlsx"\n', [2], id="przedrostek-bez-spacji"),
+    pytest.param('PREFIX = "Rozliczenie"\n', [1], id="przedrostek-w-stalej"),
     pytest.param(f'{_IN_NAMES}    return "Rozliczenie 08_14_09_2026 - Jan Testowy.xlsx"\n', [2], id="nazwa-z-tokenem-okresu"),
     pytest.param(f'{_IN_NAMES}    return (\n        f"Rozliczenie {{token}}"\n        " - zbiorcze.xlsx"\n    )\n', [3, 4], id="nazwa-w-dwoch-napisach-obok-siebie"),
-    pytest.param(f'{_IN_NAMES}    return "Rozliczenie pracowników " + token\n', [2], id="folder-rozliczen-pracownikow-sklejony-z-tokenem"),
-    pytest.param(f'{_IN_NAMES}    return "Rozliczenie wew. " + token + ".xlsx"\n', [2], id="rozliczenie-wewnetrzne-sklejone-z-tokenem"),
-    pytest.param(f'{_IN_NAMES}    return "Rozliczenie " + token + " - " + worker + ".xlsx"\n', [2], id="rozliczenie-pracownika-sklejone-z-czesci"),
-    pytest.param(f'{_IN_NAMES}    return "Plik Rozliczenie wew. jest poza zakresem tego procesu."\n', [], id="zdanie-komunikatu-o-rozliczeniu-wewnetrznym"),
+    pytest.param(
+        f'{_IN_NAMES}    return "Plik Rozliczenie wew. jest poza zakresem tego procesu."\n',
+        [],
+        id="komunikat-o-wybranym-rozliczeniu-wewnetrznym-nazywa-plik-taty-skrotem-z-jego-nazwy",
+    ),
     pytest.param(f'{_IN_NAMES}    return "Z Rejestru zleceń powstaną Rozliczenie wewnętrzne i Plik zbiorczy."\n', [], id="nazwy-plikow-w-zdaniu-karty"),
+    pytest.param(f'{_IN_NAMES}    return "Rozliczenie pracownika Jana Testowego jest gotowe."\n', [], id="rozliczenie-pracownika-w-zdaniu"),
     pytest.param(f'{_IN_NAMES}    return "Nie uruchamiaj ponownie: Folder rozliczeń pracowników już jest."\n', [], id="folder-rozliczen-w-zdaniu"),
     pytest.param(f"{_IN_NAMES}    return collective_file_name_with(token)\n", [], id="nazwa-z-folderu-okresu"),
 ]
@@ -3362,20 +3378,13 @@ def test_regula_nazw_plikow_okresu_zglasza_tylko_src_poza_folderem_okresu(tmp_pa
 
 
 ZNANE_LUKI_NAZW_PLIKOW_OKRESU: Final[dict[str, str]] = {
-    "przedrostek bez spacji przed tokenem": """\
+    "przedrostek rozcięty w środku słowa": """\
 def name(token: str, worker: str) -> str:
-    return "Rozliczenie" + " " + token + " - " + worker + ".xlsx"
+    return "Rozlicz" + "enie " + token + " - " + worker + ".xlsx"
 """,
-    "rozszerzenie w osobnym napisie": """\
+    "koniec nazwy Pliku zbiorczego rozcięty przed słowem": """\
 def name(token: str) -> str:
-    return "Rozliczenie" + f" {token} - zbiorcze" + ".xlsx"
-""",
-    "przedrostek w stałej": """\
-PREFIX = "Rozliczenie"
-
-
-def name(token: str, worker: str) -> str:
-    return f"{PREFIX} {token} - {worker}.xlsx"
+    return "Rozlicz" + "enie " + token + " -" + " zbiorcze.xlsx"
 """,
 }
 
