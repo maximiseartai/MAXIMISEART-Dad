@@ -150,8 +150,8 @@ komentarzy (sprawdzone na PR z 337 komentarzami, gh 2.101).
 CLEANUP = ROOT / "tools" / "sprzatanie.py"
 TEMPLATE = ROOT / ".agents" / "skills" / "pr" / "SKILL.md"
 CLEANUP_TIMEOUT_S = 300
-GUARD_PROOFS = "DOWODY_STRAZNIKOW"  # wynik joba ``dowod`` dla ``--status``: lista linii JSON z ``--dowod-straznikow``
-GUARD_JOB = "DOWOD_WYNIK"  # wynik tego joba (``needs.dowod.result``), gdy linii PR nie ma
+GUARD_PROOFS = "DOWODY_STRAZNIKOW"
+GUARD_JOB = "DOWOD_WYNIK"
 # Zmienna środowiska kopii bazy, którą uruchamia ``_judged_from_base``; kopia zdejmuje ją od razu, więc jej procesy
 # potomne (test scalenia z testami tego narzędzia) jej nie dziedziczą, a ``scal_pr.py`` bazy, który jej nie zna, ją pomija.
 FROM_BASE_COPY = "SCAL_PR_Z_KOPII_BAZY"
@@ -184,8 +184,6 @@ def _reasons(problems: list[str]) -> str:
 
 
 def _body_problem(body: str, skill: str) -> str | None:
-    """Przyczyna odmowy, gdy opisowi brakuje nagłówka wzoru albo ma go nie po poprzednim; wzór to blok ``markdown``."""
-
     template = skill.partition("```markdown\n")[2].partition("\n```")[0]
     lines = [line.strip() for line in body.splitlines()]
     missing, after = [], 0
@@ -222,9 +220,6 @@ def _remote_base(base: str) -> str:
 
 
 def _judged_from_base(pull: Pull, base: str, label: str, argv: list[str], *, from_copy: bool, retrying: bool) -> int | None:
-    """``None``, gdy ten checkout to czysty checkout ``base`` (SHA ``origin/<baza PR>`` tuż po pobraniu) i sądzi sam;
-    inaczej kod wyjścia polecenia ``argv`` uruchomionego z kopii ``base``, a w kopii (``from_copy``) odmowa."""
-
     head = repo.git(ROOT, "rev-parse", "HEAD").strip()
     changed = repo.run_git(ROOT, "diff", "--quiet", "HEAD").returncode != 0
     if head == base and not changed:
@@ -263,8 +258,6 @@ def _check(pull: Pull, base: str) -> str:
 
 
 def _merged_pull(number: int) -> tuple[str | None, str | None]:
-    """SHA commitu merge'a scalonego PR i nazwa jego gałęzi, każde ``None``, gdy GitHub go nie podał."""
-
     try:
         merged = json.loads(github.gh("pr", "view", str(number), "--json", "mergeCommit,headRefName"))
     except Exception:  # noqa: BLE001 - PR jest już scalony, a brak SHA podaje linia SCAL OK
@@ -280,8 +273,6 @@ NO_WAIT = (
 
 
 def _main_ci(merge_commit: str | None) -> str:
-    """Linia ``CI MAIN``: który run CI rozstrzyga o merge'u do `main` i co wiadomo o runie commitu merge'a."""
-
     listing = f"gh run list --workflow {github.CI_WORKFLOW} --event push --branch {MAIN}"
     try:
         runs = json.loads(github.gh(*listing.split()[1:], "--commit", merge_commit, "--json", "databaseId,url,conclusion")) if merge_commit else []
@@ -322,8 +313,6 @@ def _publish_verdict(pull: Pull, path: Path) -> int:
 
 
 def _skipped_status(pull: Pull) -> str | None:
-    """Przyczyna, dla której ``--status`` nie ustawia statusu PR ``pull``: zamknięty albo do innej gałęzi niż `main`."""
-
     if pull.state != "OPEN":
         return f"PR {pull.state}, więc status HEAD zostaje z chwili zamknięcia"
     if pull.base != MAIN:
@@ -348,9 +337,6 @@ def _guard_proofs(pull: Pull, output: Path, skipped: str | None = None) -> int:
 
 
 def _proved_guards(pull: Pull) -> list[str]:
-    """Przyczyny warunku 5 z wyniku joba ``dowod`` w zmiennej ``GUARD_PROOFS``, dla HEAD ``pull``; PR bez czego
-    dowodzić (``bramka_straznika.needed``) wyniku nie potrzebuje."""
-
     if not bramka_straznika.needed(pull):
         return []
     if (raw := os.environ.get(GUARD_PROOFS)) is None:
