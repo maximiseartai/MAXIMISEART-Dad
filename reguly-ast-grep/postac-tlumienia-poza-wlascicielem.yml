@@ -1,0 +1,26 @@
+id: postac-tlumienia-poza-wlascicielem
+language: python
+severity: error
+message: >-
+  wzorzec re z postacią tłumienia ruff albo mypy (noqa, ruff:, flake8:, type: ignore) przepisany poza jej
+  właścicielem: ręczna kopia gubi postacie, które narzędzie czyta (# NOQA: KOD, # flake8: noqa, komentarz typu
+  # type: list[int]); weź RUFF z tests/test_granice_wyjatkow.py, a type: ignore z ast.parse(..., type_comments=True);
+  dyrektywę # mypy: pilnuje reguła dyrektywa-mypy-recznie
+files:
+  - "**/*.py"
+ignores:
+  - tests/test_granice_wyjatkow.py
+metadata:
+  przypadki:
+    - 2311/W1/r2
+rule:
+  # Znacznik komentarza #, za nim tylko odstęp, metaznaki wzorca i nazwy ruff albo flake8, potem postać tłumienia ruff albo type: ignore:
+  # gramatyka komentarza tłumienia, nie samo słowo noqa w tekście ani komunikat „ruff:” w wyjściu narzędzia.
+  kind: string
+  regex: '#(\\+s|\s|[(?:)|*+]|ruff|flake8)*(?i:noqa|ruff:|flake8:|type:(\\+s|\s|[*+?])*ignore)'
+  inside:
+    kind: call
+    stopBy: end
+    has:
+      field: function
+      regex: '^re\.(compile|search|match|fullmatch|finditer|findall|sub|subn|split)$'

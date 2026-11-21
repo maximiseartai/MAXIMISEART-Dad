@@ -1,0 +1,33 @@
+id: wyliczone-rodzaje-instrukcji-bez-odmowy
+language: python
+severity: error
+message: >-
+  pętla po instrukcjach ciała (.body) rozpoznaje je łańcuchem isinstance(..., ast.X) / elif bez else, które odmawia,
+  więc instrukcja rodzaju spoza wyliczenia (krotka w przypisaniu, blok if, try, for, with) jest cicho pominięta;
+  dodaj else, które odmawia (raise), albo bierz nazwy wiązane przez każdą instrukcję z binds w tools/lib/komunikat_mapy.py
+files:
+  - "**/*.py"
+metadata:
+  przypadki:
+    - 2245/W1/r3
+rule:
+  kind: if_statement
+  all:
+    - has:
+        field: condition
+        regex: '^isinstance\(.*\bast\.'
+    - has:
+        field: alternative
+        kind: elif_clause
+    - not:
+        has:
+          kind: else_clause
+          has:
+            stopBy: end
+            kind: raise_statement
+    - inside:
+        stopBy: end
+        kind: for_statement
+        has:
+          field: right
+          regex: '\bbody(\[[^\]]*\])?$'
