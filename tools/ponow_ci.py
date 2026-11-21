@@ -80,7 +80,6 @@ NAJWIECEJ_TESTOW = 5
 # Linia logu zaczyna się znacznikiem czasu GitHuba; wzorzec sygnatury i testu czyta ją od początku za nim, więc tekst
 # zacytowany w porażce testu (``E   urllib.error.HTTPError: HTTP Error 503``) sygnaturą nie jest.
 _LINE = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
-# Sekunda znacznika czasu linii logu, w tej samej dokładności co ``started_at`` i ``completed_at`` kroku w API zadań.
 _SEKUNDA_LINII = re.compile(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z ")
 # Id testu kończy się przed `` - <błąd>`` pytest, bo błąd też bywa w nawiasach kwadratowych.
 TEST_LINE = re.compile(_LINE + r"(?:FAILED|ERROR) (tests/[\w/]+\.py(?:::\w+)+(?:\[.*?\])?)(?= - |\s*$)")
@@ -120,7 +119,6 @@ SYGNATURY = (
     ),
 )
 
-# Początek nazwy zadania w ci.yml i zadanie ``tools/ci_lokalnie.py --tylko``, które je odtwarza.
 LOKALNIE = (
     ("pytest", "pytest"),
     ("Mutation checks", "mutations --odtwarzam {run}"),
@@ -134,7 +132,7 @@ class Zadanie:
     nazwa: str
     sygnatury: tuple[str, ...]
     testy: tuple[str, ...]
-    plik_testu_pr: bool = False  # zadanie nie ponowiło testu z pliku testu zmienionego przez PR
+    plik_testu_pr: bool = False
     zielone: tuple[int, ...] = ()
 
 
@@ -158,8 +156,6 @@ Werdykt = Awaria | ZnanyFlaky | Defekt
 
 
 def klasyfikuj(zadania: Sequence[Zadanie], flaky: frozenset[str]) -> Werdykt:
-    """Werdykt porażki z padniętych zadań jednej próby runu i tytułów otwartych issue flaky testów."""
-
     if zadania and all(zadanie.sygnatury and not zadanie.testy for zadanie in zadania):
         return Awaria(tuple(sorted({nazwa for zadanie in zadania for nazwa in zadanie.sygnatury})), tuple(id_zadania for zadanie in zadania for id_zadania in zadanie.zielone))
     testy = tuple(dict.fromkeys(test for zadanie in zadania for test in zadanie.testy))
@@ -286,8 +282,6 @@ def _czas(tekst: str) -> datetime:
 
 
 def _wszystkie(api: GitHub, sciezka: str, klucz: str) -> list[dict[str, Any]]:
-    """Lista ``klucz`` odpowiedzi API z ``total_count`` (zadania, runy) ze wszystkich stron."""
-
     zebrane: list[dict[str, Any]] = []
     for strona in range(1, 100):
         partia = api.json(f"{sciezka}per_page={STRONA}&page={strona}")
@@ -366,8 +360,6 @@ def _ostatnie_ponowienia(api: GitHub, teraz: datetime) -> list[dict[str, Any]]:
 
 
 def _kanarek(api: GitHub, wlasny: dict[str, Any], teraz: datetime, flaky: frozenset[str]) -> Wynik | None:
-    """Wynik, gdy awarię ma już kanarek; ``None``, gdy własny run może być kanarkiem."""
-
     ponowione = _ostatnie_ponowienia(api, teraz)
     for run in ponowione:
         if run["status"] != "completed" and isinstance(_werdykt(api, run["id"], run["run_attempt"] - 1, flaky), Awaria):
