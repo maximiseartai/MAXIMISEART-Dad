@@ -19,7 +19,7 @@ import { rememberTheme, showTheme } from "@/lib/theme"
 import { DadFilesVersion, useResource, type Resource } from "@/lib/use-resource"
 
 /** Plik taty wskazywany natywnym oknem wyboru: pole Ustawień Centrum, które jest ścieżką. */
-export type PickedPath = { [Key in keyof Settings]: Settings[Key] extends PathSetting ? Key : never }[keyof Settings]
+export type PickedPath = { [Key in keyof Settings]: [Settings[Key]] extends [PathSetting | null] ? Key : never }[keyof Settings]
 
 export type FieldRefusal = { field: string; message: string }
 
@@ -114,8 +114,8 @@ function files(settings: Resource<Settings>): string | null {
   return settings.state === "ready" ? JSON.stringify([settings.data.periods_directory, settings.data.order_register]) : null
 }
 
-function remembered(setting: PathSetting): string | null {
-  return "path" in setting ? setting.path : null
+function remembered(setting: PathSetting | null): string | null {
+  return setting !== null && "path" in setting ? setting.path : null
 }
 
 /** Ścieżka wpisana albo wklejona z Eksploratora („Kopiuj jako ścieżkę” dodaje cudzysłowy); pusta to `null`. */
