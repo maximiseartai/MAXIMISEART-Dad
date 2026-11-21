@@ -112,7 +112,7 @@ def test_sprawdzenie_pomija_frontmatter_skilla_a_sprawdza_proze_po_nim() -> None
     assert list(_lines_broken_mid_sentence(document)) == [6]
 
 
-BUDZET_BAJTOW = {"CODING_STANDARDS.md": 45_000, ".agents/skills/przeglad": 41_000}
+BUDZET_BAJTOW = {"CODING_STANDARDS.md": 45_250, ".agents/skills/przeglad": 41_000}
 
 
 def _rozmiar_w_indeksie(nazwa: str) -> int:

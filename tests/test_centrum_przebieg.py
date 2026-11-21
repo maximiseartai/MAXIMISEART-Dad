@@ -1,5 +1,3 @@
-"""Przebieg rozliczeń z Centrum rozliczeń przez HTTP API i strumień zdarzeń, jak widzi je przeglądarka."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -149,7 +147,6 @@ def test_wynik_ktorego_nie_da_sie_pokazac_to_niepokazane_podsumowanie_z_tym_samy
     def broken_view(*args: object, **kwargs: object) -> NoReturn:
         raise ValueError("synthetic summary failure SYN-001")
 
-    # Psuje widok wyniku Centrum, nie rdzeń procesu: tylko tak test widzi, że karta oddaje widok do osłony rdzenia.
     monkeypatch.setattr(run_view.ProcessView, "shown", broken_view)
 
     result = run_to_end(centrum, dry_run=False)["result"]
@@ -355,9 +352,6 @@ def test_wybor_okresu_to_okresy_z_przygotowanym_plikiem_zbiorczym(tmp_path: Path
 def test_karta_przebiegu_proponuje_ostatni_pelny_okres_przed_nowszym_i_zaznacza_okres_z_udanym_podgladem(
     tmp_path: Path,
 ) -> None:
-    """Bieżący tydzień też ma Plik zbiorczy, a ostatni pełny okres ma udany Podgląd bez zapisu: karta proponuje ostatni
-    pełny okres, choć nowszy stoi wyżej, i zaznacza Podgląd tylko przy nim (przegląd #1134 r1, Drobne 2)."""
-
     centrum = settling_centrum(tmp_path)
     newer = centrum.periods_directory / "15_21_09_2026"
     newer.mkdir()

@@ -1,25 +1,3 @@
-"""Kopia wejścia: Wiersze danych, które Uruchomienie procesu przeczytało z plików taty, i odcisk każdego pliku.
-
-Uruchomienie z Centrum ma swoją Kopię wejścia (``InputCopy``) w uchwycie plików taty (``dad_files.DadFiles``), a
-czytnik, który czyta dla niego plik taty, oddaje jej przez ten uchwyt bajty, z których czytał plik, zakazane kolumny
-każdego arkusza i każdy przeczytany wiersz z jego położeniami (``row_positions.RowPositions``): Rejestr zleceń w
-Przygotowaniu pliku zbiorczego (``register_file.OrderSheets.period_rows``), Plik zbiorczy w Przebiegu rozliczeń
-(``workbook_files.read_data_rows``), w Wycenie w efenix (``workbook_files.read_computed_rows``) i INTERMAX w
-Uporządkowaniu INTERMAX (``register_file.PasteArea.copy_paste``). Zakazane kolumny to te, których komórki ten sam
-czytnik oddaje pamięci reguły danych (``client_data.ForbiddenValues``). Proces bez Centrum (Skrypt dla maszyn) Kopii nie
-ma, bo nie ma Logów.
-
-W trakcie odczytu Kopia trzyma tylko odwołania do bajtów i wartości, które czytnik i tak ma, i chwilę zmiany pliku,
-którą uchwyt bierze przed odczytem bajtów (``dad_files.DadFiles.read``). Plik po regule danych (``files``) powstaje po
-końcu procesu, zanim karta pokaże wynik: odcisk (rozmiar, chwila zmiany i skrót SHA-256 przeczytanych bajtów) i arkusze
-z kolumnami po nagłówku i wierszami po numerze, bez zakazanych kolumn i bez pustych komórek. Komórki wiersza liczy jedna
-reguła (``SheetCopy._cells``). Wolny tekst i wartości zakazanych kolumn w innych komórkach, także liczby, maskuje
-strażnik Logów (``centrum.run_logs_guard.guard_logs``), jak w każdym innym polu Logów.
-
-Kopia niesie wartości komórek, bo na nich proces podejmuje decyzje: wynik, Komunikaty i ślad. Wygląd komórek
-(Wyróżnienia, format liczby, Hiperłącza) proces tylko przenosi do plików, które tworzy, więc go nie ma.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
@@ -39,22 +17,15 @@ TypedKind = Literal["datetime", "time", "timedelta", "other"]
 
 @dataclass(frozen=True)
 class Typed:
-    """Wartość komórki, której JSON nie odróżnia od tekstu: ``kind`` i jej zapis (ISO 8601 albo sekundy); ``other``:
-    wartość, której Kopia nie zapisuje, z nazwą jej typu."""
-
     kind: TypedKind
     text: str
 
 
 CellValue = bool | int | float | str | Typed
-"""Wartość niepustej komórki w Kopii wejścia."""
 
 
 @dataclass(frozen=True)
 class Fingerprint:
-    """Odcisk przeczytanego pliku: ``size`` i ``sha256`` z przeczytanych bajtów, ``modified_at`` z pliku tuż przed
-    odczytem (UTC; ``None``, gdy system jej nie oddał)."""
-
     size: int
     modified_at: datetime | None
     sha256: str
@@ -62,27 +33,12 @@ class Fingerprint:
 
 @dataclass(frozen=True)
 class CopiedRow:
-    """Przeczytany wiersz: numer w arkuszu i niepuste komórki po literze kolumny."""
-
     number: int
     cells: Mapping[str, CellValue]
 
 
 @dataclass(frozen=True)
 class PasteFacts:
-    """Fakty wklejenia INTERMAX w przeczytanym arkuszu, same numery wierszy, bez treści; arkusz bez wklejenia ma
-    wszystkie puste.
-
-    ``shifted_row``: wiersz, którego komórki czytnik czyta o ``raw_orders.SHIFT`` kolumn na lewo od swojego nagłówka
-    (przesunięty pierwszy wiersz wklejenia INTERMAX), a w Kopii stoją pod nim; ``None``: bez takiego wiersza.
-    ``uncertain_rows``: wiersze wklejenia INTERMAX w obu położeniach (``row_positions.RowPositions.uncertain``), które mają
-    w Kopii tylko komórki dozwolone przy każdym ich możliwym przesunięciu i datę z godziną spod ``DATA GODZ. POCZ.``, więc
-    brak komórki nie znaczy w nich pustej. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty wiersz nad
-    wklejeniem INTERMAX (``raw_orders.above_paste``); ``None``: bez takiego wiersza. ``traced_rows``: wiersze ze śladem
-    przesunięcia, które nie są pierwszym wierszem bloku wklejenia: łamią fakt domeny, że przesunięty przychodzi tylko
-    pierwszy wklejony wiersz (ADR 0025).
-    """
-
     shifted_row: int | None = None
     uncertain_rows: tuple[int, ...] = ()
     last_ordered_row: int | None = None
@@ -92,9 +48,6 @@ class PasteFacts:
 
 @dataclass(frozen=True)
 class CopiedSheet:
-    """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny, wiersze, puste wiersze, które proces liczy,
-    i fakty wklejenia INTERMAX (``paste``)."""
-
     name: str
     header_row: int
     columns: Mapping[str, str]
@@ -105,14 +58,6 @@ class CopiedSheet:
 
 @dataclass(frozen=True)
 class CopiedFile:
-    """Przeczytany plik taty: sama nazwa (nigdy pełna ścieżka), odcisk i przeczytane arkusze.
-
-    ``folders``: nazwy folderu nad folderem pliku i folderu pliku, od góry, bez pełnej ścieżki, żeby Uruchomienie
-    odtworzone z Kopii leżało w tych samych folderach i miało te same Komunikaty. Komunikaty Pliku zbiorczego
-    pokazują oba (``message.folder_label``), a Komunikaty INTERMAX tylko folder pliku (``message.file_label``), więc
-    folder nad nim jest w Kopii, a w Komunikatach go nie ma.
-    """
-
     name: str
     fingerprint: Fingerprint
     sheets: tuple[CopiedSheet, ...]
@@ -120,16 +65,10 @@ class CopiedFile:
 
 
 Values = Sequence[object] | Mapping[int, object]
-"""Wartości wiersza: kolejne od kolumny A albo numer kolumny (od 1) → wartość."""
 
 
 @dataclass
 class SheetCopy:
-    """Arkusz w trakcie odczytu: nagłówek (numer kolumny → nagłówek), zakazane kolumny (numery od 1), kolumny, które
-    Kopia niesie (``None``: każda), kolumny wklejenia, w których komórka może stać w innym położeniu (``None``: te,
-    które Kopia niesie), kolumna daty z godziną, wiersze nad wklejeniem INTERMAX (``None``: arkusz bez wklejenia) i
-    odwołania do przeczytanych wierszy z ich położeniami."""
-
     name: str
     header_row: int
     header: Mapping[int, object]
@@ -145,8 +84,6 @@ class SheetCopy:
         self._rows.append((number, values, positions))
 
     def empty_rows(self, numbers: Sequence[int]) -> None:
-        """Puste wiersze ``numbers`` z przeczytanego zakresu, które proces liczy (Rejestr zleceń)."""
-
         self._empty.extend(numbers)
 
     def copied(self) -> CopiedSheet:
@@ -175,12 +112,6 @@ class SheetCopy:
         )
 
     def _cells(self, values: Values, positions: RowPositions) -> dict[str, CellValue]:
-        """Jedyna reguła komórki Kopii (ADR 0025 „Kopia wejścia”): komórka z kolumny c stoi w Kopii pod c +
-        ``positions.read``, gdy tam stoi w kolumnie, którą Kopia niesie, a w każdym położeniu z ``positions.known`` w
-        kolumnie wklejenia (``span``), w obu razach nie pod zakazanym nagłówkiem. Data z godziną spod ``date_column``
-        (czytana z przesunięciem ``read``) zostaje, bo nie jest wartością zakazanej kolumny, a bez niej odtworzenie nie
-        powtórzy Uruchomienia."""
-
         numbered = _numbered(values)
         read, known = positions.read, positions.known
         span = self.copied_columns if self.span is None else self.span
@@ -200,9 +131,6 @@ class SheetCopy:
 
 @dataclass
 class WorkbookCopy:
-    """Plik w trakcie odczytu: nazwa, przeczytane bajty, chwila zmiany sprzed odczytu, arkusze i nazwy folderów nad
-    plikiem (``CopiedFile.folders``)."""
-
     name: str
     content: bytes
     modified_at: datetime | None
@@ -221,12 +149,6 @@ class WorkbookCopy:
         above: AbovePaste | None = None,
         span: Collection[int] | None = None,
     ) -> SheetCopy:
-        """Arkusz ``name`` z nagłówkiem w wierszu ``header_row``, bez kolumn ``forbidden`` (numery od 1), których komórki
-        czytnik oddaje pamięci reguły danych; ``copied_columns``: kolumny, które Kopia niesie (``None``: każda),
-        ``date_column``: kolumna daty z godziną, która zostaje w wierszu z siatki (``SheetCopy._cells``),
-        ``above``: wiersze nad wklejeniem INTERMAX (``PasteFacts.last_ordered_row``),
-        ``span``: kolumny wklejenia, w których komórka może stać w innym położeniu (``None``: ``copied_columns``)."""
-
         sheet = SheetCopy(
             name,
             header_row,
@@ -246,23 +168,16 @@ class WorkbookCopy:
 
 
 class InputCopy:
-    """Kopia wejścia jednego Uruchomienia procesu z Centrum; pliki w kolejności odczytu."""
-
     def __init__(self) -> None:
         self._files: list[WorkbookCopy] = []
 
     def workbook(self, path: Path, content: bytes, modified: datetime | None) -> WorkbookCopy:
-        """Plik ``path`` przeczytany z bajtów ``content``; ``modified``: chwila zmiany pliku sprzed odczytu bajtów
-        (``dad_files.DadFiles.read``)."""
-
         folders = tuple(folder for folder in (path.parent.parent.name, path.parent.name) if folder)
         copy = WorkbookCopy(path.name, content, modified, folders=folders)
         self._files.append(copy)
         return copy
 
     def files(self) -> tuple[CopiedFile, ...]:
-        """Przeczytane pliki po regule danych, z odciskiem; liczone po końcu procesu, w Logach Uruchomienia."""
-
         return tuple(copy.copied() for copy in self._files)
 
 
@@ -284,9 +199,6 @@ def _cells(values: Values, forbidden: frozenset[int]) -> dict[str, CellValue]:
 
 
 def _value(value: object) -> CellValue:
-    """Wartość komórki z openpyxl do JSON: tekst (także formuła), liczba i prawda/fałsz jak są, a data z godziną (openpyxl
-    czyta tak także samą datę), godzina i czas trwania z rodzajem. Formuła tablicowa to jej tekst, jak każda formuła."""
-
     match value:
         case bool() | int() | float() | str():
             return value

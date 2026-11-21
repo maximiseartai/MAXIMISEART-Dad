@@ -1,0 +1,25 @@
+id: nazwa-pliku-okresu-poza-folderem-okresu
+language: python
+severity: error
+message: >-
+  nazwę pliku Folderu okresu (Rozliczenie wewnętrzne, Plik zbiorczy, Folder rozliczeń pracowników, Rozliczenie
+  pracownika) zna tylko src/rozliczenia/period_folder.py: weź ją z collective_file_name_with,
+  worker_settlements_name_with albo właściwości PeriodFolder, zamiast składać ją z napisu
+note: >-
+  Reguła czyta stały tekst nazw plików okresu w każdym literale napisu, bez względu na to, czym go potem złożono
+  (f-string, %, format, sklejanie, join, Template): „Rozliczenie” bez następnego słowa, „Rozliczenie wew.”,
+  „Rozliczenie pracowników” i „- zbiorcze”. Przepuszcza tylko zdanie Komunikatu „Plik Rozliczenie wew. jest poza
+  zakresem tego procesu.”, bo tata wskazał wtedy Rozliczenie wewnętrzne i Komunikat nazywa ten plik skrótem z jego
+  nazwy.
+files:
+  - src/**/*.py
+ignores:
+  - src/rozliczenia/period_folder.py
+metadata:
+  przypadki:
+    - 125af268f97bf6ff7382a6b22f84ab1f73ad2467 src/rozliczenia/collective_preparation.py:137
+rule:
+  kind: string
+  regex: 'Rozliczenie( [^\p{L}]|[^\p{L} ])|Rozliczenie wew\.|Rozliczenie pracowników|- zbiorcze'
+  not:
+    regex: 'Plik Rozliczenie wew\. jest poza zakresem tego procesu\.'
