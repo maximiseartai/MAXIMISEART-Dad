@@ -1,19 +1,3 @@
-"""Komentarz Logów Uruchomienia w Skrzynce Zgłoszeń (#320, #844): to, czego testy przez HTTP nie osiągną tanio.
-
-Logi ponad limit komentarza GitHuba wymagałyby przez HTTP setek Komunikatów, więc to, że i tak idą jednym komentarzem
-z pełnymi Logami w Archiwum Logów okresu, sprawdza wysyłka zbudowana wprost z rekordu (``post_of``): jej części to
-dokładnie komentarze, które kolejka dopisuje do issue, a jej plik to plik w Archiwum.
-Podsumowanie ma tu tylko przypadki bez taniej drogi przez HTTP z fikstur Przebiegu: nazwa Przygotowania,
-powtórki kodów, powtórzone Zatrzymanie, Zatrzymanie po odmowie w Decyzji taty, czas w sekundach albo nieznany, brak commitu i sprawdzenia Diagnozy,
-które nie przeszły albo których nie sprawdzono. Resztę sprawdza ``test_centrum_logi_w_skrzynce.py``. Strażnik reguły
-danych (``guard_logs``, ADR 0025) ma tu klucz słownika Logów z zakazaną wartością: klucze pochodzą dziś z zamkniętych
-list (operator z reguły taty, kod pozycji efenix, litera kolumny), więc przez HTTP żadna taka wartość do klucza nie
-trafia, i liczbę policzoną przez narzędzie w kształcie telefonu, której syntetyczne pliki taty przez HTTP nie dają.
-Pełne Logi z każdym polem schematu (``FULL_LOGS``) niesie tylko ten plik: przemiatanie kształtów pól (#936) daje
-strażnikowi każdą ich wartość jako wartość z pliku taty, a przez HTTP jedno Uruchomienie nie wypełnia wszystkich pól.
-Typy pól, które strażnik zostawia bez maski (``TOOL_FIELDS``), sprawdza tu test struktury na schemacie Logów.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence, Sized
@@ -221,9 +205,6 @@ def test_podsumowanie_nazywa_wynik_sposob_zakonczenia_i_kody_komunikatow(
 
 
 def test_komentarz_postepu_wyceny_mowi_wyniki_zlecen_tymi_samymi_slowami_co_logi_uruchomienia() -> None:
-    """Komentarz postępu Wyceny w efenix liczy zlecenia skończone z każdym wynikiem, w kolejności wyników karty, i mówi
-    ostatnie skończone z wynikiem i kodem Komunikatu, słowami wyniku z Logów Uruchomienia („gotowe”, „błąd”)."""
-
     started = StartFacts(run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 14, 8, tzinfo=timezone.utc))
     done = (
         OrderDone(18, OrderKind.ERROR, "EFENIX_NIEZNANY_NUMER"),
@@ -241,10 +222,7 @@ def test_komentarz_postepu_wyceny_mowi_wyniki_zlecen_tymi_samymi_slowami_co_logi
 PRICING_START: Final = StartFacts(
     run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 14, 8)
 )
-"""Start Wyceny w efenix ``RUN_ID``, której postęp i wynik bez Logów mówią komentarze niżej."""
 
-# Dziennik Wyceny w efenix → linie komentarza postępu o ostatnim zleceniu skończonym i zleceniu w trakcie: ostatnie bez
-# kodu Komunikatu ma tylko wiersz i wynik, a zlecenie w trakcie jest tylko wtedy, gdy dziennik ma zaczęte bez wyniku.
 PROGRESS_LINES: Final[dict[str, tuple[PricingProgress, list[str]]]] = {
     "ostatnie-bez-kodu-i-zlecenie-w-trakcie": (
         PricingProgress(PRICING_START, (OrderDone(19, OrderKind.READY, None),), 4, 20),
@@ -261,17 +239,11 @@ PROGRESS_LINES: Final[dict[str, tuple[PricingProgress, list[str]]]] = {
 def test_komentarz_postepu_wyceny_mowi_zlecenie_w_trakcie_i_ostatnie_skonczone_bez_kodu_tylko_wierszem_i_wynikiem(
     progress: PricingProgress, lines: list[str]
 ) -> None:
-    """Komentarz postępu Wyceny w efenix (#846) mówi zlecenie zaczęte w dzienniku bez wyniku, a ostatnie skończone bez
-    kodu Komunikatu tylko wierszem i wynikiem, bez pustego miejsca na kod."""
-
     comment = progress_markdown(progress, elapsed_s=90).splitlines()
 
     assert [line for line in comment if line.startswith(("- Ostatnie zlecenie:", "- W trakcie:"))] == lines
 
 
-# Dziennik Wyceny w efenix i wynik z wpisu końca → linie wyniku bez Logów, który start Centrum wysyła z dziennika (#910):
-# bez wpisu końca wynik jest nieznany, dziennik bez wpisu „zaczynam zlecenie” nie ma żadnego zlecenia, a zlecenie zaczęte
-# bez wyniku ma swoją linię.
 WITHOUT_LOGS_LINES: Final[dict[str, tuple[ResultWithoutLogs, list[str]]]] = {
     "bez-wpisu-konca-i-bez-zlecen": (
         ResultWithoutLogs(PricingProgress(PRICING_START, (), None, None), None, "nieczytelne"),
@@ -290,9 +262,6 @@ WITHOUT_LOGS_LINES: Final[dict[str, tuple[ResultWithoutLogs, list[str]]]] = {
 def test_wynik_bez_logow_mowi_wynik_nieznany_brak_zlecen_i_zlecenie_bez_wyniku_z_dziennika_wyceny(
     final: ResultWithoutLogs, lines: list[str]
 ) -> None:
-    """Wynik bez Logów, który start Centrum wysyła z dziennika Wyceny w efenix (``comment_versions.close``), mówi słowami,
-    że dziennik nie ma wyniku albo żadnego zlecenia, zamiast pustego pola, i wiersz zlecenia zaczętego bez wyniku."""
-
     comment = without_logs_markdown(final).splitlines()
 
     assert [line for line in comment if line.startswith(("- Wynik:", "- Zlecenia:", "- Zlecenie bez wyniku:"))] == lines
@@ -318,8 +287,6 @@ def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archi
 
 
 def _versions() -> dict[str, CommentVersion]:
-    """Każda wersja komentarza jednego Uruchomienia Wyceny w efenix, z tekstem po strażniku."""
-
     logs = guard_logs(record(process="efenix", run_id=RUN_ID), empty_memory())
     started = StartFacts(
         run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=logs.record.started_at
@@ -334,8 +301,6 @@ def _versions() -> dict[str, CommentVersion]:
     }
 
 
-# Stopień wersji (ADR 0015, dopisek #910): postęp najniższy, wersja zastępcza ze startu Centrum niższa niż
-# Logi z wynikiem, a Logi z pracy Centrum Uruchomienia najwyższe.
 RANKS: Final = {
     "postep": Rank.DRAFT,
     "logi-z-pliku-albo-urwane": Rank.STAND_IN,
@@ -348,10 +313,6 @@ RANKS: Final = {
 def test_kazda_wersja_komentarza_uruchomienia_to_ta_sama_wysylka_w_swoim_stopniu_a_plik_w_archiwum_maja_tylko_logi(
     kind: str, rank: Rank
 ) -> None:
-    """Każda wersja komentarza Uruchomienia idzie do issue Logów okresu jako ta sama wysyłka (Uruchomienie i etykieta),
-    więc kolejka zmienia jeden komentarz, w stopniu, który wybiera nadawca (#910). Pełny plik w Archiwum Logów okresu
-    mają tylko Logi: postęp i wynik bez Logów go nie mają."""
-
     version = _versions()[kind]
 
     post = post_of(version)
@@ -373,18 +334,12 @@ JOURNAL_AFTER: Final = {
 def test_dziennik_wyceny_znika_tylko_po_wersji_koncowej_komentarza_ktora_kolejka_przyjela(
     kind: str, after: tuple[str, str]
 ) -> None:
-    """Dziennik Wyceny w efenix jest śladem komentarza, który może mówić, że Uruchomienie trwa, więc znika tylko wtedy,
-    gdy Kolejka wysyłki przyjęła wersję końcową tego komentarza: Logi albo wynik bez Logów (#910). Postęp, także przyjęty,
-    dziennika nie usuwa."""
-
     version = _versions()[kind]
 
     assert (journal_after(version, accepted=True), journal_after(version, accepted=False)) == after
 
 
 def _progress() -> PricingProgress:
-    """Postęp Wyceny w efenix Uruchomienia ``RUN_ID``: jedno zlecenie skończone z dwóch."""
-
     started = StartFacts(
         run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
     )
@@ -392,9 +347,6 @@ def _progress() -> PricingProgress:
 
 
 def _text_version(kind: str, forbidden: ForbiddenValues) -> ProgressVersion | WithoutLogsVersion:
-    """Postęp albo wynik bez Logów Uruchomienia ``RUN_ID`` z tekstem komentarza po strażniku ``forbidden``, tak jak
-    budują je ``RunComments._progress`` i ``close``."""
-
     progress = _progress()
     if kind == "postep":
         return ProgressVersion(progress, guard_text(progress_markdown(progress, elapsed_s=90), "postęp", forbidden))
@@ -404,10 +356,6 @@ def _text_version(kind: str, forbidden: ForbiddenValues) -> ProgressVersion | Wi
 
 @pytest.mark.parametrize("kind", ["postep", "wynik-bez-logow"])
 def test_postep_i_wynik_bez_logow_ida_do_skrzynki_z_tekstem_po_strazniku(kind: str) -> None:
-    """Komentarz postępu i wyniku bez Logów idzie do Skrzynki taki, jaki dał strażnik reguły danych pracy Centrum (ADR
-    0025): wartość z kolumny ``ADRES``, która trafiła do jego tekstu (tu w miejscu identyfikatora Uruchomienia), jest
-    maską z uwagą techniczną, a nie wartością sprzed strażnika."""
-
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, RUN_ID)
 
@@ -417,7 +365,6 @@ def test_postep_i_wynik_bez_logow_ida_do_skrzynki_z_tekstem_po_strazniku(kind: s
     assert "- Uwaga techniczna: Reguła danych: zamaskowano wartość kolumny ADRES" in comment
 
 
-# Drogi do Logów albo tekstu po strażniku bez guard_logs i guard_text, które zamyka sam typ (docstring run_logs_guard._MINTED).
 NOT_FROM_GUARD: Final[dict[str, Callable[[Any], object]]] = {
     "replace": lambda value: dataclasses.replace(value, **_field_change(value)),
     "kopia": copy.copy,
@@ -430,24 +377,19 @@ NOT_FROM_GUARD: Final[dict[str, Callable[[Any], object]]] = {
 
 
 def _field_change(value: object) -> dict[str, object]:
-    """Zmiana pola, które wartość po strażniku miała, gdy była dataclassą (przed rundą 2 przeglądu #1038): ``record``
-    Logów (Logi sprzed strażnika) i ``text`` tekstu."""
-
     return {"record": record()} if hasattr(value, "record") else {"text": "ul. Syntetyczna 1"}
 
 
 def _guarded(kind: str) -> Any:
-    """Logi (``logi``) albo tekst (``tekst``) po strażniku z ``guard_logs`` i ``guard_text``."""
-
     return guard_logs(record(), empty_memory()) if kind == "logi" else guard_text("Postęp.", "postęp", empty_memory())
 
 
 def _slot(value: object) -> str:
-    """Nazwa pierwszego slotu wartości po strażniku po name manglingu (``_Klasa__pole``)."""
-
     kind = type(value)
     slots: tuple[str, ...] = getattr(kind, "__slots__")
-    return f"_{kind.__name__}{slots[0]}"
+    name = f"_{kind.__name__}{slots[0]}"
+    assert hasattr(value, name), f"{name} nie jest slotem {kind.__name__}, więc zmiana slotu odmawia z innej przyczyny"
+    return name
 
 
 @pytest.mark.parametrize("make", NOT_FROM_GUARD.values(), ids=NOT_FROM_GUARD.keys())
@@ -455,9 +397,6 @@ def _slot(value: object) -> str:
 def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
     kind: str, make: Callable[[Any], object]
 ) -> None:
-    """Logi i tekst po strażniku reguły danych daje tylko ``guard_logs`` i ``guard_text``: kopia, ``replace`` i zmiana
-    pola odmawiają, bo wartość, która ich nie przeszła, przeszłaby jako po strażniku (przegląd #1038, runda 1)."""
-
     value = _guarded(kind)
     text = value.text
 
@@ -470,9 +409,6 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
 
 @pytest.mark.parametrize("zmiana", [dataclasses.replace, copy.replace], ids=["dataclasses.replace", "copy.replace"])
 def test_gotowej_wysylki_logow_nie_przerabia_replace_wartosci_bez_typu(zmiana: Callable[..., object]) -> None:
-    """Wysyłkę Logów daje tylko ``post_of``: mypy odrzuca ``replace`` gotowej ``LogsPost``, a wartość bez typu (``Any``,
-    ``type: ignore``) rzuca ``TypeError``, bo ``LogsPost`` nie jest dataclassą i nie ma ``__replace__``."""
-
     post: Any = _proof_value("wysylka-logow")
 
     with pytest.raises(TypeError):
@@ -491,9 +427,6 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
 
 
 def _proof_value(kind: str) -> object:
-    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów
-    i każda wersja komentarza Uruchomienia, którą bierze ``post_of``."""
-
     memory = empty_memory()
     match kind:
         case "postep" | "wynik-bez-logow" | "logi-z-pliku-albo-urwane" | "logi-z-wynikiem-albo-diagnoza":
@@ -513,7 +446,6 @@ _DROGI_PODKLASY: Final[dict[str, Callable[[type, dict[str, object]], object]]] =
     "type-z-baza-przed-bez-super": lambda proof, namespace: type("Inne", (_BezSuper, proof), namespace),
     "type-new-z-metaklasa-typu": lambda proof, namespace: type.__new__(type(proof), "Inne", (proof,), namespace),
 }
-"""Drogi do podklasy typu-dowodu przy jej tworzeniu: dwie przez ``__new__`` metaklasy i jedna z jego pominięciem."""
 
 
 _WERSJA_BEZ_PODKLAS: Final = "Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji."
@@ -525,8 +457,6 @@ _ODMOWY_PODKLASY: Final = {
     "wysylka-logow": "Wysyłka Logów nie ma podklas: daje ją tylko post_of.",
     **dict.fromkeys(("postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza"), _WERSJA_BEZ_PODKLAS),
 }
-"""Odmowa podklasy każdego typu-dowodu z nagłówka jego klasy: inna odmowa (np. „Klasa bez podklas podaje odmowę”, gdy
-metaklasa nie przejrzy bazy za klasą pomocniczą) to inny błąd niż odmowa tej klasy."""
 
 
 @pytest.mark.parametrize(
@@ -545,11 +475,6 @@ metaklasa nie przejrzy bazy za klasą pomocniczą) to inny błąd niż odmowa te
     ],
 )
 def test_typy_dowody_reguly_danych_odmawiaja_podklasy_przy_tworzeniu(kind: str, droga: str) -> None:
-    """Typ-dowód i wersja komentarza odmawiają podklasy już przy tworzeniu przez ``type()`` (przegląd #1038, runda 2),
-    także z bazą przed typem, której ``__init_subclass__`` nie woła ``super()``, bo odmawia sama metaklasa
-    ``client_data.WithoutSubclasses``, a ``type.__new__`` z metaklasą typu, który ją pomija, zatrzymuje ``__init_subclass__``
-    typu. To wcześniejszy błąd; regułę trzyma kontrola dokładnego typu przy użyciu (#1551)."""
-
     proof = type(_proof_value(kind))
     namespace: dict[str, object] = {"text": property(lambda self: "ul. Syntetyczna 1")}
 
@@ -574,13 +499,9 @@ _POSTEP: Final = (
 )
 _ARCHIWUM_POLA: Final = ("tag", "title", "description", "name", "text")
 _TEKST_NARZEDZIA: Final = ("tag", "title", "description", "name")
-"""Pola pliku w Archiwum z tekstem narzędzia (okres i nazwa pliku Logów), typu ``Outgoing``."""
 
 
 def _pola(z_komorki: str) -> str:
-    """Pola pliku w Archiwum: ``z_komorki`` z komórki, tekst pliku po strażniku, a reszta z gotowego pliku ``plik`` (próbka w
-    ``src`` nie robi tekstu narzędzia, bo ``tool`` ma zakaz ruff)."""
-
     return ", ".join("komorka" if pole == z_komorki else ("tekst" if pole == "text" else f"plik.{pole}") for pole in _ARCHIWUM_POLA)
 
 
@@ -608,8 +529,6 @@ def zla(prawdziwa: ForbiddenValues, komorka: str) -> object:
 
 
 def _zgloszenie(cialo: str, *, importy: str = "", wstep: str = "") -> str:
-    """Próbka, która daje tytuł nowego Zgłoszenia (pole ``Outgoing`` spoza drogi Logów) z ``cialo``."""
-
     return (
         "from rozliczenia.centrum.outbox import NewIssue\nfrom rozliczenia.centrum.report_box import Label\n"
         "from rozliczenia.centrum.run_logs import RunLog\n"
@@ -620,12 +539,9 @@ def _zgloszenie(cialo: str, *, importy: str = "", wstep: str = "") -> str:
 
 
 _GUARDED_TEXT: Final = 'Argument 2 to "NewIssue" has incompatible type'
-"""Tekst komentarza po ``guard_text`` nie jest ``Outgoing`` (nazwę jego typu w napisie odrzuca test granic importów)."""
 _LOGS_TEXT: Final = 'Argument 2 to "NewIssue" has incompatible type "LogsText"; expected "Outgoing"'
 _POSTEP_Z: Final = '    return NewIssue(etykieta, guard_text("Postęp.", "postęp Wyceny w efenix", {pamiec}))\n'
 
-# Drogi wartości z komórki taty bez strażnika do pliku Logów, pliku w Archiwum Logów okresu, komentarza Uruchomienia i
-# z nich do innych celów wysyłki → zgłoszenie mypy albo ruff, które każdą odrzuca w nowym module src/rozliczenia/centrum.
 DROGI_DO_LOGOW: Final = {
     **{
         f"ArchiveFile.{pole} z komórki": (_plik(_pola(pole)), f'Argument {numer} to "ArchiveFile" has incompatible type "str"; expected "Outgoing"')
@@ -657,7 +573,7 @@ DROGI_DO_LOGOW: Final = {
         "from rozliczenia.client_data import ForbiddenValues\n\n\n"
         "def plik(komorka: str, pamiec: ForbiddenValues, plik: ArchiveFile) -> ArchiveFile:\n"
         '    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, guard_text("Postęp.", komorka, pamiec))\n',
-        '; expected "LogsText"',  # tekst komentarza po guard_text
+        '; expected "LogsText"',
     ),
     "postęp z komórki": (
         _POSTEP + "\n\ndef wersja(komorka: str, postep: PricingProgress) -> ProgressVersion:\n"
@@ -727,8 +643,6 @@ def wysylka(komorka: str, post: Post) -> Post:
         "def zapis(dysk: LogsOnDisk, logi: RunLog) -> None:\n    dysk.write(logi)\n",
         'Argument 1 to "write" of "LogsOnDisk" has incompatible type "RunLog"',
     ),
-    # Tekst drogi Logów nie jest ``Outgoing``, więc uwagi spoza strażnika i pola ``TOOL_TEXT`` Logów od wywołującego nie
-    # trafiają przez guard_text, guard_logs ani plik w Archiwum do innego celu (przegląd #1688, rundy 1–3).
     "miejsce uwagi guard_text z komórki do Zgłoszenia": (_zgloszenie(_POSTEP_Z.replace('"postęp Wyceny w efenix"', "komorka").format(pamiec="pamiec")), _GUARDED_TEXT),
     "podklasa pamięci: uwagi guard_text do Zgłoszenia": (
         _zgloszenie(_POSTEP_Z.format(pamiec="Pamiec(pamiec, komorka)"), wstep=_PAMIEC_Z_UWAGA),
@@ -801,17 +715,8 @@ from typing import Any
 
 from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
 """
-"""Początek próbki, która daje ``post_of`` wersję postępu z tekstem z komórki zamiast tekstu po strażniku."""
 
-# Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
-# Uruchomienia wartość z komórki taty bez strażnika, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie
-# łapią. Pola pliku w Archiwum z tekstem narzędzia (``_TEKST_NARZEDZIA``) mają typ ``Outgoing``, więc ich wartość z
-# komórki odrzuca mypy (``DROGI_DO_LOGOW``) i plik kolejki w chwili zapisu (``ODMOWY_LOGOW``). Pola ``TOOL_TEXT`` Logów
-# od wywołującego strażnik przepuszcza bez maski do pliku Logów i pliku w Archiwum, a pole ``str`` od wywołującego,
-# które moduł z prawem ``tool`` wpisuje w tekst narzędzia, do komentarza: obie postaci przechodzą tak samo na
-# ``origin/main``.
 ZNANE_LUKI_LOGOW: Final = {
-    # Kontrola dokładnego typu Wzorca w pliku kolejki (outbox._templates_json) też sprawdza obiekt tak, jak go zastaje.
     "zmiana obiektu w chwili działania: przypisanie __class__ Wzorca do Archiwum obcemu obiektowi z bajtami komórki": _GOTOWY_PLIK
     + """from typing import Any
 
@@ -834,9 +739,6 @@ def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:
         _pola("title").replace("komorka", "str.__new__(Outgoing, komorka)"), importy="from rozliczenia.client_data import Outgoing\n"
     ),
     "str.__new__ z klasą LogsText w pliku Archiwum": _plik(_pola("text").replace("komorka", "str.__new__(LogsText, komorka)")),
-    # Kontrola dokładnego typu w chwili użycia (outbox._queue_text, comment_versions.post_of, LogsOnDisk.write) sprawdza
-    # obiekt tak, jak go zastaje, więc zmiana obiektu, klasy albo modułu sprawdzenia w chwili działania ją omija: jedna
-    # próbka na cel i klasę (#1551).
     "zmiana obiektu w chwili działania: przypisanie __class__ LogsText napisowi obcej podklasy str w pliku Archiwum": _GOTOWY_PLIK
     + """from typing import cast
 
@@ -950,8 +852,6 @@ def zapis(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> str:
         LogsOnDisk(CentrumLog(Path(katalog) / "c.log"), journaled="efenix").write(obca)
         return "".join(plik.read_text(encoding="utf-8") for plik in Path(katalog).rglob("*.json"))
 """,
-    # Dynamiczny dostęp do modułu daje LogsText z komórki mimo zakazu logs_text i _PASSED (przegląd #1688, runda 3, D1);
-    # trzecią postać, importlib.import_module(…).logs_text, odrzuca ruff od #1717.
     'dowód z getattr modułu: getattr(client_data, "logs_text") w pliku Archiwum': _GOTOWY_PLIK
     + """from rozliczenia import client_data
 
@@ -974,8 +874,6 @@ from rozliczenia.centrum.outbox import ArchiveFile
 def plik(komorka: str) -> ArchiveFile | None:
     return cls._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
 """,
-    # Pole TOOL_TEXT spoza gramatyki pola idzie przez strażnika, który maskuje tylko wartości z pamięci; wartość spoza
-    # pamięci przechodzi, jak każdy tekst Logów (krok B: lista dozwolonych słów).
     "strażnik zna tylko zapamiętane wartości: pole TOOL_TEXT spoza gramatyki z wartością spoza pamięci (run_id)": _GOTOWY_PLIK
     + """from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
@@ -985,8 +883,6 @@ from rozliczenia.client_data import ForbiddenValues
 def plik(komorka: str, logi: RunLog, pamiec: ForbiddenValues, plik: ArchiveFile) -> ArchiveFile:
     return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, guard_logs(logi.model_copy(update={"run_id": komorka}), pamiec).text)
 """,
-    # Do gramatyki identyfikatora (typ wyjątku, plik i funkcja ramki, system) pasuje jedno słowo, a strażnik zostawia tekst
-    # w gramatyce pola bez maski także wtedy, gdy pamięć go zna (#936: słowo narzędzia równe wartości z pliku taty).
     "gramatyka identyfikatora przepuszcza jedno słowo z komórki: zapamiętane słowo jako funkcja ramki śladu": _GOTOWY_PLIK
     + """from rozliczenia.call_trace import CallFrame, CallTrace
 from rozliczenia.centrum.run_logs import RunLog
@@ -1018,15 +914,9 @@ class Mixin:
 
 
 """
-"""Początek próbki z podklasą typu-dowodu albo wersji, której ``__init_subclass__`` typu nie odmówił (baza przed typem bez
-``super()``) albo której nie widział (``__bases__``, ``type()`` bez odmowy)."""
 
 _PUSTE_PRZYJECIE: Final = "{'__post_init__': lambda self: None}"
 
-# Postaci, które bez kontroli dokładnego typu w chwili użycia (outbox._queue_text, comment_versions.post_of,
-# run_logs_guard.exact_logs i exact_text) dawałyby plikowi kolejki wartość komórki przez plik w Archiwum albo komentarz
-# Uruchomienia, a z nią dostają odmowę → fragment zgłoszenia biegu. Relacja podklasy powstaje różnie (type(), type.__new__
-# z bazą bez super(), __bases__), a odmowa stoi w chwili użycia, więc nie zależy od drogi.
 ODMOWY_LOGOW: Final = {
     "bajty komórki typu Any jako Wzorzec w pliku Archiwum": (
         _GOTOWY_PLIK.replace("\n\n\n", "\nfrom typing import Any\n\n\n")
@@ -1265,12 +1155,9 @@ def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
 }
 
 _KOMORKA: Final = "Syntetyczna Lipowa 5"
-"""Komórka zakazanej kolumny w próbkach drogi Logów, która w pliku kolejki to wyciek."""
 
 
 def _argumenty_logow() -> dict[str, object]:
-    """Argumenty funkcji próbki drogi Logów, świeże dla każdej próbki, bo próbka zmienia gotowy plik w Archiwum."""
-
     pamiec = empty_memory()
     logi = record()
     return {
@@ -1291,10 +1178,6 @@ def _w_pliku_kolejki(plik: Path) -> list[str]:
 
 @pytest.mark.parametrize("opis", ODMOWY_LOGOW.keys())
 def test_plik_archiwum_i_post_of_odmawiaja_podklasy_i_atrapy_w_chwili_uzycia(opis: str, tmp_path: Path) -> None:
-    """Plik kolejki bierze plik w Archiwum tylko z tekstem dokładnie ``LogsText``, a ``post_of`` wersję dokładnie jednej z
-    czterech klas z tekstem albo Logami dokładnego typu, sprawdzone tuż przed użyciem, więc podklasa, jakkolwiek powstała,
-    i wartość podmieniona po przyjęciu wersji nie dają plikowi kolejki wartości komórki (#1551)."""
-
     kod, odmowa = ODMOWY_LOGOW[opis]
     plik = tmp_path / "probka.py"
     plik.write_text(kod, encoding="utf-8")
@@ -1324,12 +1207,9 @@ def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a
 
 
 def _logs_on_disk(directory: Path) -> LogsOnDisk:
-    """Logi na dysku w katalogu Logów ``directory`` (obok dziennika Centrum)."""
-
     return LogsOnDisk(CentrumLog(directory / "centrum-rozliczen.log"), journaled="efenix")
 
 
-# Wszystko, co bierze Logi albo tekst po strażniku: cztery wersje komentarza Uruchomienia i plik Logów.
 TAKES_GUARDED: Final[dict[str, Callable[[Any, Path], object]]] = {
     "postep": lambda value, _: ProgressVersion(_progress(), value),
     "wynik-bez-logow": lambda value, _: WithoutLogsVersion(ResultWithoutLogs(_progress(), "OK", "niezapisane"), value),
@@ -1343,10 +1223,6 @@ TAKES_GUARDED: Final[dict[str, Callable[[Any, Path], object]]] = {
 def test_wersje_komentarza_i_plik_logow_odmawiaja_logow_sprzed_straznika_ktorych_typ_nie_widzi(
     take: Callable[[Any, Path], object], tmp_path: Path
 ) -> None:
-    """Logi sprzed strażnika podane przez ``Any`` (np. ``cast(Any, …)`` albo ``# type: ignore``) typ przepuszcza, więc
-    wersja komentarza Uruchomienia i plik Logów sprawdzają je przy uruchomieniu i odmawiają, zanim cokolwiek pójdzie do
-    Skrzynki albo na dysk (przegląd #1038, runda 2)."""
-
     raw = record()
     unguarded: Any = SimpleNamespace(record=raw, text=raw.text)
 
@@ -1356,7 +1232,6 @@ def test_wersje_komentarza_i_plik_logow_odmawiaja_logow_sprzed_straznika_ktorych
     assert list(tmp_path.iterdir()) == []
 
 
-# Wartość po strażniku drugiego typu: tekst komentarza zamiast Logów i Logi zamiast tekstu (przegląd #1038, runda 3).
 OTHER_GUARDED: Final = {
     "postep": "logi",
     "wynik-bez-logow": "logi",
@@ -1370,9 +1245,6 @@ OTHER_GUARDED: Final = {
 def test_wersje_komentarza_i_plik_logow_odmawiaja_wartosci_po_strazniku_drugiego_typu(
     name: str, other: str, tmp_path: Path
 ) -> None:
-    """Tekst komentarza po strażniku nie jest Logami, a Logi nie są tekstem komentarza: wersja z Logami i plik Logów
-    biorą tylko Logi po strażniku, a postęp i wynik bez Logów tylko tekst, także gdy typ wartości nie widzi (``Any``)."""
-
     with pytest.raises(TypeError, match="po strażniku"):
         TAKES_GUARDED[name](_guarded(other), tmp_path)
 
@@ -1380,9 +1252,6 @@ def test_wersje_komentarza_i_plik_logow_odmawiaja_wartosci_po_strazniku_drugiego
 
 
 class _BezSuper:
-    """Baza, której ``__init_subclass__`` nie woła ``super()``: przed typem-dowodem w bazach przesłania jego
-    ``__init_subclass__`` (przegląd #1698, runda 1, W1)."""
-
     def __init_subclass__(cls, **kwargs: object) -> None:
         pass
 
@@ -1391,9 +1260,6 @@ class _BezSuper:
 def test_wersje_komentarza_i_plik_logow_odmawiaja_podklasy_z_type_new_ktorej_nie_odmowilo_jej_utworzenie(
     name: str, tmp_path: Path
 ) -> None:
-    """``type.__new__`` z bazą, której ``__init_subclass__`` nie woła ``super()``, robi podklasę Logów albo tekstu po
-    strażniku bez odmowy, więc wersja komentarza Uruchomienia i plik Logów sprawdzają dokładny typ (#1551)."""
-
     own = {"logi": "tekst", "tekst": "logi"}[OTHER_GUARDED[name]]
     proof = type(_guarded(own))
     subclass = type.__new__(type(proof), "Inne", (_BezSuper, proof), {})
@@ -1404,8 +1270,6 @@ def test_wersje_komentarza_i_plik_logow_odmawiaja_podklasy_z_type_new_ktorej_nie
     assert list(tmp_path.iterdir()) == []
 
 
-# Wartość z kolumny ADRES pliku taty, którą ta praca Centrum przeczytała (ADR 0025): w Logach z dziennika i w tekście
-# wyniku bez Logów (tu w miejscu identyfikatora Uruchomienia, jak w teście postępu wyżej).
 ADDRESS: Final = "Syntetyczna Kwarcowa 9"
 
 
@@ -1417,8 +1281,6 @@ def _forbidden() -> ForbiddenValues:
 
 
 def _journal(end: EndEntry | None) -> JournalRead:
-    """Dziennik Wyceny Uruchomienia ``RUN_ID`` z zaczętym zleceniem z wiersza 19 i wpisem końca ``end``."""
-
     started = StartFacts(
         run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
     )
@@ -1427,11 +1289,9 @@ def _journal(end: EndEntry | None) -> JournalRead:
 
 
 FROM_FILE: Final = record(process="efenix", technical_notes=[f"Notatka: {ADDRESS}"])
-"""Logi z pliku, które zapisała praca Centrum sprzed strażnika (wartość z kolumny ADRES bez maski)."""
 INTERRUPTED: Final = record(
     process="efenix", result=None, ending="interrupted", duration_ms=None, technical_notes=[f"Notatka: {ADDRESS}"]
 )
-"""Logi Urwanego Uruchomienia, które składa start Centrum (``RecordMaker.interrupted``)."""
 
 
 def _without_logs(
@@ -1441,8 +1301,6 @@ def _without_logs(
     return WithoutLogsVersion(final, guard_text(without_logs_markdown(final), "wynik Wyceny w efenix bez Logów", forbidden))
 
 
-# Macierz startu Centrum (ADR 0017, dopisek #910): co zastał na dysku → wersja zastępcza po strażniku
-# reguły danych tej pracy Centrum i czy start złożył Logi Urwanego Uruchomienia (zabiera działania taty).
 CLOSE_MATRIX: Final[
     dict[str, tuple[EndEntry | None, bool, LogsRead, Callable[[JournalRead, ForbiddenValues], Closing], bool]]
 ] = {
@@ -1461,7 +1319,6 @@ CLOSE_MATRIX: Final[
         lambda read, forbidden: _without_logs(read, "OK", "nieczytelne", forbidden),
         False,
     ),
-    # Plik Logów jest, więc Uruchomienie miało wynik, ale ani plik, ani dziennik go nie mówią (przegląd #1043, Drobne 3).
     "logi-nieczytelne-bez-wpisu-konca": (
         None,
         True,
@@ -1496,12 +1353,6 @@ def test_start_centrum_zamyka_dziennik_wyceny_wersja_zastepcza_po_strazniku_z_te
     expected: Callable[[JournalRead, ForbiddenValues], Closing],
     built: bool,
 ) -> None:
-    """Model ``Czytaj`` skilla ``verify-urwane-uruchomienie``: dziennik bez pierwszej linii start usuwa, a z każdego
-    innego robi wersję zastępczą komentarza Uruchomienia z tego, co zastał: Logi z pliku, wynik bez Logów, gdy pliku nie
-    da się odczytać albo go nie ma, a jest wpis końca, i Logi Urwanego Uruchomienia, gdy nie ma ani pliku, ani wpisu
-    końca. Każda wersja przeszła strażnika reguły danych tej pracy Centrum (ADR 0025), także Logi z pliku sprzed niego,
-    a Logi Urwanego Uruchomienia składa tylko ostatnia gałąź, bo zabierają działania taty, które czekają na Logi."""
-
     read = _journal(end)
     asked: list[JournalRead] = []
 
@@ -1519,15 +1370,15 @@ def test_start_centrum_zamyka_dziennik_wyceny_wersja_zastepcza_po_strazniku_z_te
         assert closing == wanted
     else:
         assert not isinstance(closing, Drop)
-        assert post_of(closing) == post_of(wanted)
-        assert all(ADDRESS not in text for text in post_of(closing).parts)
+        sent = post_of(closing)
+        assert sent == post_of(wanted)
+        archived = "" if sent.archive is None else gzip.decompress(sent.archive.packed()).decode("utf-8")
+        assert any("[adres]" in text for text in (*sent.parts, archived)), "wersja ma wartość z kolumny ADRES, którą strażnik maskuje"
+        assert [text for text in (*sent.parts, archived) if ADDRESS in text] == [], "wartość z kolumny ADRES po strażniku"
     assert asked == ([read] if built else [])
 
 
 def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_z_bledem_systemu() -> None:
-    """Nie wiadomo, czy Logi są i jakie, więc start nie zgaduje wersji: błąd systemu wychodzi do startu, który zostawia
-    dziennik następnemu startowi, i niczego nie składa."""
-
     failure = PermissionError("plik trzyma antywirus")
     left = LeftJournal(JournalKey(), _journal(None), Refused(failure))
     asked: list[JournalRead] = []
@@ -1543,14 +1394,11 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_z_bledem_
 
 
 class SwitchedOff(BaseException):
-    """Centrum zgasło (brak prądu, zamknięta konsola, zabity proces): ``BaseException``, więc żadne ``except`` kodu go
-    nie zatrzyma, jak wątku, który ginie razem z komputerem."""
+    pass
 
 
 @dataclass
 class RecordingQueue:
-    """Kolejka wysyłki, która przyjmuje każdą wysyłkę (``accepts``) albo każdej odmawia i pamięta przyjęte."""
-
     posts: list[LogsPost] = dataclasses.field(default_factory=list)
     accepts: bool = True
 
@@ -1564,25 +1412,15 @@ class RecordingQueue:
 
 
 StartStep = Literal["ZapiszLogi", "Wyslij"]
-"""Kroki modelu ``verify-urwane-uruchomienie`` przy starcie Centrum, które coś zapisują."""
 EndStep = Literal["WpisKonca", "LogiWyniku", "WyslijWynik", "UsunPoLogach"]
-"""Kroki modelu na końcu Wyceny (``RunComments.run_ended``), które coś zapisują, w kolejności modelu."""
 
 
 class PowerCut:
-    """Zgaśnięcie Centrum tuż przed krokiem modelu ``verify-urwane-uruchomienie``, który coś zapisuje. Daje Logi na dysku
-    i kolejkę, które gasną przed nim: start Centrum przed zapisem pliku Logów (``ZapiszLogi``) albo wysyłką wersji
-    zastępczej (``Wyslij``), koniec Wyceny przed wpisem końca (``WpisKonca``), plikiem Logów z wynikiem (``LogiWyniku``),
-    ich wysyłką (``WyslijWynik``) albo usunięciem dziennika za nimi (``UsunPoLogach``); ``None``: Centrum nie gaśnie. Po
-    zgaśnięciu nic już nie pisze, także ``finally`` kodu, który biegł w tej chwili."""
-
     def __init__(self, before: StartStep | EndStep | None) -> None:
         self.before = before
         self.off = False
 
     def reached(self, step: StartStep | EndStep) -> None:
-        """Krok ``step`` zaczyna pisać: Centrum gaśnie, gdy to krok zgaśnięcia albo już zgasło."""
-
         if self.off or step == self.before:
             self.off = True
             raise SwitchedOff
@@ -1608,7 +1446,6 @@ class PowerCut:
                 return journal
 
             def write(self, logs: GuardedLogs) -> None:
-                # Ten sam zapis pliku Logów to ZapiszLogi przy starcie Centrum i LogiWyniku na końcu Wyceny.
                 cut.reached("ZapiszLogi" if cut.before == "ZapiszLogi" else "LogiWyniku")
                 super().write(logs)
 
@@ -1627,8 +1464,6 @@ class PowerCut:
 
 
 def _started(comments: RunComments) -> None:
-    """Start Centrum od budowy aplikacji do końca startu serwera: zamknięcie dzienników, potem ich wysyłka."""
-
     comments.close_left_behind()
     comments.send_left_behind()
 
@@ -1640,9 +1475,6 @@ def _comments(
     clock: ManualClock | None = None,
     files: ProcessFiles = lambda process, period, settings: [],
 ) -> RunComments:
-    """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu, a pliki procesu
-    z ``files`` (domyślnie żadnych), bez Wzorców."""
-
     work = centrum_work(directory, CentrumLog(directory / "centrum-rozliczen.log"), clock)
     records = RecordMaker(
         commit=lambda: None,
@@ -1659,8 +1491,6 @@ def _comments(
 
 
 def _urwane(directory: Path) -> Path:
-    """Dziennik Urwanego Uruchomienia ``RUN_ID``, które zgasło przy zleceniu z wiersza 19."""
-
     started = StartFacts(
         run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=datetime(2026, 9, 10, 8, 0)
     )
@@ -1671,11 +1501,6 @@ def _urwane(directory: Path) -> Path:
 def test_centrum_zgaszone_przy_zamykaniu_dziennika_wyceny_wysyla_logi_urwanego_uruchomienia_przy_nastepnym_starcie(
     before: StartStep, tmp_path: Path
 ) -> None:
-    """Start Centrum, który zgasł przed zapisem pliku Logów Urwanego Uruchomienia albo przed ich wysyłką, zostawia
-    dziennik i niczego nie wysyła; następny start wysyła je raz, w stopniu wersji zastępczej, z plikiem w Archiwum o
-    bajtach pliku Logów, dopiero w starcie serwera (po ``Outbox.resume``), i dopiero wtedy usuwa dziennik
-    (obietnice DziennikPoKolejce, TeSameZnaki, NicPrzedWznowieniem i Zbieganie)."""
-
     journal = _urwane(tmp_path)
     queue, cut = RecordingQueue(), PowerCut(before)
 
@@ -1690,23 +1515,21 @@ def test_centrum_zgaszone_przy_zamykaniu_dziennika_wyceny_wysyla_logi_urwanego_u
     [post] = queue.posts
     [logs_file] = (tmp_path / RUN_LOGS_DIRECTORY).glob(f"*-{RUN_ID}.json")
     sent = RunLog.model_validate_json(logs_file.read_text(encoding="utf-8"))
-    assert (after_cut, before_request) == ((True, []), [])
+    assert after_cut == (True, []), "DziennikPoKolejce: zgaszony start zostawia dziennik i niczego nie wysyła"
+    assert before_request == [], "NicPrzedWznowieniem: nic nie idzie do kolejki przed startem serwera"
     assert (post.rank, sent.ending, sent.interruption) == (
         Rank.STAND_IN,
         "interrupted",
         LoggedInterruption(row=19, place=1, total=2, omitted=0),
     )
-    assert post.archive is not None and gzip.decompress(post.archive.packed()) == logs_file.read_bytes()
-    assert not journal.exists()
+    assert post.archive is not None
+    assert gzip.decompress(post.archive.packed()) == logs_file.read_bytes(), "TeSameZnaki: plik w Archiwum to plik Logów"
+    assert not journal.exists(), "Zbieganie: dziennik znika po przyjęciu Logów przez kolejkę"
 
 
 def test_katalog_logow_ktory_nie_przyjal_pliku_przy_starcie_nie_zatrzymuje_logow_urwanego_uruchomienia(
     tmp_path: Path,
 ) -> None:
-    """Na miejscu katalogu Logów stoi plik, więc start Centrum nie zapisze pliku Logów Urwanego Uruchomienia: jedna linia
-    dziennika Centrum, a te Logi i tak idą do Skrzynki w starcie serwera i dziennik znika (przegląd #1043,
-    Drobne 1)."""
-
     journal = _urwane(tmp_path)
     (tmp_path / RUN_LOGS_DIRECTORY).write_text("", encoding="utf-8")
     queue = RecordingQueue()
@@ -1723,10 +1546,6 @@ def test_katalog_logow_ktory_nie_przyjal_pliku_przy_starcie_nie_zatrzymuje_logow
 
 
 def test_wyjatek_wysylki_jednej_wersji_zastepczej_przy_starcie_nie_zatrzymuje_nastepnych(tmp_path: Path) -> None:
-    """Dwa dzienniki Urwanych Uruchomień, a kolejka rzuca nieoczekiwany wyjątek przy pierwszej wersji zastępczej: ta
-    wersja to jedna linia dziennika Centrum i jej dziennik czeka na następny start, a druga idzie do Kolejki wysyłki i jej
-    dziennik znika (przegląd #1166 r2, Drobne 1)."""
-
     other = "9f0e7c2b5a8d4e1f8c3b6a9d2e5f8a1b"
     first, second = (
         left_journal(
@@ -1761,10 +1580,6 @@ def test_wyjatek_wysylki_jednej_wersji_zastepczej_przy_starcie_nie_zatrzymuje_na
 
 
 def test_logi_sprzed_schematu_3_przy_dzienniku_wyceny_zostaja_w_swoim_schemacie_ze_slowem_trybu(tmp_path: Path) -> None:
-    """Start Centrum zastaje dziennik Wyceny i plik Logów schematu 2, który zapisało Centrum sprzed schematu 3 (Logi,
-    których przyjęcia przez kolejkę nikt nie zapisał): plik Logów i plik w Archiwum Logów okresu mają te Logi w ich
-    schemacie, z trybem i trybem przycisku startu słowem, bo odtworzenie czyta je kodem ich commitu (``tool.commit``)."""
-
     logs = full_logs()
     old = json.loads(logs.text)
     entries = [entry | {"mode": RunMode(entry["mode"]).word} if entry.get("mode") else entry for entry in old["dad_actions"]["entries"]]
@@ -1796,12 +1611,9 @@ PRICING = RunInfo(
 STARTED_AT: Final = datetime(2026, 9, 10, 8, 0, tzinfo=timezone.utc)
 OTHER_RUN_ID: Final = "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6"
 ENTRIES: Final = ["start Uruchomienia", "zaczynam zlecenie"]
-"""Wpisy dziennika Wyceny ``PRICING`` przed jej wynikiem (``_priced``)."""
 
 
 def _ended(info: RunInfo = PRICING) -> EndedRun:
-    """Koniec Uruchomienia ``info`` bez wyniku rdzenia (``BLAD_KRYTYCZNY``), po pół godzinie."""
-
     progress = Progress(phases=[], template_total=0, templates_completed=0, current_worker=None, figures=[])
     return EndedRun(
         info, None, None, progress, STARTED_AT, STARTED_AT + timedelta(minutes=30), None,
@@ -1810,8 +1622,6 @@ def _ended(info: RunInfo = PRICING) -> EndedRun:
 
 
 def _priced(comments: RunComments, disk: LogsOnDisk) -> None:
-    """Start Wyceny ``PRICING`` z Centrum i zlecenie z wiersza 19 zaczęte w jej dzienniku, przed wynikiem."""
-
     comments.run_started(PRICING, STARTED_AT)
     disk.journal.begun(19, 1, 1)
 
@@ -1828,9 +1638,6 @@ def _logs_file(directory: Path) -> dict[str, Any]:
 def test_logi_z_folderem_procesu_bez_dostepu_maja_pliki_none_bez_wpisu_nieoczekiwanego_wyjatku(
     tmp_path: Path, failure: Exception
 ) -> None:
-    """Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek: Logi Uruchomienia mają wtedy pliki ``None``,
-    a dziennik Centrum nie ma wpisu, który Diagnoza by zgłosiła."""
-
     def files(process: object, period: object, settings: object) -> list[Path]:
         raise failure
 
@@ -1845,17 +1652,11 @@ def test_logi_z_folderem_procesu_bez_dostepu_maja_pliki_none_bez_wpisu_nieoczeki
     assert UNEXPECTED_FAILURE_EVENT not in (log.read_text(encoding="utf-8") if log.exists() else "")
 
 
-# Zgaśnięcie Centrum przed krokiem końca Wyceny (model ``verify-urwane-uruchomienie``; ``None``: bez zgaśnięcia) i czy na
-# miejscu katalogu Logów stoi plik → co zostaje: wpis końca w dzienniku, plik Logów z wynikiem i stopnie wysyłek tej pracy
-# Centrum (postęp przy starcie Wyceny, Logi z wynikiem), a potem wersja zastępcza następnego startu: Logi z pliku, wynik bez
-# Logów albo Logi Urwanego Uruchomienia (przy ``WpisKonca`` to przyjęte znalezisko ``przed-wpisem-konca``). Bez zgaśnięcia
-# dziennik znika za Logami z wynikiem, a start nie ma czego wysłać.
 AFTER_CUT: Final[dict[str, tuple[EndStep | None, bool, tuple[bool, bool, list[Rank], str | None]]]] = {
     "WpisKonca": ("WpisKonca", False, (False, False, [Rank.DRAFT], "interrupted")),
     "LogiWyniku": ("LogiWyniku", False, (True, False, [Rank.DRAFT], "bez-logow")),
     "WyslijWynik": ("WyslijWynik", False, (True, True, [Rank.DRAFT], "finished")),
     "UsunPoLogach": ("UsunPoLogach", False, (True, True, [Rank.DRAFT, Rank.OWN], "finished")),
-    # Logi z wynikiem przyjęte bez swojego pliku: start wysyła wynik bez Logów, niższego stopnia (#871, #910).
     "UsunPoLogach-bez-pliku-logow": ("UsunPoLogach", True, (True, False, [Rank.DRAFT, Rank.OWN], "bez-logow")),
     "bez-zgasniecia": (None, False, (True, True, [Rank.DRAFT, Rank.OWN], None)),
 }
@@ -1865,11 +1666,6 @@ AFTER_CUT: Final[dict[str, tuple[EndStep | None, bool, tuple[bool, bool, list[Ra
 def test_centrum_zgaszone_przed_kazdym_krokiem_konca_wyceny_daje_nastepnemu_startowi_wersje_zastepcza_z_tego_co_zapisalo(
     before: EndStep | None, blocked: bool, expected: tuple[bool, bool, list[Rank], str | None], tmp_path: Path
 ) -> None:
-    """Koniec Wyceny w efenix to po kolei wpis końca, plik Logów z wynikiem, ich wysyłka i usunięcie dziennika, gdy
-    kolejka je przyjęła (``RunComments.run_ended``, #871, #910). Centrum zgaszone przed każdym z tych kroków zostawia
-    dziennik, a następny start wysyła z niego wersję zastępczą tego, co zdążyło się zapisać, w stopniu niższym od Logów
-    z wynikiem, i usuwa dziennik. Zgaśnięcie przed wpisem końca daje Logi Urwanego Uruchomienia (przyjęte znalezisko)."""
-
     queue, cut = RecordingQueue(), PowerCut(before)
     disk = cut.disk(tmp_path)
     comments = _comments(tmp_path, cut.queue(queue), disk)
@@ -1908,21 +1704,24 @@ def test_centrum_zgaszone_przed_kazdym_krokiem_konca_wyceny_daje_nastepnemu_star
 
 
 def test_wynik_wyceny_bez_przyjecia_logow_przez_kolejke_zostawia_dziennik_do_nastepnego_startu(tmp_path: Path) -> None:
-    """Kolejka odmawia Logów z wynikiem (``post`` daje ``False``), więc komentarz postępu nie ma jeszcze wersji
-    końcowej: dziennik zostaje z wpisem końca, a następny start wysyła z niego Logi z pliku (#910)."""
-
     queue = RecordingQueue(accepts=False)
     disk = _logs_on_disk(tmp_path)
     comments = _comments(tmp_path, queue, disk)
     _priced(comments, disk)
 
     comments.run_ended(_ended())
-    left = list((tmp_path / "dzienniki-wyceny").glob("*.jsonl"))
+    left = [
+        [json.loads(line)["entry"] for line in path.read_text(encoding="utf-8").splitlines()]
+        for path in (tmp_path / "dzienniki-wyceny").glob("*.jsonl")
+    ]
     queue.accepts = True
     _started(_comments(tmp_path, queue))
 
     [post] = queue.posts
-    assert (len(left), post.rank) == (1, Rank.STAND_IN)
+    assert left == [[*ENTRIES, "koniec Uruchomienia"]], "dziennik z wpisem końca"
+    assert post.rank == Rank.STAND_IN
+    assert post.archive is not None, "następny start wysyła Logi z pliku, a nie wynik bez Logów"
+    assert json.loads(gzip.decompress(post.archive.packed()))["ending"] == "finished"
     assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
 
 
@@ -1947,9 +1746,6 @@ def test_logi_z_wynikiem_ktorych_nie_dalo_sie_zbudowac_nie_ida_do_kolejki_a_dzie
 
 
 def test_dziennik_wyceny_bez_dowodu_startu_logow_na_dysku_odmawia_przed_pierwsza_linia(tmp_path: Path) -> None:
-    """Dziennik startuje tylko ``LogsOnDisk.started``, który zapisuje też plik ostatniego startu: start bez dowodu
-    (``_STARTER``) odmawia, zanim dziennik zapisze pierwszą linię albo pokaże postęp."""
-
     directory = tmp_path / "dzienniki-wyceny"
     journal = Journal(directory, CentrumLog(tmp_path / "centrum-rozliczen.log"), process="efenix")
 
@@ -1960,10 +1756,6 @@ def test_dziennik_wyceny_bez_dowodu_startu_logow_na_dysku_odmawia_przed_pierwsza
 
 
 def test_blad_wpisu_konca_nie_zatrzymuje_logow_z_wynikiem_a_blad_pliku_logow_ich_wysylki(tmp_path: Path) -> None:
-    """Każdy krok końca Wyceny ma własną osłonę (#871): wpis końca, który rzucił, nie zatrzymuje Logów z wynikiem, a plik
-    Logów, który się nie zapisał (na miejscu katalogu Logów stoi plik), nie zatrzymuje ich wysyłki; kolejka je przyjęła,
-    więc dziennik znika, a dziennik Centrum ma typ każdego błędu w miejscu działań po wyniku."""
-
     queue = RecordingQueue()
     log = CentrumLog(tmp_path / "centrum-rozliczen.log")
 
@@ -1999,10 +1791,6 @@ def test_blad_wpisu_konca_nie_zatrzymuje_logow_z_wynikiem_a_blad_pliku_logow_ich
 
 
 def test_postep_wyceny_idzie_tylko_z_pierwsza_linia_dziennika_na_dysku_i_konczy_sie_z_wynikiem(tmp_path: Path) -> None:
-    """Postęp Wyceny w efenix idzie przy jej starcie i co ``PROGRESS_S``, tylko gdy dziennik ma na dysku pierwszą linię
-    (#846): bez niej (na miejscu katalogu dzienników stoi plik) budzik dzwoni, a nic nie idzie. Od końca Wyceny postęp
-    nie idzie, a pierwszy budzik po końcu nie ustawia następnego."""
-
     (tmp_path / "dzienniki-wyceny").write_text("", encoding="utf-8")
     queue, clock = RecordingQueue(), ManualClock()
     comments = _comments(tmp_path, queue, clock=clock)
@@ -2025,10 +1813,6 @@ def test_postep_wyceny_idzie_tylko_z_pierwsza_linia_dziennika_na_dysku_i_konczy_
 def test_postep_wyceny_przeczytany_przed_jej_koncem_nie_idzie_po_jej_logach_gdy_trwa_juz_nastepna_wycena(
     tmp_path: Path,
 ) -> None:
-    """Budzik postępu czyta dziennik Wyceny, zanim weźmie blokadę komentarza Uruchomienia (#846). Gdy w tej chwili Wycena
-    się kończy, a Centrum startuje następną, postęp pierwszej nie idzie: poszedłby po jej Logach z wynikiem jako
-    nowsza wersja komentarza, która mówi, że Uruchomienie trwa. Postęp następnej Wyceny idzie (przegląd #1047)."""
-
     queue, clock = RecordingQueue(), ManualClock()
     log = CentrumLog(tmp_path / "centrum-rozliczen.log")
     box: list[RunComments] = []
@@ -2116,9 +1900,6 @@ def test_postep_wyceny_po_wyjatku_jest_w_dzienniku_centrum_i_idzie_przy_nastepny
 
 
 def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp_path: Path) -> None:
-    """Diagnoza dopisuje się do Logów ostatniego Uruchomienia tej pracy Centrum nowszą wersją tej samej wysyłki, a druga
-    z tym samym wynikiem i Diagnoza innego Uruchomienia nie zmieniają niczego (#840)."""
-
     queue = RecordingQueue()
     comments = _comments(tmp_path, queue)
     comments.run_ended(_ended(PRICING.model_copy(update={"process": "preparation"})))
@@ -2138,9 +1919,6 @@ def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp
 
 
 def test_wpis_dziennika_wyceny_bez_startu_wyceny_z_centrum_nie_zapisuje_niczego(tmp_path: Path) -> None:
-    """Wpis silnika bez startu Wyceny z Centrum nie ma dziennika, do którego by należał: Wycena biegnie dalej, a na dysku
-    i w dzienniku Centrum nic nie przybywa."""
-
     directory = tmp_path / "dzienniki-wyceny"
     log = CentrumLog(tmp_path / "centrum-rozliczen.log")
     journal = Journal(directory, log, process="efenix")
@@ -2151,8 +1929,6 @@ def test_wpis_dziennika_wyceny_bez_startu_wyceny_z_centrum_nie_zapisuje_niczego(
 
 
 class _WatchedLock:
-    """``threading.Lock``, który woła ``on_wait``, gdy wątek musi na nią czekać, zanim zacznie czekać."""
-
     def __init__(self, on_wait: Callable[[], None]) -> None:
         self._lock = threading.Lock()
         self._on_wait = on_wait
@@ -2169,9 +1945,6 @@ class _WatchedLock:
 def test_dwie_diagnozy_naraz_pisza_plik_i_komentarz_logow_jedna_po_drugiej(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Druga Diagnoza (druga karta) czeka, aż pierwsza odda plik Logów i jego komentarz kolejce, więc ostatni komentarz
-    ma bajty pliku Logów na dysku."""
-
     first_posting, release, moved = threading.Event(), threading.Event(), threading.Event()
     seen: list[str] = []
 
@@ -2231,9 +2004,6 @@ def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_pol
 
 
 def test_liczba_policzona_przez_narzedzie_w_ksztalcie_telefonu_zostaje_a_ta_sama_liczba_z_komorki_jest_telefonem() -> None:
-    """Strażnik liczby sprawdza tylko wartości z komórek pliku taty (ADR 0025): numer wiersza i rozmiar pliku w Kopii
-    wejścia policzyło narzędzie, więc zostają, choć mają kształt telefonu, a te same liczby w komórkach są ``[telefon]``."""
-
     row, size = (form.value for form in COMPUTED)
     sheet = {"sheet": "Sheet1", "header_row": 17, "columns": {}, "rows": [{"row": row, "cells": {"AS": row, "AT": size}}], "empty_rows": []}
     copied = {"name": "plik.xlsx", "fingerprint": {"size": size, "modified_at": None, "sha256": "0" * 64}, "sheets": [sheet]}
@@ -2263,10 +2033,6 @@ def _step(amount: str | None) -> dict[str, Any]:
 
 
 def test_maska_w_kwocie_logow_nie_gubi_logow_tylko_kwote_albo_zlecenie_z_uwaga_o_polu() -> None:
-    """Kwota w Logach jest liczbą ``Decimal``, więc maska strażnika (numer Orange ``12345`` w ``12345.67``) w niej nie
-    stoi: kwota strony, która może być pusta, jest pusta, a zlecenie z kwotą z pliku, która pusta być nie może, odpada,
-    każde z uwagą techniczną o polu bez wartości; reszta Logów wychodzi, a numer z nich znika."""
-
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ORANGE, 12345)
     orders = [
@@ -2279,7 +2045,9 @@ def test_maska_w_kwocie_logow_nie_gubi_logow_tylko_kwote_albo_zlecenie_z_uwaga_o
 
     assert kept.efenix_orders is not None
     assert [(order.row, order.file_amount, order.steps[0].amount) for order in kept.efenix_orders] == [(19, Decimal("10.00"), None)]
-    assert kept.technical_notes[-2:] == [
+    assert kept.technical_notes == [
+        "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: efenix_orders[0].file_amount.",
+        "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: efenix_orders[1].steps[0].amount.",
         "Reguła danych: pominięto efenix_orders[0]: strażnik zamaskował w nim wartość, której pole nie przyjmuje.",
         "Reguła danych: pole efenix_orders[1].steps[0].amount jest puste: strażnik zamaskował w nim wartość, której pole "
         "nie przyjmuje.",
@@ -2288,9 +2056,6 @@ def test_maska_w_kwocie_logow_nie_gubi_logow_tylko_kwote_albo_zlecenie_z_uwaga_o
 
 
 def test_maska_w_chwili_zmiany_pliku_kopii_wejscia_daje_puste_pole_z_uwaga_kopii_a_nie_karty() -> None:
-    """Chwila zmiany pliku w Kopii wejścia jest datą, więc numer Orange ``123456Z`` w niej (część ułamkowa sekundy z
-    oznaczeniem UTC) zostawia pole puste, a uwaga idzie do uwag Kopii, których karta nie pokazuje."""
-
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ORANGE, "123456Z")
     fingerprint = {"size": 10, "modified_at": "2026-10-23T20:47:20.123456Z", "sha256": "0" * 64}
@@ -2300,18 +2065,15 @@ def test_maska_w_chwili_zmiany_pliku_kopii_wejscia_daje_puste_pole_z_uwaga_kopii
 
     assert kept.input_copy is not None
     assert kept.input_copy[0].fingerprint.modified_at is None
-    assert kept.input_copy_notes[-1] == (
+    assert kept.input_copy_notes == [
+        "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: input_copy[0].fingerprint.modified_at.",
         "Reguła danych: pole input_copy[0].fingerprint.modified_at jest puste: strażnik zamaskował w nim wartość, "
-        "której pole nie przyjmuje."
-    )
+        "której pole nie przyjmuje.",
+    ]
     assert kept.technical_notes == []
 
 
 def test_miejsca_ktore_straznik_pominal_albo_zostawil_puste_wracaja_z_uwag_logow_po_strazniku() -> None:
-    """Plik Logów ma cięcie strażnika tylko w uwadze technicznej, więc odtworzenie czyta z uwag Logów po strażniku
-    (``guard_cuts``) każde miejsce, które straciło wartość, z tym samym rodzajem: pominięty element listy i puste pole,
-    w uwagach technicznych i w uwagach Kopii wejścia."""
-
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ORANGE, 12345)
     forbidden.remember_value(ForbiddenColumn.ORANGE, "123456Z")
@@ -2352,8 +2114,6 @@ _FULL_STEP: Final[dict[str, Any]] = {
     "realizator": "otwierajacy.testowy",
     "refusal": "NO_PHOTOS",
 }
-# Pełne Logi: każde pole schematu ma wartość, a każda wartość jest jedna w Logach. Tekst spoza zamkniętych list i pól
-# narzędzia to syntetyczna treść plików taty i strony efenix.
 FULL_LOGS: Final[dict[str, Any]] = {
     "schema_version": 3,
     "run_id": RUN_ID,
@@ -2659,16 +2419,12 @@ def full_logs(**changes: Any) -> RunLog:
 
 
 def _json_at(logs: RunLog, place: str) -> str:
-    """Pole ``place`` (nazwy pól po kropce) w JSON-ie Logów ``logs``."""
-
     value: Any = logs.model_dump(mode="json")
     for key in place.split("."):
         value = value[key]
     return json.dumps(value, ensure_ascii=False)
 
 
-# Pola Logów, które niosą tylko słowa i chwile narzędzia (ADR 0025, #936), i wartość z każdego z nich w pełnych Logach.
-# Tryb to ``DRY-RUN``, bo ``RUN`` jest krótsze niż ``client_data.MIN_VALUE``, więc reguła danych go nie pamięta.
 TOOL_FIELD_VALUES: Final = {
     "run_id": RUN_ID,
     "process": "efenix",
@@ -2692,14 +2448,12 @@ TOOL_FIELD_VALUES: Final = {
 def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma_te_wartosc_w_kolumnie_adres(
     place: str, value: str
 ) -> None:
-    """Strażnik porównuje słowa, a nie pochodzenie wartości (#936): wartość z kolumny ``ADRES`` pliku taty równa słowu
-    albo chwili narzędzia zostaje w polu, które niesie tylko to, co dało narzędzie. Logi powstają i idą do issue swojego
-    okresu jako swoje Uruchomienie, a w Komunikacie, który cytuje komórkę, ta wartość jest maską."""
-
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
     logs = full_logs(messages=[{**FULL_LOGS["messages"][0], "where": f"Komórka „{value}”."}])
-    assert guarded(forbidden, _json_at(logs, place), place).notes, "pole ma wartość z kolumny ADRES"
+    assert guarded(forbidden, _json_at(logs, place), place).notes, (
+        f"pole {place} ma wartość z kolumny ADRES, którą strażnik pamięta (od MIN_VALUE znaków; tryb RUN jest za krótki)"
+    )
 
     guarded_logs = guard_logs(logs, forbidden)
     kept = guarded_logs.record
@@ -2711,9 +2465,6 @@ def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma
 
 
 def _scalars(value: object) -> Iterator[tuple[str | int | float, bool]]:
-    """Każda wartość skalarna JSON-a Logów (tekst, także chwila i kwota, i liczba; bez ``bool`` i ``None``) i każdy
-    klucz: (wartość, czy to klucz)."""
-
     if isinstance(value, dict):
         for key, entry in value.items():
             yield key, True
@@ -2726,9 +2477,6 @@ def _scalars(value: object) -> Iterator[tuple[str | int | float, bool]]:
 
 
 def _numbers(value: object, read: bool = False) -> Iterator[tuple[int | float, bool]]:
-    """Każda liczba Logów ``value`` i czy stoi w polu ``READ_VALUES`` (komórki pliku taty, ilości przy zleceniu Wyceny w
-    efenix): tylko takie liczby strażnik sprawdza (ADR 0025), a każdą inną policzyło narzędzie."""
-
     if isinstance(value, BaseModel):
         for name, field in type(value).model_fields.items():
             yield from _numbers(getattr(value, name), read or READ_VALUES in field.metadata)
@@ -2746,8 +2494,6 @@ def _numbers(value: object, read: bool = False) -> Iterator[tuple[int | float, b
 
 
 def _schema_words() -> tuple[set[str], set[str]]:
-    """Nazwy pól i wartości zamkniętych list schematu Logów (``RunLog.model_json_schema``)."""
-
     names: set[str] = set()
     closed: set[str] = set()
 
@@ -2768,10 +2514,6 @@ def _schema_words() -> tuple[set[str], set[str]]:
 
 
 def _bez_probki(logs: RunLog) -> list[str]:
-    """Pola rekordów schematu Logów bez wartości w Logach ``logs`` (``Rekord.pole``; ``None`` i wartość bez elementów, czyli
-    pusta lista, krotka, słownik albo tekst, to brak wartości, choć pole z domyślną ma w JSON-ie klucz) i rodzaje rekordów unii z polem rodzaju bez rekordu tego rodzaju
-    (``Rekord.pole=rodzaj``), także rodzaj, którego pola mają już wartości w rekordzie innego rodzaju."""
-
     schema = RunLog.model_json_schema()
     wanted = {
         f"{record}.{field}"
@@ -2815,14 +2557,6 @@ def _bez_probki(logs: RunLog) -> list[str]:
 
 
 def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_poza_slowami_narzedzia() -> None:
-    """Przemiatanie kształtów pól (#936): każda wartość skalarna pełnych Logów (tekst, chwila, kwota, liczba, także
-    liczba z komórki pliku taty) i każdy klucz po kolei jako wartość kolumny ``ADRES`` z pliku taty. Pełne Logi mają
-    wartość w każdym polu każdego rekordu schematu i rekord każdego rodzaju (problem Wpisania raportów, mail, działanie
-    taty), a Logi powstają za każdym razem, także gdy to nazwa pola schematu, słowo zamkniętej listy, wartość pola
-    narzędzia albo liczba, którą policzyło narzędzie, a pola narzędzia mają wartość z rekordu.
-    Wartość spoza słów narzędzia nie zostaje nigdzie w tekście Logów, a nazwa pola, której nie ma w żadnym tekście, nie
-    zmienia Logów wcale."""
-
     logs = full_logs()
     assert _bez_probki(logs) == [], "pełne Logi mają wartość w każdym polu każdego rekordu i rekord każdego rodzaju"
     scalars = list(_scalars(logs.model_dump(mode="json")))
@@ -2838,7 +2572,8 @@ def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_
         forbidden = empty_memory()
         forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
         if not guarded(forbidden, shown(value), "").notes:
-            continue  # krótsza niż ``MIN_VALUE``: strażnik jej nie szuka
+            assert len(shown(value)) < MIN_VALUE, f"{value!r}: strażnik nie szuka w Logach wartości z pliku taty od MIN_VALUE znaków"
+            continue
         swept += 1
 
         guarded_logs = guard_logs(logs, forbidden)
@@ -2853,8 +2588,6 @@ def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_
     assert swept > len(names)
 
 
-# Pola w poddrzewach ``TOOL_FIELDS``, których typ przyjmuje dowolny tekst, z tym, skąd jest ich wartość (#936). Strażnik
-# zostawia je bez maski, więc każde nowe takie pole trafia tu tylko z powodem, a pole bez powodu czerwieni test niżej.
 TOOL_TEXT: Final = {
     "RunLog.run_id": "uuid4().hex przy starcie Uruchomienia (runs.py), w Logach Urwanego Uruchomienia z dziennika Centrum",
     "RunLog.period": "token okresu z parse_period_token żądania przeglądarki albo period_of zegara (INTERMAX)",
@@ -2869,41 +2602,32 @@ TOOL_TEXT: Final = {
 }
 
 _CLOSED: Final = (type(None), bool, int, float, Decimal, date, datetime)
-"""Typy bez dowolnego tekstu; liczbę ``READ_VALUES`` ``_free`` sprawdza osobno."""
 
 
-def _free(annotation: object, owner: str, metadata: Sequence[object] = ()) -> Iterator[str]:
-    """Pola typu ``annotation`` (pole ``owner``, ``Model.pole``), które mogą nieść treść pliku taty: dowolny tekst,
-    słownik, liczbę ``READ_VALUES`` albo typ, którego ta funkcja nie zna."""
-
+def _pola_z_trescia_pliku_taty(annotation: object, owner: str, metadata: Sequence[object] = ()) -> Iterator[str]:
     origin, args = get_origin(annotation), get_args(annotation)
     if READ_VALUES in metadata:
         yield f"{owner} (READ_VALUES)"
     elif origin is Annotated:
-        yield from _free(args[0], owner, args[1:])
+        yield from _pola_z_trescia_pliku_taty(args[0], owner, args[1:])
     elif origin in (Union, UnionType, list, tuple):
         for arg in args:
             if arg is not Ellipsis:
-                yield from _free(arg, owner)
+                yield from _pola_z_trescia_pliku_taty(arg, owner)
     elif origin is Literal or annotation in _CLOSED or (isinstance(annotation, type) and issubclass(annotation, Enum)):
         return
     elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
         for name, field in annotation.model_fields.items():
-            yield from _free(field.annotation, f"{annotation.__name__}.{name}", field.metadata)
+            yield from _pola_z_trescia_pliku_taty(field.annotation, f"{annotation.__name__}.{name}", field.metadata)
     elif isinstance(annotation, type) and is_dataclass(annotation):
         hints = get_type_hints(annotation, include_extras=True)
         for item in fields(annotation):
-            yield from _free(hints[item.name], f"{annotation.__name__}.{item.name}")
+            yield from _pola_z_trescia_pliku_taty(hints[item.name], f"{annotation.__name__}.{item.name}")
     else:
         yield owner if annotation is str else f"{owner} ({annotation!r})"
 
 
 def test_pole_z_listy_pol_narzedzia_ma_w_typie_tylko_zamkniete_listy_chwile_liczby_narzedzia_i_tekst_z_powodem() -> None:
-    """Strażnik zostawia każde pole z ``TOOL_FIELDS`` bez maski z całym poddrzewem (#936), więc typ każdego z nich,
-    przez modele, dataclassy, listy i unie, ma tylko zamknięte listy, chwile, liczby spoza ``READ_VALUES`` i tekst z
-    ``TOOL_TEXT`` z powodem. Nowe pole z dowolnym tekstem, słownikiem albo liczbą z komórek w takim poddrzewie czerwieni
-    ten test, zanim wyjdzie bez maski."""
-
     assert set(TOOL_FIELD_VALUES) == TOOL_FIELDS, "test pola z listy ma każde pole z listy"
     found: set[str] = set()
     for place in TOOL_FIELDS:
@@ -2914,9 +2638,12 @@ def test_pole_z_listy_pol_narzedzia_ma_w_typie_tylko_zamkniete_listy_chwile_licz
             assert isinstance(nested, type) and issubclass(nested, BaseModel), place
             model = nested
         field = model.model_fields[name]
-        found.update(_free(field.annotation, f"{model.__name__}.{name}", field.metadata))
+        found.update(_pola_z_trescia_pliku_taty(field.annotation, f"{model.__name__}.{name}", field.metadata))
 
-    assert sorted(found - set(TOOL_TEXT)) == []
+    assert sorted(found - set(TOOL_TEXT)) == [], (
+        "pole z dowolnym tekstem, słownikiem albo liczbą READ_VALUES w poddrzewie TOOL_FIELDS strażnik zostawia bez maski: "
+        "daj mu zamknięty typ albo wpisz je do TOOL_TEXT z tym, skąd jest jego wartość"
+    )
     assert sorted(set(TOOL_TEXT) - found) == [], "wyjątek bez pola w poddrzewie listy"
     assert sorted(set(TOOL_TEXT) ^ set(TOOL_TEXT_GRAMMAR)) == [], "każdy tekst pola z listy ma gramatykę w run_logs_guard.TOOL_TEXT_GRAMMAR"
 
@@ -2925,9 +2652,6 @@ _Sciezka = tuple[str | int, ...]
 
 
 def _teksty_pol_narzedzia(logs: RunLog) -> Iterator[tuple[str, _Sciezka]]:
-    """Każdy tekst w poddrzewach ``TOOL_FIELDS`` Logów ``logs``: pole jak klucz ``TOOL_TEXT_GRAMMAR`` (``Model.pole``
-    modelu, z którego powstał JSON, tak jak nazywa je strażnik) i ścieżka tekstu w JSON-ie."""
-
     def walk(source: object, value: object, place: str, path: _Sciezka, owner: str, tool_field: bool) -> Iterator[tuple[str, _Sciezka]]:
         if isinstance(value, str) and tool_field:
             yield owner, path
@@ -2945,12 +2669,9 @@ def _teksty_pol_narzedzia(logs: RunLog) -> Iterator[tuple[str, _Sciezka]]:
 
 
 _TEKSTY_POL_NARZEDZIA: Final = list(_teksty_pol_narzedzia(full_logs()))
-"""Teksty pól narzędzia pełnych Logów; nowe pole gramatyki albo listy pól narzędzia dostaje tu przypadek samo."""
 
 
 def _z_dopisana_komorka(sciezka: _Sciezka) -> tuple[str, dict[str, Any]]:
-    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst ma dopisaną komórkę."""
-
     dump = full_logs().model_dump(mode="json")
     *droga, ostatni = sciezka
     miejsce: Any = dump
@@ -2967,10 +2688,6 @@ def _z_dopisana_komorka(sciezka: _Sciezka) -> tuple[str, dict[str, Any]]:
     ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
 )
 def test_tekst_pola_narzedzia_z_dopisana_komorka_spoza_calej_gramatyki_nie_wychodzi_bez_maski(pole: str, sciezka: _Sciezka) -> None:
-    """Tekst narzędzia każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``), w każdym miejscu pełnych Logów, także w liście i
-    poddrzewie śladu, pasuje do niej, a z dopisaną zapamiętaną komórką już nie: strażnik (``_kept``) i ``tool_text``
-    biorą całą gramatykę, więc początek w gramatyce nie przepuszcza reszty (przegląd #1849, D1)."""
-
     narzedzia, dump = _z_dopisana_komorka(sciezka)
     pamiec = empty_memory()
     pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
@@ -2986,9 +2703,6 @@ def test_tekst_pola_narzedzia_z_dopisana_komorka_spoza_calej_gramatyki_nie_wycho
     ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
 )
 def test_tekst_pola_narzedzia_bez_gramatyki_ma_zamkniety_typ_ktory_nie_przyjmuje_komorki(pole: str, sciezka: _Sciezka) -> None:
-    """Tekst pola z ``TOOL_FIELDS`` bez gramatyki strażnik zostawia bez maski, więc Logi nie powstają z takim polem z
-    dopisaną komórką: to zamknięta lista albo chwila schematu. Nowe pole z dowolnym tekstem bez gramatyki tu czerwieni."""
-
     _, dump = _z_dopisana_komorka(sciezka)
 
     with pytest.raises(ValidationError):
@@ -2996,8 +2710,6 @@ def test_tekst_pola_narzedzia_bez_gramatyki_ma_zamkniety_typ_ktory_nie_przyjmuje
 
 
 def _z_tekstem(sciezka: _Sciezka, tekst: Callable[[str], str]) -> tuple[str, dict[str, Any]]:
-    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst zamienia ``tekst``."""
-
     dump = full_logs().model_dump(mode="json")
     *droga, ostatni = sciezka
     miejsce: Any = dump
@@ -3023,21 +2735,19 @@ ALFABETY: Final = {
     "Environment.system": _ZNAKI_IDENTYFIKATORA + ".-",
     "Environment.python": _ZNAKI_IDENTYFIKATORA + ".",
 }
-"""Alfabet każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``): znaki, które gramatyka pola może przyjąć. Gramatyka, która
-przyjmuje znak spoza alfabetu swojego pola, czerwieni test alfabetu."""
 
-_PROBY: Final = "".join(map(chr, range(128))) + "ąŻéß" + "٣１" + "\u00a0\u2028" + "€"
-"""Znaki próby: każdy znak ASCII (także sterujący) i znaki spoza ASCII, które przyjmują ``\\w``, ``\\d`` albo ``\\s``
-Pythona bez ``re.ASCII`` albo klasa zaprzeczona: litery (ą, Ż, é, ß), cyfry (arabska ٣, pełnej szerokości １), odstępy
-(twarda spacja, separator wiersza), symbol €."""
+_LITERY_W_SPOZA_ASCII: Final = "ąŻéß"
+_CYFRY_D_SPOZA_ASCII: Final = "٣１"
+_ODSTEPY_S_SPOZA_ASCII: Final = "\u00a0\u2028"
+_SYMBOL_SPOZA_ASCII: Final = "€"
+_PROBY: Final = (
+    "".join(map(chr, range(128))) + _LITERY_W_SPOZA_ASCII + _CYFRY_D_SPOZA_ASCII + _ODSTEPY_S_SPOZA_ASCII + _SYMBOL_SPOZA_ASCII
+)
 
 DRUGIE_GALEZIE: Final = {"RunLog.period": (UNKNOWN_PERIOD,), "CallFrame.function": ("<module>",)}
-"""Tekst narzędzia gałęzi gramatyki, której nie ma w pełnych Logach: okres ``nieznany`` i ramka kodu modułu."""
 
 
 def _galezie(wzor: str) -> list[str]:
-    """Gałęzie najwyższego poziomu wzoru: części między ``|`` poza nawiasami i klasą znaków."""
-
     galezie: list[str] = []
     poczatek = glebokosc = 0
     klasa = ucieczka = False
@@ -3062,12 +2772,9 @@ _PODSTAWY: Final = [
     *((pole, sciezka, _z_tekstem(sciezka, str)[0]) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole in TOOL_TEXT_GRAMMAR),
     *((pole, sciezka, tekst) for pole, sciezka in _TEKSTY_POL_NARZEDZIA for tekst in DRUGIE_GALEZIE.get(pole, ())),
 ]
-"""Pole, ścieżka w JSON-ie pełnych Logów i poprawny tekst narzędzia: tekst pełnych Logów i tekst drugiej gałęzi."""
 
 
 def _id(wartosc: object) -> str:
-    """Nazwa przypadku: pole, ścieżka tekstu w JSON-ie Logów albo tekst narzędzia."""
-
     return ".".join(map(str, wartosc)) if isinstance(wartosc, tuple) else str(wartosc)
 
 
@@ -3075,45 +2782,59 @@ def _id(wartosc: object) -> str:
 def test_gramatyka_pola_narzedzia_nie_przyjmuje_znaku_spoza_alfabetu_pola_wstawionego_ani_zamienionego_w_zadnym_miejscu(
     pole: str, sciezka: _Sciezka, narzedzia: str
 ) -> None:
-    """Każdy poprawny tekst narzędzia pola z gramatyką (``_PODSTAWY``: tekst pełnych Logów i tekst drugiej gałęzi z
-    ``DRUGIE_GALEZIE``) pasuje do gramatyki, a z jednym znakiem próby (``_PROBY``) spoza alfabetu pola (``ALFABETY``),
-    wstawionym przed którymkolwiek znakiem albo za ostatnim albo w miejsce któregokolwiek znaku, nie pasuje w całości.
-    Pada więc gramatyka, która przyjmuje taki znak w którejkolwiek gałęzi, także przez ``\\w`` albo ``\\d`` bez
-    ``re.ASCII`` i w klasie o stałej albo najdłuższej długości. Nie pada gramatyka, która przyjmuje znak spoza próby, ani
-    taka, która przyjmuje znak spoza alfabetu tylko w ciągu dłuższym niż jedna taka zmiana tekstu (np.
-    ``(?:\\+local)?``)."""
-
     gramatyka = TOOL_TEXT_GRAMMAR[pole]
+
+    assert gramatyka.fullmatch(narzedzia), narzedzia
+    assert _przyjete_spoza_alfabetu(gramatyka, narzedzia, ALFABETY[pole]) == []
+
+
+def _przyjete_spoza_alfabetu(gramatyka: re.Pattern[str], narzedzia: str, alfabet: str) -> list[str]:
     zmienione = [
         f"{narzedzia[:miejsce]}{znak}{narzedzia[miejsce + zamiana:]}"
         for znak in _PROBY
-        if znak not in ALFABETY[pole]
+        if znak not in alfabet
         for zamiana in (0, 1)
         for miejsce in range(len(narzedzia) + 1 - zamiana)
     ]
-    przyjete = [tekst for tekst in zmienione if gramatyka.fullmatch(tekst)]
+    return [tekst for tekst in zmienione if gramatyka.fullmatch(tekst)]
 
+
+@pytest.mark.parametrize(
+    ("pole", "gramatyka", "narzedzia", "lapie"),
+    [
+        pytest.param("Tool.wydanie", re.compile(r"\d+\.\d+\.\d+"), "0.10.0", True, id="cyfra-spoza-ascii-przez-d-bez-re-ascii"),
+        pytest.param("CallFrame.function", re.compile(r"[A-Za-z_][^\W\d]*"), "price_orders", True, id="litera-spoza-ascii-przez-w-bez-re-ascii"),
+        pytest.param(
+            "RunLog.run_id", re.compile(r"[0-9a-f]{32}|[0-9a-f]{31}[^\S\x00-\x7f]"), RUN_ID, True, id="odstep-spoza-ascii-w-klasie-zaprzeczonej"
+        ),
+        pytest.param(
+            "RunLog.run_id", re.compile(r"[0-9a-f]{32}|[0-9a-f]{31}[^\w\s\x00-\x7f]"), RUN_ID, True, id="symbol-spoza-ascii-w-klasie-zaprzeczonej"
+        ),
+        pytest.param("RunLog.run_id", re.compile(r"[0-9a-f]{32}|[0-9a-f]{31}g", re.ASCII), RUN_ID, True, id="znak-spoza-alfabetu-w-drugiej-galezi"),
+        pytest.param("RunLog.run_id", re.compile(r"[0-9a-g]{32}", re.ASCII), RUN_ID, True, id="klasa-o-stalej-dlugosci"),
+        pytest.param("Tool.commit", re.compile(r"[0-9a-g]{7,40}", re.ASCII), "3c1d0a9e5b7f4c2d8e6a1b0f9c8d7e6a5b4c3d2e", True, id="klasa-o-najdluzszej-dlugosci"),
+        pytest.param("Tool.wydanie", re.compile(r"\d+\.\d+\.\d+(?:\+local)?", re.ASCII), "0.10.0", False, id="granica-dopisek-dluzszy-niz-jedna-zmiana"),
+        pytest.param("RunLog.run_id", re.compile(r"[0-9a-fł]{32}", re.ASCII), RUN_ID, False, id="granica-znak-spoza-proby"),
+    ],
+)
+def test_sprawdzenie_alfabetu_lapie_gramatyke_ze_znakiem_proby_spoza_alfabetu_a_nie_dluzszy_dopisek_ani_znak_spoza_proby(
+    pole: str, gramatyka: re.Pattern[str], narzedzia: str, lapie: bool
+) -> None:
     assert gramatyka.fullmatch(narzedzia), narzedzia
-    assert przyjete == []
+    assert bool(_przyjete_spoza_alfabetu(gramatyka, narzedzia, ALFABETY[pole])) is lapie
 
 
 def _separatory_straznika() -> list[str]:
-    """Znaki próby, którymi strażnik rozdziela słowa wartości (ADR 0025): ``guarded`` maskuje komórkę, której słowa
-    rozdziela ten znak. Źródłem jest sam strażnik, nie lista."""
-
     pamiec = empty_memory()
     pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
     return [znak for znak in _PROBY if znak.join(_KOMORKA.split()) not in guarded(pamiec, znak.join(_KOMORKA.split()), "").text]
 
 
-_KOMORKI: Final = (_KOMORKA, "7 Lipowa Syntetyczna")
-"""Komórki testów komórki w polu narzędzia: pierwsza zaczyna się literą i kończy cyfrą, druga zaczyna się cyfrą i
-kończy literą, więc dopisek gramatyki z każdą z tych klas na krańcu komórki ma próbkę."""
+_KOMORKA_OD_CYFRY_DO_LITERY: Final = "7 Lipowa Syntetyczna"
+_KOMORKI: Final = (_KOMORKA, _KOMORKA_OD_CYFRY_DO_LITERY)
 
 
 def _pamiec_komorek() -> ForbiddenValues:
-    """Pamięć strażnika, która zna każdą komórkę ``_KOMORKI`` jako ADRES."""
-
     pamiec = empty_memory()
     for komorka in _KOMORKI:
         pamiec.remember_value(ForbiddenColumn.ADDRESS, komorka)
@@ -3121,17 +2842,9 @@ def _pamiec_komorek() -> ForbiddenValues:
 
 
 _OBCE_ZNAKI: Final = ("x", "7")
-"""Obcy znak przy tekście narzędzia we wstawkach ``_komorki_w_tekscie``: litera ``x`` i cyfra ``7``, każdy ze spacją
-między nim a komórką; innego znaku przy tekście ani innego separatora za nim wstawki nie mają."""
 
 
 def _komorki_w_tekscie(pole: str, narzedzia: str) -> Iterator[tuple[str, str]]:
-    """Tekst narzędzia z zapamiętaną komórką i zapis komórki w nim: pierwsza komórka ``_KOMORKI`` zapisana każdym
-    separatorem strażnika spoza alfabetu pola, druga spacją; komórka otoczona separatorem z przodu, w środku i z tyłu
-    tekstu, komórka na samym początku albo na samym końcu tekstu z separatorem tylko od strony tekstu oraz (obie
-    komórki, spacją) komórka za obcym znakiem (``_OBCE_ZNAKI``), który przylega do początku albo końca tekstu, z
-    separatorem między nim a komórką i bez separatora albo z nim po drugiej stronie komórki."""
-
     separatory = [znak for znak in _separatory_straznika() if znak not in ALFABETY[pole]]
     assert " " in separatory
     for komorka, znaki in ((_KOMORKI[0], separatory), (_KOMORKI[1], [" "])):
@@ -3148,8 +2861,6 @@ def _komorki_w_tekscie(pole: str, narzedzia: str) -> Iterator[tuple[str, str]]:
 
 
 def _napisy(wartosc: object) -> Iterator[str]:
-    """Każdy napis i klucz zdekodowanego JSON-a."""
-
     if isinstance(wartosc, str):
         yield wartosc
     elif isinstance(wartosc, list):
@@ -3163,42 +2874,52 @@ def _napisy(wartosc: object) -> Iterator[str]:
 
 @pytest.mark.parametrize("pole, sciezka, narzedzia", _PODSTAWY, ids=_id)
 def test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs(pole: str, sciezka: _Sciezka, narzedzia: str) -> None:
-    """Zapamiętana komórka z ``_komorki_w_tekscie`` (pierwsza zapisana każdym separatorem strażnika spoza alfabetu
-    pola: znakiem zwykłym, sterującym, cudzysłowem, ukośnikiem i pozostałymi; druga spacją), otoczona separatorem z
-    przodu, w środku i z tyłu poprawnego tekstu narzędzia albo stojąca na samym początku lub końcu tekstu z separatorem
-    od strony tekstu, a obie komórki spacją także za obcym znakiem ``x`` albo ``7`` (``_OBCE_ZNAKI``) przy końcu
-    tekstu i przed nim przy początku tekstu, nie stoi w żadnym napisie ani kluczu zdekodowanych Logów po ``guard_logs``.
-    Pada więc ``_kept``, który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek
-    (``match``), właściciel pola w poddrzewie bez klasy, lista w poddrzewie bez gramatyki i gramatyka, która przyjmuje w
-    całości którykolwiek z tych tekstów. Nie pada gramatyka, która przyjmuje komórkę tylko za innym znakiem przy tekście
-    albo za innym separatorem po nim, np. po ``run_id`` dopisek zaczęty wielką literą (``[A-Z]``), literą szesnastkową
-    (``[a-f]``) albo literą i łącznikiem (``[A-Za-z]-``). Komórki sklejonej z tekstem bez żadnego znaku między nimi test
-    nie wstawia: przy ``run_id``, ``Tool.wydanie`` i ``Environment.python`` strażnik szuka wartości jako ciągu całych
-    słów (ADR 0025), więc takiej komórki nie maskuje też przy poprawnej gramatyce, a przy ``<module>`` w
-    ``CallFrame.function``, który zaczyna się ``<`` i kończy ``>``, maskuje ją."""
+    assert _wycieki_z_guard_logs(pole, sciezka, narzedzia) == []
 
+
+def _wycieki_z_guard_logs(pole: str, sciezka: _Sciezka, narzedzia: str) -> list[str]:
     pamiec = _pamiec_komorek()
-
+    wycieki = []
     for tekst, zapis in _komorki_w_tekscie(pole, narzedzia):
         logi = json.loads(guard_logs(RunLog.model_validate(_z_tekstem(sciezka, lambda _: tekst)[1]), pamiec).text)
-        assert not any(zapis in napis for napis in _napisy(logi)), repr(tekst)
+        if any(zapis in napis for napis in _napisy(logi)):
+            wycieki.append(tekst)
+    return wycieki
 
 
 @pytest.mark.parametrize("pole, sciezka, narzedzia", _PODSTAWY, ids=_id)
 def test_komorka_w_tekscie_narzedzia_nie_wychodzi_bez_maski_z_tool_text(pole: str, sciezka: _Sciezka, narzedzia: str) -> None:
-    """Te same teksty z komórką (``_komorki_w_tekscie``) nie dają zapisu komórki w wyniku ``tool_text``. Pada więc
-    ``tool_text``, który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek
-    (``match``), i gramatyka, która przyjmuje w całości którykolwiek z tych tekstów. Granica jest ta sama co w teście
-    ``guard_logs``: komórka tylko za innym znakiem przy tekście albo za innym separatorem po nim nie ma wstawki."""
+    assert _wycieki_z_tool_text(pole, narzedzia) == []
 
-    for tekst, zapis in _komorki_w_tekscie(pole, narzedzia):
-        assert zapis not in tool_text(pole, tekst), repr(tekst)
+
+def _wycieki_z_tool_text(pole: str, narzedzia: str) -> list[str]:
+    return [tekst for tekst, zapis in _komorki_w_tekscie(pole, narzedzia) if zapis in tool_text(pole, tekst)]
+
+
+@pytest.mark.parametrize(
+    ("gramatyka", "lapie"),
+    [
+        pytest.param(re.compile(r"[0-9a-f]{32}(?: [\w ]*\d)?", re.ASCII), True, id="dopisek-po-spacji-konczacy-sie-cyfra"),
+        pytest.param(re.compile(r"[0-9a-f]{32}(?: [\w ]*[A-Za-z])?", re.ASCII), True, id="dopisek-po-spacji-konczacy-sie-litera"),
+        pytest.param(re.compile(r"[0-9a-f]{32}(?: \d[\w ]*)?", re.ASCII), True, id="dopisek-po-spacji-zaczety-cyfra"),
+        pytest.param(re.compile(r"[0-9a-f]{32}(?:[a-z] [\w ]*)?", re.ASCII), True, id="dopisek-za-mala-litera-przy-tekscie"),
+        pytest.param(re.compile(r"[0-9a-f]{32}(?:[A-Z][\w ]*)?", re.ASCII), False, id="granica-dopisek-sklejony-zaczety-wielka-litera"),
+        pytest.param(re.compile(r"[0-9a-f]{32}(?:[a-f][\w ]*)?", re.ASCII), False, id="granica-dopisek-zaczety-litera-szesnastkowa"),
+        pytest.param(re.compile(r"[0-9a-f]{32}(?:[A-Za-z]-[\w ]*)?", re.ASCII), False, id="granica-dopisek-z-litera-i-lacznikiem"),
+    ],
+)
+def test_sprawdzenie_komorki_lapie_gramatyke_z_dopiskiem_po_separatorze_a_nie_za_innym_znakiem_przy_tekscie(
+    gramatyka: re.Pattern[str], lapie: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(TOOL_TEXT_GRAMMAR, "RunLog.run_id", gramatyka)
+
+    wycieki = (_wycieki_z_tool_text("RunLog.run_id", RUN_ID), _wycieki_z_guard_logs("RunLog.run_id", ("run_id",), RUN_ID))
+
+    assert gramatyka.fullmatch(RUN_ID)
+    assert (bool(wycieki[0]), bool(wycieki[1])) == (lapie, lapie), wycieki
 
 
 def test_kazda_galaz_gramatyki_pola_narzedzia_ma_poprawny_tekst_narzedzia() -> None:
-    """Każda gałąź najwyższego poziomu każdej gramatyki (``_galezie``) ma w ``_PODSTAWY`` tekst, który do niej pasuje,
-    więc test alfabetu i testy komórki sprawdzają każdą gałąź; nowa gałąź bez tekstu czerwieni ten test."""
-
     brak = [
         (pole, galaz)
         for pole, gramatyka in TOOL_TEXT_GRAMMAR.items()
@@ -3207,4 +2928,4 @@ def test_kazda_galaz_gramatyki_pola_narzedzia_ma_poprawny_tekst_narzedzia() -> N
     ]
 
     assert sorted(set(DRUGIE_GALEZIE) - set(TOOL_TEXT_GRAMMAR)) == []
-    assert brak == []
+    assert brak == [], "gałąź gramatyki bez tekstu w _PODSTAWY: dopisz jej tekst do DRUGIE_GALEZIE"

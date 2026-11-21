@@ -1,0 +1,33 @@
+id: stanowisko-z-tytulu
+language: python
+severity: error
+message: >-
+  początek tytułu to nie tożsamość sprawy: tytuł Uwagi pisze tata i może go zacząć od ANDRZEJ, więc Stanowisko sprawy
+  Skrzynki Zgłoszeń weź ze znaku Stanowiska w treści (naprawia.workstation_of, w Centrum box_prefix.stamped), a issue
+  po wierszu, który pisze narzędzie, znajdzie KeyedBox.find_issue
+files:
+  - src/**/*.py
+  - tools/**/*.py
+ignores:
+  - src/rozliczenia/centrum/box_prefix.py
+metadata:
+  przypadki:
+    - 2504/W1/r2
+rule:
+  # Stanowisko z prefiksu tytułu obok właściciela prefiksu (box_prefix.prefix_of): naprawia.workstation_of z #2504 r2
+  # czytało je z title.startswith, choć tytuł Uwagi to tekst taty. Reguła czyta wywołanie metody startswith albo
+  # removeprefix na wyrażeniu, którego tekst nazywa tytuł (title albo tytuł w dowolnej wielkości liter: nazwa,
+  # atrybut, klucz słownika, wywołanie wokół). Tytuł pod inną nazwą, str.startswith(tytuł, …), wycinek, porównanie
+  # słowa po split, wyrażenie regularne i operator in to znane luki w ZNANE_LUKI_STANOWISKA_Z_TYTULU
+  # w tests/test_zapadki.py.
+  kind: call
+  has:
+    field: function
+    kind: attribute
+    all:
+      - has:
+          field: attribute
+          regex: '^(startswith|removeprefix)$'
+      - has:
+          field: object
+          regex: '(?i)title|tytu[lł]'

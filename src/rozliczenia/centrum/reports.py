@@ -12,6 +12,7 @@ from typing import Final, Literal
 from rozliczenia.client_data import ForbiddenValues, Outgoing, guarded, tool
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import report_messages
+from rozliczenia.centrum.box_prefix import titled
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.contract import runs as runs_contract
@@ -22,7 +23,7 @@ from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, PART_LIMIT, OpenIssue, Outbox, Post
 from rozliczenia.centrum.report_issue import RETURNED_HEADING, fingerprint_line
-from rozliczenia.centrum.report_box import FindOutcome
+from rozliczenia.centrum.report_box import FindOutcome, Issue
 from rozliczenia.centrum.tool_freshness import RELEASES_TIMEOUT_S, CommitSource
 from rozliczenia.centrum.tool_update import UpdateResult
 from rozliczenia.centrum.work import CentrumWork
@@ -440,6 +441,7 @@ class Reports:
         self._commit = commit
         self._settings_changes = settings_changes
         self._forbidden = work.forbidden
+        self._prefix = work.box_prefix
         self._search_deadline_s = search_deadline_s
         self._cases = cases
         self._queue_directory = outbox.directory
@@ -492,7 +494,7 @@ class Reports:
             return self._cases.queued(fingerprint, self._box)
         case = Case(REPORT, fingerprint, preview.what, self._commit(), utc_now(), number=None)
         post = Post.of(
-            report_target(fingerprint, preview.title),
+            report_target(fingerprint, titled(self._prefix, preview.title)),
             period=preview.period,
             run_id=tool(uuid.uuid4().hex),
             blocks=[preview.body],
@@ -524,10 +526,10 @@ class Reports:
         if answer is None:
             return
         [found] = answer
-        if found is None or isinstance(found, int):
+        if found is None or isinstance(found, Issue):
             with self._lock:
                 if self._numbered.get(fingerprint, 0) == numbered:
-                    self._open[fingerprint] = found
+                    self._open[fingerprint] = None if found is None else found.number
 
     def _find_open(self, fingerprint: str) -> FindOutcome | NoKey:
         return self._box.find_issue(REPORT.label, fingerprint_line(fingerprint), include_closed=False)
