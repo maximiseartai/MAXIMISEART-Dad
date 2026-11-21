@@ -103,10 +103,14 @@ def _pytest(name: str = "pytest (Python 3.14, Linux, 1/1)", *, queue: float = 2,
 
 
 def _fast(run: int, day: int) -> Run:
+    """Run w budżecie: jedno zadanie pytest, 149 s do Required."""
+
     return Run(run, day, (_pytest(),))
 
 
 def _slow_queue(run: int, day: int) -> Run:
+    """Run ogona, który czeka 441 s w kolejce, a pracuje jak run w budżecie: 588 s (9,8 min) do Required."""
+
     return Run(run, day, (_pytest(queue=441),))
 
 
@@ -339,6 +343,9 @@ def test_grupa_w_budzecie_to_runy_do_5_min_a_nie_wszystkie_runy_ponizej_p90(tmp_
 
 
 def test_p90_rowny_5_min_miesci_sie_w_budzecie_wiec_straznik_zamyka_otwarte_issue(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """D2 to „p90 ≤ 5 min”: okno, w którym każdy run kończy Required dokładnie po 300 s, ma p90 równy budżetowi, więc
+    strażnik zamyka otwarte issue z liczbami okna i żadnego runu nie liczy ponad budżet."""
+
     github = _GitHub([Run(n, 5, (_pytest(work=251),)) for n in range(1, 11)])
     github.issues.append({"number": 7, "title": budzet_ci.TYTUL, "body": "", "labels": ["budzet-ci"], "state": "open"})
 
