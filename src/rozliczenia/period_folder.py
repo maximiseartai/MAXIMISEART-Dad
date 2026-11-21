@@ -45,13 +45,11 @@ from .settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD, SettlementP
 from .file_state import entry_kind, folder_entries, path_state
 
 _INTERNAL_SETTLEMENT = "Rozliczenie wew. {token}.xlsx"
-"""Wzór nazwy, jak trzy niżej: ``{token}`` to token okresu, ``{worker}`` nazwa Wykonawcy."""
 _COLLECTIVE_FILE = "Rozliczenie {token} - zbiorcze.xlsx"
 _WORKER_SETTLEMENTS = "Rozliczenie pracowników {token}"
 _WORKER_SETTLEMENT = "Rozliczenie {token} - {worker}.xlsx"
 
 _INTERNAL_SETTLEMENT_MARK = _INTERNAL_SETTLEMENT.partition(" {token}")[0]
-"""Początek nazwy Rozliczenia wewnętrznego dowolnego okresu."""
 _COLLECTIVE_FILE_PREFIX, _, _COLLECTIVE_FILE_SUFFIX = _COLLECTIVE_FILE.partition("{token}")
 _COLLECTIVE_FILE_NAME = re.compile(
     rf"{re.escape(_COLLECTIVE_FILE_PREFIX)}(?P<token>{PERIOD_TOKEN_PATTERN}){re.escape(_COLLECTIVE_FILE_SUFFIX)}"
@@ -125,8 +123,6 @@ class PeriodFolderInaccessible(Exception):
 
 @contextmanager
 def reading(folder: Path) -> Iterator[None]:
-    """Odczyt zawartości ``folder``; błąd systemu plików staje się ``PeriodFolderInaccessible``."""
-
     try:
         yield
     except OSError as error:
@@ -176,8 +172,6 @@ class PeriodFolder:
 
     @property
     def worker_settlements(self) -> Path:
-        """Folder rozliczeń pracowników."""
-
         return self.directory / worker_settlements_name_with(self.period.token)
 
     def path_of(self, place: PeriodPlace) -> Path:
@@ -362,8 +356,7 @@ class PeriodFolderObservation:
 
 
 def period_status_label(status: PeriodStatus) -> str:
-    """Nazwa Statusu okresu z GLOSSARY; ``match`` nie ma gałęzi domyślnej, więc Status okresu bez nazwy mypy zgłasza
-    jako brakujący ``return``."""
+    """Nazwa Statusu okresu z GLOSSARY."""
 
     match status:
         case "no_period_files":

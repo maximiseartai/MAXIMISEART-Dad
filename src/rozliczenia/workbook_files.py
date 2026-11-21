@@ -1,15 +1,3 @@
-"""Skoroszyty na dysku: otwarcie z jedną klasyfikacją uszkodzeń, sprawdzenie układu arkusza i odczyt Wierszy danych.
-
-Każde otwarcie skoroszytu w obu procesach przechodzi przez ten moduł: Plik zbiorczy (``read_data_rows``) daje Wiersze
-danych z komórkami po kolumnie (``DataRow``), a Rejestr zleceń (``register_file``) wiersze z komórkami pod nagłówkiem
-docelowym (``RegisterRow``). Wzorce czyta przez ``open_workbook`` plik z Wzorca (``template_file``). Otwarcie
-sprawdza dostępność i klasyfikuje każde uszkodzenie, a problem zgłasza jako ``WorkbookError`` z powodem, przy złym
-układzie z jego miejscem. Moduł nie zna Komunikatów: proces tłumaczy powód na Komunikat ze swojego katalogu.
-
-Układ arkusza Pliku zbiorczego bierze z ``collective_layout``. Wycena w efenix czyta ``Kwota`` w AU tak, jak policzył ją
-Excel (``read_computed_rows``).
-"""
-
 from __future__ import annotations
 
 import zipfile
@@ -83,10 +71,6 @@ _UNREADABLE_WORKBOOK_ERRORS = (
     ParseError,
     ExpatError,
 )
-"""Błędy openpyxl przy pliku, który nie jest poprawnym skoroszytem .xlsx: przy otwieraniu, a w trybie tylko do odczytu
-także przy czytaniu wierszy, bo arkusz jest wtedy parsowany leniwie. ``IndexError``: komórka ze stylem w skoroszycie
-bez ``xl/styles.xml``. ``ExpatError``: zepsuty XML arkusza przy odczycie Wierszy danych
-(``workbook_parts.rows_with_input``)."""
 
 _WORKBOOK_SUFFIXES = (".xlsx", ".xlsm", ".xltx", ".xltm")
 
@@ -94,7 +78,6 @@ FORBIDDEN_POSITIONS: Final = (
     (client_data.ForbiddenColumn.ADDRESS, ADDRESS_COLUMN),
     (client_data.ForbiddenColumn.ORANGE, ORANGE_COLUMN),
 )
-"""Kolumny reguły danych, które układ Wzorca stawia na stałym miejscu, bez względu na nagłówek."""
 
 
 _ExcelCellValue = (
@@ -120,20 +103,13 @@ class Problem(Enum):
     MISSING = "brak pliku"
     OPEN_IN_EXCEL = "otwarty w Excelu"
     INACCESSIBLE = "niedostępny"
-    """Plik jest cały, ale system nie oddał jego bajtów, np. zajęty przez inny program albo OneDrive bez sieci."""
     UNREADABLE = "nieczytelny"
     LAYOUT = "zły układ"
     HAS_DATA = "zawiera dane"
-    """Wzorzec rozliczenia pracownika ma już wartości w Wierszach danych."""
 
 
 @dataclass(frozen=True)
 class MissingHeader:
-    """Nagłówek ``header`` nie stoi na swoim miejscu w wierszu ``row`` arkusza ``sheet``.
-
-    ``found_in``: litera kolumny A:K, w której stoi WYKONAWCA zamiast w H; ``None``: nagłówka w wierszu nie ma.
-    """
-
     sheet: str
     row: int
     header: str
@@ -142,8 +118,6 @@ class MissingHeader:
 
 @dataclass(frozen=True)
 class MergedCells:
-    """Komórki ``cells`` arkusza ``sheet``, do których trafiłyby Wiersze danych, są scalone."""
-
     sheet: str
     cells: str
 
@@ -152,8 +126,6 @@ LayoutFault = MissingHeader | MergedCells
 
 
 class WorkbookError(Exception):
-    """Skoroszytu nie da się użyć; ``problem`` mówi dlaczego, a przy złym układzie (i tylko wtedy) ``fault`` mówi gdzie."""
-
     def __init__(self, path: Path, problem: Problem, fault: LayoutFault | None = None) -> None:
         super().__init__(f"{problem.value}: {path.name}")
         self.path = path
@@ -163,8 +135,6 @@ class WorkbookError(Exception):
 
 @dataclass(frozen=True)
 class HeaderCell:
-    """Etykieta komórki nagłówka do treści Komunikatów: ``str()`` daje np. ``H17``."""
-
     column: str
     row: int
 
@@ -181,8 +151,6 @@ _NO_FILLS: MappingProxyType[str, Never] = MappingProxyType({})
 
 
 class DataCell(NamedTuple):
-    """Komórka Wiersza danych: wartość, jej Wyróżnienia, format liczby i Hiperłącze (tylko przy wartości)."""
-
     value: _ExcelCellValue
     highlights: Highlights
     number_format: str
@@ -191,15 +159,6 @@ class DataCell(NamedTuple):
 
 @dataclass(frozen=True)
 class DataRow:
-    """Wiersz danych Pliku zbiorczego: komórki kolumn A:AT po kolei od A.
-
-    ``number`` to numer wiersza w Pliku zbiorczym. Przebieg rozliczeń wpisuje każdą komórkę do tej samej kolumny
-    Rozliczenia pracownika, a Ilości tylko dla INEA jako puste, tak samo Czerwone pole, a
-    Zielone pole z 1 (``worker_settlement``). Format liczby z pliku mają
-    tylko kolumny wyglądu A:L, a dalsze komórki ogólny: odczyt formatu, którego plik nie użyje, mógłby zatrzymać
-    rozliczenie na komórce ze stylem bez definicji formatu.
-    """
-
     number: int
     cells: tuple[DataCell, ...]
 
@@ -213,47 +172,22 @@ class DataRow:
 
 @dataclass(frozen=True)
 class RegisterRow:
-    """Wiersz Rejestru zleceń, który staje się Wierszem danych obu plików okresu: komórki pod nagłówkiem docelowym.
-
-    ``number`` to numer wiersza w Rejestrze zleceń; plik z Wzorca wpisuje komórkę do kolumny pod jej nagłówkiem.
-    """
-
     number: int
     cells: Mapping[str, DataCell]
     quantities: Mapping[str, int] = field(default_factory=lambda: _NO_QUANTITIES)
-    """Ilości usług Wiersza danych Pliku zbiorczego z Przygotowania: litera kolumny N:AP → liczba różna od zera.
-
-    Trafiają do komórki Wzorca z jej wyglądem, bez Wyróżnień; reszta kolumn ilości zostaje jak we Wzorcu.
-    """
     amount: int = 0
-    """Kwota w ``AS`` (Uwagi - kwota) z Legendy czynności; 0: komórka zostaje jak we Wzorcu."""
     fills: Mapping[str, Fill] = field(default_factory=lambda: _NO_FILLS)
-    """Wypełnienia z Legendy czynności: litera kolumny → wypełnienie, które zastępuje wypełnienie komórki Wzorca, także
-    bez liczby w komórce; reszta wyglądu komórki zostaje z Wzorca."""
 
 
 def excel_lock_file(path: Path) -> Path:
-    """Plik blokady ``~$…``, który desktopowy Excel kładzie obok otwartego skoroszytu ``path``."""
-
     return path.with_name(f"~${path.name}")
 
 
 def is_open_in_excel(path: Path) -> bool:
-    """Rozpoznaje skoroszyt otwarty w desktopowym Excelu po pliku blokady ``~$…``.
-
-    W folderze bez dostępu blokady nie widać; niedostępny skoroszyt zgłasza jego odczyt (``ensure_available``).
-    """
-
     return file_state(excel_lock_file(path)) == "file"
 
 
 def ensure_available(path: Path, *, despite_excel_lock: bool = False) -> None:
-    """Skoroszyt jest na dysku i nie jest otwarty w Excelu; inaczej ``WorkbookError``.
-
-    Folder, którego nie da się odczytać (np. brak dostępu), czyni skoroszyt niedostępnym, a nie uszkodzonym.
-    ``despite_excel_lock`` pozwala czytać skoroszyt, który trzyma Excel: jego ostatnią zapisaną wersję (ADR 0016).
-    """
-
     match file_state(path):
         case "inaccessible":
             raise WorkbookError(path, Problem.INACCESSIBLE)
@@ -270,8 +204,6 @@ _T = TypeVar("_T")
 
 @contextmanager
 def unreadable_as_error(path: Path) -> Iterator[None]:
-    """Uszkodzenie skoroszytu zgłoszone przez openpyxl staje się ``WorkbookError``; inne błędy przechodzą."""
-
     try:
         yield
     except _UNREADABLE_WORKBOOK_ERRORS as exc:
@@ -286,13 +218,9 @@ def file_bytes(path: Path) -> bytes:
 
 
 ByteSource: TypeAlias = Callable[[Path], bytes]
-"""Źródło bajtów skoroszytu (``dad_files.DadFiles.source``): produkcyjne to ``file_bytes``, a test podstawia źródło,
-które się psuje, liczy odczyty albo zapisuje plik zaraz po odczycie."""
 
 
 def classified(path: Path, items: Iterator[_T]) -> Iterator[_T]:
-    """Elementy leniwego odczytu openpyxl; klasyfikowane jest tylko pobranie elementu."""
-
     while True:
         with unreadable_as_error(path):
             try:
@@ -303,12 +231,6 @@ def classified(path: Path, items: Iterator[_T]) -> Iterator[_T]:
 
 
 def _open(path: Path, source: IO[bytes], *, read_only: bool, computed: bool = False) -> Workbook:
-    """Skoroszyt ``path`` otwarty przez openpyxl z jego bajtów (``file_bytes``) z klasyfikacją uszkodzeń.
-
-    ``computed`` (tylko do odczytu): komórka z formułą ma wartość, którą Excel policzył przy ostatnim zapisie, a bez niej
-    ``None``.
-    """
-
     with unreadable_as_error(path):
         if read_only:
             workbook = load_workbook(source, read_only=True, data_only=computed)
@@ -325,8 +247,6 @@ def _is_worker_header(value: object) -> bool:
 
 
 def check_worker_header(path: Path, sheet: str, header: Sequence[object]) -> None:
-    """Jedno sprawdzenie nagłówka WYKONAWCA w H17 (bez względu na wielkość liter i spacje) dla wartości A17:K17."""
-
     columns = [column for column, value in enumerate(header[: INPUT_COLUMNS[-1]], start=1) if _is_worker_header(value)]
     if WORKER_COLUMN not in columns:
         found_in = get_column_letter(columns[0]) if columns else None
@@ -338,8 +258,6 @@ def is_blank(value: object) -> bool:
 
 
 def cell_datetime(value: object) -> datetime | None:
-    """Data i godzina z komórki ``DATA``; data bez godziny to północ, inna treść to ``None``."""
-
     if isinstance(value, datetime):
         return value
     if isinstance(value, date):
@@ -352,10 +270,6 @@ def header_columns(values: Sequence[object]) -> dict[str, int]:
 
 
 def _forbidden_columns(header: Sequence[object]) -> tuple[tuple[client_data.ForbiddenColumn, int], ...]:
-    """Zakazane kolumny Wiersza danych Pliku zbiorczego (reguła danych, ADR 0025) z ich numerem od 1, z nagłówków
-    A17:K17 ``header``: ``ADRES`` (B) i ``NUMER UMOWY/ZLECENIA ORANGE`` (I) z układu Wzorca bez względu na nagłówek, więc
-    adres pod innym nagłówkiem też nie wychodzi, i każda kolumna A:K z nagłówkiem zakazanej kolumny."""
-
     by_header = client_data.forbidden_columns(header_columns(header[: INPUT_COLUMNS[-1]]))
     return tuple(dict.fromkeys((*FORBIDDEN_POSITIONS, *by_header)))
 
@@ -366,31 +280,19 @@ class _Collective:
     title: str
     header: ExcelRow
     content: bytes = field(repr=False)
-    """Bajty, które czyta openpyxl: plik bez wierszy, które nie mogą mieć wartości w A:K (``rows_with_input``)."""
     rows: Iterator[tuple[int, tuple[object, ...], ExcelRow]]
-    """Wiersze danych od 18 w kolejności z pliku: numer, komórki i wartości do ``last_column``; każdy już u świadka."""
 
 
 @contextmanager
 def _collective_sheet(
     path: Path, files: DadFiles, *, last_column: int, computed: bool = False, despite_excel_lock: bool = False
 ) -> Iterator[_Collective]:
-    """Jedyny ciąg kroków odczytu Pliku zbiorczego, wspólny dla obu obiektywów (wyglądu i wartości policzonych).
-
-    ``computed``: wartości policzone przez Excel. Arkusz wchodzi do Kopii wejścia przed sprawdzeniem nagłówka, więc Logi
-    Uruchomienia zatrzymanego na złym układzie mają odcisk pliku i jego nagłówek. Każdy Wiersz danych przechodzi przez
-    świadka (pamięć reguły danych i Kopia), zanim dostanie go obiektyw.
-
-    openpyxl czyta tylko wiersze, które mogą mieć wartości w A:K (``workbook_parts.rows_with_input``), a nie każdy z
-    ~10 tys. sformatowanych wierszy Pliku zbiorczego; wartości i klasyfikacja uszkodzeń są takie jak przy odczycie
-    całego arkusza. Skoroszyt jest otwarty tylko do odczytu, więc aktywny arkusz to ``ReadOnlyWorksheet``.
-    """
-
     file = files.read(path, despite_excel_lock=despite_excel_lock)
     with unreadable_as_error(path):
         content = rows_with_input(file.content, INPUT_COLUMNS[-1])
     workbook = _open(path, BytesIO(content), read_only=True, computed=computed)
     try:
+        # ZEWNĘTRZNE: types-openpyxl opisuje ReadOnlyWorksheet.iter_rows jako Worksheet.iter_rows z self typu Worksheet, choć workbook.active skoroszytu otwartego tylko do odczytu to ReadOnlyWorksheet (types-openpyxl, openpyxl-stubs/worksheet/_read_only.pyi)
         sheet = cast(Worksheet, workbook.active)
         header = next(
             classified(
@@ -421,30 +323,12 @@ def _data_rows(
 
 @dataclass(frozen=True)
 class DataRows:
-    """Wiersze danych Pliku zbiorczego i nagłówki A17:K17 z tego samego odczytu.
-
-    ``header``: znormalizowany nagłówek (``header_columns``) → kolumna od 1. Przygotowanie zapisuje kolumny A:K pod
-    nagłówkami Wzorca, więc odczyt po nagłówku jest lustrem zapisu.
-    """
-
     header: Mapping[str, int]
     rows: list[DataRow]
     price_list: Mapping[str, str]
-    """Litera kolumny N:AP i ``AS`` (Uwagi - kwota) → tekst jej komórki w wierszu 17: nazwa pozycji cennika, którą
-    Przygotowanie kopiuje z Wzorca; pusta komórka to ``""``."""
 
 
 def read_data_rows(path: Path, files: DadFiles, *, despite_excel_lock: bool = False) -> DataRows:
-    """Wiersze danych Pliku zbiorczego z Wyróżnieniami i Hiperłączami komórek A:AT w kolejności z pliku; plik jest tylko
-    czytany.
-
-    Obiektyw wyglądu na potoku ``_collective_sheet``: wiersz bez wartości w A:K nie jest Wierszem danych i jest
-    pomijany, a brak nagłówka WYKONAWCA w H17 to ``WorkbookError`` ze złym układem. Plik otwarty w Excelu to
-    ``WorkbookError``, chyba że wywołujący jawnie pozwala go czytać (``despite_excel_lock``, ADR 0016). Komórki
-    zakazanych kolumn (``_forbidden_columns``) zna pamięć reguły danych (ADR 0025), a bajty pliku, nagłówki A17:AP17 i
-    wartości A:AT bez tych kolumn Kopia wejścia Uruchomienia.
-    """
-
     with _collective_sheet(path, files, last_column=DATA_ROW_COLUMNS[-1], despite_excel_lock=despite_excel_lock) as sheet:
         with unreadable_as_error(path):
             links = read_sheet_hyperlinks(sheet.content, sheet.title)
@@ -473,15 +357,6 @@ def read_data_rows(path: Path, files: DadFiles, *, despite_excel_lock: bool = Fa
 
 
 def collective_workers(path: Path, files: DadFiles) -> frozenset[str]:
-    """Każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez pustych) Wierszy danych Pliku zbiorczego, z XML
-    aktywnego arkusza bez openpyxl; plik otwarty w Excelu to jego ostatnia zapisana wersja (ADR 0016).
-
-    Druga droga obok ``_collective_sheet``, bo pyta tylko o kolumnę H każdego Pliku zbiorczego wszystkich okresów:
-    openpyxl daje 1–2 s na plik, XML jednej kolumny ok. 0,3 s. Wiersz bez wartości w A:K nie jest Wierszem danych, ale nie
-    ma też wartości w H, więc zbiór jest ten sam. Nagłówek WYKONAWCA w H17 sprawdza ``check_worker_header`` jak w
-    ``read_data_rows``. ``WorkbookError``, gdy pliku nie ma, jest niedostępny, nieczytelny albo ma zły układ.
-    """
-
     file = files.read(path, despite_excel_lock=True)
     with unreadable_as_error(path), package_parts(file.content) as parts:
         workbook = office_document(parts)
@@ -516,11 +391,6 @@ def price_list(header: Sequence[object], columns: Sequence[int] = QUANTITY_COLUM
 
 @dataclass(frozen=True)
 class ComputedRow:
-    """Wiersz danych Pliku zbiorczego z wartościami komórek A:AU tak, jak Excel je policzył przy ostatnim zapisie.
-
-    ``number`` to numer wiersza w Pliku zbiorczym; komórka z formułą, której Excel nie policzył, ma ``None``.
-    """
-
     number: int
     values: ExcelRow
 
@@ -531,26 +401,12 @@ class ComputedRow:
 
 @dataclass(frozen=True)
 class ComputedRows:
-    """Wiersze danych Pliku zbiorczego z wartościami policzonymi przez Excel i nagłówki A17:K17 z tego samego odczytu.
-
-    ``header``: znormalizowany nagłówek (``header_columns``) → kolumna od 1. ``content``: bajty pliku, z których pochodzą
-    wiersze.
-    """
-
     header: Mapping[str, int]
     rows: list[ComputedRow]
     content: bytes
 
 
 def read_computed_rows(path: Path, files: DadFiles) -> ComputedRows:
-    """Wiersze danych Pliku zbiorczego (A:AU) z wartościami, które policzył Excel, w kolejności z pliku; plik jest tylko
-    czytany.
-
-    Obiektyw wartości na tym samym potoku co ``read_data_rows`` (``_collective_sheet``): te same Wiersze danych, to samo
-    Zatrzymanie na złym układzie i ta sama Kopia wejścia, tylko z wartościami A:AU. Plik otwarty w Excelu to
-    ``WorkbookError``.
-    """
-
     with _collective_sheet(path, files, last_column=AMOUNT_COLUMN, computed=True) as sheet:
         rows = [ComputedRow(number, values) for number, _, values in sheet.rows]
     return ComputedRows(header_columns(sheet.header[: INPUT_COLUMNS[-1]]), rows, sheet.file.content)
@@ -562,8 +418,6 @@ def workbook_content(path: Path) -> bytes:
 
 
 def template_content(path: Path) -> bytes:
-    """Bajty Wzorca jak ``workbook_content``, a plik bez rozszerzenia skoroszytu, który otwiera openpyxl, jest nieczytelny."""
-
     ensure_available(path)
     if path.suffix.lower() not in _WORKBOOK_SUFFIXES:
         raise WorkbookError(path, Problem.UNREADABLE)
@@ -572,11 +426,6 @@ def template_content(path: Path) -> bytes:
 
 @contextmanager
 def open_workbook(path: Path, content: bytes, *, read_only: bool) -> Iterator[Workbook]:
-    """Skoroszyt ``path`` z jego bajtów (``workbook_content``) otwarty przez openpyxl z klasyfikacją uszkodzeń.
-
-    Bez ``read_only`` z odwołaniami zewnętrznymi, do zapisu. Zamykany przy wyjściu z bloku.
-    """
-
     workbook = _open(path, BytesIO(content), read_only=read_only)
     try:
         yield workbook

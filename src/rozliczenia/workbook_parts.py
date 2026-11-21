@@ -1,56 +1,3 @@
-"""Części zip skoroszytu .xlsx: nawigacja po relacjach i wierszach arkusza, wspólne części ręcznych zapisów XML oraz
-skoroszyt zawężony do potrzebnych wierszy.
-
-Moduł czyta skoroszyt po częściach zip, bez openpyxl: ``relationships`` i
-``sheet_part`` znajdują część po relacjach, ``active_sheet`` arkusz, który
-openpyxl daje jako ``workbook.active``, a ``SheetData`` dzieli XML arkusza na
-wiersze bez parsera. Ręczne zapisy XML skoroszytu biorą stąd dopisanie wpisów do
-list ``xl/styles.xml`` (``appended``), ustawienie atrybutu stylu komórki z flagą
-``applyX`` (``with_style_attribute``) i jeden wyjątek kształtu, którego nie
-przenoszą (``UnsupportedShape``).
-
-``SheetData`` przyjmuje tylko kształt, który zapisują Excel i openpyxl: jeden
-``<sheetData>``, każdy wiersz i każda komórka z ``r`` jako pierwszym atrybutem,
-wiersze rosnąco po numerze i bez komentarzy ani CDATA w danych arkusza. Inny
-kształt to ``IrregularSheetData``: zawężanie zostawia wtedy arkusz w całości, a
-``template_copy`` oddaje zapis openpyxl.
-
-Plik zbiorczy ma ~10 tys. sformatowanych wierszy, a dane tylko w kilkuset;
-Rejestr zleceń dziesiątki tysięcy wierszy od 2021 r., a okres kilkaset. openpyxl
-czytałby każdą komórkę każdego wiersza. ``rows_with_input`` i
-``rows_dated_between`` składają więc z bajtów skoroszytu taki sam skoroszyt
-(części przepisane bez kompresji), w którego arkuszach zostają tylko potrzebne
-wiersze i wiersze z formułą główną wspólnej formuły, bo openpyxl rozwija z niej
-formuły zależne w dalszych wierszach. Wartości komórek dalej odczytuje openpyxl,
-więc są takie same jak przy odczycie całego arkusza (typy, daty, teksty wspólne
-i wbudowane, formuły). Pominięte wiersze nie są czytane przez openpyxl, więc XML
-zawężanego arkusza jest najpierw sprawdzany parserem expat, żeby zepsuty arkusz
-dalej był nieczytelny (``xml.parsers.expat.ExpatError``).
-
-``rows_with_input`` (Wiersze danych Pliku zbiorczego) zostawia wiersze, które
-mogą mieć dane w kolumnach danych wejściowych, i nagłówek. Pominięty wiersz nie
-ma tam wartości: każda jego komórka w tych kolumnach jest pustym elementem
-``<c …/>``, a openpyxl czyta taki wiersz tak samo jak brakujący.
-
-``rows_dated_between`` (zlecenia okresu z Rejestru zleceń) zostawia wiersz 1 z
-nagłówkami, z którego czytający rozpoznaje arkusze zleceń, i wiersze od pierwszego
-do ostatniego z liczbą z przedziału w kolumnie daty, którą podaje czytający
-(``date_columns``). openpyxl daje datę tylko z liczby
-w komórce bez typu albo z ``t="n"`` (ze stylem daty), więc wiersz, którego data
-leży w przedziale, ma w kolumnie daty liczbę z przedziału. Zakres od pierwszej do
-ostatniej takiej liczby zawiera więc każdy taki wiersz i wszystkie wiersze między
-nimi. Liczba bez stylu daty albo wartość zapamiętana przy formule może zakres
-tylko poszerzyć. Arkusz z komórką daty typu ``d`` (data tekstem ISO, której
-Excel nie zapisuje) albo z wartością liczbową, której nie da się przeczytać bez
-parsera XML, zostaje w całości.
-
-Tabela tekstów wspólnych Rejestru ma dziesiątki tysięcy tekstów, które openpyxl
-parsowałby wszystkie, a zawężone arkusze sięgają do kilku tysięcy. Zawężony
-skoroszyt ``rows_dated_between`` ma więc w tabeli tylko te teksty, bajt w bajt
-i w kolejności z tabeli, a komórki arkuszy mają ich nowe numery. W kształcie,
-którego to przepisanie nie zna, tabela i arkusze zostają bez zmian.
-"""
-
 from __future__ import annotations
 
 import html
@@ -85,9 +32,9 @@ _WORKSHEET: Final = re.compile(rb"\s*(?:<\?xml[^>]*\?>\s*)?<worksheet[\s>]")
 _SHARED_FORMULA_MASTER: Final = re.compile(rb'<f\b[^>]*\bt="shared"[^>]*(?<!/)>')
 _TYPE: Final = re.compile(rb"""\st=["']([^"']*)["']""")
 _VALUE: Final = re.compile(rb"<v\b[^>]*>([^<]*)</v>")
+# ZEWNĘTRZNE: openpyxl daje datę tylko z liczby w komórce bez typu albo z t="n" ze stylem daty, a z t="d" tekst ISO zamieniony na datę (openpyxl/worksheet/_reader.py, WorkSheetParser.parse_cell)
 _NUMBER_TYPES: Final = (None, b"n")
 WORKSHEET_ROOT: Final = re.compile(rb"<((?:[\w.-]+:)?)worksheet\b[^>]*>")
-"""Znacznik otwierający ``<worksheet>`` z deklaracjami przestrzeni nazw; grupa 1 to prefiks z dwukropkiem albo pusty."""
 STYLE_XF: Final = re.compile(rb"<xf\b[^>]*?(?:/>|>.*?</xf>)", re.S)
 
 
@@ -97,27 +44,18 @@ class UnsupportedShape(Exception):
 
 @contextmanager
 def package_parts(content: bytes) -> Iterator[Mapping[str, bytes]]:
-    """Części skoroszytu ``content`` (.xlsx) po nazwie w zip; zepsuty zip zgłasza ``zipfile`` (np. ``BadZipFile``)."""
-
     with zipfile.ZipFile(BytesIO(content)) as archive:
         yield _ZipParts(archive)
 
 
 @lru_cache(maxsize=1)
 def unpacked(content: bytes) -> tuple[tuple[zipfile.ZipInfo, ...], Mapping[str, bytes]]:
-    """Wpisy zip skoroszytu ``content`` (.xlsx) w kolejności z pliku i ich rozpakowane części po nazwie, tylko do odczytu;
-    zepsuty zip zgłasza ``zipfile`` (np. ``BadZipFile``) albo ``zlib``. Pamięta ostatni wynik, bo Przygotowanie czyta
-    ten sam Rejestr zleceń w Sprawdzaniu (Surowe zlecenia, ``register_file.read``) i w Odczycie danych (zawężenie), a
-    rozpakowanie jego arkusza kosztuje drugi raz tyle samo."""
-
     with zipfile.ZipFile(BytesIO(content)) as archive:
         infos = tuple(archive.infolist())
         return infos, MappingProxyType({info.filename: archive.read(info) for info in infos})
 
 
 class _ZipParts(Mapping[str, bytes]):
-    """Części zip po nazwie, rozpakowane dopiero przy odczycie: arkusz Rejestru zleceń ma dziesiątki MB."""
-
     def __init__(self, archive: zipfile.ZipFile) -> None:
         self._archive = archive
 
@@ -140,8 +78,6 @@ class _ZipParts(Mapping[str, bytes]):
 
 @dataclass(frozen=True)
 class Relationship:
-    """Relacja części: typ (``Type``) i cel, czyli ścieżka części w zip albo adres zewnętrzny."""
-
     kind: str
     target: str
     external: bool
@@ -168,8 +104,6 @@ def relationships(parts: Mapping[str, bytes], part: str) -> dict[str, Relationsh
 
 
 def office_document(parts: Mapping[str, bytes]) -> str | None:
-    """Część skoroszytu (``xl/workbook.xml``) według relacji paczki; ``None``, gdy żadna relacja jej nie wskazuje."""
-
     for relationship in ElementTree.fromstring(parts["_rels/.rels"]).iter(PACKAGE_REL):
         if relationship.get("Type", "").endswith("/officeDocument"):
             return relationship.get("Target", "").lstrip("/")
@@ -177,8 +111,6 @@ def office_document(parts: Mapping[str, bytes]) -> str | None:
 
 
 def sheet_part(parts: Mapping[str, bytes], title: str) -> str:
-    """Część arkusza o nazwie ``title`` według ``workbook.xml`` i jego relacji; brak którejś to ``KeyError``."""
-
     workbook = office_document(parts) or ""
     sheets = ElementTree.fromstring(parts[workbook]).iter(f"{MAIN}sheet")
     identifier = next((sheet.get(f"{{{OFFICE_REL}}}id", "") for sheet in sheets if sheet.get("name") == title), "")
@@ -187,24 +119,14 @@ def sheet_part(parts: Mapping[str, bytes], title: str) -> str:
 
 @dataclass(frozen=True)
 class ActiveSheet:
-    """Arkusz, który openpyxl daje jako ``workbook.active``, więc ten, który czytają czytniki skoroszytów."""
-
     part: str
     title: str
     position: int
-    """Miejsce wśród ``<sheet>`` w ``workbook.xml``, od 0: tak liczy ``localSheetId`` nazw."""
     visible: bool
     worksheet: bool
 
 
 def active_sheet(parts: Mapping[str, bytes], workbook: str) -> ActiveSheet:
-    """Arkusz ``workbook.active`` openpyxl w skoroszycie o częściach ``parts`` i części skoroszytu ``workbook``.
-
-    openpyxl liczy ``activeTab`` pierwszego widoku skoroszytu (bez niego 0) wśród arkuszy, które wczytuje: ``<sheet>`` z
-    ``r:id``, którego część jest w zip. Arkusz bez relacji (openpyxl nie wczyta skoroszytu) albo ``activeTab`` poza nimi
-    (``workbook.active`` to ``None``) to ``UnsupportedShape``.
-    """
-
     root = ElementTree.fromstring(parts[workbook])
     rels = relationships(parts, workbook)
     loaded: list[ActiveSheet] = []
@@ -227,8 +149,6 @@ def active_sheet(parts: Mapping[str, bytes], workbook: str) -> ActiveSheet:
 
 
 def style_list(xml: bytes, tag: bytes) -> re.Match[bytes]:
-    """Pierwsza lista ``tag`` w ``xl/styles.xml``: atrybuty (grupa 1) i wpisy (grupa 2); brak to ``UnsupportedShape``."""
-
     found = re.search(rb"<" + tag + rb"\b([^>]*)>(.*?)</" + tag + rb">", xml, re.S)
     if found is None:
         raise UnsupportedShape(f"style: {tag.decode('ascii')}")
@@ -245,9 +165,6 @@ def appended(xml: bytes, tag: bytes, entries: Sequence[bytes], existing: int) ->
 
 
 def with_style_attribute(xf: bytes, name: bytes, value: int, apply: bytes) -> bytes:
-    """Wpis ``<xf>`` z atrybutem ``name`` równym ``value`` zaraz za nazwą elementu i flagą ``apply`` równą 1 na końcu
-    znacznika otwierającego; dotychczasowe ``name`` i ``apply`` znikają, reszta atrybutów i elementy wewnątrz zostają."""
-
     tag_end = xf.index(b">")
     tag = re.sub(rb"\s" + name + rb'="\d+"', b"", xf[:tag_end])
     tag = re.sub(rb"\s" + apply + rb'="\w+"', b"", tag).rstrip(b"/ ")
@@ -256,7 +173,7 @@ def with_style_attribute(xf: bytes, name: bytes, value: int, apply: bytes) -> by
 
 
 class IrregularSheetData(Exception):
-    """``<sheetData>`` spoza kształtu, który zapisują Excel i openpyxl."""
+    ...
 
 
 @dataclass(frozen=True)
@@ -286,8 +203,6 @@ class SheetData:
 
 
 def _sheet_data_bounds(xml: bytes) -> tuple[int, int]:
-    """Treść jedynego ``<sheetData>``: od miejsca za ``<sheetData>`` do ``</sheetData>``; inaczej ``IrregularSheetData``."""
-
     start = xml.find(b"<sheetData>")
     end = xml.find(b"</sheetData>")
     if start < 0 or end < start or xml.count(b"<sheetData") != 1:
@@ -296,15 +211,6 @@ def _sheet_data_bounds(xml: bytes) -> tuple[int, int]:
 
 
 class RowsFromBottom:
-    """Wiersze jedynego ``<sheetData>`` arkusza od ostatniego w górę, dzielone dopiero, gdy czytający po nie sięga.
-
-    Dla zmiany dołu arkusza, który ma dziesiątki tysięcy wierszy (Rejestr zleceń): dzielenie całego ``SheetData``
-    kosztuje tyle co reszta Uporządkowania INTERMAX. Kształt jest ten sam co w ``SheetData``, ale sprawdzany tylko w
-    wierszach, które czytający dostał: każdy z nich i jego kolejność za wierszem nad nim, a komentarz albo CDATA także
-    wtedy, gdy w nich się kończy, choć zaczął się wyżej, i granica drugiego ``<sheetData>`` w nich. Wierszy nad nimi
-    czytający nie zna i ich bajtów nie zmienia.
-    """
-
     def __init__(self, xml: bytes) -> None:
         start, end = xml.find(b"<sheetData>"), xml.rfind(b"</sheetData>")
         if start < 0 or end < start:
@@ -329,8 +235,6 @@ class RowsFromBottom:
         return rows[::-1]
 
     def row(self, number: int) -> SheetRow:
-        """Wiersz o numerze ``number``; ``KeyError``, gdy arkusz go nie ma."""
-
         for row in self:
             if row.number == number:
                 return row
@@ -339,8 +243,6 @@ class RowsFromBottom:
         raise KeyError(number)
 
     def _divide_more(self) -> bool:
-        """Dzieli wiersz nad podzieloną już częścią; ``False``, gdy nad nią nie ma już wierszy."""
-
         end = self._divided_from
         if end <= self.start:
             return False
@@ -356,9 +258,6 @@ class RowsFromBottom:
 
 
 def _sheet_rows(xml: bytes, start: int, end: int) -> list[SheetRow]:
-    """Wiersze arkusza ``xml`` między ``start`` a ``end`` w jednym przejściu po arkuszu, zamiast osobnego dla każdego
-    warunku kształtu."""
-
     rows: list[SheetRow] = []
     for match in _ROW_START_OR_IRREGULAR.finditer(xml, start, end):
         if match.group(1) is None:
@@ -389,8 +288,6 @@ _ROW_ATTRIBUTE: Final = re.compile(rb'\s([\w:]+)="([^"]*)"')
 
 @dataclass(frozen=True)
 class SheetCell:
-    """Komórka ``<c>`` wiersza arkusza: kolumna (od 1), atrybuty poza ``r`` i treść (``None``: element pusty)."""
-
     column: int
     attributes: bytes
     content: bytes | None
@@ -442,14 +339,6 @@ _PHONETIC: Final = re.compile(rb"<rPh\b.*?</rPh>", re.S)
 
 
 class SharedStrings:
-    """Teksty wspólne bez podpowiedzi wymowy (``rPh``): zwykły tekst albo tekst każdego fragmentu.
-
-    Tekst powstaje dopiero, gdy komórka po niego sięga: INTERMAX taty ma dziesiątki tysięcy tekstów wspólnych, a
-    Uporządkowanie czyta kilkaset wierszy z dołu arkusza. Granice ``<si>`` daje ``shared_string_spans``: zepsuta część
-    to ``ExpatError``, a tabela w kształcie, którego granic nie zna, ``ValueError``, czyli w obu przypadkach nieczytelny
-    skoroszyt.
-    """
-
     def __init__(self, xml: bytes) -> None:
         self._xml = xml
         try:
@@ -466,15 +355,6 @@ class SharedStrings:
 
 
 def column_texts(xml: bytes, column: int, first_row: int, shared: SharedStrings) -> Iterator[tuple[int, str]]:
-    """Numer wiersza i tekst każdej komórki z wartością w kolumnie ``column`` (od 1) arkusza ``xml`` od wiersza
-    ``first_row``, w kolejności z pliku, bez openpyxl i bez dzielenia arkusza na wiersze: tekst wspólny z ``shared``,
-    tekst w komórce, a wartość innego typu (liczba, wynik formuły) jej zapisem z XML.
-
-    Komórkę kolumny poznaje jej adres ``r``, więc kształt musi być ten, który zapisują Excel i openpyxl (``SheetData``):
-    jeden ``<sheetData>``, ``r`` jako pierwszy atrybut każdej komórki i wiersza, bez komentarzy ani CDATA. Inny kształt to
-    ``IrregularSheetData``: komórka bez ``r`` albo w komentarzu zniknęłaby z odczytu bez śladu.
-    """
-
     start, end = _sheet_data_bounds(xml)
     if xml.find(b"<!", start, end) >= 0:
         raise IrregularSheetData("komentarz albo CDATA")
@@ -510,12 +390,6 @@ _Choose = Callable[[str, bytes], _Narrow | None]
 
 
 def rows_with_input(content: bytes, input_columns: int) -> bytes:
-    """Skoroszyt ``content`` (.xlsx) z arkuszami zawężonymi do wierszy, które mogą mieć dane w kolumnach 1..``input_columns``.
-
-    Pozostałe części są przepisane bez zmian. Uszkodzenie skoroszytu zgłaszają
-    ``zipfile`` (np. ``BadZipFile``), ``zlib`` albo ``expat`` (``ExpatError``).
-    """
-
     letters = b"|".join(get_column_letter(column).encode("ascii") for column in range(1, input_columns + 1))
     with_input = re.compile(rb'<c r="(?:' + letters + rb')[0-9]+"[^>]*(?<!/)>')
 
@@ -533,23 +407,6 @@ def rows_with_input(content: bytes, input_columns: int) -> bytes:
 def rows_dated_between(
     content: bytes, date_columns: Mapping[str, int], low: float, high: float
 ) -> tuple[bytes, dict[str, range]]:
-    """Skoroszyt ``content`` (.xlsx) z arkuszami ``date_columns`` (tytuł → kolumna daty od 1) zawężonymi do zakresu dat.
-
-    Zakres arkusza to wiersze od pierwszego do ostatniego z liczbą z [``low``,
-    ``high``] w kolumnie daty; zwracany jest dla każdego zawężonego arkusza (pusty,
-    gdy żadna komórka daty nie ma takiej liczby), a zawężony arkusz ma też wiersz 1 i wiersze z formułą główną
-    wspólnej formuły. Granice zakresu biorą się z komórek daty jego pierwszego i ostatniego wiersza, bez dzielenia
-    całego arkusza na wiersze: arkusz Rejestru zleceń ma dziesiątki tysięcy wierszy, a okres to kilkaset na dole.
-    Arkusz bez zwróconego zakresu
-    zostaje w całości, tabela tekstów wspólnych ma tylko teksty komórek arkuszy (``_used_strings_only``), a
-    pozostałe części są przepisane bez zmian. Uszkodzenie
-    skoroszytu zgłaszają ``zipfile`` (np. ``BadZipFile``), ``zlib``, brak części
-    ``KeyError`` albo ``expat`` (``ExpatError``). Komórka bez typu innego niż ``n`` z liczbą zapisaną samymi cyframi,
-    której część całkowita jest spoza dni od ``floor(low) - 1`` do ``floor(high)``, ma liczbę spoza [``low``,
-    ``high``]: ``float`` zaokrągla ją najwyżej do części całkowitej plus 1, więc zakres dni ma dzień zapasu przed
-    ``floor(low)``. Takiej komórki parser wyrażeń nie oddaje, a ``_is_number_between`` sprawdza resztę.
-    """
-
     ranges: dict[str, range] = {}
     days = b"|".join(b"%d" % day for day in range(math.floor(low) - 1, math.floor(high) + 1))
     outside = rb"""(?:(?!\st=["'](?!n["']))[^>])*><v>(?!0*(?:""" + days + rb""")(?:\.\d+)?</v>)\d+(?:\.\d+)?</v>"""
@@ -584,12 +441,6 @@ def rows_dated_between(
 
 
 def _rewritten(content: bytes, choose: Callable[[Mapping[str, bytes]], _Choose], *, used_strings_only: bool = False) -> bytes:
-    """Skoroszyt ``content`` przepisany bez kompresji, z częściami zawężonymi tak, jak wybiera ``choose`` z jego części.
-
-    Arkusz spoza kształtu (``IrregularSheetData``) zostaje w całości. Z ``used_strings_only`` tabela tekstów wspólnych
-    ma tylko teksty, do których sięgają komórki arkuszy po zawężeniu (``_used_strings_only``).
-    """
-
     reduced = BytesIO()
     infos, unpacked_parts = unpacked(content)
     with zipfile.ZipFile(reduced, "w", zipfile.ZIP_STORED) as target:
@@ -609,13 +460,6 @@ def _rewritten(content: bytes, choose: Callable[[Mapping[str, bytes]], _Choose],
 
 
 def _window(xml: bytes, start: int, end: int, dated: Sequence[tuple[int, int]]) -> tuple[int, int]:
-    """Granice w XML wierszy od pierwszego do ostatniego z wierszy ``dated`` (numer, miejsce komórki daty w nim).
-
-    Komentarz albo CDATA, który zaczyna się nad nimi, a kończy w nich, i granica innego ``<sheetData>`` w nich to
-    ``IrregularSheetData``: wiersze w komentarzu nie są wierszami arkusza. Resztę kształtu sprawdza openpyxl, który
-    czyta zawężony arkusz.
-    """
-
     begin = xml.rfind(b"<row", start, min(dated)[1])
     finish = xml.find(b"</row>", max(dated)[1], end)
     if begin < 0 or finish < 0 or _IRREGULAR_IN_ROW.search(xml, begin, finish):
@@ -624,8 +468,6 @@ def _window(xml: bytes, start: int, end: int, dated: Sequence[tuple[int, int]]) 
 
 
 def _first_row(xml: bytes, start: int, end: int) -> set[tuple[int, int]]:
-    """Granice w XML wiersza 1, gdy arkusz zaczyna się od niego (nagłówki Rejestru zleceń); inaczej pusty zbiór."""
-
     begin = xml.find(b"<row", start, end)
     if begin < 0 or not xml.startswith(b'<row r="1"', begin):
         return set()
@@ -635,9 +477,6 @@ def _first_row(xml: bytes, start: int, end: int) -> set[tuple[int, int]]:
 
 
 def _master_rows(xml: bytes, start: int, end: int) -> set[tuple[int, int]]:
-    """Granice w XML wierszy z formułą główną wspólnej formuły: openpyxl potrzebuje jej, by czytać formuły z niej
-    przeniesione."""
-
     rows: set[tuple[int, int]] = set()
     for found in _SHARED_FORMULA_MASTER.finditer(xml, start, end):
         begin = xml.rfind(b"<row", start, found.start())
@@ -647,11 +486,6 @@ def _master_rows(xml: bytes, start: int, end: int) -> set[tuple[int, int]]:
 
 
 def _with_rows(xml: bytes, sheet: SheetData, kept: Iterable[int]) -> bytes:
-    """XML arkusza tylko z wierszami o indeksach ``kept`` i z wierszami formuł głównych wspólnych formuł.
-
-    Najpierw sprawdza cały XML: openpyxl nie przeczyta pominiętych wierszy, a zepsuty arkusz ma być nieczytelny.
-    """
-
     masters = (sheet.row_index(found.start()) for found in _SHARED_FORMULA_MASTER.finditer(xml, sheet.start, sheet.end))
     indices = sorted({*kept, *masters} - {-1})
     expat.ParserCreate().Parse(xml, True)
@@ -660,8 +494,6 @@ def _with_rows(xml: bytes, sheet: SheetData, kept: Iterable[int]) -> bytes:
 
 
 def _is_number_between(attributes: bytes, content: bytes, low: float, high: float) -> bool:
-    """Komórka z liczbą z [``low``, ``high``]: tylko taką openpyxl może odczytać jako datę z przedziału."""
-
     found_type = _TYPE.search(attributes)
     cell_type = found_type.group(1) if found_type else None
     if cell_type == b"d":
@@ -683,31 +515,18 @@ _CONTENT_TYPE_OVERRIDE: Final = "{http://schemas.openxmlformats.org/package/2006
 _STRINGS_ROOT: Final = re.compile(
     rb"(?:<\?xml[^>]*\?>)?\s*<(?:[\w.-]+:)?[\w.-]+((?:\s+[\w.:-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*)\s*(/?)>\s*"
 )
-"""Prolog bez komentarzy, DOCTYPE i instrukcji przetwarzania i znacznik otwierający korzeń z białymi znakami za nim;
-grupa 1 to atrybuty korzenia, grupa 2 ``/`` korzenia bez treści."""
 _MAIN_DEFAULT: Final = re.compile(rb"""\sxmlns\s*=\s*(["'])""" + re.escape(SPREADSHEET_NS.encode("ascii")) + rb"\1")
 _STRING_ITEMS: Final = re.compile(
     rb"(?:<si(?:\s+(?!xmlns)[\w.:-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*+\s*+"
     rb"(?:/>|>[^<]*+(?:<(?![!?]|/?(?:[\w.-]+:)?si)[^<]*+)*+</si\s*+>)\s*+)*+"
 )
-"""Ciąg ``<si>`` z białymi znakami między nimi, każdy bez prefiksu i bez ``xmlns``, a w jego treści bez komentarza,
-CDATA, instrukcji przetwarzania i znacznika, którego nazwa bez prefiksu zaczyna się od ``si``; kwantyfikatory bez
-cofania, bo odrzucenie tabeli z dziesiątkami tysięcy tekstów z cofaniem trwałoby długo."""
+"""Kwantyfikatory bez cofania, bo odrzucenie tabeli z dziesiątkami tysięcy tekstów z cofaniem trwałoby długo."""
 _STRING_START: Final = re.compile(rb"<si")
 _CELL: Final = f"{SPREADSHEET_NS} c"
 _CELL_VALUE: Final = f"{SPREADSHEET_NS} v"
 
 
 def _used_strings_only(parts: Mapping[str, bytes]) -> dict[str, bytes]:
-    """Części do podmiany: tabela tekstów wspólnych tylko z tekstami, do których sięgają komórki ``t="s"`` arkuszy, i
-    arkusze z numerami tekstów w nowej tabeli.
-
-    Teksty zostają bajt w bajt i w kolejności z tabeli, więc openpyxl czyta z każdej komórki ten sam tekst. Tabela to
-    część, którą wskazuje ``[Content_Types].xml``, tak jak w openpyxl, a arkusze to cel relacji każdego ``<sheet>``
-    skoroszytu. Kształt spoza tego, który znają ``shared_string_spans`` i ``_shared_cells``, zepsuty XML albo numer spoza
-    tabeli, którego openpyxl może nie przeczytać: żadnej podmiany, więc openpyxl czyta skoroszyt jak bez niej.
-    """
-
     strings = next(
         (
             override.get("PartName", "")[1:]
@@ -743,18 +562,9 @@ def _used_strings_only(parts: Mapping[str, bytes]) -> dict[str, bytes]:
 
 @lru_cache(maxsize=1)
 def shared_string_spans(table: bytes) -> tuple[tuple[int, int], ...]:
-    """Granice każdego ``<si>`` tabeli tekstów wspólnych ``table`` w kolejności z tabeli: od jego początku do początku
-    następnego, a ostatniego do ostatniego znacznika końca, czyli korzenia, więc tekst ma też białe znaki za sobą.
-    Pamięta ostatni wynik, bo Przygotowanie czyta tę samą tabelę w Sprawdzaniu (``register_file.read``) i w Odczycie
-    danych (zawężenie), z tych samych bajtów z ``unpacked``.
-
-    Tabelę sprawdza parser expat (zepsuty XML to ``ExpatError``), a granice dają wyrażenia regularne, które znają jeden
-    kształt: prolog bez komentarzy, DOCTYPE i instrukcji przetwarzania, korzeń bez treści (żadnych tekstów) albo z
-    domyślną przestrzenią nazw arkusza i treścią, która od początku do końca jest ciągiem ``<si>`` (``_STRING_ITEMS``).
-    W poprawnym XML bez komentarzy, CDATA i instrukcji przetwarzania każdy ``<`` zaczyna znacznik, więc każdy ``<si>``
+    """W poprawnym XML bez komentarzy, CDATA i instrukcji przetwarzania każdy ``<`` zaczyna znacznik, więc każdy ``<si>``
     jest wtedy dzieckiem korzenia z przestrzeni nazw arkusza, tak jak liczy go openpyxl, a każde ``<si`` w treści
-    korzenia zaczyna tekst. Inny kształt to ``UnsupportedShape``.
-    """
+    korzenia zaczyna tekst."""
 
     expat.ParserCreate(namespace_separator=" ").Parse(table, True)
     root = _STRINGS_ROOT.match(table)
@@ -768,8 +578,6 @@ def shared_string_spans(table: bytes) -> tuple[tuple[int, int], ...]:
 
 
 def _sheet_parts(parts: Mapping[str, bytes]) -> set[str]:
-    """Części arkuszy, z których openpyxl czyta komórki: cel relacji każdego ``<sheet>`` skoroszytu."""
-
     workbook = office_document(parts) or ""
     rels = relationships(parts, workbook)
     sheets = ElementTree.fromstring(parts[workbook]).iter(f"{MAIN}sheet")
@@ -777,14 +585,9 @@ def _sheet_parts(parts: Mapping[str, bytes]) -> set[str]:
 
 
 def _shared_cells(xml: bytes) -> list[tuple[int, int, int]]:
-    """Numer tekstu wspólnego w każdym ``<v>`` komórki ``t="s"`` arkusza z granicami w XML jego tekstu: (początek,
-    koniec, numer), w kolejności z arkusza.
-
-    openpyxl czyta numer z ``<v>`` dziecka komórki; ``<v>`` głębiej dostaje nowy numer tak samo, więc nie zmienia tego,
-    co openpyxl czyta. Granice daje parser expat, a tekst ``<v>`` ma być samymi cyframi w bajtach XML, bez spacji,
-    encji, CDATA ani znaczników; inaczej ``UnsupportedShape``, także pusty ``<v>``. Zepsuty XML to ``ExpatError``.
-    Tekst ``<v>`` zaczyna się za pierwszym ``>`` za ``<v``, a gdyby ``>`` stał w atrybucie, tekst ma znaki spoza cyfr.
-    """
+    """openpyxl czyta numer z ``<v>`` dziecka komórki; ``<v>`` głębiej dostaje nowy numer tak samo, więc nie zmienia
+    tego, co openpyxl czyta. Tekst ``<v>`` zaczyna się za pierwszym ``>`` za ``<v``, a gdyby ``>`` stał w atrybucie,
+    tekst ma znaki spoza cyfr."""
 
     parser = expat.ParserCreate(namespace_separator=" ")
     cells: list[tuple[int, int, int]] = []

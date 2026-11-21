@@ -1,5 +1,3 @@
-"""Moduł skoroszytu przez jego interfejs: otwarcie z jedną klasyfikacją, układ arkusza i plik z Wzorca."""
-
 from __future__ import annotations
 
 import re
@@ -27,12 +25,13 @@ from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.styles.fills import Fill
 from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import column_index_from_string, get_column_letter
-from openpyxl.utils.datetime import WINDOWS_EPOCH
+from openpyxl.utils.datetime import CALENDAR_MAC_1904, WINDOWS_EPOCH
 
 from rozliczenia import tool_files
-from rozliczenia.client_data import empty_memory
+from rozliczenia.client_data import Guarded, empty_memory, guarded, tool
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
+from rozliczenia.collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, INPUT_COLUMNS, LOOK_COLUMNS
 from rozliczenia.highlights import Highlights
 from rozliczenia.register_columns import TARGET_HEADERS
 from rozliczenia.workbook_files import (
@@ -42,6 +41,8 @@ from rozliczenia.workbook_files import (
     Problem,
     RegisterRow,
     WorkbookError,
+    cell_datetime,
+    collective_workers,
     read_computed_rows,
     read_data_rows,
 )
@@ -51,11 +52,15 @@ from rozliczenia.write_routes import Route
 from rozliczenia.workbook_parts import (
     IrregularSheetData,
     RowsFromBottom,
+    SheetData,
     UnsupportedShape,
     active_sheet,
     appended,
     package_parts,
     rows_dated_between,
+    rows_with_input,
+    shared_string_spans,
+    unpacked,
 )
 from rozliczenia.workbook_save import (
     ExternalLinksError,
@@ -110,8 +115,6 @@ def not_a_zip(path: Path) -> None:
 
 
 def with_target_headers(path: Path) -> None:
-    """Nagłówki docelowe pliku zbiorczego w A17:K17, z WYKONAWCA w H17."""
-
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
@@ -123,8 +126,6 @@ def with_target_headers(path: Path) -> None:
 
 
 def styled_template(path: Path) -> Path:
-    """Skoroszyt w układzie Pliku zbiorczego z nagłówkami docelowymi i komórką ze stylem w Wierszu danych."""
-
     write_template(path)
     with_target_headers(path)
     workbook = load_workbook(path)
@@ -188,7 +189,6 @@ DAMAGES: dict[str, Callable[[Path], None]] = {
     "bez-styles-xml": without_styles,
     "bez-arkusza": without_sheet,
 }
-# Odczyt sięga po style tylko w Wierszach danych, a ten skoroszyt ich nie ma, więc bez styles.xml daje się przeczytać.
 UNREADABLE_CASES = [
     pytest.param(damage, opening, id=f"{damage}-{opening}")
     for damage in DAMAGES
@@ -212,13 +212,18 @@ def test_uszkodzony_skoroszyt_jest_nieczytelny_przy_kazdym_otwarciu(tmp_path: Pa
     with pytest.raises(WorkbookError) as raised:
         OPENINGS[opening](path)
 
-    assert raised.value.problem is Problem.UNREADABLE
+    assert (raised.value.problem, raised.value.fault) == (Problem.UNREADABLE, None)
     assert raised.value.path == path
 
 
-def _wrong_checksum(path: Path, part: str) -> None:
-    """Część ``part`` z nienaruszoną treścią i inną sumą kontrolną CRC-32 w nagłówku lokalnym i w katalogu centralnym."""
+def test_skoroszyt_ze_stylem_poza_wierszami_danych_bez_styles_xml_daje_sie_przeczytac(tmp_path: Path) -> None:
+    path = styled_template(tmp_path / "Skoroszyt.xlsx")
+    without_styles(path)
 
+    assert read_data_rows(path, DadFiles()).rows == []
+
+
+def _wrong_checksum(path: Path, part: str) -> None:
     data = bytearray(path.read_bytes())
     with zipfile.ZipFile(path) as archive:
         info = archive.getinfo(part)
@@ -234,20 +239,27 @@ def _wrong_checksum(path: Path, part: str) -> None:
     path.write_bytes(bytes(data))
 
 
+@pytest.mark.parametrize("route", [Route.COPY, Route.OPENPYXL], ids=["kopia", "openpyxl"])
 @pytest.mark.parametrize("opening", [_check_template, _plan_template])
-def test_wzorzec_przyjmowany_przez_kopie_z_zla_suma_kontrolna_czesci_arkusza_jest_nieczytelny(
-    tmp_path: Path, opening: Callable[[Path], None]
+def test_wzorzec_pliku_zbiorczego_z_zla_suma_kontrolna_czesci_arkusza_jest_nieczytelny_na_obu_drogach(
+    tmp_path: Path, opening: Callable[[Path], None], route: Route
 ) -> None:
-    """Kopia Wzorca czyta każdą część zip ze sprawdzeniem sumy kontrolnej CRC-32, więc Wzorzec pliku zbiorczego, który
-    kopia przyjmuje, z inną sumą kontrolną części arkusza przy tej samej treści jest nieczytelny, jak w dawnej drodze."""
-
     path = write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
+    if route is Route.OPENPYXL:
+        refused_by_copy(path)
+    assert TemplateFile.collective_file(path).create(tmp_path / "Plik zbiorczy.xlsx", []) is route
     _wrong_checksum(path, "xl/worksheets/sheet1.xml")
 
     with pytest.raises(WorkbookError) as raised:
         opening(path)
 
     assert raised.value.problem is Problem.UNREADABLE
+
+
+def test_data_bez_godziny_w_komorce_daty_to_polnoc_a_tekst_nie_jest_data() -> None:
+    values = (datetime(2026, 9, 8, 7, 30), date(2026, 9, 8), "8.09.2026", None)
+
+    assert [cell_datetime(value) for value in values] == [datetime(2026, 9, 8, 7, 30), datetime(2026, 9, 8), None, None]
 
 
 def test_skoroszyt_bez_stylow_daje_sie_przeczytac_bez_formatu(tmp_path: Path) -> None:
@@ -284,13 +296,12 @@ def _cell_style_count(path: Path) -> int:
     return cell_styles.group(0).count(b"<xf ")
 
 
-# Wzorzec w kształcie Pliku zbiorczego (z autofiltrem) przyjmuje kopia Wzorca, a ``styled_template`` nie.
 @pytest.mark.parametrize(
-    ("make", "styled"),
+    ("make", "styled", "route"),
     [
-        pytest.param(styled_template, "wiersza", id="wiersza-openpyxl"),
-        pytest.param(write_collective_template, "wiersza", id="wiersza-kopia"),
-        pytest.param(write_collective_template, "kolumny", id="kolumny-kopia"),
+        pytest.param(styled_template, "wiersza", Route.OPENPYXL, id="wiersza-openpyxl"),
+        pytest.param(write_collective_template, "wiersza", Route.COPY, id="wiersza-kopia"),
+        pytest.param(write_collective_template, "kolumny", Route.COPY, id="kolumny-kopia"),
     ],
 )
 @pytest.mark.parametrize(
@@ -304,9 +315,15 @@ def _cell_style_count(path: Path) -> int:
 )
 @pytest.mark.parametrize("opening", [_check_template, _plan_template])
 def test_styl_wiersza_spoza_stylow_skoroszytu_czyni_wzorzec_nieczytelnym(
-    tmp_path: Path, opening: Callable[[Path], None], outside: Callable[[int], int], styled: str, make: Callable[[Path], Path]
+    tmp_path: Path,
+    opening: Callable[[Path], None],
+    outside: Callable[[int], int],
+    styled: str,
+    make: Callable[[Path], Path],
+    route: Route,
 ) -> None:
     path = make(tmp_path / "Skoroszyt.xlsx")
+    assert TemplateFile.collective_file(path).create(tmp_path / "Plik zbiorczy.xlsx", []) is route
     pattern, replacement = _OUTSIDE_STYLES[styled]
     style = outside(_cell_style_count(path))
     rewrite_parts(
@@ -344,7 +361,7 @@ def test_brak_pliku_przy_kazdym_otwarciu(tmp_path: Path, opening: str) -> None:
     with pytest.raises(WorkbookError) as raised:
         OPENINGS[opening](tmp_path / "Brak.xlsx")
 
-    assert raised.value.problem is Problem.MISSING
+    assert (raised.value.problem, raised.value.fault) == (Problem.MISSING, None)
 
 
 @pytest.mark.parametrize(("exists", "problem"), [(True, Problem.UNREADABLE), (False, Problem.MISSING)], ids=["jest", "brak"])
@@ -370,7 +387,6 @@ def test_folder_albo_plik_zamiast_skoroszytu_to_brak_pliku_przy_kazdym_otwarciu(
         assert raised.value.problem is Problem.MISSING, path.name
 
 
-# Te otwarcia sprawdzają po sobie, że w folderze skoroszytu nie został plik, a w folderze bez dostępu nie da się tego sprawdzić.
 CHECK_FOLDER_AFTER = frozenset({"plik-okresu-z-wzorca", "rozliczenie-pracownika"})
 
 
@@ -387,13 +403,12 @@ def test_skoroszyt_w_folderze_bez_dostepu_jest_niedostepny_przy_kazdym_otwarciu(
     finally:
         folder.chmod(0o755)
 
-    assert raised.value.problem is Problem.INACCESSIBLE
+    assert (raised.value.problem, raised.value.fault) == (Problem.INACCESSIBLE, None)
 
 
 OPENINGS_IN_EXCEL: dict[str, Callable[[Path], object]] = OPENINGS | {
     "odczyt-wartosci-policzonych": lambda path: read_computed_rows(path, DadFiles()),
 }
-"""Otwarcia z odczytem wartości policzonych przez Excel (Wycena w efenix), który też odmawia pliku otwartego w Excelu."""
 
 
 @pytest.mark.parametrize("opening", OPENINGS_IN_EXCEL)
@@ -405,13 +420,11 @@ def test_plik_otwarty_w_excelu_przy_kazdym_otwarciu(tmp_path: Path, opening: str
     with pytest.raises(WorkbookError) as raised:
         OPENINGS_IN_EXCEL[opening](path)
 
-    assert raised.value.problem is Problem.OPEN_IN_EXCEL
+    assert (raised.value.problem, raised.value.fault) == (Problem.OPEN_IN_EXCEL, None)
     assert lock_file.exists()
 
 
 def move_worker_header(path: Path, cell: str | None) -> None:
-    """WYKONAWCA z H17 w komórce ``cell``, a jej nagłówek w H17; bez ``cell`` H17 jest pusta."""
-
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
@@ -432,7 +445,11 @@ HEADER_CHECKS: dict[str, Callable[[Path], object]] = {
 
 
 @pytest.mark.parametrize("check", HEADER_CHECKS)
-@pytest.mark.parametrize(("cell", "worker_column"), [("C17", "C"), (None, None)], ids=["WYKONAWCA-w-C", "bez-WYKONAWCA"])
+@pytest.mark.parametrize(
+    ("cell", "worker_column"),
+    [("C17", "C"), ("L17", None), (None, None)],
+    ids=["WYKONAWCA-w-C", "WYKONAWCA-za-A-K", "bez-WYKONAWCA"],
+)
 def test_wykonawca_poza_h17_to_zly_uklad(tmp_path: Path, check: str, cell: str | None, worker_column: str | None) -> None:
     path = tmp_path / "Rozliczenie - zbiorcze.xlsx"
     write_source(path, include_unmapped=False)
@@ -462,11 +479,12 @@ def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
-        sheet.insert_rows(19)  # pusty wiersz między Wierszami danych nie jest Wierszem danych
-        sheet["L22"] = "poza A:K"  # wiersz bez wartości w A:K nie jest Wierszem danych
-        sheet["K23"] = "tylko K"  # wartość w ostatniej kolumnie A:K wystarcza
+        sheet.insert_rows(19)
+        sheet["L22"] = "poza A:K"
+        sheet["K23"] = "tylko K"
         sheet["AT18"] = "uwagi"
         sheet["AU18"] = "poza A:AT"
+        valued = {row: [cell.column for cell in sheet[row] if cell.value is not None] for row in (19, 22, 23)}
         workbook.save(path)
     finally:
         workbook.close()
@@ -474,6 +492,7 @@ def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_
 
     rows = read_data_rows(path, DadFiles()).rows
 
+    assert valued == {19: [], 22: [INPUT_COLUMNS[-1] + 1], 23: [INPUT_COLUMNS[-1]]}
     assert [(row.number, row.worker) for row in rows] == [
         (18, "adrian.testowy"),
         (20, "dariusz.fikcyjny2"),
@@ -486,32 +505,92 @@ def test_wiersze_danych_pliku_zbiorczego_w_kolejnosci_z_wykonawca_i_wartosciami_
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize(("header", "forbidden"), [("D17", True), ("L17", False)], ids=["w-A-K", "za-A-K"])
+def test_kolumna_pliku_zbiorczego_z_naglowkiem_adresu_jest_zakazana_tylko_w_a_k(
+    tmp_path: Path, header: str, forbidden: bool
+) -> None:
+    value = "SYNTETYCZNE-OSIEDLE-ZAKAZANE"
+    path = tmp_path / "Rozliczenie - zbiorcze.xlsx"
+    write_source(path, include_unmapped=False)
+    workbook = load_workbook(path)
+    try:
+        sheet = active_worksheet(workbook)
+        sheet[header], sheet[header.replace("17", "18")] = "ADRES", value
+        workbook.save(path)
+    finally:
+        workbook.close()
+    memory = empty_memory()
+
+    columns = read_data_rows(path, DadFiles(forbidden=memory)).header
+
+    assert (guarded(memory, value, "tekst") != Guarded(tool(value), ())) is forbidden
+    assert ("adres" in columns) is forbidden and max(columns.values()) <= INPUT_COLUMNS[-1]
+
+
+def test_wykonawcy_pliku_zbiorczego_otwartego_w_excelu_to_wykonawcy_jego_zapisanej_wersji(tmp_path: Path) -> None:
+    path = tmp_path / "Rozliczenie - zbiorcze.xlsx"
+    write_source(path, include_unmapped=False)
+    (tmp_path / f"~${path.name}").touch()
+
+    assert collective_workers(path, DadFiles()) == {"adrian.testowy", "dariusz.fikcyjny2"}
+
+
+def test_wykonawcy_pliku_zbiorczego_to_teksty_h_wierszy_danych_po_normalizacji_bez_pustych(tmp_path: Path) -> None:
+    path = tmp_path / "Rozliczenie - zbiorcze.xlsx"
+    write_source(path, include_unmapped=False)
+    workbook = load_workbook(path)
+    try:
+        sheet = active_worksheet(workbook)
+        sheet["H5"] = "notatka nad nagłówkiem"
+        sheet["H20"] = "  Adrian.TESTOWY "
+        sheet["A21"], sheet["H21"] = "syntetyczne miasto", "   "
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+    assert collective_workers(path, DadFiles()) == {"adrian.testowy", "dariusz.fikcyjny2"}
+
+
+SHEET_SHAPES_OUTSIDE_EXCEL: dict[str, Callable[[bytes], bytes]] = {
+    "komentarz-w-danych": lambda data: data.replace(b"</sheetData>", b"<!-- H99 --></sheetData>", 1),
+    "komorka-h-bez-adresu": lambda data: data.replace(b'<c r="H19"', b"<c", 1),
+}
+
+
+@pytest.mark.parametrize("shape", SHEET_SHAPES_OUTSIDE_EXCEL.values(), ids=SHEET_SHAPES_OUTSIDE_EXCEL.keys())
+def test_wykonawcy_pliku_zbiorczego_w_ksztalcie_spoza_excela_to_plik_nieczytelny(
+    tmp_path: Path, shape: Callable[[bytes], bytes]
+) -> None:
+    path = tmp_path / "Rozliczenie - zbiorcze.xlsx"
+    write_source(path, include_unmapped=False)
+    rewrite_parts(path, lambda name, data: shape(data) if name == "xl/worksheets/sheet1.xml" else data)
+
+    with pytest.raises(WorkbookError) as raised:
+        collective_workers(path, DadFiles())
+
+    assert (raised.value.problem, raised.value.fault) == (Problem.UNREADABLE, None)
+
+
 def _inline(reference: str, text: str) -> str:
     return f'<c r="{reference}" s="13" t="inlineStr"><is><t>{text}</t></is></c>'
 
 
 def excel_collective_file(directory: Path) -> Path:
-    """Plik zbiorczy w kształcie z Excela: tekst wspólny i wbudowany, wspólne formuły, sformatowane puste wiersze.
-
-    Wiersze danych 18, 100 i 150 przedzielają dziesiątki sformatowanych pustych
-    wierszy; wspólna formuła w Q100 ma formułę główną w wierszu 30 bez danych w A:K.
-    """
-
     path = write_synthetic_templates(directory) / COLLECTIVE_TEMPLATE
     replace_cells(
         path,
         {
-            "A18": '<c r="A18" s="13" t="s"><v>4</v></c>',  # sharedStrings[4] == "Instalacje"
+            "A18": '<c r="A18" s="13" t="s"><v>4</v></c>',
             "B18": _inline("B18", "syntetyczny adres 1"),
             "F18": '<c r="F18" s="15"><v>1001</v></c>',
-            "G18": '<c r="G18" s="16"><v>46301.375</v></c>',  # format daty 14
+            "G18": '<c r="G18" s="16"><v>46301.375</v></c>',
             "H18": _inline("H18", "adrian.testowy"),
             "J18": '<c r="J18" s="15" t="b"><v>1</v></c>',
             "K18": '<c r="K18" s="15" t="str"><v>wynik formuły</v></c>',
             "N18": '<c r="N18" s="26"><v>2</v></c>',
             "O18": '<c r="O18" s="26"><v>2.5</v></c>',
             "P18": '<c r="P18" s="26"><f>N18*2</f><v>4</v></c>',
-            "AT18": '<c r="AT18" s="31" t="s"><v>0</v></c>',  # sharedStrings[0] == "Suma"
+            "AT18": '<c r="AT18" s="31" t="s"><v>0</v></c>',
             "Q30": '<c r="Q30" s="26"><f t="shared" ref="Q30:Q140" si="90">N30+1</f><v>1</v></c>',
             "L60": _inline("L60", "poza A:K"),
             "C100": _inline("C100", "tylko C"),
@@ -529,8 +608,6 @@ def _values_by_column(row: DataRow) -> dict[str, object]:
 
 
 def without_cell_references_in_row_100(path: Path) -> None:
-    """Komórki A:P wiersza 100 bez adresu ``r``; openpyxl liczy wtedy kolumny po kolei, jak pozwala format."""
-
     def change(name: str, data: bytes) -> bytes:
         if name != "xl/worksheets/sheet1.xml":
             return data
@@ -555,6 +632,11 @@ def test_wiersze_danych_po_pustych_wierszach_maja_wartosci_jak_w_excelu(tmp_path
 
     rows = read_data_rows(path, DadFiles()).rows
 
+    sheet = zip_part(path, "xl/worksheets/sheet1.xml")
+    master = [int(row) for row in re.findall(r'<c r="Q(\d+)"[^>]*><f t="shared" ref="[^"]*" si="90"', sheet)]
+    blank_between = set(range(19, 100)) - {row.number for row in rows}
+    assert len(master) == 1 and master[0] in blank_between
+    assert len(blank_between & {int(row) for row in re.findall(r'<row r="(\d+)"', sheet)}) > 20
     assert [(row.number, row.worker) for row in rows] == [(18, "adrian.testowy"), (100, "beata.fikcyjna"), (150, None)]
     assert all(len(row.cells) == 46 for row in rows)
     assert _values_by_column(rows[0]) == {
@@ -617,8 +699,6 @@ def test_plik_z_wzorca_przez_openpyxl_ma_wiersze_danych_formuly_formatowanie_i_k
 
 
 def shared_formula_masters(path: Path) -> list[str]:
-    """Wzory wspólnych formuł arkusza ``Sheet1`` (zakres, numer i treść) w kolejności z pliku."""
-
     return re.findall(r'<f t="shared" ref="[^"]+" si="\d+">[^<]*</f>', zip_part(path, "xl/worksheets/sheet1.xml"))
 
 
@@ -666,8 +746,6 @@ def test_rozliczenie_pracownika_z_wzorca_zachowuje_wspolne_formuly_calcchain_i_f
 def _settlement_folders(
     tmp_path: Path, template_path: Path, rows: list[DataRow], *, copied: bool = True
 ) -> tuple[Path, Path]:
-    """Rozliczenie pracownika z Wzorca (kopią, gdy ``copied``) i to samo z jego bliźniaka drogą openpyxl."""
-
     created = tmp_path / "rozliczenie"
     expected = tmp_path / "przez-openpyxl"
     created.mkdir()
@@ -691,8 +769,6 @@ def _row(**columns: Any) -> ExcelRow:
 
 
 def _data_row(values: ExcelRow, **highlights: Highlights) -> DataRow:
-    """Wiersz danych z wartościami ``values`` i Wyróżnieniami w podanych kolumnach; pozostałe komórki bez Wyróżnień."""
-
     return data_row(values, {_column_index(letter): cell for letter, cell in highlights.items()})
 
 
@@ -730,9 +806,6 @@ VALUE_ROWS: list[ExcelRow] = [
 
 @pytest.mark.parametrize("template", ["maly", "maly-z-datami-od-1904", "syntetyczny"])
 def test_rozliczenie_pracownika_ma_wartosci_kazdego_typu_jak_plik_z_wzorca(tmp_path: Path, template: str) -> None:
-    """Wzorzec z datami liczonymi od 1904 r. (``date1904``, opcja Excela) dostaje daty jako liczby od tej epoki, więc
-    Excel pokazuje w nim te same dni co we Wzorcu z epoką 1900 r."""
-
     if template == "syntetyczny":
         template_path = write_synthetic_templates(tmp_path / "wzorce") / WORKER_TEMPLATE
     else:
@@ -746,6 +819,7 @@ def test_rozliczenie_pracownika_ma_wartosci_kazdego_typu_jak_plik_z_wzorca(tmp_p
     saved = load_workbook(created / "Rozliczenie - Wykonawca.xlsx")
     try:
         written = active_worksheet(saved)
+        assert saved.epoch == (CALENDAR_MAC_1904 if template == "maly-z-datami-od-1904" else WINDOWS_EPOCH)
         assert written["A18"].value == '<b>Miasto & "Wieś"</b> \'1\' ]]>'
         assert written["B18"].value == " spacje na brzegach "
         assert written["C18"].value == "=N18*2"
@@ -767,9 +841,31 @@ def test_rozliczenie_pracownika_ma_wartosci_kazdego_typu_jak_plik_z_wzorca(tmp_p
 RICH_TEXT_ROWS: list[ExcelRow] = [_row(A=CellRichText("zwykły ", TextBlock(InlineFont(b=True), "pogrubiony")), N=1)]
 
 
-def test_rozliczenie_pracownika_z_tekstem_sformatowanym_jest_jak_plik_z_wzorca(tmp_path: Path) -> None:
-    """Tekst sformatowany nie przychodzi z Pliku zbiorczego (odczyt daje zwykły tekst), więc ``run_settlements()`` go nie sięga."""
+def test_tekst_sformatowany_pliku_zbiorczego_przychodzi_jako_zwykly_tekst(tmp_path: Path) -> None:
+    path = tmp_path / "Rozliczenie - zbiorcze.xlsx"
+    write_source(path, include_unmapped=False)
+    workbook = load_workbook(path)
+    try:
+        active_worksheet(workbook)["A18"] = "SYNTETYCZNY-TEKST-A18"
+        workbook.save(path)
+    finally:
+        workbook.close()
+    like_excel(path)
+    rich = '<si><r><t xml:space="preserve">zwykły </t></r><r><rPr><b/></rPr><t>pogrubiony</t></r></si>'.encode()
+    rewrite_parts(
+        path,
+        lambda name, data: _once(b"<si><t>SYNTETYCZNY-TEKST-A18</t></si>", rich)(data)
+        if name == "xl/sharedStrings.xml"
+        else data,
+    )
+    assert re.search(r'<c r="A18"[^>]*t="s"', zip_part(path, "xl/worksheets/sheet1.xml"))
 
+    value = read_data_rows(path, DadFiles()).rows[0].value("A")
+
+    assert (type(value), value) == (str, "zwykły pogrubiony")
+
+
+def test_rozliczenie_pracownika_z_tekstem_sformatowanym_jest_jak_plik_z_wzorca(tmp_path: Path) -> None:
     template_path = linked_template(tmp_path / "Wzorzec.xlsx")
 
     created, expected = _settlement_folders(
@@ -790,8 +886,6 @@ HIGHLIGHTED_ROWS: list[DataRow] = [
 
 
 def _highlights(cell: Any) -> tuple[object, ...]:
-    """Wyróżnienia komórki tak, jak widzi je tata: wypełnienie, kolor czcionki, pogrubienie, kursywa."""
-
     fill = cell.fill
     return (fill.fill_type, fill.fgColor if fill.fill_type else None, cell.font.color, bool(cell.font.b), bool(cell.font.i))
 
@@ -821,9 +915,11 @@ def test_rozliczenie_pracownika_ma_wyroznienia_wierszy_danych_i_czcionke_naglowk
         assert _highlights(written["N18"]) == (None, None, Color(theme=1), False, True)
         assert _highlights(written["A19"]) == (None, None, None, False, False)
         assert (written["G18"].value, is_date_format(written["G18"].number_format)) == (datetime(2026, 9, 8), True)
-        # A w kolumnach wyglądu: krój nagłówka A17; N poza nimi: krój komórki Wzorca.
-        assert [(written[cell].font.name, written[cell].font.sz) for cell in ("A18", "N18", "A19")] == [
-            (wzorzec[cell].font.name, wzorzec[cell].font.sz) for cell in ("A17", "N18", "A17")
+        cells = ("A18", "N18", "A19")
+        sources = tuple(f"{cell[0]}17" if written[cell].column in LOOK_COLUMNS else cell for cell in cells)
+        assert sources == ("A17", "N18", "A17")
+        assert [(written[cell].font.name, written[cell].font.sz) for cell in cells] == [
+            (wzorzec[cell].font.name, wzorzec[cell].font.sz) for cell in sources
         ]
     finally:
         saved.close()
@@ -831,11 +927,15 @@ def test_rozliczenie_pracownika_ma_wyroznienia_wierszy_danych_i_czcionke_naglowk
 
 
 def test_pusta_komorka_bez_wlasnego_stylu_za_wierszami_wzorca_ma_styl_kolumny_jak_plik_z_wzorca(tmp_path: Path) -> None:
-    """Komórki C nie ma we Wzorcu za jego Wierszami danych; czarna czcionka to czcionka domyślna Wzorca."""
-
     template_path = write_synthetic_templates(tmp_path / "wzorce") / WORKER_TEMPLATE
     black = Highlights.of(Font(color=Color("FF000000")), None)
     rows = [_data_row(_row(A="syntetyczne miasto"), C=black)] * (SMALL_DATA_ROWS + 5)
+    beyond_template = set(range(FIRST_DATA_ROW + SMALL_DATA_ROWS, FIRST_DATA_ROW + len(rows)))
+    template_cells_c = {int(row) for row in re.findall(r'<c r="C(\d+)"', zip_part(template_path, "xl/worksheets/sheet1.xml"))}
+    default_font = re.search(r"<fonts\b[^>]*>(<font>.*?</font>)", zip_part(template_path, "xl/styles.xml"))
+    assert beyond_template and not beyond_template & template_cells_c
+    assert black.color is not None and default_font is not None
+    assert f'<color rgb="{black.color.rgb}"/>' in default_font.group(1)
 
     created, expected = _settlement_folders(tmp_path, template_path, rows)
 
@@ -843,8 +943,6 @@ def test_pusta_komorka_bez_wlasnego_stylu_za_wierszami_wzorca_ma_styl_kolumny_ja
 
 
 def _row_styles(path: Path, row: int, columns: range) -> dict[str, str | None]:
-    """Numer stylu (atrybut ``s``) każdej komórki wiersza ``row`` w kolumnach ``columns`` w XML arkusza."""
-
     found = re.search(rf'<row r="{row}"[^>]*?(?:/>|>(.*?)</row>)', zip_part(path, "xl/worksheets/sheet1.xml"), re.S)
     assert found is not None
     cells = re.finditer(r'<c r="([A-Z]+)\d+"([^>]*?)/?>', found.group(1) or "")
@@ -877,12 +975,11 @@ def test_wyroznienia_takie_jak_we_wzorcu_zostawiaja_style_wzorca_poza_kolumnami_
 
     TemplateFile.worker_settlement(template_path).create(target, [_data_row(_row(A="syntetyczne miasto", N=2), **same)])
 
-    beyond_look = range(13, 47)  # M:AT
+    beyond_look = range(LOOK_COLUMNS[-1] + 1, DATA_ROW_COLUMNS[-1] + 1)
     assert _row_styles(target, 18, beyond_look) == _row_styles(template_path, 18, beyond_look)
     assert _row_styles(template_path, 18, beyond_look)
 
 
-# Adresy, które aplikacja firmowa może dać w Rejestrze zleceń: znaki specjalne XML, fragment, spacje na brzegach, polskie znaki.
 LINKED_CELLS = {
     "F18": 'https://przyklad.invalid/zlecenie?caseId=SYN-1&tw=1&q="a"<b>#sekcja',
     "B19": " https://przyklad.invalid/ścieżka/zażółć gęślą?x='1' ",
@@ -891,8 +988,6 @@ LINKED_CELLS = {
 
 
 def linked_collective_file(directory: Path) -> Path:
-    """Plik zbiorczy z Wierszami danych 18–20 i Hiperłączami ``LINKED_CELLS``."""
-
     path = directory / "Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"
     write_source(path, include_unmapped=False)
     workbook = load_workbook(path)
@@ -908,6 +1003,11 @@ def linked_collective_file(directory: Path) -> Path:
 
 @pytest.mark.parametrize("template", ["maly", "syntetyczny"])
 def test_rozliczenie_pracownika_ma_hiperlacza_wierszy_danych_jak_plik_z_wzorca(tmp_path: Path, template: str) -> None:
+    addresses = LINKED_CELLS.values()
+    assert [
+        any(set(address) & set(characters) for address in addresses) for characters in ("&<>\"'", "#", "ąćęłńóśźż")
+    ] == [True, True, True]
+    assert any(address != address.strip() for address in addresses)
     if template == "maly":
         template_path = linked_template(tmp_path / "Wzorzec.xlsx")
     else:
@@ -1019,15 +1119,11 @@ def test_nieczytelne_odwolania_wzorca_przerywaja_zapis_i_nazywaja_skoroszyt_doce
 
 
 class _FullDisk(Workbook):
-    """Skoroszyt, którego zapis pada jak na pełnym dysku."""
-
     def save(self, filename: object) -> None:
         raise OSError(28, "wymuszony: brak miejsca na dysku")
 
 
 class _NotAZip(Workbook):
-    """Skoroszyt, którego zapis daje plik bez archiwum ZIP, więc odwołań zewnętrznych nie da się w nim przywrócić."""
-
     def save(self, filename: object) -> None:
         assert isinstance(filename, Path), "write_atomically podaje ścieżkę pliku tymczasowego"
         filename.write_bytes(b"to nie jest skoroszyt")
@@ -1064,8 +1160,6 @@ def test_nieudany_krok_zapisu_nazywa_skoroszyt_i_krok_a_skoroszyt_zostaje_bez_zm
 
 
 def test_tekst_bledu_zapisu_to_krok_i_nazwa_pliku_bez_folderu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Zapis wyjątku do logu nie przenosi pełnej ścieżki, a z nią nazwy konta taty (ADR 0004)."""
-
     target_path = linked_template(tmp_path / "Plik zbiorczy.xlsx")
     lock_file(monkeypatch, target_path.name)
 
@@ -1076,8 +1170,6 @@ def test_tekst_bledu_zapisu_to_krok_i_nazwa_pliku_bez_folderu(tmp_path: Path, mo
 
 
 def _register_row() -> RegisterRow:
-    """Wiersz Rejestru zleceń: komórka pod każdym nagłówkiem docelowym go nazywa."""
-
     return register_row({header: f"syntetyczne {header}" for header in TARGET_HEADERS})
 
 
@@ -1120,9 +1212,6 @@ def test_naglowek_docelowy_rozliczenia_wewnetrznego_jest_szukany_w_calym_wierszu
 def test_rozliczenie_wewnetrzne_wpisuje_kazda_wartosc_pod_jej_naglowkiem_w_kolejnosci_innej_niz_u_taty(
     tmp_path: Path, copied: bool
 ) -> None:
-    """Atrapy mają kolejność kolumn taty, więc ten Wzorzec (nagłówki docelowe odwrócone, w A:K jak u taty) dowodzi na
-    obu drogach zapisu, że wartość idzie za nagłówkiem, nie za miejscem w tabeli taty ani w ``TARGET_HEADERS``."""
-
     headers = (*reversed(TARGET_HEADERS), *INTERNAL_HEADERS[len(TARGET_HEADERS) :])
     assert headers != INTERNAL_HEADERS and headers[: len(TARGET_HEADERS)] != TARGET_HEADERS
     assert set(headers) == set(INTERNAL_HEADERS)
@@ -1145,10 +1234,11 @@ def test_rozliczenie_wewnetrzne_przelicza_formuly_przy_otwarciu_bez_wymuszonego_
     tmp_path: Path, copied: bool
 ) -> None:
     template_path = marked_for_copy(write_internal_template(tmp_path / tool_files.INTERNAL_TEMPLATE.name))
-    rewrite_parts(  # ``calcPr`` jak we Wzorcu taty, bez żadnej flagi przeliczania
+    rewrite_parts(
         template_path,
         lambda name, data: re.sub(rb"<calcPr\b[^>]*/>", b'<calcPr calcId="191029"/>', data) if name == "xl/workbook.xml" else data,
     )
+    assert calculation_flags(template_path) == dict.fromkeys(("calcMode", "fullCalcOnLoad", "forceFullCalc"))
     if not copied:
         refused_by_copy(template_path)
     target = tmp_path / "Rozliczenie wewnętrzne.xlsx"
@@ -1194,7 +1284,7 @@ def test_wzorzec_rozliczenia_pracownika_z_wartoscia_w_wierszu_danych_nie_daje_pl
     with pytest.raises(WorkbookError) as raised:
         TemplateFile.worker_settlement(template_path).create(target, [])
 
-    assert raised.value.problem is Problem.HAS_DATA
+    assert (raised.value.problem, raised.value.fault) == (Problem.HAS_DATA, None)
     assert not target.exists()
 
 
@@ -1210,7 +1300,6 @@ def _worker_template_with_merge(tmp_path: Path, merged: str, *, copied: bool) ->
     return (marked_for_copy if copied else refused_by_copy)(template_path)
 
 
-# Zapis Wzorca rozliczenia pracownika obejmuje kolumny A:AT Wierszy danych zapisanych wierszy (18 i 19).
 @pytest.mark.parametrize("merged", ["A20:B20", "AU19:AV19"], ids=["wiersz-pod-zapisanymi", "kolumna-za-zapisem"])
 @pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
 def test_scalenie_wzorca_rozliczenia_pracownika_poza_komorkami_zapisu_nie_przeszkadza(
@@ -1256,8 +1345,6 @@ def test_wzorzec_rozliczenia_pracownika_ze_scaleniem_w_wierszu_danych_nie_daje_p
 
 
 def _workbook_with_chartsheet(path: Path) -> Path:
-    """Skoroszyt z arkuszami A, B, arkuszem wykresu W i arkuszem C (części ``sheet1``, ``sheet2``, wykres, ``sheet3``)."""
-
     workbook = Workbook()
     active_worksheet(workbook).title = "A"
     workbook.create_sheet("B")
@@ -1306,13 +1393,10 @@ ACTIVE_SHEET_SHAPES: dict[str, tuple[Callable[[str, bytes], bytes | None], tuple
 def test_aktywny_arkusz_zapisow_xml_to_arkusz_workbook_active_ktory_czytaja_czytniki(
     tmp_path: Path, shape: Callable[[str, bytes], bytes | None], expected: tuple[str, str, int, bool, bool]
 ) -> None:
-    """Kopia Wzorca i Znacznik efenix piszą w arkuszu ``workbook.active`` openpyxl, bo ten czytają czytniki Pliku
-    zbiorczego: ``activeTab`` liczy się wśród arkuszy, które openpyxl wczytuje, także ukrytych i arkuszy wykresu."""
-
     path = _workbook_with_chartsheet(tmp_path / "skoroszyt.xlsx")
     rewrite_parts(path, shape)
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)  # openpyxl ostrzega o arkuszu bez r:id
+        warnings.filterwarnings("ignore", "File contains an invalid specification", UserWarning)
         reader = load_workbook(path, read_only=True)
     with package_parts(path.read_bytes()) as parts:
         sheet = active_sheet(parts, "xl/workbook.xml")
@@ -1341,9 +1425,6 @@ def test_skoroszyt_bez_arkusza_workbook_active_to_ksztalt_ktorego_zapisy_xml_nie
 def test_wzorzec_z_ukrytym_aktywnym_arkuszem_idzie_dawna_droga_i_wiersze_trafiaja_do_tego_arkusza(
     tmp_path: Path, hidden: bool
 ) -> None:
-    """Kopia Wzorca nie pisze w ukrytym arkuszu ``workbook.active``: Rozliczenie pracownika powstaje dawną drogą openpyxl,
-    która pisze Wiersze danych w tym samym arkuszu."""
-
     template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
     write_template(template_path)
     if hidden:
@@ -1367,17 +1448,22 @@ def test_wzorzec_z_ukrytym_aktywnym_arkuszem_idzie_dawna_droga_i_wiersze_trafiaj
         ('<c r="A3"><v>46278.9999999999999999</v></c>', range(3, 6)),
         ('<c r="A6"><v>46288</v></c>', range(4, 7)),
         ('<c r="A2" t="d"><v>45000</v></c>', None),
+        ('<c r="A2"><v>4628x</v></c>', None),
+        ('<c r="A4"><!-- komentarz w wierszu okresu --><v>46280.5</v></c>', None),
     ],
-    ids=["zero-na-poczatku", "cyfry-zaokraglone-do-poczatku", "koniec-przedzialu", "data-typu-d-cyframi"],
+    ids=[
+        "zero-na-poczatku",
+        "cyfry-zaokraglone-do-poczatku",
+        "koniec-przedzialu",
+        "data-typu-d-cyframi",
+        "wartosc-spoza-liczby",
+        "komentarz-w-wierszu-okresu",
+    ],
 )
 def test_rejestr_zawezony_do_okresu_ma_wiersze_z_liczba_daty_z_przedzialu_w_kazdym_jej_zapisie(
     tmp_path: Path, cell: str, kept: range | None
 ) -> None:
-    """Kolumna daty z liczbami w zapisie openpyxl (``t="n"``) i Excela (bez typu), w wierszach 4–5 z przedziału
-    46279–46288: wiersz z liczbą z przedziału jest w zakresie okresu także wtedy, gdy liczba ma zero na początku, cyfry,
-    które ``float`` zaokrągla do początku przedziału, albo jest jego końcem. Komórka daty typu ``d``, także zapisana
-    cyframi daleko poza przedziałem, zostawia arkusz w całości, bez zakresu."""
-
+    low, high = 46279.0, 46288.0
     path = tmp_path / "Rejestr.xlsx"
     workbook = Workbook()
     orders = active_worksheet(workbook)
@@ -1386,11 +1472,67 @@ def test_rejestr_zawezony_do_okresu_ma_wiersze_z_liczba_daty_z_przedzialu_w_kazd
     for value in (45000.5, 46000.5, 46280.5, 46281.5, 47000.5):
         orders.append([value])
     workbook.save(path)
-    replace_cells(path, {cell[len('<c r="') : cell.index('"', len('<c r="'))]: cell})
+    reference = cell[len('<c r="') : cell.index('"', len('<c r="'))]
+    replace_cells(path, {reference: cell})
+    sheet = zip_part(path, "xl/worksheets/sheet1.xml")
+    typed = dict(re.findall(r'<c r="A(\d+)" t="n"><v>([^<]*)</v>', sheet))
+    text = re.findall(r"<v>([^<]*)</v>", cell)[0]
+    number = float(text) if re.fullmatch(r"\d+(\.\d+)?", text) else None
 
-    _, ranges = rows_dated_between(path.read_bytes(), {"ZLECENIA": 1}, 46279.0, 46288.0)
+    _, ranges = rows_dated_between(path.read_bytes(), {"ZLECENIA": 1}, low, high)
 
+    assert [row for row, value in typed.items() if low <= float(value) <= high] == [
+        row for row in ("4", "5") if row != reference[1:]
+    ]
+    in_period = number is not None and " t=" not in cell and "<!--" not in cell and low <= number <= high
+    assert in_period is (kept is not None)
     assert ranges == ({} if kept is None else {"ZLECENIA": kept})
+
+
+def test_plik_zbiorczy_zawezony_do_wierszy_z_danymi_nie_ma_wierszy_samych_pustych_komorek_a_k(tmp_path: Path) -> None:
+    path = excel_collective_file(tmp_path / "wzorce")
+    content = path.read_bytes()
+
+    with package_parts(rows_with_input(content, INPUT_COLUMNS[-1])) as parts:
+        narrowed = {int(row) for row in re.findall(rb'<row r="(\d+)"', parts["xl/worksheets/sheet1.xml"])}
+
+    whole = {int(row) for row in re.findall(r'<row r="(\d+)"', zip_part(path, "xl/worksheets/sheet1.xml"))}
+    without_input = set(range(31, 61))
+    assert without_input <= whole and not without_input & narrowed
+    assert {17, 18, 30, 100, 150} <= narrowed
+
+
+def test_drugi_odczyt_tego_samego_rejestru_nie_rozpakowuje_go_i_nie_dzieli_tekstow_od_nowa(tmp_path: Path) -> None:
+    path = write_register(tmp_path / "Rejestr.xlsx", [register_order(2, datetime(2026, 9, 8, 8, 0))])
+    like_excel(path)
+    content = path.read_bytes()
+
+    first = unpacked(content)
+    table = first[1]["xl/sharedStrings.xml"]
+
+    assert (unpacked(content) is first, shared_string_spans(table) is shared_string_spans(table)) == (True, True)
+
+
+@pytest.mark.parametrize("value", [b" 0", b"&#48;", b""], ids=["spacja", "encja", "pusty"])
+def test_rejestr_z_numerem_tekstu_wspolnego_spoza_cyfr_zawezony_do_okresu_ma_cala_tabele_tekstow(
+    tmp_path: Path, value: bytes
+) -> None:
+    path = write_register(tmp_path / "Rejestr.xlsx", [register_order(2, datetime(2026, 9, 8, 8, 0))])
+    like_excel(path)
+    with package_parts(path.read_bytes()) as parts:
+        table = parts["xl/sharedStrings.xml"]
+    rewrite_parts(
+        path,
+        lambda name, data: re.sub(rb'(<c r="B2"[^>]*t="s"[^>]*><v>)\d+', lambda found: found.group(1) + value, data, count=1)
+        if name == "xl/worksheets/sheet2.xml"
+        else data,
+    )
+    day = (datetime(2026, 9, 8) - WINDOWS_EPOCH) / timedelta(days=1)
+
+    narrowed, _ = rows_dated_between(path.read_bytes(), {"ZLECENIA": 3}, day, day + 1)
+
+    with package_parts(narrowed) as parts:
+        assert parts["xl/sharedStrings.xml"] == table
 
 
 def _rows(content: bytes) -> dict[int, tuple[object, ...]]:
@@ -1403,9 +1545,6 @@ def _rows(content: bytes) -> dict[int, tuple[object, ...]]:
 
 
 def test_rejestr_z_pusta_tabela_tekstow_wspolnych_zawezony_do_okresu_ma_wiersze_okresu_jak_caly(tmp_path: Path) -> None:
-    """Rejestr zapisany jak w Excelu bez żadnego tekstu, więc z tabelą tekstów wspólnych bez tekstów: zawężony do
-    10–12.09.2026 ma wiersze z tymi datami takie same jak cały Rejestr."""
-
     path = tmp_path / "Rejestr.xlsx"
     workbook = Workbook()
     orders = active_worksheet(workbook)
@@ -1420,14 +1559,13 @@ def test_rejestr_z_pusta_tabela_tekstow_wspolnych_zawezony_do_okresu_ma_wiersze_
     narrowed, ranges = rows_dated_between(content, {"ZLECENIA": 1}, day, day + 3)
 
     whole = _rows(content)
+    with package_parts(content) as parts:
+        assert b"<si" not in parts["xl/sharedStrings.xml"]
     assert ranges == {"ZLECENIA": range(10, 13)}
     assert _rows(narrowed) == {number: whole[number] for number in (1, 10, 11, 12)}
 
 
 def test_rejestr_z_wierszem_1_bez_komorek_zawezony_do_okresu_ma_wiersze_okresu_jak_caly(tmp_path: Path) -> None:
-    """Wiersz 1 arkusza bez żadnej komórki, tylko z wysokością, zapisany jako pusty element ``<row …/>``: zawężony do
-    10–12.09.2026 arkusz ma ten wiersz i wiersze z tymi datami, a nie wiersz 2, takie same jak cały Rejestr."""
-
     path = tmp_path / "Rejestr.xlsx"
     workbook = Workbook()
     orders = active_worksheet(workbook)
@@ -1447,15 +1585,13 @@ def test_rejestr_z_wierszem_1_bez_komorek_zawezony_do_okresu_ma_wiersze_okresu_j
     narrowed, ranges = rows_dated_between(content, {"ZLECENIA": 1}, day, day + 3)
 
     whole = _rows(content)
+    with package_parts(narrowed) as parts:
+        assert re.search(rb'<sheetData><row r="1"[^>]*/><row r="10"', parts["xl/worksheets/sheet1.xml"])
     assert ranges == {"ZLECENIA": range(10, 13)}
     assert _rows(narrowed) == {number: whole[number] for number in (10, 11, 12)}
 
 
 def test_rejestr_zawezony_do_okresu_niesie_w_tabeli_tekstow_wspolnych_tylko_teksty_swoich_wierszy(tmp_path: Path) -> None:
-    """Rejestr zapisany jak w Excelu: wiersze 2 i 4 to zlecenia z 2025 r., a wiersz 3 zlecenie z 8.09.2026. Po zawężeniu
-    do tego dnia tabela tekstów wspólnych nie ma tekstów wierszy 2 i 4, a wiersze 1 i 3 mają te same wartości co w
-    całym Rejestrze."""
-
     path = write_register(
         tmp_path / "Rejestr.xlsx",
         [
@@ -1478,10 +1614,33 @@ def test_rejestr_zawezony_do_okresu_niesie_w_tabeli_tekstow_wspolnych_tylko_teks
     assert _rows(narrowed) == {1: whole[1], 3: whole[3]}
 
 
-def test_rejestr_z_numerem_tekstu_wspolnego_tuz_za_tabela_zawezony_do_okresu_ma_cala_tabele_tekstow(tmp_path: Path) -> None:
-    """Komórka zlecenia z 8.09.2026 w arkuszu ``ZLECENIA`` sięga po tekst wspólny o numerze równym liczbie tekstów tabeli, czyli tuż za nią:
-    zawężenie do tego dnia nie podmienia tabeli tekstów wspólnych, więc openpyxl czyta ją taką, jak w całym Rejestrze."""
+def test_rejestr_z_tabela_tekstow_wspolnych_pod_inna_nazwa_zawezony_do_okresu_niesie_tylko_teksty_swoich_wierszy(
+    tmp_path: Path,
+) -> None:
+    path = write_register(
+        tmp_path / "Rejestr.xlsx",
+        [register_order(100, datetime(2025, 3, 4, 8, 0)), register_order(2, datetime(2026, 9, 8, 8, 0))],
+    )
+    like_excel(path)
+    with zipfile.ZipFile(path) as archive:
+        parts = {info.filename: archive.read(info) for info in archive.infolist()}
+    parts["xl/teksty.xml"] = parts.pop("xl/sharedStrings.xml")
+    for name in ("[Content_Types].xml", "xl/_rels/workbook.xml.rels"):
+        assert parts[name].count(b"sharedStrings.xml") == 1
+        parts[name] = parts[name].replace(b"sharedStrings.xml", b"teksty.xml")
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in parts.items():
+            archive.writestr(name, data)
+    day = (datetime(2026, 9, 8) - WINDOWS_EPOCH) / timedelta(days=1)
 
+    narrowed, _ = rows_dated_between(path.read_bytes(), {"ZLECENIA": 3}, day, day + 1)
+
+    with package_parts(narrowed) as narrowed_parts:
+        table = narrowed_parts["xl/teksty.xml"]
+    assert (b"UM-SYN-002" in table, b"UM-SYN-100" in table) == (True, False)
+
+
+def test_rejestr_z_numerem_tekstu_wspolnego_tuz_za_tabela_zawezony_do_okresu_ma_cala_tabele_tekstow(tmp_path: Path) -> None:
     path = write_register(tmp_path / "Rejestr.xlsx", [register_order(2, datetime(2026, 9, 8, 8, 0))])
     like_excel(path)
     with package_parts(path.read_bytes()) as parts:
@@ -1512,24 +1671,37 @@ STYLES_WITHOUT_BORDERS = (
 
 @pytest.mark.parametrize(("tag", "existing"), [(b"fonts", 1), (b"borders", 0)], ids=["lista-z-count-na-koncu", "brak-listy"])
 def test_style_bez_nowych_wpisow_zostaja_bajt_w_bajt(tag: bytes, existing: int) -> None:
-    """Zapis dopisuje do każdej listy stylów nowe wpisy, także pustą listę: bez nowych wpisów ``xl/styles.xml`` zostaje
-    taki, jaki był, również gdy listy nie ma albo jej ``count`` nie stoi pierwszy."""
-
+    fonts = re.search(rb"<fonts\b([^>]*)>", STYLES_WITHOUT_BORDERS)
+    assert fonts is not None and not fonts.group(1).lstrip().startswith(b"count") and b"<borders" not in STYLES_WITHOUT_BORDERS
     assert appended(STYLES_WITHOUT_BORDERS, tag, [], existing) == STYLES_WITHOUT_BORDERS
+
+
+def test_wpisy_stylow_trafiaja_takze_do_pustej_listy() -> None:
+    styles = STYLES_WITHOUT_BORDERS.replace(b"<cellXfs", b'<borders count="0"></borders><cellXfs')
+
+    assert b'<borders count="1"><border/></borders>' in appended(styles, b"borders", [b"<border/>"], 0)
 
 
 SHEET_ROWS_2_TO_4 = b'<worksheet><sheetData><row r="2"><c r="A2"/></row><row r="3"/><row r="4"><c r="A4"/></row></sheetData></worksheet>'
 
 
 def test_wiersze_od_dolu_koncza_sie_na_pierwszym_wierszu_arkusza() -> None:
-    """Wiersze nad numerem mniejszym niż pierwszy wiersz arkusza to wszystkie jego wiersze, a wiersza nad pierwszym
-    arkusz nie ma (``KeyError``)."""
-
     sheet = RowsFromBottom(SHEET_ROWS_2_TO_4)
 
     assert [row.number for row in sheet.above(1)] == [2, 3, 4]
     with pytest.raises(KeyError):
         sheet.row(1)
+
+
+@pytest.mark.parametrize("repeated", [b'<row r="2"/>', b'<row r="1"/>'], ids=["ten-sam-numer", "mniejszy-numer"])
+def test_dane_arkusza_z_wierszem_nie_wiekszym_od_poprzedniego_to_ksztalt_spoza_excela(repeated: bytes) -> None:
+    with pytest.raises(IrregularSheetData, match="kolejność wierszy"):
+        SheetData.of(SHEET_ROWS_2_TO_4.replace(b'<row r="3"/>', repeated))
+
+
+def test_dane_arkusza_z_drugim_sheetdata_to_ksztalt_spoza_excela() -> None:
+    with pytest.raises(IrregularSheetData):
+        SheetData.of(SHEET_ROWS_2_TO_4.replace(b"</worksheet>", b"<sheetData/></worksheet>"))
 
 
 def test_wiersze_od_dolu_z_tym_samym_numerem_dwa_razy_to_ksztalt_spoza_excela() -> None:
@@ -1540,9 +1712,6 @@ def test_wiersze_od_dolu_z_tym_samym_numerem_dwa_razy_to_ksztalt_spoza_excela() 
 
 
 def test_repr_przeczytanego_pliku_taty_to_sciezka_i_chwila_zmiany_bez_bajtow_pamieci_i_kopii(tmp_path: Path) -> None:
-    """Bajty pliku taty, pamięć reguły danych i Kopia wejścia mają wartości taty, więc ``repr`` przeczytanego pliku, który
-    trafia do tekstu błędu, pokazuje tylko ścieżkę i chwilę zmiany."""
-
     path = styled_template(tmp_path / "Skoroszyt.xlsx")
     read = DadFiles(forbidden=empty_memory()).for_run().read(path, despite_excel_lock=False)
     read.enter_copy()

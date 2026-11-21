@@ -128,6 +128,7 @@ Skoroszyt `ZLECENIA INTERMAX OD 08_11_2021.xlsx`, do którego tata wkleja zlecen
 Tata nazywa go też INTERMAX; obie nazwy znaczą to samo.
 Jest jedynym źródłem prawdy o zleceniach wszystkich okresów.
 Zawiera między zleceniami całkowicie puste wiersze.
+Ma dziesiątki tysięcy wierszy zleceń od 2021 r. i dziesiątki tysięcy tekstów wspólnych, a arkusz zleceń zajmuje dziesiątki MB; okres to kilkaset wierszy na jego dole.
 Procesy go czytają.
 Uporządkowanie INTERMAX zmienia w nim tylko Surowe zlecenia i widok po otwarciu, Wpisanie raportów tylko zlecenia uporządkowanych dni (`SKUTECZNE`, `CZYNNOŚCI ZREALIZOWANE`, Przeniesienie zlecenia i Zlecenie dopisane z raportu), a przywrócenie Kopii INTERMAX zastępuje go w całości tą kopią.
 Edytują go tata na swoim komputerze i Andrzej na swoim.
@@ -410,6 +411,8 @@ Uruchamiany osobno od Przebiegu rozliczeń.
 
 Skoroszyt `Rozliczenie {okres} - zbiorcze.xlsx`: zlecenia skuteczne wszystkich wykonawców dla jednego okresu rozliczeniowego.
 Jest wynikiem Przygotowania pliku zbiorczego i jedynym wejściem Przebiegu rozliczeń.
+Ma ok. 10 tys. sformatowanych wierszy, a Wiersze danych tylko w kilkuset.
+Wykonawców Plików zbiorczych wszystkich okresów (`collective_workers`) narzędzie czyta z XML samej kolumny `WYKONAWCA`, bez openpyxl: openpyxl otwiera jeden Plik zbiorczy w 1–2 s, a XML jednej kolumny w ok. 0,3 s.
 
 ## Wykonawca
 

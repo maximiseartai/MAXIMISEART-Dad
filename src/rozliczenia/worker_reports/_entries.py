@@ -22,7 +22,6 @@ EXAMPLE: Final = ("12345678 tak inst20m spawpg", "12345679 nie brak klienta")
 ``nie`` z powodem (ADR 0039)."""
 
 EXAMPLE_NUMBERS: Final = frozenset(OrderNumber(line.split()[0]) for line in EXAMPLE)
-"""Numery zleceń z przykładu w treści przypomnienia: w żadnym mailu nie są Wpisami (``entries``)."""
 
 _EDGES: Final = re.compile(r"^(?:[^\w]|_)+|(?:[^\w]|_)+$")
 _MARKS: Final[dict[str, Verdict | VerdictFault]] = {
@@ -64,7 +63,6 @@ szybką obsługę``), więc kończy go tylko wtedy, gdy do końca linii stoi po 
 _SIGNATURE: Final = 2
 """Najwięcej słów podpisu (imię i nazwisko) po pożegnaniu w środku linii."""
 _PREFIXES: Final = frozenset({"zlecenie", "zlec", "zl", "nr"})
-"""Słowa przed numerem następnego Wpisu (``Zlecenie``, ``Zlec.``, ``Zl.``, ``Nr``), które nie należą do opisu."""
 _END: Final = re.compile(
     r"^[ \t]*(?:--"
     r"|>.*"
@@ -100,11 +98,9 @@ class _Word:
     core: str
     """Słowo bez znaków niealfanumerycznych na brzegach."""
     first: bool
-    """Pierwsze słowo swojej linii."""
 
 
 _Stream = Sequence[_Word | None]
-"""Słowa treści w kolejności; ``None`` to przerwa: pusta linia albo stopka (``Wysłane z iPhone'a``)."""
 
 
 def entries(text: str, digits: int) -> tuple[ReportEntry, ...]:
@@ -141,9 +137,6 @@ def entries(text: str, digits: int) -> tuple[ReportEntry, ...]:
 
 
 def _counted(said: Sequence[ReportEntry]) -> tuple[ReportEntry, ...]:
-    """Wpisy numeru, które się liczą: przy przeciwnym zamiarze pierwszy Wpis każdego zamiaru, inaczej pierwszy Wpis z
-    ``tak``/``nie``, a bez nich pierwszy Wpis."""
-
     first: dict[Verdict, ReportEntry] = {}
     for entry in said:
         if entry.leaning is not None:
@@ -192,9 +185,6 @@ def _starts(stream: _Stream, index: int, digits: int) -> bool:
 
 
 def _cut(stream: _Stream, start: int) -> int:
-    """Koniec opisu przed Wpisem ``start``: bez słów z ``_PREFIXES`` tuż przed numerem i bez znacznika listy (sama
-    interpunkcja albo liczba) na początku linii."""
-
     end = start
     while (prefix := stream[end - 1]) is not None and _fold(prefix.core) in _PREFIXES:
         end -= 1
@@ -242,8 +232,6 @@ def _description(words: _Stream) -> str:
 
 
 def _closing(words: _Stream) -> bool:
-    """Czy pożegnanie z ``_CLOSINGS`` na początku ``words`` kończy opis."""
-
     first = words[0] is not None and words[0].first
     for closing, anywhere in _CLOSINGS:
         folded = tuple("" if word is None else _fold(word.core) for word in words[: len(closing)])
@@ -253,8 +241,6 @@ def _closing(words: _Stream) -> bool:
 
 
 def _line_rest(words: _Stream) -> int:
-    """Liczba słów ``words`` do końca linii."""
-
     count = 0
     for word in words:
         if word is None or word.first:

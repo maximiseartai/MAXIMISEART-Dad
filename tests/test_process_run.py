@@ -1,9 +1,3 @@
-"""Rdzeń Uruchomienia procesu (``run_process``) na sztucznym procesie w pamięci, z rozmówcą testowym.
-
-Sztuczny proces jest trzecim adapterem seamu ``Process``, obok Przebiegu
-rozliczeń i Przygotowania pliku zbiorczego.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -15,11 +9,11 @@ from typing import NoReturn
 import pytest
 
 from rozliczenia.decision import Declined
-from rozliczenia.domain import ProgressPhase
+from rozliczenia.domain import PhaseEnded, PhaseStarted, ProgressEvent, ProgressPhase
 from rozliczenia.message import Message, StopError
 from rozliczenia.phase_runner import PhaseRunner
 from rozliczenia.process_run import Counter, Finished, Outcome, Process, Stop, run_process
-from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.progress import PhaseState, ProgressProjection, ProgressSnapshot
 from rozliczenia.run_clock import RunClock
 from rozliczenia.run_context import RunContext
 from rozliczenia.tool_files import TOOL_ROOT
@@ -88,14 +82,14 @@ def test_core_closes_every_ending_with_a_message(tmp_path: Path, dry_run: bool) 
 
     not_shown = ENDINGS["plan_not_shown" if dry_run else "summary_not_shown"]
     assert {
-        name: (outcome.ending.kind, outcome.ending.message, outcome.view)
+        name: (outcome.ending.kind, outcome.ending.message, outcome.view, outcome.ending.trace is not None)
         for name, outcome in seen.items()
         if isinstance(outcome.ending, Stop)
     } == {
-        "stop": ("stop", own.message, None),
-        "unexpected": ("unexpected", ENDINGS["unexpected_failure"], None),
-        "after_engine": ("after_engine", not_shown, None),
-        "view": ("after_engine", not_shown, None),
+        "stop": ("stop", own.message, None, False),
+        "unexpected": ("unexpected", ENDINGS["unexpected_failure"], None, True),
+        "after_engine": ("after_engine", not_shown, None, True),
+        "view": ("after_engine", not_shown, None, True),
     }
     assert [
         (record["result"], record["completed"], record["counters"], record["stop"])
@@ -144,19 +138,20 @@ def test_rekord_metryk_ma_liczniki_w_kolejnosci_ich_definicji_w_procesie_takze_p
 def test_zatrzymanie_zapisuje_rekord_z_okresem_zerowymi_licznikami_i_czasami_etapow_ktore_sie_wykonaly(
     tmp_path: Path,
 ) -> None:
-    checking_ms = 50
+    clock = ManualClock()
 
     def stop_in_reading(_inputs: Inputs, context: RunContext) -> NoReturn:
         phases = PhaseRunner(context.observer, clock=context.clock.now)
-        phases.check(lambda: time.sleep(checking_ms / 1000))
+        phases.check(lambda: clock.advance(0.05))
 
         def read() -> NoReturn:
+            clock.advance(0.025)
             raise stop_error("Brak pliku.")
 
         phases.read(read)
         raise AssertionError("Odczyt danych miał zatrzymać proces.")
 
-    outcome = run_core(fake_process(execute=stop_in_reading), tmp_path / "metrics.jsonl")
+    outcome = run_core(fake_process(execute=stop_in_reading), tmp_path / "metrics.jsonl", clock=clock)
 
     assert isinstance(outcome.ending, Stop)
     assert outcome.ending.kind == "stop"
@@ -167,9 +162,7 @@ def test_zatrzymanie_zapisuje_rekord_z_okresem_zerowymi_licznikami_i_czasami_eta
         "BLAD_KRYTYCZNY",
         {"items": 0},
     )
-    durations = record["phase_durations_ms"]
-    assert durations["Sprawdzanie"] >= checking_ms
-    assert (durations["Planowanie"], durations["Zapisywanie"]) == (0, 0)
+    assert record["phase_durations_ms"] == {"Sprawdzanie": 50, "Odczyt danych": 25, "Planowanie": 0, "Zapisywanie": 0}
 
 
 def test_nieudany_zapis_metryk_to_tylko_ostrzezenie_bez_zmiany_wyniku_procesu(tmp_path: Path) -> None:
@@ -229,10 +222,34 @@ def test_decyzja_taty_w_trakcie_etapu_nie_liczy_sie_do_czasu_etapu_ani_czasu_uru
     assert outcome.total_duration_ms == 750
 
 
+def test_przerwany_etap_ma_czas_do_przerwania() -> None:
+    clock = ManualClock()
+    runner = PhaseRunner(None, clock=clock)
+    runner.check(lambda: clock.advance(0.05))
+
+    def read() -> None:
+        clock.advance(0.025)
+        raise RuntimeError("syntetyczny błąd")
+
+    with pytest.raises(RuntimeError):
+        runner.read(read)
+
+    assert dict(runner.durations_ms()) == {ProgressPhase.CHECKING: 50, ProgressPhase.READING: 25}
+
+
+def test_czas_uruchomienia_liczy_sie_od_utworzenia_sekwencera() -> None:
+    clock = ManualClock()
+    events: list[ProgressEvent] = []
+    runner = PhaseRunner(events.append, clock=clock)
+    clock.advance(0.1)
+
+    runner.check(lambda: clock.advance(0.05))
+
+    assert [(type(event), event.elapsed_ms) for event in events][:2] == [(PhaseStarted, 100), (PhaseEnded, 150)]
+
+
 @dataclass
 class TataSeeingSteps(Tata):
-    """Tata, który zapisuje ``Czas uruchomienia`` z postępu przy każdym nowym kroku Zapisywania."""
-
     reached_ms: list[int] = field(default_factory=list)
     _last: object = None
 
@@ -314,10 +331,55 @@ def stop_in_saving(_inputs: Inputs, context: RunContext) -> NoReturn:
 
 
 class BlindTata(Tata):
-    """Rozmówca, którego podgląd postępu pada od startu, więc rdzeń go odłącza."""
-
     def show_progress(self, snapshot: ProgressSnapshot) -> None:
         raise RuntimeError("podgląd nie działa")
+
+
+@dataclass
+class TataWatching(Tata):
+    snapshots: list[ProgressSnapshot] = field(default_factory=list)
+
+    def show_progress(self, snapshot: ProgressSnapshot) -> None:
+        self.snapshots.append(snapshot)
+
+
+def test_podglad_postepu_dostaje_pusty_snapshot_na_starcie_i_po_jednym_po_kazdym_zdarzeniu_przebiegu(
+    tmp_path: Path,
+) -> None:
+    tata = TataWatching()
+
+    outcome = run_core(fake_process(), tmp_path / "metrics.jsonl", tata=tata)
+
+    started_and_ended = 2 * len(ProgressPhase)
+    issue_count_and_plan_ready = 2
+    assert len(tata.snapshots) == 1 + started_and_ended + issue_count_and_plan_ready
+    assert tata.snapshots[0] == ProgressProjection().snapshot
+    assert tata.snapshots[-1] == outcome.progress
+
+
+@dataclass
+class TataBlindOnce(Tata):
+    shown: int = 0
+
+    def show_progress(self, snapshot: ProgressSnapshot) -> None:
+        self.shown += 1
+        if self.shown == 1:
+            raise RuntimeError("podgląd nie działa")
+
+
+def test_podglad_postepu_ktory_raz_padl_jest_odlaczony_do_konca_uruchomienia_bez_zmiany_wyniku(tmp_path: Path) -> None:
+    tata = TataBlindOnce()
+
+    outcome = run_core(fake_process(), tmp_path / "metrics.jsonl", tata=tata)
+
+    assert tata.shown == 1
+    assert (outcome.result, outcome.technical_notes) == (
+        "OK",
+        ("Podgląd postępu przestał się aktualizować; wynik nie zależy od tego.",),
+    )
+    assert outcome.progress.phase_states == {
+        phase: PhaseState.RUNNING if phase is ProgressPhase.CHECKING else PhaseState.PENDING for phase in ProgressPhase
+    }
 
 
 @pytest.mark.parametrize(

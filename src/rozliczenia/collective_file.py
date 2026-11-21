@@ -60,7 +60,7 @@ def read_data_rows(path: Path, files: DadFiles, rules: QuantityRules) -> Collect
 class NumberedOrders:
     rows: tuple[NumberedOrder, ...]
     price_list: Mapping[str, str]
-    """Litera kolumny N:AP i ``AS`` → nazwa pozycji cennika z wiersza 17."""
+    """Litera kolumny N:AP → nazwa pozycji cennika z wiersza 17; klucz ``AS`` ma zawsze ``""``."""
 
 
 def read_numbered_orders(path: Path, files: DadFiles) -> NumberedOrders | MissingHeaders:

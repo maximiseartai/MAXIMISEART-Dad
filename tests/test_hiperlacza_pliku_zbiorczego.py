@@ -23,13 +23,6 @@ def _relationship(rid: str, target: str, *, kind: str = _HYPERLINK, external: bo
 
 
 def with_hyperlinks(path: Path, links: str | None, relationships: str | None, *, root: str = "") -> None:
-    """Arkusz Pliku zbiorczego z blokiem ``<hyperlinks>`` przed ``pageMargins`` i relacjami arkusza.
-
-    ``links`` to elementy ``<hyperlink>`` (``None``: bez bloku), ``relationships`` to wpisy części relacji
-    arkusza (``None``: bez tej części), ``root`` to deklaracje przestrzeni nazw dopisane do ``<worksheet>``;
-    bez niej przedrostek ``r`` jest deklarowany na bloku, jak zapisuje openpyxl.
-    """
-
     with zipfile.ZipFile(path) as source:
         parts = {info.filename: source.read(info) for info in source.infolist()}
     sheet = parts[SHEET]
