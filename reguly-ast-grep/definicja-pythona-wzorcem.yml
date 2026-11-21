@@ -15,7 +15,7 @@ metadata:
     - 2524/W1/r1
 rule:
   kind: string
-  regex: '(^|[^\w])(def|class)( |\\s)[+*]'
+  regex: '(^|[^\w])(def|class)\)?( |\\s)'
   inside:
     kind: call
     stopBy: end

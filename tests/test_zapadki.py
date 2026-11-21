@@ -2443,7 +2443,12 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(rf"^(?:(?:async +)?def +|class +)?{{NAZWA}}\\b", re.MULTILINE)\n', [3]),
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.findall(r"^\\s*def\\s+(\\w+)", "")\n', [3]),
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.search(r"class\\s*(\\w+)", "")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"^(?:async\\s+)?(?:def|class)\\s+(\\w+)", re.MULTILINE)\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.findall(r"^(def|class)\\s+(\\w+)", "")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"^def (\\w+)", re.MULTILINE)\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.search(rf"^class {{NAZWA}}\\b", "")\n', [3]),
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"default +(\\w+)")\n', []),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"subclass(\\w+)")\n', []),
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"def")\n', []),
     ("definicja-pythona-wzorcem", 'import ast\n\nNAZWY = {wezel.name for wezel in ast.parse("").body if isinstance(wezel, ast.FunctionDef)}\n', []),
 ]
