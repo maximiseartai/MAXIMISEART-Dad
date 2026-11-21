@@ -73,14 +73,10 @@ _ASSET_NAME: Final = re.compile(rf"{ASSET_PREFIX}(?P<sha256>[0-9a-f]{{64}}){re.e
 
 
 def asset_name(sha256: str) -> str:
-    """Nazwa pliku Wzorca o skrócie ``sha256`` w Archiwum Logów okresu."""
-
     return f"{ASSET_PREFIX}{sha256}{ASSET_SUFFIX}"
 
 
 class Refusal(Enum):
-    """Powód, dla którego Wzorzec nie idzie do Archiwum; ``value`` to jego opis w uwadze, bez wartości."""
-
     ADDRESS = f"wartość w kolumnie {ForbiddenColumn.ADDRESS.value}"
     ORANGE = f"wartość w kolumnie {ForbiddenColumn.ORANGE.value}"
     FORBIDDEN = "tekst albo liczba z zakazaną wartością z plików, które przeczytała ta praca Centrum"
@@ -95,21 +91,15 @@ _IN_COLUMN: Final = {ForbiddenColumn.ADDRESS: Refusal.ADDRESS, ForbiddenColumn.O
 
 @dataclass(frozen=True)
 class TemplateRefused:
-    """Wzorzec ``file`` (nazwa w ``config``), którego sprawdzenie nie przepuściło do Archiwum, z powodem."""
-
     file: str
     reason: Refusal
 
     @property
     def note(self) -> str:
-        """Uwaga techniczna w Logach (``RunLog.input_copy_notes``): nazwa Wzorca i powód, bez wartości."""
-
         return f"Reguła danych: {self.file} nie idzie do Archiwum Logów okresu: {self.reason.value}."
 
 
 _CHECKED: Final = object()
-"""Dowód, że Wzorzec przeszedł sprawdzenie (``TemplateChecks.checked``) albo wrócił z pliku kolejki (``from_queue``); poza
-tym modułem ruff (``TID251``) odrzuca jego import i atrybut modułu."""
 
 _NO_SUBCLASSES: Final = "Wzorzec do Archiwum nie ma podklas: daje go tylko TemplateChecks.checked."
 
@@ -177,7 +167,6 @@ _TEMPLATE_FILES: Final = frozenset(template.name for template in (INTERNAL_TEMPL
 """Nazwy Wzorców w ``config`` (``tool_files``), jedyne nazwy Wzorca w uwadze i w etykiecie pliku w Archiwum."""
 
 _COLLECTIVE_LAYOUT: Final = frozenset({COLLECTIVE_TEMPLATE.name, WORKER_TEMPLATE.name})
-"""Wzorce z układem Pliku zbiorczego: kolumny reguły danych stoją w nich na stałym miejscu (``FORBIDDEN_POSITIONS``)."""
 
 
 @dataclass(frozen=True)
@@ -205,8 +194,6 @@ class TemplateChecks:
         self._lock = threading.Lock()
 
     def checked(self, file: str, content: bytes) -> ArchivedTemplate | TemplateRefused:
-        """Wzorzec ``file`` (nazwa w ``config``, z niej układ) o bajtach ``content`` po tabeli postaci modułu."""
-
         if file not in _TEMPLATE_FILES:
             raise ValueError(f"{file} nie jest Wzorcem z config")
         sha256 = hashlib.sha256(content).hexdigest()
@@ -442,8 +429,6 @@ class _Columns:
         return cls(positions if collective else {})
 
     def refusal(self, cell: Element, shared: tuple[str, ...]) -> Refusal | None:
-        """Odmowa za wartość komórki ``cell`` pod nagłówkiem zakazanej kolumny; nagłówek takiej kolumny zapamiętuje."""
-
         reference = _CELL_REFERENCE.fullmatch(cell.get("r", ""))
         if reference is None:
             raise ValueError("komórka bez adresu")

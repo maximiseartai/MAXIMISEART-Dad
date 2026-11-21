@@ -45,8 +45,8 @@ odczyta, wstrzymanie zdejmuje. Lista pokazuje wtedy to, co pokazuje GitHub. Tę 
 numerze na liście (``known_issue``): kolejka uznaje, że issue zniknęło, tylko gdy zapis z jego etykietą nie byłby
 wstrzymany, bo inaczej lista mogła jeszcze nie pokazać świeżego issue. Plik, którego treść nie jest UTF-8, to
 treść w innej postaci (brak zapisów), którą następny zapis zastąpi. Plik, którego nie da się odczytać ani zapisać na
-stałe, wstrzymuje każdy zapis do Skrzynki: kolejka czeka jak bez sieci i ponawia co budzenie, a dziennik Centrum dostaje
-raz na pracę Centrum linię z typem błędu (``NotesFile.unavailable``), jak przy pliku kolejki, którego nie da się odczytać.
+stałe, wstrzymuje każdy zapis, którego skutek widać tylko na liście: kolejka czeka jak bez sieci i ponawia co
+budzenie, a dziennik Centrum dostaje raz na pracę Centrum linię z typem błędu (``NotesFile.unavailable``), jak przy pliku kolejki, którego nie da się odczytać.
 """
 
 from __future__ import annotations
@@ -122,9 +122,6 @@ def _unnoticed(failure: OSError) -> None:
 
 @dataclass(frozen=True)
 class NotesFile:
-    """Plik zapisów ``KeyedBox`` (opis modułu) i jego zamiana (u taty ``atomic_file.replace_atomically``).
-    ``unavailable`` dostaje pierwszy błąd odczytu albo zapisu pliku w tej pracy Centrum (u taty dziennik Centrum)."""
-
     path: Path
     replace: Callable[[Path, str], None]
     unavailable: Callable[[OSError], None] = _unnoticed
@@ -171,8 +168,6 @@ class _Notes:
 
 
 def _parsed(text: str) -> _Notes:
-    """Zapisy z treści pliku ``opening``; treść w innej postaci to brak zapisów."""
-
     try:
         found = json.loads(text)
         return _Notes(
@@ -296,8 +291,6 @@ class KeyedBox:
         )
 
     def open_issue(self, label: Label, title: str, body: str) -> SendOutcome | NoKey:
-        """Nowe issue; ``Unreachable`` bez zapytania, gdy zakładanie z etykietą ``label`` jest wstrzymane (opis modułu)."""
-
         key = self._usable()
         if not isinstance(key, str):
             return key
@@ -323,8 +316,7 @@ class KeyedBox:
         odpowiedzi tego rodzaju sprzed niego, zapisane w pliku ``opening``; ``None``: zapis wstrzymany albo pliku nie da
         się odczytać lub zapisać.
 
-        Identyfikator, a nie chwila, mówi, czyj jest zapis: ``time.monotonic`` na Windows zmienia się co ok. 15 ms, więc
-        dwa zapisy mogą mieć tę samą chwilę.
+        Identyfikator, a nie chwila, mówi, czyj jest zapis: dwa zapisy mogą mieć tę samą chwilę.
         """
 
         asked_at = self._clock()
@@ -441,8 +433,6 @@ class KeyedBox:
         return True
 
     def comment(self, number: int, body: str) -> CommentOutcome | NoKey:
-        """Komentarz; jego odmowa (404 usuniętego issue) nie jest werdyktem o kluczu, przyjęcie jest."""
-
         return self._about_issue(lambda key: self._box.comment(number, body, key=key))
 
     def comments(self, number: int) -> CommentsOutcome | NoKey:
@@ -494,8 +484,6 @@ class KeyedBox:
         )
 
     def upload(self, archive_id: int, name: str, label: str, data: bytes) -> UploadOutcome | NoKey:
-        """Plik w Archiwum; ``Unreachable`` bez zapytania, gdy zapis plików Archiwum jest wstrzymany (opis modułu)."""
-
         return self._listed_write(
             _file_kind(name),
             lambda key: self._box.upload(archive_id, name, label, data, key=key),
@@ -525,9 +513,6 @@ class KeyedBox:
         ask: Callable[[str], _Outcome],
         effect: Callable[[_Outcome], Callable[[_Notes, float], None] | None],
     ) -> _Outcome | NoKey | Refused | Unreachable:
-        """Zapis do Archiwum, którego skutek (``effect`` odpowiedzi) widać tylko na liście ``kind``: wstrzymany jak
-        zakładanie issue (opis modułu), a jego odmowa nie jest werdyktem o kluczu (``_about_issue``)."""
-
         key = self._usable()
         if not isinstance(key, str):
             return key
@@ -542,8 +527,6 @@ class KeyedBox:
         return outcome
 
     def _about_issue(self, ask: Callable[[str], _Outcome]) -> _Outcome | NoKey | Refused:
-        """Pytanie o jedno issue albo o Archiwum okresu: odpowiedź poza odmową jest werdyktem o kluczu."""
-
         key = self._usable()
         if not isinstance(key, str):
             return key
@@ -586,9 +569,6 @@ class KeyedBox:
     def _labelled(
         self, label: Label, *, include_closed: bool
     ) -> tuple[tuple[ListedIssue, ...], tuple[Issue, ...], bool] | Refused | Unreachable | NoKey:
-        """Lista Skrzynki, issue ``labelled_issues`` spoza niej i czy ta lista pokazuje każdy zapis etykiety ``label``:
-        zapis nie byłby teraz wstrzymany."""
-
         key = self._usable()
         if not isinstance(key, str):
             return key
@@ -673,8 +653,6 @@ class KeyedBox:
         return outcome
 
     def _usable(self) -> str | NoKey | Refused:
-        """Klucz do zapytania; ``Refused`` bez sieci, gdy Skrzynka odrzuciła ten klucz w ``REFUSED_KEPT_S``."""
-
         key = self._key()
         if key is None:
             return NoKey()
@@ -690,8 +668,6 @@ class KeyedBox:
         return key
 
     def _observe(self, key: str, asked_at: float, outcome: object) -> None:
-        """Werdykt z odpowiedzi na pytanie zadane w ``asked_at``; pytanie starsze niż obecny werdykt nic nie zmienia."""
-
         digest = _digest(key)
         with self._lock:
             if isinstance(outcome, Unreachable):
@@ -729,8 +705,6 @@ def _file_kind(name: str) -> str:
 
 
 def _list_of(kind: str) -> str:
-    """Lista, która pokazuje zapis rodzaju ``kind``: plik Archiwum na liście plików, inny zapis na swojej."""
-
     return _FILES_LIST if kind.startswith(_FILE_PREFIX) else kind
 
 
