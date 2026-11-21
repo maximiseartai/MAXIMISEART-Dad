@@ -67,6 +67,7 @@ from rozliczenia.centrum.report_entering_logs import (
     window_mails,
 )
 from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.scope import Scope
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, empty_memory
 from rozliczenia.domain import RunMode
@@ -96,6 +97,7 @@ from rozliczenia.worker_reports import Verdict as Intent
 from atrapy.skrzynka import ArchivedFile, BoxArchive, BoxIssue
 from atrapy.workbooks import excel_lock
 from tests.fixtures.centrum import (
+    ANDRZEJ_PREFIX_SCOPE,
     TOOL_COMMIT,
     CentrumClient,
     FakeReportBox,
@@ -3812,6 +3814,92 @@ def test_odnosnik_z_komentarza_logow_pobiera_plik_z_archiwum_przez_gh_i_odtwarza
         ["release", "download", tag, "--repo", REPOSITORY, "--pattern", name],
         ["release", "download", tag, "--repo", REPOSITORY, "--pattern", _template_asset(produced)],
     ]
+
+
+def test_odnosnik_z_komentarza_logow_stanowiska_andrzeja_pobiera_plik_z_jego_archiwum_i_odtwarza_go(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    centrum = settling_centrum(tmp_path, surroundings=Surroundings(scope=ANDRZEJ_PREFIX_SCOPE))
+    box(centrum).background = frozenset()
+    write_report_key(centrum.tool)
+    assert run_to_end(centrum, dry_run=True)["result"]["result"] == "OK"
+    assert box(centrum).wait_until(lambda fake: any(issue.comments for issue in fake.issues_with(LABEL)))
+    archive = tmp_path / "archiwum"
+    archive.mkdir()
+    _archive_file(centrum, archive)
+    [thread] = box(centrum).issues_with(LABEL)
+    link = LINK.fullmatch(thread.comments[0].rstrip("\n").splitlines()[-1])
+    assert link is not None, thread.comments
+    tag = f"andrzej-logi-{PERIOD}"
+
+    with _fake_gh(tmp_path / "gh", archive) as calls:
+        code, lines = _replayed(
+            capsys,
+            f"https://github.com/{link['repo']}/releases/download/{link['tag']}/{link['file']}",
+            "--na-tym-drzewie",
+            "--konfiguracja",
+            tmp_path / "config",
+        )
+
+    assert (thread.title, link["tag"], code, lines[0]) == (f"ANDRZEJ Logi Uruchomienia {PERIOD}", tag, 0, "ODTWORZENIE ZGODNE"), lines
+    assert {json.loads(line)[2] for line in calls.read_text(encoding="utf-8").splitlines()} == {tag}
+
+
+STANOWISKA: Final[dict[str, Scope | None]] = {"tata": None, "andrzej": ANDRZEJ_PREFIX_SCOPE}
+KONTROLA: Final = "kontrola-ilosci"
+
+
+def _centrum_stanowiska(tmp_path: Path, stanowisko: str, fake: FakeReportBox) -> SettlingCentrum:
+    centrum = settling_centrum(tmp_path / stanowisko, surroundings=Surroundings(report_box=fake, scope=STANOWISKA[stanowisko]))
+    write_report_key(centrum.tool)
+    return centrum
+
+
+def _archiwum_odnosnika(issue: BoxIssue) -> str:
+    [comment] = issue.comments
+    link = LINK.fullmatch(comment.rstrip("\n").splitlines()[-1])
+    assert link is not None, comment
+    return link["tag"]
+
+
+def _archiwum_naglowka(issue: BoxIssue) -> str:
+    found = re.search(r"\(Release `(?P<tag>[^`]+)`\)", issue.body)
+    assert found is not None, issue.body
+    return found["tag"]
+
+
+def _doszly_po(uruchomienia: int) -> Callable[[FakeReportBox], bool]:
+    def doszly(fake: FakeReportBox) -> bool:
+        return (
+            sum(len(issue.comments) for issue in fake.issues_with(LABEL)),
+            sum(len(fake.archived(archive.tag)) for archive in fake.archives),
+            sum(1 + len(issue.comments) for issue in fake.issues_with(KONTROLA)),
+        ) == (uruchomienia, uruchomienia, uruchomienia)
+
+    return doszly
+
+
+@pytest.mark.parametrize("kolejnosc", [("tata", "andrzej"), ("andrzej", "tata")], ids=["najpierw-tata", "najpierw-andrzej"])
+def test_logi_i_kontrola_ilosci_obu_stanowisk_z_jednego_okresu_ida_do_osobnych_issue_i_archiwow(
+    tmp_path: Path, kolejnosc: tuple[str, str]
+) -> None:
+    fake = FakeReportBox()
+    for numer, stanowisko in enumerate(kolejnosc, start=1):
+        assert run_to_end(_centrum_stanowiska(tmp_path, stanowisko, fake), dry_run=False)["result"]["result"] == "OK"
+        assert fake.wait_until(_doszly_po(numer)), (fake.issues, fake.archives)
+
+    logs = {issue.title: (_archiwum_naglowka(issue), _archiwum_odnosnika(issue)) for issue in fake.issues_with(LABEL)}
+    archives = {archive.tag: (archive.title, len(fake.archived(archive.tag))) for archive in fake.archives}
+    checks = sorted(issue.title.split(":")[0] for issue in fake.issues_with(KONTROLA))
+    assert logs == {
+        f"Logi Uruchomienia {PERIOD}": (ARCHIVE, ARCHIVE),
+        f"ANDRZEJ Logi Uruchomienia {PERIOD}": (f"andrzej-{ARCHIVE}", f"andrzej-{ARCHIVE}"),
+    }
+    assert archives == {
+        ARCHIVE: (f"Logi Uruchomień {PERIOD}", 1),
+        f"andrzej-{ARCHIVE}": (f"ANDRZEJ Logi Uruchomień {PERIOD}", 1),
+    }
+    assert checks == [f"ANDRZEJ Kontrola ilości {PERIOD}", f"Kontrola ilości {PERIOD}"]
 
 
 def _template_asset(produced: Produced) -> str:

@@ -1,47 +1,3 @@
-"""Schemat Logów Uruchomienia na komputerze taty (ADR 0015): jeden plik JSON na Uruchomienie procesu z Centrum.
-
-Logi powstają z tych samych faktów co karta Uruchomienia (``logs_of_run.logs_of``): wynik, Komunikaty z kodami,
-podsumowanie, etapy, ślad wywołań Zatrzymania, a z ostatniego snapshotu projekcji postępu Przetworzenia Szablonów
-pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z Diagnozy z rozmiarem i atrybutem OneDrive,
-a Wzorce także z SHA-256 bajtów, pod którym leżą w Archiwum Logów okresu (``template_archive``), a przy pliku Folderów bez
-odczytu zamiast plików nazwa tego pliku. Z Ustawień ze startu Logi mają Reguły ilości, Legendę czynności i Listę
-Wykonawców bez adresów (``LoggedWorker``), każde tylko w Logach procesu, który nim liczy (``settings_at_start``).
-Dodatki Logów procesu (``ProcessLogs``) daje jego wpis w katalogu procesów: z podsumowania silnika Przebiegu rozliczeń
-liczba wyczyszczonych Ilości tylko dla INEA, której karta nie pokazuje (ADR 0018), a z podsumowania Uporządkowania
-INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy, oraz
-liczby Historii adresu (``LoggedHistory``) bez adresów, numerów zleceń i treści wierszy Bazy zleceń, a z
-Wpisania raportów Wpisy, problemy i zmiany komórek bez adresów, tematów i treści maili (``report_entering_logs``, ADR
-0028). Z podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``) z działaniami okna efenix i odczytem
-strony po każdym (``LoggedStep``), bez numeru zlecenia i bez danych adresowych z pliku i z efenix. Zatrzymanie okna
-efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``: przyczynę techniczną z
-zamkniętej listy, wiersz i miejsce zlecenia w Uruchomieniu oraz jego działania aż do tego, które się nie udało; a każde
-Zatrzymanie z przyczyną w wyjątku, także dla taty, ma ślad wywołań z łańcuchem przyczyn, więc Zatrzymanie przy starcie
-okna efenix nazywa drogę startu, która zawiodła, i typ jej wyjątku. Wiersze danych niesie tylko Kopia wejścia
-(``input_copy``): każdy plik taty, który Uruchomienie przeczytało, z odciskiem i przeczytanymi wierszami bez kolumn
-``ADRES`` i numeru Orange (w Uporządkowaniu INTERMAX wklejone wiersze). Poza nią komórkę cytuje tylko Komunikat
-(``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Plik i wysyłka biorą tylko Logi po strażniku reguły
-danych (``run_logs_guard``, ADR 0025). Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
-
-Schemat 2 daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
-Przetworzenie Szablonu pracownika też, a działanie okna efenix chwilę rozpoczęcia, więc widać przerwy i czekanie, których
-czasy trwania nie liczą. Dochodzi dziennik działań taty w Centrum (``dad_actions``) od Logów poprzedniego Uruchomienia do
-końca tego, bez treści zapytań, więc bez treści Uwagi taty. Plik schematu 1 nie ma godzin ani dziennika, a te pola są
-w nim ``None``.
-
-Schemat 3 zapisuje tryb Uruchomienia, także przy starcie Uruchomienia w dzienniku działań taty, wartością ``RunMode``
-(``RUN``, ``DRY-RUN``) jak rekord metryk, zamiast słowa „zapis”/„podgląd”, a fakty startu (``StartFacts``) stoją w
-pliku przed resztą pól. Karta z Logów, Historia, odtworzenie i Uwaga taty czytają każdy schemat: słowo trybu z pliku
-schematu 1–2 to ten sam tryb (``StoredRunMode``).
-
-Plik leży w katalogu Logów obok dziennika Centrum (``logs_disk``), poza Gitem i OneDrive, bez rotacji. Urwana Wycena w
-efenix ma Logi z dziennika Wyceny (``RunLog.interrupted``): sposób zakończenia ``interrupted``, bez wyniku, czasu,
-etapów i Komunikatów, ze śladem zleceń skończonych przed zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku
-(``LoggedInterruption``); ich koniec to ostatni wpis dziennika, bo chwili zgaśnięcia nikt nie zapisał.
-
-Moduł zależy tylko od kontraktu i typów silnika, które Logi niosą, a nie od gospodarza Uruchomień ani Diagnozy: Logi z
-nich składa ``logs_of_run`` (``tests/test_granice_importow.py``).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -95,8 +51,6 @@ RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 SCHEMA_VERSION: Final = 3
 
 LoggedEnding = Literal["finished", StopEnding, "interrupted"]
-"""Sposób zakończenia w Logach: jak na karcie (``runs.Ending``) albo ``interrupted``, Urwane Uruchomienie, którego Logi
-zamknął start Centrum z dziennika Wyceny w efenix."""
 
 
 class _Record(BaseModel):
@@ -104,17 +58,12 @@ class _Record(BaseModel):
 
 
 class StartFacts(_Record):
-    """Bezpieczne fakty startu jednego Uruchomienia, jedyny ich kształt: nagłówek Logów (``RunLog``), plik ostatniego
-    startu i pierwsza linia dziennika Wyceny w efenix (``logs_disk``) to te pola z polami swojego pliku."""
-
     run_id: str
     process: common_contract.ProcessKey
     mode: StoredRunMode
     period: str
     started_at: datetime
     pricing: runs_contract.Pricing | None = None
-    """Tryb Wyceny w efenix (ADR 0027). ``None``: inne procesy i Logi sprzed trybów, w których Wycena biegła bez
-    Przekazania."""
 
     @classmethod
     def of_run(cls, info: runs_contract.RunInfo, started_at: datetime) -> StartFacts:
@@ -129,21 +78,13 @@ class StartFacts(_Record):
 
     @property
     def start(self) -> StartFacts:
-        """Same fakty startu, bez pól pliku, który je niesie; z nich ``logs_disk.name_of`` daje nazwę pliku Logów."""
-
         return StartFacts.model_validate({name: getattr(self, name) for name in StartFacts.model_fields})
 
 
 LoggedQuantity = int | str
-"""Ilość pozycji przy zleceniu Wyceny w efenix; tekst to maska strażnika (``[numer Orange]``) zamiast liczby."""
 
 
 class LoggedMessage(_Record):
-    """Komunikat karty w trzech częściach z kodem; ``stop`` to Zatrzymanie, ``warning`` ostrzeżenie wyniku.
-    ``setting``: sekcja Ustawień Centrum z linkiem na karcie; bez niej pola nie ma w pliku, jak w Logach sprzed niej.
-    ``at_start``: ostrzeżenie startu (``Start.warnings``), fakt startu, który odtworzenie bierze z Logów zamiast liczyć
-    go z Ustawień, których Logi nie mają; bez niego pola nie ma w pliku."""
-
     kind: Literal["stop", "warning"]
     code: str
     what: str
@@ -165,23 +106,13 @@ class LoggedMessage(_Record):
         )
 
     def message(self) -> Message:
-        """Komunikat z Logów z tym samym kodem, treścią i sekcją Ustawień; pliku taty Logi nie mają."""
-
         return Message(code=self.code, what=self.what, where=self.where, action=self.action, setting=self.setting)
 
     def shown(self) -> common_contract.Message:
-        """Komunikat karty odtworzonej z Logów, z tym samym linkiem do Ustawień co na karcie na żywo."""
-
         return common_contract.Message(what=self.what, where=self.where, action=self.action, setting=self.setting)
 
 
 class LoggedPhase(_Record):
-    """Etap Uruchomienia jak na karcie (stan i czas bez czekania na tatę) z chwilami rozpoczęcia i końca (UTC).
-
-    ``started_at`` ``None``: etap się nie zaczął; ``ended_at`` ``None``: nie skończył się (Zatrzymanie w innym etapie,
-    odłączony podgląd postępu). Oba ``None`` także w plikach schematu 1.
-    """
-
     phase: runs_contract.PhaseName
     state: Literal["pending", "running", "completed", "failed"]
     duration_ms: int
@@ -208,14 +139,10 @@ class LoggedPhase(_Record):
 
     @property
     def progress(self) -> runs_contract.PhaseProgress:
-        """Etap tak, jak go pokazuje karta Uruchomienia."""
-
         return runs_contract.PhaseProgress(phase=self.phase, state=self.state, duration_ms=self.duration_ms)
 
 
 class LoggedTemplate(_Record):
-    """Przetworzenie Szablonu pracownika; chwile rozpoczęcia i końca w UTC, ``None`` w plikach schematu 1."""
-
     wykonawca: str
     outcome: WorkerStatus | Literal["failed"]
     rows: int
@@ -225,15 +152,6 @@ class LoggedTemplate(_Record):
 
 
 class LoggedFile(_Record):
-    """Plik taty procesu: sama nazwa, rozmiar, atrybut OneDrive „tylko online” i przy Wzorcu SHA-256 jego bajtów.
-
-    ``size`` ``None``: pliku nie ma albo nie da się go odczytać. ``online_only`` ``None``: poza Windows albo bez pliku.
-    ``sha256``: Wzorzec procesu z ``config`` na dysku narzędzia przy końcu Uruchomienia, pod którego nazwą
-    (``template_archive.asset_name``) leży w Archiwum Logów okresu, gdy przeszedł sprawdzenie reguły danych; ``None``:
-    plik spoza Wzorców (plików na OneDrive narzędzie nie haszuje, bo odczyt pliku „tylko online” go pobiera), Wzorzec,
-    którego nie dało się przeczytać, i Logi sprzed tego pola.
-    """
-
     name: str
     size: int | None
     online_only: bool | None
@@ -241,9 +159,6 @@ class LoggedFile(_Record):
 
 
 class LoggedWorker(_Record):
-    """Wykonawca z Listy Wykonawców ze startu Uruchomienia bez adresów Raportów wykonawcy: loginy z kolumny
-    ``WYKONAWCA``, nazwa w Rozliczeniu pracownika i czy jest aktywny (``worker_list.Worker``)."""
-
     logins: list[str]
     name: str
     active: bool
@@ -254,17 +169,10 @@ class LoggedWorker(_Record):
 
     @staticmethod
     def worker_list(logged: Sequence[LoggedWorker]) -> WorkerList | WorkerListProblem:
-        """Lista Wykonawców z Logów regułami ``WorkerList.of``, bez adresów; problem, gdy maska strażnika reguły danych
-        zrobiła z dwóch loginów albo nazw ten sam tekst."""
-
         return WorkerList.of([WorkerEntry(worker.logins, worker.name, active=worker.active) for worker in logged])
 
 
 class CentrumLogLines(_Record):
-    """Dziennik Centrum od Logów poprzedniego Uruchomienia do powstania tych, bez pomiarów widoku (``CentrumLog.take_for_logs``):
-    każdy wpis jak w pliku dziennika (czas komputera taty, zdarzenie, fakty), po kolei. ``omitted``: wpisy starsze od
-    ``log.MAX_FOR_LOGS`` najnowszych."""
-
     lines: list[str]
     omitted: int
 
@@ -273,15 +181,10 @@ class Environment(_Record):
     system: str
     python: str
     files: list[LoggedFile] | None
-    """``None``: plików procesu nie dało się wyliczyć (np. Folder okresu niedostępny)."""
     unreadable_settings: str | None = None
-    """Plik Ustawień Centrum (nazwa w ``config``), którego nie dało się przeczytać, więc plików procesu nie wyliczono
-    (``files`` ``None``); ``None``: każdy plik Ustawień przeczytany i pliki sprzed tego pola."""
 
 
 class Explanation(_Record):
-    """Wyjaśnienie Diagnozy: Komunikat w trzech częściach z kodem, jak w Zgłoszeniu."""
-
     code: str
     what: str
     where: str
@@ -289,8 +192,6 @@ class Explanation(_Record):
 
 
 class LoggedCheck(_Record):
-    """Sprawdzenie Diagnozy jak na liście „Sprawdzono” taty; ``code`` to kod Komunikatu sprawdzenia, które nie przeszło."""
-
     label: str
     state: diagnosis_contract.CheckState
     detail: str
@@ -298,23 +199,16 @@ class LoggedCheck(_Record):
 
     @property
     def result(self) -> tuple[str, diagnosis_contract.CheckState, str | None, str | None]:
-        """Sprawdzenie bez okoliczności: ``detail`` sprawdzenia, które przeszło, to fakt chwili (liczba wpisów dziennika
-        rośnie z każdą Diagnozą), a przy ``failed`` i ``not_checked`` sam wynik: treść Komunikatu albo powód."""
-
         return self.label, self.state, self.code, None if self.state == "passed" else self.detail
 
 
 class LoggedDiagnosis(_Record):
-    """Ostatnia Diagnoza Uruchomienia; sprawdzenia po kolei."""
-
     diagnosed_at: datetime
     explanation: Explanation
     next_action: diagnosis_contract.DiagnosisNextAction
     checks: list[LoggedCheck]
 
     def same_result(self, other: LoggedDiagnosis) -> bool:
-        """Te same Logi Diagnozy bez okoliczności: bez chwili i z każdym sprawdzeniem jako ``LoggedCheck.result``."""
-
         def result(diagnosis: LoggedDiagnosis) -> object:
             return diagnosis.explanation, diagnosis.next_action, [check.result for check in diagnosis.checks]
 
@@ -322,16 +216,11 @@ class LoggedDiagnosis(_Record):
 
 
 class LoggedWholesale(_Record):
-    """Instalacja hurt bez Wpisu: wiersz INTERMAX i nazwa operatora z aplikacji (``None``: puste ``CZYNNOŚCI``)."""
-
     row: int
     operator: str | None
 
 
 class LoggedEntries(_Record):
-    """Wpisy urządzenia i czynności INTERMAX Uporządkowania: operator z reguły taty → wiersze INTERMAX z Wpisem
-    oraz instalacje hurt bez Wpisu (operator spoza reguły)."""
-
     rows: dict[str, list[int]]
     without_entry: list[LoggedWholesale]
 
@@ -344,9 +233,6 @@ class LoggedEntries(_Record):
 
 
 class LoggedHistory(_Record):
-    """Historia adresu Uporządkowania w liczbach (``intermax_ordering.HistoryCounts``): zlecenia z choć jednym blokiem,
-    skopiowane wiersze Bazy zleceń i jej arkusze, bez adresów, numerów zleceń i treści wierszy."""
-
     orders: int
     rows: int
     sheets: int
@@ -357,10 +243,6 @@ class LoggedHistory(_Record):
 
 
 class LoggedResult(_Record):
-    """Wiersz listy zleceń efenix po szukaniu (``efenix_checks.ListedRead``): czy ``Numer dokumentu`` to ``NUMER ZL.`` z
-    pliku, status i login realizatora jak na liście oraz nazwy części adresu (``efenix_address.AddressPart``), którymi
-    ``Dane adresowe`` różnią się od ``ADRES``, bez wartości; pusta lista to ten sam adres."""
-
     same_number: bool
     status: str
     realizator: str | None
@@ -377,14 +259,6 @@ class LoggedResult(_Record):
 
 
 class LoggedStep(_Record):
-    """Działanie okna efenix przy zleceniu (``efenix_trace.TraceStep``): chwila rozpoczęcia (UTC; ``None`` w plikach
-    schematu 1), czas i odczyt strony efenix po nim.
-
-    ``results``: każdy wiersz listy po szukaniu, ``status`` i ``realizator``: wiersz listy, którego stronę zlecenia okno
-    otworzyło, ``refusal``: nazwa odmowy efenix przy Przekazaniu do akceptacji (``efenix_window.ForwardRefusal``, bez
-    tekstu okna informacji); ``None`` przy innych działaniach i w plikach sprzed tych pól.
-    """
-
     action: WindowAction
     started_at: datetime | None = None
     duration_ms: int
@@ -421,10 +295,6 @@ class LoggedStep(_Record):
 
 
 class LoggedOrder(_Record):
-    """Ślad zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, wynik (``OrderKind``, w pliku jego klucz) z kodem
-    Komunikatu (``None`` przy wyniku, który nie zostaje tacie), ilości z pliku po kodach pozycji (``None``, gdy nie dało
-    się ich przepisać), ``Kwota`` (AU) i działania okna."""
-
     row: int
     outcome: OrderKind
     code: str | None
@@ -449,15 +319,6 @@ class LoggedOrder(_Record):
 
 
 class LoggedCause(_Record):
-    """Przyczyna techniczna Zatrzymania Wyceny w efenix z zamkniętej listy (``efenix_window.WindowCause``), bez treści
-    strony i wyjątku: ``part`` to część strony (nazwa ``PagePart``, ``None`` poza stronami efenix), a ``what`` przyczyna z
-    listy.
-
-    ``positions``: kod pozycji, której dotyczy budowa. ``element`` i ``count``: selektor z kodu okna i ile razy jest na
-    stronie. ``status``: status HTTP strony błędu efenix. ``error_type`` i ``operation``: typ wyjątku Playwrighta i
-    działanie przeglądarki (``None``: działanie bez nazwy).
-    """
-
     part: str | None
     what: str
     positions: list[str] | None = None
@@ -496,14 +357,6 @@ _HTTP_STATUS: Final = "strona błędu HTTP serwera efenix zamiast strony albo od
 
 
 class LoggedWindowStop(_Record):
-    """Zatrzymanie okna efenix w Wycenie w efenix: przyczyna techniczna i zlecenie, przy którym Wycena stanęła.
-
-    ``row``: wiersz Pliku zbiorczego, ``order`` z ``orders``: miejsce zlecenia w Uruchomieniu (od 1), ``steps``: udane
-    działania okna przy nim, ``failed``: działanie, które się nie udało, z rodzajem i czasem. Przy Zatrzymaniu przed
-    pierwszym zleceniem (otwarcie okna, logowanie) ``row``, ``order``, ``orders`` i ``failed`` są ``None``, a ``steps``
-    puste.
-    """
-
     cause: LoggedCause
     row: int | None
     order: int | None
@@ -528,11 +381,6 @@ class LoggedWindowStop(_Record):
 
 
 class ProcessLogs(_Record):
-    """Dodatki Logów jednego procesu: wpis procesu w katalogu daje je z podsumowania silnika i faktów Zatrzymania
-    (``ProcessKind.logs``), a plik ma je jako pola ``RunLog`` o tych samych nazwach. Proces bez dodatków ma wszystkie
-    ``None``. Rekordy dodatku, który odtworzenie czyta z powrotem kodem ``src``, stoją we własnym module Logów procesu
-    (Wpisanie raportów: ``report_entering_logs``), a pozostałe tutaj."""
-
     inea_only_cleared: dict[str, int] | None = None
     intermax_entries: LoggedEntries | None = None
     address_history: LoggedHistory | None = None
@@ -542,12 +390,6 @@ class ProcessLogs(_Record):
 
 
 class LoggedQuantityRules(_Record):
-    """Reguły ilości z Listą Urządzeń ze startu Uruchomienia (migawka Ustawień Centrum): dokumenty plików
-    ``reguly-ilosci.yaml`` i ``lista-urzadzen.yaml`` (``quantity_rules_file``) jako tekst JSON. Tekst, a nie słownik,
-    bo strażnik reguły danych maskuje klucze słownika jak dane, a nazwy pól pliku reguł to słowa narzędzia. Liczą nimi
-    Przygotowanie pliku zbiorczego, Przebieg rozliczeń i jego Kontrola ilości, a odtworzenie z Logów liczy nimi zamiast
-    regułami z Wydania."""
-
     rules: str
     devices: str
 
@@ -556,9 +398,6 @@ class LoggedQuantityRules(_Record):
         return cls(rules=_json_text(dump_quantity_rules(rules)), devices=_json_text(dump_device_list(rules.devices)))
 
     def value(self) -> QuantityRules | RulesProblem:
-        """Reguły ilości z Logów tym samym parserem co pliki Ustawień; problem, gdy ich nie da się odczytać (np. maska
-        strażnika reguły danych w tekście reguły albo zapis innego Wydania)."""
-
         try:
             rules, devices = json.loads(self.rules), json.loads(self.devices)
         except ValueError:
@@ -568,10 +407,6 @@ class LoggedQuantityRules(_Record):
 
 
 class LoggedActivityLegend(_Record):
-    """Legenda czynności ze startu Uruchomienia (migawka Ustawień Centrum): dokument pliku ``legenda-czynnosci.yaml``
-    (``activity_legend_file``) jako tekst JSON, z tego samego powodu co ``LoggedQuantityRules``. Liczy nią Przygotowanie
-    pliku zbiorczego, a odtworzenie z Logów liczy nią zamiast legendy z Wydania."""
-
     legend: str
 
     @classmethod
@@ -579,8 +414,6 @@ class LoggedActivityLegend(_Record):
         return cls(legend=_json_text(dump_activity_legend(legend)))
 
     def value(self) -> ActivityLegend | LegendProblem:
-        """Legenda czynności z Logów tym samym parserem co plik Ustawień; problem, gdy jej nie da się odczytać."""
-
         try:
             document = json.loads(self.legend)
         except ValueError:
@@ -593,13 +426,6 @@ def _json_text(document: dict[str, object]) -> str:
 
 
 class LoggedInterruption(_Record):
-    """Urwana Wycena w efenix z dziennika: zlecenie zaczęte bez wyniku i wpisy dziennika, których nie dało się odczytać.
-
-    ``row`` (wiersz Pliku zbiorczego), ``place`` i ``total`` (miejsce w Uruchomieniu, od 1): zlecenie, w którego trakcie
-    Centrum zgasło, więc jego zmiany w efenix mogą być niepełne; ``None``, gdy zgasło między zleceniami. ``omitted``:
-    wpisy dziennika, których nie dało się odczytać (np. wpis urwany zgaśnięciem w trakcie zapisu).
-    """
-
     row: int | None
     place: int | None
     total: int | None
@@ -608,23 +434,10 @@ class LoggedInterruption(_Record):
 
 class Tool(_Record):
     wydanie: str | None
-    """Numer Wydania (ADR 0014), którego tag w klonie wskazuje ``commit`` (``0.10.0``); ``None``, gdy nie da się go
-    ustalić lokalnie: commit po Wydaniu, bez Gita albo bez commitu."""
     commit: str | None
 
 
 class RunLog(StartFacts):
-    """Logi jednego Uruchomienia procesu z Centrum; kształt tego modelu to schemat pliku JSON, a fakty startu
-    (``StartFacts``) to jego nagłówek.
-
-    ``duration_ms`` to Czas uruchomienia bez czekania na Decyzję taty; ``started_at`` i ``ended_at`` to zegar ścienny.
-    ``issue_count``, ``templates`` i ``duration_ms`` są puste tylko wtedy, gdy sam rdzeń (``run_process``) rzucił wyjątek,
-    albo w Logach Urwanego Uruchomienia (``ending`` ``interrupted``), które nie mają też wyniku (``result`` ``None``).
-    Centrum zapisuje schemat 3, a czyta też pliki schematu 1 (bez godzin kroków i dziennika działań taty) i 2 (tryb
-    i tryb przycisków startu w dzienniku działań taty jako słowo „podgląd”/„zapis”, ``StoredRunMode``), a taki plik
-    zapisuje z powrotem w jego schemacie (``_in_own_schema``).
-    """
-
     schema_version: Literal[1, 2, 3]
     ended_at: datetime
     duration_ms: int | None
@@ -639,64 +452,25 @@ class RunLog(StartFacts):
     phases: list[LoggedPhase]
     templates: list[LoggedTemplate]
     inea_only_cleared: dict[str, int] | None = None
-    """Ilości tylko dla INEA (ADR 0018): litera kolumny → liczba komórek z wartością, które Przebieg rozliczeń zostawił
-    (w podglądzie: zostawiłby) puste w Rozliczeniach pracownika. ``None``: Przygotowanie, Przebieg bez podsumowania
-    i pliki sprzed tego pola."""
     intermax_entries: LoggedEntries | None = None
-    """Wpisy urządzenia i czynności INTERMAX (ADR 0019). ``None``: inne procesy, Uporządkowanie bez podsumowania
-    i pliki sprzed tego pola."""
     address_history: LoggedHistory | None = None
-    """Historia adresu Uporządkowania w liczbach (ADR 0019). ``None``: inne procesy, Uporządkowanie bez podsumowania,
-    bez Bazy zleceń albo z Bazą, której nie dało się przeczytać, i pliki sprzed tego pola."""
     efenix_orders: list[LoggedOrder] | None = None
-    """Ślad każdego zlecenia Wyceny w efenix po kolei, a po Zatrzymaniu z ``efenix_stop`` każdego zlecenia sprzed niego.
-    ``None``: inne procesy, Wycena w efenix bez podsumowania i bez Zatrzymania okna oraz pliki sprzed tego pola."""
     efenix_stop: LoggedWindowStop | None = None
-    """Zatrzymanie okna efenix z przyczyną techniczną. ``None``: inne procesy, Wycena w efenix bez takiego Zatrzymania i
-    pliki sprzed tego pola."""
     report_entering: LoggedReports | None = None
-    """Wpisanie raportów (``LoggedReports``). ``None``: inne procesy, Wpisanie raportów zatrzymane przed rdzeniem raportów
-    i pliki sprzed tego pola."""
     environment: Environment
     trace: CallTrace | None
     diagnosis: LoggedDiagnosis | None
-    """Ostatnia Diagnoza tego Uruchomienia z nowym wynikiem; ``None``, dopóki tata jej nie uruchomił (pliki schematu 1 sprzed niej też)."""
     dad_actions: DadActions | None = None
-    """Działania taty w Centrum od Logów poprzedniego Uruchomienia do końca tego (``dad_actions``). ``None``: pliki
-    schematu 1."""
     centrum_log: CentrumLogLines | None = None
-    """Co Centrum zrobiło od Logów poprzedniego Uruchomienia do powstania tych (``CentrumLogLines``): także poza
-    Uruchomieniami, np. Przypomnienia o raporcie, Wysyłka rozliczeń i zmiany Ustawień. Wpis końca tego Uruchomienia i
-    wysyłki jego Logów powstają po nich, więc są w Logach następnego. ``None``: Logi odtworzenia i pliki
-    sprzed tego pola."""
     interruption: LoggedInterruption | None = None
-    """Urwana Wycena w efenix (``ending`` ``interrupted``); ``None`` w każdych innych Logach."""
     input_copy: list[LoggedInputFile] | None = None
-    """Kopia wejścia (``input_copy``): pliki taty, które Uruchomienie przeczytało, w kolejności odczytu, każdy z
-    odciskiem i przeczytanymi Wierszami danych po regule danych. Pusta lista: Uruchomienie skończyło się przed odczytem.
-    ``None``: Logi Urwanego Uruchomienia, pliki sprzed tego pola i Uporządkowania INTERMAX z wersji, która ich Kopii
-    wejścia jeszcze nie pisała."""
     input_copy_notes: list[str] = []
-    """Uwagi techniczne o Kopii wejścia, osobno od ``technical_notes``, które pokazuje karta Uruchomienia z Logów: wiersz
-    ze śladem przesunięcia, który łamie fakt domeny (``logs_of_run.logs_of``), i uwagi strażnika reguły danych o
-    wartościach zamaskowanych w Kopii (``guard_logs``)."""
     quantity_rules: LoggedQuantityRules | None = None
-    """Reguły ilości ze startu Uruchomienia (``LoggedQuantityRules``). ``None``: Logi Urwanego Uruchomienia i pliki sprzed
-    tego pola."""
     activity_legend: LoggedActivityLegend | None = None
-    """Legenda czynności ze startu Uruchomienia (``LoggedActivityLegend``). ``None``: Logi Urwanego Uruchomienia, procesu,
-    który nią nie liczy, i pliki sprzed tego pola."""
     workers: list[LoggedWorker] | None = None
-    """Lista Wykonawców ze startu Uruchomienia bez adresów (``LoggedWorker``), po kolei; odtworzenie liczy nią zamiast
-    pliku ``wykonawcy.yaml`` z folderu Konfiguracji. ``None``: Logi Urwanego Uruchomienia, procesu, który nią nie liczy,
-    i pliki sprzed tego pola."""
 
     @model_serializer(mode="wrap")
     def _in_own_schema(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """Logi w ich schemacie: plik sprzed schematu 3, który start Centrum zapisuje z powrotem przy dzienniku Wyceny
-        (``comment_versions.close``), ma dalej tryb i tryb przycisków startu słowem, bo odtworzenie czyta go kodem jego
-        commitu (``tool.commit``). Zrzut w trybie Pythona też ma słowo: ``StoredRunMode`` czyta je z powrotem."""
-
         dumped: dict[str, Any] = handler(self)
         if self.schema_version == SCHEMA_VERSION:
             return dumped
@@ -708,8 +482,6 @@ class RunLog(StartFacts):
         return dumped
 
     def start_warnings(self) -> tuple[Message, ...]:
-        """Ostrzeżenia startu Uruchomienia (``LoggedMessage.at_start``) dla startu odtworzenia."""
-
         return tuple(message.message() for message in self.messages if message.at_start)
 
     @classmethod
@@ -725,9 +497,6 @@ class RunLog(StartFacts):
         dad_actions: DadActions,
         centrum_log: CentrumLogLines | None = None,
     ) -> RunLog:
-        """Logi Urwanego Uruchomienia ``started`` z dziennika Wyceny w efenix: zlecenia skończone przed zgaśnięciem Centrum
-        (``orders``) i ``interruption``; ``ended_at`` to ostatni wpis dziennika."""
-
         return cls(
             **dict(started.start),
             schema_version=SCHEMA_VERSION,
@@ -754,8 +523,6 @@ class RunLog(StartFacts):
 
     @property
     def text(self) -> str:
-        """Treść pliku Logów; te same znaki idą do Skrzynki Zgłoszeń."""
-
         return self.model_dump_json(indent=2) + "\n"
 
 

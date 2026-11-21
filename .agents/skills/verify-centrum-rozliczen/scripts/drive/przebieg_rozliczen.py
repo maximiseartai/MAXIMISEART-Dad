@@ -1,5 +1,3 @@
-"""Drive features/przebieg-rozliczen.md."""
-
 from __future__ import annotations
 
 import json

@@ -1,5 +1,3 @@
-"""Pomiar Reguł ilości na Pliku zbiorczym wypełnionym przez tatę: liczby i teksty ``URZĄDZENIA``, bez danych zleceń."""
-
 from __future__ import annotations
 
 from datetime import datetime

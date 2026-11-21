@@ -101,6 +101,11 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Ładowacz z importlib.abc (przegląd #1705 r1, W1), postacie jego importu i importlib.metadata.
     "from importlib.abc import SourceLoader\nclass Ladowacz(SourceLoader): ...": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     "from importlib import abc": (DRIVE_CONFIG, (), "importlib.abc"),
+    "import shlex\nwords = list(shlex.shlex(command, posix=True))": (ROOT_CONFIG, ("tools", "hooks"), "shlex.shlex"),
+    "from shlex import shlex as lexer\nwords = list(lexer(command))": (ROOT_CONFIG, ("tools", "hooks"), "shlex.shlex"),
+    "import shlex as s\nwords = list(s.shlex(command))": (SRC_CONFIG, (), "shlex.shlex"),
+    "import shlex\nwords = list(shlex.shlex(command))": (TESTS_CONFIG, (), "shlex.shlex"),
+    "from shlex import shlex": (DRIVE_CONFIG, (), "shlex.shlex"),
     "import importlib.abc as ladowacze": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     'from importlib.metadata import EntryPoint\nEntryPoint("x", "tests.fixtures.znane_luki:zapisz", "g").load()': (
         ROOT_CONFIG,
@@ -432,6 +437,7 @@ def _drogi_zapisu_pyyaml() -> set[str]:
 
     najwyzsze = importlib.metadata.distribution("PyYAML").read_text("top_level.txt") or ""
     moduly = [nazwa for nazwa in najwyzsze.split() if importlib.util.find_spec(nazwa) is not None]
+    assert yaml.__name__ in moduly, f"dystrybucja PyYAML bez modułu {yaml.__name__} w top_level.txt: strażnik nie ma czego przejść"
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         moduly += [
@@ -480,6 +486,21 @@ def test_znane_luki_zakazu_zapisu_yaml_poza_tests_przechodza_przez_ruff(tmp_path
     zgloszenia = ruff(pliki, sonda=ROOT.joinpath(*TOOLS_PROBE, "sonda_luki.py"))
 
     assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_ZAPISU_YAML)")
+
+
+ZNANE_LUKI_LEKSERA_SHLEX = {
+    "nazwa w napisie: getattr": 'import shlex\n\nwords = list(getattr(shlex, "shlex")("a b"))\n',
+    "słownik modułu": 'import shlex\n\nwords = list(vars(shlex)["shlex"]("a b"))\n',
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_leksera_shlex_w_hookach_przechodza_przez_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_LEKSERA_SHLEX, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath("tools", "hooks", "sonda_luki.py"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_LEKSERA_SHLEX)")
 
 
 @wymaga_ruff
@@ -1036,6 +1057,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/centrum/catalog.py": frozenset({"rozliczenia.centrum.process_kind._CATALOG"}),
     "src/rozliczenia/dad_files.py": frozenset({"rozliczenia.workbook_files.file_bytes"}),
     "src/rozliczenia/centrum/app.py": frozenset({"rozliczenia.client_data.empty_memory"}),
+    "src/rozliczenia/centrum/box_prefix.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/case_delivery.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/comment_versions.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/dad_notes.py": frozenset({"rozliczenia.client_data.tool"}),
@@ -1152,15 +1174,25 @@ def test_konfiguracja_ruff_zwalnia_z_tid251_tylko_wlascicieli(tmp_path: Path) ->
 
 def _outside_owner_right(owners: Mapping[str, frozenset[str]], cwd: Path = ROOT) -> list[str]:
     """Pliki ``owners`` w ``cwd`` w jednym biegu ruff bez ``per-file-ignores`` i z ``--ignore-noqa``: każda zakazana nazwa
-    spoza prawa pliku i każde ``import *`` z komunikatem zakazu, a potem każda nazwa prawa, której plik już nie używa."""
+    spoza prawa pliku i każde ``import *`` z komunikatem zakazu, a potem każda nazwa prawa, której plik już nie używa.
+
+    Nadpisanie z wiersza poleceń zdejmuje ``per-file-ignores`` każdej konfiguracji, ale ``extend-per-file-ignores`` ruff do
+    niego dokłada, a ``ignore`` zostaje, więc plik bez zgłoszenia dostaje sondę ``SHARED_PROBE`` pod swoją ścieżką: bez
+    zgłoszenia sondy zwalnia go inna droga niż prawo właściciela, a nie brak użycia nazw."""
 
     found: dict[str, dict[str, str]] = {owner: {} for owner in owners}
-    unexempted = ("--config", "lint.per-file-ignores = {}", "--config", "lint.extend-per-file-ignores = {}")
+    unexempted = ("--config", "lint.per-file-ignores = {}")
     for path, banned, message in _banned_names(*unexempted, *owners, cwd=cwd):
         found[path].setdefault(banned, message)
+    hidden = {
+        owner
+        for owner in owners
+        if not found[owner] and not _banned_names(*unexempted, "--stdin-filename", owner, "-", code=SHARED_PROBE, cwd=cwd)
+    }
     return [
+        *(f"{owner}: zwolnienie z TID251 spoza per-file-ignores ruff.toml korzenia (extend-per-file-ignores, ignore)" for owner in owners if owner in hidden),
         *(f"{owner}: {found[owner][banned]}" for owner in owners for banned in sorted(found[owner].keys() - owners[owner])),
-        *(f"{owner}: {banned} bez użycia" for owner in owners for banned in sorted(owners[owner] - found[owner].keys())),
+        *(f"{owner}: {banned} bez użycia" for owner in owners if owner not in hidden for banned in sorted(owners[owner] - found[owner].keys())),
     ]
 
 
@@ -1181,14 +1213,15 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw() -> None:
     )
 
 
-_OWNER_CONFIG = """[lint]
-select = ["TID251", "F403"]
-[lint.per-file-ignores]
-"wlasciciel.py" = ["TID251"]
-[lint.flake8-tidy-imports.banned-api]
+_OWNER_BANS = """[lint.flake8-tidy-imports.banned-api]
 "os.name".msg = "system"
 "time.sleep".msg = "czekanie"
 """
+_OWNER_CONFIG = f"""[lint]
+select = ["TID251", "F403"]
+[lint.per-file-ignores]
+"wlasciciel.py" = ["TID251"]
+{_OWNER_BANS}"""
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
@@ -1217,6 +1250,7 @@ select = ["TID251", "F403"]
             id="import-gwiazdki-pada",
         ),
         pytest.param("import time\ntime.sleep(1)\n", ["wlasciciel.py: `time.sleep` is banned: czekanie", "wlasciciel.py: os.name bez użycia"], id="prawo-bez-użycia-pada"),
+        pytest.param("SYSTEM = 1\n", ["wlasciciel.py: os.name bez użycia"], id="plik-bez-zakazanych-nazw-pada-bez-użycia"),
     ],
 )
 def test_zakazana_nazwa_spoza_prawa_wlasciciela_pada_w_pliku_wlasciciela(tmp_path: Path, code: str, expected: list[str]) -> None:
@@ -1227,6 +1261,28 @@ def test_zakazana_nazwa_spoza_prawa_wlasciciela_pada_w_pliku_wlasciciela(tmp_pat
     (tmp_path / "wlasciciel.py").write_text(code, encoding="utf-8")
 
     assert _outside_owner_right({"wlasciciel.py": frozenset({"os.name"})}, cwd=tmp_path) == expected
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+@pytest.mark.parametrize(
+    "exemption",
+    [
+        pytest.param('[lint.extend-per-file-ignores]\n"wlasciciel.py" = ["TID251"]\n', id="extend-per-file-ignores"),
+        pytest.param('[lint]\nignore = ["TID251"]\n', id="ignore"),
+    ],
+)
+def test_zwolnienie_spoza_per_file_ignores_korzenia_pada_jako_zwolnienie(tmp_path: Path, exemption: str) -> None:
+    """Zwolnienie właściciela w konfiguracji katalogu drogą, której nadpisanie ``per-file-ignores`` nie zdejmuje, pada
+    z nazwą tej drogi, a nie jako jego nazwa bez użycia."""
+
+    (tmp_path / "ruff.toml").write_text(f'[lint]\nselect = ["TID251", "F403"]\n{_OWNER_BANS}', encoding="utf-8")
+    (tmp_path / "pakiet").mkdir()
+    (tmp_path / "pakiet" / "ruff.toml").write_text(f'extend = "../ruff.toml"\n{exemption}{_OWNER_BANS}', encoding="utf-8")
+    (tmp_path / "pakiet" / "wlasciciel.py").write_text("import os\nimport time\nSYSTEM = os.name\ntime.sleep(1)\n", encoding="utf-8")
+
+    assert _outside_owner_right({"pakiet/wlasciciel.py": frozenset({"os.name"})}, cwd=tmp_path) == [
+        "pakiet/wlasciciel.py: zwolnienie z TID251 spoza per-file-ignores ruff.toml korzenia (extend-per-file-ignores, ignore)"
+    ]
 
 
 # Zakazy treści z Wydania pliku Ustawień w src/ruff.toml, które testy niżej uruchamiają z --ignore-noqa: każda zakazana

@@ -23,10 +23,10 @@ from rozliczenia.centrum.report_box import (
     CommentOutcome,
     CommentsOutcome,
     Commented,
-    FindOutcome,
     GitHubReportBox,
     Issue,
-    IssuesOutcome,
+    ListedIssue,
+    ListOutcome,
     Label,
     Refused,
     Rejected,
@@ -253,18 +253,24 @@ def pages(*answers: list[dict[str, object]]) -> Callable[[], HttpResponse]:
 
 def issues_with(
     answer: Callable[[], HttpResponse], *, include_closed: bool = False
-) -> tuple[IssuesOutcome, ScriptedTransport]:
+) -> tuple[ListOutcome, ScriptedTransport]:
     transport = ScriptedTransport(answer)
     box = GitHubReportBox(transport=transport)
     return box.labelled_issues("kontrola-ilosci", include_closed=include_closed, key=KEY), transport
 
 
-def test_otwarte_issue_z_etykieta_to_ich_numery_i_tresci() -> None:
+def test_otwarte_issue_z_etykieta_to_ich_numery_tytuly_i_tresci() -> None:
     outcome, transport = issues_with(
-        pages([{"number": 3, "body": "a\r\nb", "state": "open"}, {"number": 8, "body": None}, {"body": "bez numeru"}])
+        pages(
+            [
+                {"number": 3, "title": "ANDRZEJ Logi Uruchomienia 08_14_09_2026", "body": "a\r\nb", "state": "open"},
+                {"number": 8, "title": None, "body": None},
+                {"body": "bez numeru"},
+            ]
+        )
     )
 
-    assert outcome == (Issue(3, "a\r\nb"), Issue(8, ""))
+    assert outcome == (ListedIssue(Issue(3, "a\r\nb"), "ANDRZEJ Logi Uruchomienia 08_14_09_2026"), ListedIssue(Issue(8, ""), ""))
     [request] = transport.requests
     assert (request.method, request.url, request.body) == (
         "GET",
@@ -287,7 +293,7 @@ def test_issue_z_etykieta_sa_zbierane_ze_wszystkich_stron() -> None:
     outcome, transport = issues_with(pages(full_page, [{"number": 5, "body": "ostatnie"}]))
 
     assert isinstance(outcome, tuple)
-    assert [found.number for found in outcome] == [*range(200, 100, -1), 5]
+    assert [found.issue.number for found in outcome] == [*range(200, 100, -1), 5]
     assert [request.url.rsplit("=", 1)[1] for request in transport.requests] == ["1", "2"]
 
 
@@ -316,10 +322,11 @@ def test_brak_sieci_na_drugiej_stronie_to_skrzynka_nieosiagalna() -> None:
     assert outcome == Unreachable()
 
 
-def find_with(answer: Callable[[], HttpResponse]) -> tuple[FindOutcome | NoKey, ScriptedTransport]:
+def find_with(answer: Callable[[], HttpResponse]) -> tuple[int | None | Refused | Unreachable | NoKey, ScriptedTransport]:
     transport = ScriptedTransport(answer)
     box = KeyedBox(GitHubReportBox(transport=transport), lambda: KEY, clock=ManualClock())
-    return box.find_issue("zgloszenie", fingerprint_line(FINGERPRINT), include_closed=False), transport
+    found = box.find_issue("zgloszenie", fingerprint_line(FINGERPRINT), include_closed=False)
+    return (found.number if isinstance(found, Issue) else found), transport
 
 
 def test_otwarte_issue_z_odciskiem_problemu_to_znalezione_zgloszenie() -> None:
@@ -383,7 +390,8 @@ def test_zamkniete_issue_ma_powod_i_czas_zamkniecia_a_otwarte_nie() -> None:
         include_closed=True,
     )
 
-    assert outcome == (
+    assert isinstance(outcome, tuple)
+    assert tuple(entry.issue for entry in outcome) == (
         Issue(1, "", Closure("completed", CLOSED_MOMENT)),
         Issue(2, "", Closure("not_planned", CLOSED_MOMENT)),
         Issue(3, "", Closure("duplicate", CLOSED_MOMENT)),

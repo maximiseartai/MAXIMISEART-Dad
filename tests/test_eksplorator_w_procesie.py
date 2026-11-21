@@ -23,7 +23,6 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = "tests.fixtures.eksplorator_w_procesie"
 
 RECORDS = 'from pathlib import Path\nPath(__file__).with_suffix(".wykonany").touch()\n'
-# Na początku każdego pliku przypadku; ``explore_fake`` to eksplorator przypadku.
 PRELUDE = """\
 import importlib
 import importlib.util
@@ -240,9 +239,6 @@ OUTSIDE = {
 
 
 def _outcomes(tmp_path: Path, workers: list[str]) -> tuple[dict[str, str], set[str]]:
-    """Wynik każdego przypadku w osobnym pytest: ``przeszedł`` albo komunikat porażki, oraz eksploratory, których kod się
-    wykonał."""
-
     scripts = tmp_path / ".agents" / "skills" / "verify-x" / "scripts"
     scripts.mkdir(parents=True)
     (scripts / "explore_publication.py").write_text(RECORDS, encoding="utf-8")
@@ -251,7 +247,6 @@ def _outcomes(tmp_path: Path, workers: list[str]) -> tuple[dict[str, str], set[s
         (tmp_path / "przypadki" / case).mkdir(parents=True)
         for name, code in files.items():
             module = PRELUDE + textwrap.dedent(code)
-            # Nazwa modułu testu jest jedna w całym pytest, więc każdy przypadek ma swoją.
             target = f"test_{case}.py" if name == "test_x.py" else name
             (tmp_path / "przypadki" / case / target).write_text(module.replace("explore_fake", f"explore_{case}"), encoding="utf-8")
     report = tmp_path / "junit.xml"
@@ -266,7 +261,6 @@ def _outcomes(tmp_path: Path, workers: list[str]) -> tuple[dict[str, str], set[s
     )
     outcomes: dict[str, str] = {}
     for testcase in ET.parse(report).iter("testcase"):
-        # Błąd zbierania ma pustą klasę: przypadek jest wtedy w nazwie.
         case = (testcase.attrib["classname"] or testcase.attrib["name"]).split(".")[1]
         problems = [f"{element.get('message')}\n{element.text}" for element in testcase if element.tag in ("failure", "error")]
         outcomes[case] = problems[0] if problems else outcomes.get(case, "przeszedł")

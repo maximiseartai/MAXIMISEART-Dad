@@ -135,35 +135,26 @@ class PricingMode(enum.Enum):
     """Tryb Wyceny w efenix, który wybiera tata: co dzieje się z gotowym zleceniem."""
 
     FILL = "bez Przekazania"
-    """Uzupełnia wycenę i oznacza gotowe zlecenie Znacznikiem efenix; Przekazanie do akceptacji zostaje tacie."""
     FORWARD = "z Przekazaniem"
     """Uzupełnia wycenę i gotowe zlecenie przekazuje do akceptacji (zielony „Zapisz”)."""
 
 
 @dataclass(frozen=True)
 class Ready:
-    """Wycena zlecenia w efenix zgadza się z Plikiem zbiorczym, a kwota końcowa jest równa ``Kwota`` (AU)."""
-
     listed: ListedOrder
 
 
 @dataclass(frozen=True)
 class OrderError:
-    """Zlecenie, które proces zostawia tacie: pierwsza niezgodność z efenix albo kwota inna niż AU."""
-
     problem: OrderFault
 
 
 @dataclass(frozen=True)
 class EmmettWarning:
-    """Ostrzeżenie Emmetta: efenix ma w pozycjach ``excess`` więcej niż Plik zbiorczy, więc proces ich nie zmienił, a
-    pozostałe ilości pliku wpisał."""
-
     excess: tuple[Excess, ...]
 
 
 Outcome = Ready | Settled | Forwarded | OrderError | EmmettWarning
-"""Wynik zlecenia w Wycenie w efenix."""
 
 
 class OrderKind(enum.Enum):
@@ -178,8 +169,6 @@ class OrderKind(enum.Enum):
 
     @property
     def left_for_tata(self) -> bool:
-        """Zlecenie zostało tacie z Komunikatem: błąd zlecenia albo Ostrzeżenie Emmetta."""
-
         return self in (OrderKind.ERROR, OrderKind.WARNING)
 
 
@@ -216,8 +205,6 @@ class OrderResult:
 
 @dataclass
 class PricingSummary:
-    """Podsumowanie Wyceny w efenix: wynik każdego zlecenia z zakresu po kolei i liczby pominiętych Wierszy danych."""
-
     results: tuple[OrderResult, ...]
     with_photos: int
     defects: int
@@ -225,8 +212,6 @@ class PricingSummary:
 
     @property
     def warnings(self) -> list[Message]:
-        """Komunikat każdego zlecenia, które zostało tacie, po kolei, z numerem wiersza Pliku zbiorczego."""
-
         return [result.message for result in self.results if result.message is not None]
 
     def count(self, kind: OrderKind) -> int:
@@ -234,8 +219,6 @@ class PricingSummary:
 
     @property
     def not_found(self) -> int:
-        """Błędy zleceń, których efenix nie zna po numerze z ``NUMER ZL.``."""
-
         return sum(
             isinstance(result.outcome, OrderError) and result.outcome.problem is OrderProblem.UNKNOWN_NUMBER
             for result in self.results
@@ -244,11 +227,6 @@ class PricingSummary:
 
 @dataclass(frozen=True)
 class StoppedOrder:
-    """Zlecenie, przy którym okno efenix stanęło: wiersz Pliku zbiorczego, miejsce w przebiegu (``place`` z ``total``, od
-    1), udane działania okna przy nim po kolei i działanie, które się nie udało (``failed``, z samym rodzajem i czasem;
-    ``None``, gdy ślad zlecenia nie ma nieudanego działania).
-    """
-
     row: int
     place: int
     total: int
@@ -275,18 +253,13 @@ class OrderJournal(Protocol):
     """
 
     def begun(self, row: int, place: int, total: int) -> None:
-        """Zaczynam zlecenie z wiersza ``row`` Pliku zbiorczego, ``place`` z ``total`` w przebiegu (od 1), przed pierwszym
-        działaniem okna efenix przy nim."""
         ...
 
     def ended(self, result: OrderResult) -> None:
-        """Zlecenie skończone z wynikiem ``result``."""
         ...
 
 
 class _NoJournal:
-    """Przebieg bez dziennika (Skrypt dla maszyn, testy silnika)."""
-
     def begun(self, row: int, place: int, total: int) -> None:
         return None
 
@@ -319,7 +292,6 @@ class EfenixInputs:
 
 
 _LOGIN: Final = "Zaloguj się w oknie efenix"
-"""Krok Zapisywania na karcie Uruchomienia, tak jak ``_ORDERS`` i ``_MARKING``."""
 _ORDERS: Final = "Zlecenia"
 _MARKING: Final = "Znaczniki efenix w Pliku zbiorczym"
 
@@ -448,11 +420,6 @@ def _result(
 def _efenix_stops(
     changed: Callable[[WindowStop], bool], stopped: Callable[[PagePart | None, WindowCause], PricingStopped]
 ) -> Iterator[None]:
-    """Wyjątek okna to Zatrzymanie z Komunikatem procesu, a fakty Zatrzymania dla Logów Uruchomienia daje ``stopped``.
-
-    ``changed``: czy przed Zatrzymaniem z wyjątku okna proces zmienił już coś w efenix.
-    """
-
     try:
         yield
     except LoggedOut as error:
@@ -468,10 +435,6 @@ def _efenix_stops(
 
 
 def _kept(results: Sequence[OrderResult], current: OrderTrace | None, error: WindowStop) -> bool:
-    """Czy przed Zatrzymaniem z wyjątku okna ``error`` proces mógł coś zmienić w efenix: udany zapis w śladzie zleceń
-    ``results`` albo zlecenia ``current``, przy którym okno stanęło, albo działanie, które przed wyjątkiem kliknęło już
-    przycisk zmiany zlecenia (``WindowStop.sent``)."""
-
     done = [step for result in results for step in result.steps]
     if current is not None:
         done.extend(current.steps)
@@ -488,10 +451,6 @@ def _outcome(
 
 
 def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Forwarded | OrderError:
-    """Gotowe zlecenie ``order`` (wiersz listy ``ready``) przekazane do akceptacji i potwierdzone ponownym szukaniem:
-    lista ze statusem „Do akceptacji” i realizatorem i adresem z pliku (``listing``); każda inna to ``NOT_FORWARDED``, a
-    odmowa efenix przy Przekazaniu błąd z jej przyczyną."""
-
     if (refusal := efenix.forward_to_accept()) is not None:
         return OrderError(refusal)
     confirmed = listing(order, _searched(efenix, ready.number, forbidden))
@@ -570,11 +529,6 @@ def _emmett(load: EmmettLoad) -> OrderPricing:
 
 
 def _dated(hit: ListedOrder, efenix: Efenix, file: Mapping[str, int], day: date) -> OrderPricing | OrderError:
-    """Strona zlecenia ``hit`` z pustą datą wykonania po ustawieniu ``day``, otwarta ponownie, z ilościami albo bez.
-
-    Dzień, którego kalendarz efenix nie przyjął albo którego efenix nie zapisał, to błąd ``DateRefused``, a ponownie
-    otwarta strona bez pozycji z ilością w pliku to błąd ``missing_positions``; ilości proces wtedy nie zmienia."""
-
     if not efenix.set_execution_date(day):
         return OrderError(DateRefused.OUT_OF_RANGE)
     reopened = efenix.open_order(hit)

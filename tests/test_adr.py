@@ -1,5 +1,3 @@
-"""Rejestr ADR w ``docs/adr/``: numer pliku jednoznacznie wskazuje decyzję."""
-
 from __future__ import annotations
 
 from collections import Counter

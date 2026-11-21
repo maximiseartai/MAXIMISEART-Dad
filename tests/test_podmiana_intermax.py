@@ -52,15 +52,11 @@ def before(request: pytest.FixtureRequest) -> Before:
 
 @pytest.fixture(params=["ordering", "restore", None], ids=["Uporządkowanie", "przywrócenie Kopii", "Wpisanie raportów"])
 def variant(request: pytest.FixtureRequest) -> Before | None:
-    """Rodzaj Kopii INTERMAX podmiany albo ``None``: podmiana Wpisania raportów bez Kopii."""
-
     kind: Before | None = request.param
     return kind
 
 
 def _copies_after(variant: Before | None) -> dict[str, bytes]:
-    """Kopie INTERMAX po udanej podmianie w pustym folderze Kopii."""
-
     return {} if variant is None else {NAMES[variant]: ORIGINAL}
 
 
@@ -88,8 +84,6 @@ class Folders:
         check: Callable[[bytes], None] | None = None,
         content: bytes = NEW,
     ) -> Replaced | Refusal | None:
-        """Podmiana z Kopią ``before`` albo, dla ``None``, bez Kopii (``None`` wyniku: INTERMAX podmieniony)."""
-
         def same_as_content(written: bytes) -> None:
             if written != content:
                 raise WriteMismatch("treść")
@@ -123,8 +117,6 @@ def folders(tmp_path: Path) -> Folders:
 
 @contextmanager
 def _unchanged(folders: Folders) -> Iterator[None]:
-    """INTERMAX bajt w bajt, bez pliku tymczasowego obok i z tymi samymi Kopiami po bloku."""
-
     state = folders.state()
     yield
     assert folders.state() == state

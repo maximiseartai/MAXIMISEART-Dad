@@ -115,7 +115,7 @@ extend-select = [
 "src/rozliczenia/dad_files.py" = ["TID251"]
 "src/rozliczenia/register_file.py" = ["TID251"]
 "src/rozliczenia/template_file.py" = ["TID251"]
-"src/rozliczenia/centrum/{app,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard,template_archive}.py" = ["TID251"]
+"src/rozliczenia/centrum/{app,box_prefix,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard,template_archive}.py" = ["TID251"]
 "src/rozliczenia/centrum/opener.py" = ["TID251"]
 # Treść z Wydania plików Ustawień: właściciel Ustawień (domyślne plików i okno Ustawień), pora Przypomnień sprzed pliku
 # (ADR 0030), wartości domyślne Uruchomienia silnika i pakiet Raportów pracowników, który ją wystawia.
@@ -150,6 +150,9 @@ extend-select = [
 # (tests/test_granice_wyjatkow.py) go nie widzi (przegląd #1689, W1).
 "typing.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
 "typing_extensions.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
+# Strumieniowy lekser shlex.shlex w hooku czekania (#2295 W3 r2) obcinał polecenie za # w słowie i za cudzysłowem bez
+# pary, więc dalsze polecenia proste hook przepuszczał; kod usunięto z PR, a zakaz trzyma go przed powrotem.
+"shlex.shlex".msg = "nie czytaj polecenia powłoki strumieniowym lekserem shlex.shlex: jego komentarz (#) i ValueError cudzysłowu bez pary obcinają resztę polecenia inaczej niż bash; słowa polecenia w hooku czyta _words z tools/hooks/czekanie.py, a gdzie indziej shlex.split"
 # Prywatny dowód modułu w konstruktorze typu (wzór run_logs_guard._MINTED) i fabryka, która go wkłada (refusal._refused):
 # bez dowodu mypy odrzuca wywołanie, a ruff odrzuca ich import i atrybut modułu poza modułem, który je zna (getattr
 # z napisem nie).

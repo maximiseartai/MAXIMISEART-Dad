@@ -1,5 +1,3 @@
-"""``wall_clock_from`` (``tests/fixtures/zegar_scienny.py``): zegar testu, który zna każdą swoją chwilę (#1789, #1797)."""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -14,8 +12,6 @@ START = datetime(2026, 9, 16, 12, 7, tzinfo=timezone.utc)
 
 
 def test_zegar_testu_rosnie_o_krok_na_pytanie_a_pytanie_ponad_limit_pada(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Chwile zegara to ``START + k·STEP`` po kolei, a pytanie numer ``MOMENTS`` pada, zamiast wyjść poza nie."""
-
     wall_clock_from(monkeypatch, START)
     readings: list[datetime] = []
 
@@ -31,8 +27,6 @@ def test_zegar_testu_rosnie_o_krok_na_pytanie_a_pytanie_ponad_limit_pada(monkeyp
 
 
 def test_zegar_testu_pada_gdy_wall_clock_czyta_zegar_systemu_przypisanym_wywolywalnym(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Publiczna nazwa ``wall_clock``, która nie jest funkcją Pythona (``epoch_s = time.time``), też pada w fixture."""
-
     monkeypatch.setattr(wall_clock, "epoch_s", time.time)
 
     with pytest.raises(AssertionError, match="epoch_s: "):

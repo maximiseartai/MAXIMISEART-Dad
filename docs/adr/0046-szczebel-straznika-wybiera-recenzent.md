@@ -43,6 +43,17 @@ Decyzje autora tego PR:
 - **Pole `Mechanizm:` stoi po `Szczebel:`**, który zostaje: `Szczebel:` mówi, jak autor wyrwał korzeń, a `Mechanizm:`, jakiego strażnika żąda Ważne.
 - **Przejście.** Wątek, którego pierwszy werdykt powstał przed wejściem tego pliku do bazy PR, kończy po staremu, bez pola `Mechanizm:` i z opcjonalnym `Idiom:` (`werdykt_pr.rule_applies`, jak decyzja Q20 ADR 0031); stare werdykty z `Idiom:` szablon przyjmuje jak dotąd, ale od ticketu #2463 żadne narzędzie pola nie czyta, a raport tygodniowy liczy odpalenia strażników w Required CI i poszerzenia reguł z historii gita.
 
+Decyzje autora PR ticketu #2461:
+
+- **Chroniony właściciel to wpis wprost.** Plik jest właścicielem, gdy konfiguracja reguł drzewa HEAD PR scalonego z bazą nazywa go wprost (`chroniony_wlasciciel.ZASADY`): wpis ze wzorcem (`src/**`) albo katalog to zasięg reguły, a nie jedyność. Zakaz `TID251` liczy się ze zwolnienia w `per-file-ignores`, bo to, że każde zwolnienie ma wiersz `OWNERS` z nazwami właściciela, pilnuje już `tests/test_zakazy_ruff.py` w Required CI tego samego drzewa.
+- **Każdy plik z `Gdzie`.** Test przechodzi tylko, gdy każdy plik z `Gdzie` jest chronionym właścicielem, bo Ważne z drugim plikiem poza właścicielem ma drugie miejsce, w którym błąd wróci.
+- **Szczebel w następnej rundzie.** Recenzent następnej rundy zmienia szczebel, który nie działa, punktem `Mechanizm W<n> r<k>: <szczebel> - zdanie` w `## Sprawdzone`, jak kod korzenia punktem `Korzeń W<n> r<k>:` (decyzja Q25 ADR 0031), a bramka bierze szczebel z ostatniego werdyktu, który dotyczy tego Ważnego; inaczej Ważne ze szczeblem, który nie działa, nie miałoby jak się scalić.
+- **Przejście.** Warunek chronionego właściciela ma własną chwilę wdrożenia (`szczebel_straznika.OWNER_MARKER`), więc wątek z pierwszym werdyktem sprzed niej kończy jak po #2460.
+
+Decyzje autora PR poprawek po #2461 (spec #2448):
+
+- **Luka w samej regule lint to `test`.** Ważne, którego `Gdzie` to plik reguły ast-grep albo `ruff.toml` z `banned-api` (luka we wzorcu albo w zasięgu zakazu), ma szczebel `test`, bo `mypy`, `ruff` ani `ast-grep <id>` nie udowodni luki w regule: dowód przywraca plik reguły z drzewa `FAIL` i nie ma złego kodu, który by odpalił. Plik reguły i `ruff.toml` z zakazami są więc chronionymi właścicielami: test ich próbek (`tests/test_zapadki.py`, `tests/test_zakazy_ruff.py`) pada na mutacji recenzenta, a słabszą regułę ast-grep odrzuca też warunek 6 `tools/scal_pr.py`. Wątek, który już ma `lint`, zmienia szczebel punktem `Mechanizm W<n> r<k>:`.
+
 ## Wdrożenie
 
 | Decyzja | Ticket |

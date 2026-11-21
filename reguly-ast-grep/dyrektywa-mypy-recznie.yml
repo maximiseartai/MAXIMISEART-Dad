@@ -1,0 +1,42 @@
+id: dyrektywa-mypy-recznie
+language: python
+severity: error
+message: >-
+  dyrektywę konfiguracji mypy (# mypy: ...) mypy czyta z surowych linii pliku, także w docstringu i napisie, więc własne
+  dopasowanie literału ją gubi albo myli: użyj mypy.util.get_mypy_comments.
+files:
+  - tests/**/*.py
+  - tools/**/*.py
+  - .agents/skills/**/scripts/**/*.py
+metadata:
+  przypadki:
+    - 1655/W1/r1
+rule:
+  kind: string
+  regex: '#(\s|\\s[*+?]?)*mypy:'
+  any:
+    - inside:
+        kind: argument_list
+        inside:
+          kind: call
+          has:
+            field: function
+            matches: dopasowanie-tekstu
+    - inside:
+        kind: tuple
+        inside:
+          kind: argument_list
+          inside:
+            kind: call
+            has:
+              field: function
+              matches: dopasowanie-tekstu
+    - inside:
+        kind: comparison_operator
+        not:
+          inside:
+            kind: assert_statement
+            stopBy: end
+utils:
+  dopasowanie-tekstu:
+    regex: '(startswith|endswith|match|search|fullmatch|compile|findall|finditer|split|sub|find|index)$'

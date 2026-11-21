@@ -3,10 +3,10 @@
 nothing to wait for (``quiet_for``), the one late answer of a route (``answer_late``), and the retry of a file the
 server holds open (``while_open``, for the file helpers of ``drive/common.py``).
 
-``Run.wait_for`` of ``drive/common.py`` is gone (#1539), so the drive has no way of its own beside this one to copy; it
-also waits through Playwright's ``page.wait_for_function``, which polls a condition inside the page for the page's
-default limit: ``Budget.SCREEN`` for the drive's page (``drive_centrum.py``), what ``dad_tab`` or ``wydajnosc`` set for
-theirs, and Playwright's own 30 s for a tab opened without ``set_default_timeout``.
+The drive has no way of its own beside this one to copy; it also waits through Playwright's
+``page.wait_for_function``, which polls a condition inside the page for the page's default limit: ``Budget.SCREEN``
+for the drive's page (``drive_centrum.py``), what ``dad_tab`` or ``wydajnosc`` set for theirs, and Playwright's own
+30 s for a tab opened without ``set_default_timeout``.
 Ruff ``TID251`` (``drive/ruff.toml``) refuses ``time.sleep`` in every file of ``drive/`` but this one and
 ``drive/common.py``, which ``per-file-ignores`` frees from all of ``TID251``; in ``drive/common.py`` the test of
 ``OWNERS`` in ``tests/test_zakazy_ruff.py`` refuses it, and a wait on an object (``page.wait_for_timeout``) passes both
@@ -119,8 +119,8 @@ def while_open(action: Callable[[], T], *, limit_s: float = RETRY_OPEN_S) -> T:
 
     The server reads and writes the run's files from its own threads at any moment (pacing, the scripted GitHub, the
     skrzynka Zgłoszeń and its queue, the settings, metrics and Wzorce while a page refreshes), and on Windows a file
-    another process has open can be neither deleted nor renamed (``WinError 32``, #921), nor opened while the server
-    puts it in place (#1087)."""
+    another process has open can be neither deleted nor renamed (``WinError 32``), nor opened while the server
+    puts it in place."""
 
     deadline = time.monotonic() + limit_s
     while True:
@@ -134,7 +134,7 @@ def while_open(action: Callable[[], T], *, limit_s: float = RETRY_OPEN_S) -> T:
 
 def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Budget.SCREEN, *, page: Page | None = None) -> T:
     """Read ``ready`` until it gives a true value in Python's sense, and return that; ``what`` names it: ``None``,
-    ``False``, ``0``, an empty text and an empty collection are a state not there yet (#1857).
+    ``False``, ``0``, an empty text and an empty collection are a state not there yet.
 
     An error of ``NOT_YET`` from ``ready`` is a state not ready yet, read again; any other error leaves at once. After
     ``budget`` (or a number of seconds, which only the tests of the wait pass) the wait fails with
@@ -142,7 +142,7 @@ def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Bud
     written is a failure that names its state.
 
     A wait on what ``page`` sends waits inside Playwright, whose sync client delivers the page's events (a request, a
-    route) only during its own calls: after ``time.sleep`` their record stays as it was (#1682).
+    route) only during its own calls: after ``time.sleep`` their record stays as it was.
     """
 
     limit_s = budget.value if isinstance(budget, Budget) else budget
