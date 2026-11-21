@@ -12,6 +12,7 @@ import pytest
 
 import chroniony_wlasciciel
 import na_scalonych_pr
+import strazniki_przeniesione
 from tests.fixtures import werdykty_szablonu
 from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
@@ -457,6 +458,7 @@ def _guard_proof(
     meanwhile: dict[str, str] | None = None,
     merge: bool = True,
     on_main: dict[str, str] | None = None,
+    after_main: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     """Dowód ``arguments`` (``--straznik`` z selektorem) dla Ważnego 5/W1/r1 z werdyktu FAIL z treścią ``findings``,
     a z ``later`` także z późniejszym werdyktem PASS HEAD z tą treścią; ``dev`` to dodatkowe piny dodatku dev, ``base``
@@ -483,6 +485,8 @@ def _guard_proof(
     if on_main is not None:
         _merge(github, 6, on_main)
         head = git(github.checkout, "rev-parse", "main").strip()
+    if after_main is not None:
+        _merge(github, 7, after_main)
     return github.run(*arguments, "--z-commita", head, "--wazne", "5/W1/r1"), failed
 
 
@@ -674,14 +678,32 @@ def test_straznik_pytest_szczebla_test_ma_dowod_na_wlascicielu_dopisanym_w_tym_s
     assert end == f"DOWÓD OK | {GUARD_NODE} | wykryte 1/1", done.stdout
 
 
+REWRITTEN = {"kod/inne.py": 'def wazne(obiekt):\n    getattr(obiekt, "dozwolone")()\n'}
+MOVED_MUTATION = '''[{"nazwa": "zakazane na nowej kotwicy", "zmiany": [["kod/inne.py", "getattr(obiekt, \\"dozwolone\\")()", "obiekt.zakazane()"]]}]'''
+STALE = "ODMOWA | zakazane z FAIL: kotwicy nie ma dokładnie raz w kod/inne.py"
+
+
+def _moved_entry(selector: str) -> dict[str, str]:
+    return {strazniki_przeniesione.PLIK: f'["5/W1/r1"]\nstraznik = "{selector}"\nmutacja = \'\'\'{MOVED_MUTATION}\'\'\'\n'}
+
+
 @wymaga_uv
 @pytest.mark.parametrize(
     ("later_files", "state", "last"),
     [
         ({"kod/obok.py": "OBOK = 1\n"}, "WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed", "DOWÓD OK"),
         ({"tests/test_inne.py": "def test_wazne_wola_tylko_dozwolone() -> None:\n    pass\n"}, "NIEWYKRYTA | zakazane z FAIL: NIEWYKRYTA", "DOWÓD ODMOWA"),
+        (REWRITTEN, STALE, "DOWÓD ODMOWA"),
+        ({**REWRITTEN, **_moved_entry("pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone")}, "WYKRYTA | z bloku ### Mutacja W1 r1: zakazane na nowej kotwicy → 1 failed", "DOWÓD OK"),
+        ({**REWRITTEN, **_moved_entry("pytest tests/test_inne.py::test_inny")}, STALE, "DOWÓD ODMOWA"),
     ],
-    ids=["pozniejszy-commit-nie-rusza-straznika", "pozniejszy-commit-wylacza-straznika"],
+    ids=[
+        "pozniejszy-commit-nie-rusza-straznika",
+        "pozniejszy-commit-wylacza-straznika",
+        "pozniejszy-commit-zmienia-kotwice-mutacji",
+        "wpis-straznika-przeniesionego-niesie-mutacje-na-nowej-kotwicy",
+        "wpis-innego-selektora-nie-zmienia-mutacji",
+    ],
 )
 @ONLY_FOUND_BY_NAME_ON_POSIX
 def test_ponowny_dowod_straznika_scalonego_pr_na_pozniejszym_main_wykrywa_tylko_gdy_main_nie_wylaczyl_straznika(tmp_path: Path, later_files: dict[str, str], state: str, last: str) -> None:
@@ -699,6 +721,26 @@ def test_ponowny_dowod_straznika_scalonego_pr_na_pozniejszym_main_wykrywa_tylko_
     [line, end] = done.stdout.splitlines()
     assert line.startswith(f"#5 W1 r1 | {failed[:8]} | {state}"), done.stdout
     assert end.startswith(f"{last} | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte"), done.stdout
+
+
+@wymaga_uv
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_ponowny_dowod_bierze_mutacje_wpisu_z_commita_dowodu_a_nie_z_checkoutu(tmp_path: Path) -> None:
+    node = "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone"
+
+    done, _ = _guard_proof(
+        tmp_path,
+        "--straznik",
+        node,
+        dev=PYTEST_PINS,
+        findings=werdykty_szablonu.WERDYKTY["wazne-z-nieaktualna-mutacja"],
+        later=werdykty_szablonu.WERDYKTY["pass-z-mutacja"],
+        on_main={**REWRITTEN, **_moved_entry(node)},
+        after_main={strazniki_przeniesione.PLIK: ""},
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == f"DOWÓD OK | {node} | wykryte 1/1", done.stdout
 
 
 @needs_ast_grep

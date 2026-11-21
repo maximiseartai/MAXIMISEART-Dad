@@ -92,7 +92,6 @@ def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centru
         assert found is not None and found.startswith(f"kod opisany modelem zmienił się: {moved}. "), found
 
 
-# Jednostki sprawdzenia kodu i modelu w kolejności ``UNITS``; atrapa sprawdzenia wypisuje pierwszy zakres jednostki.
 ALL = [
     "explore_outbox.py --scope postep",
     "sprawdz_model_kolejki.py --config archiwum-lista",

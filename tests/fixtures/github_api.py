@@ -33,8 +33,6 @@ class Answer:
 
 @dataclass(frozen=True)
 class Asked:
-    """Jedno pytanie do atrapy: ścieżka z zapytaniem, nagłówek ``Authorization`` (``None``: bez tokenu) i metoda HTTP."""
-
     path: str
     authorization: str | None
     method: str

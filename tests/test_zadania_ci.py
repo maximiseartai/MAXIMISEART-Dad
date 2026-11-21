@@ -36,7 +36,6 @@ from zakres_runu import Zdarzenie
 ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED = "required"
-# Zadanie, którego macierz albo start ustala plan, i wyrażenie ci.yml, które czyta wyjście planu.
 FROM_PLAN = {
     "pytest": ("${{ needs.plan.outputs.pytest != '[]' }}", "${{ fromJSON(needs.plan.outputs.pytest) }}"),
     "mutations": ("${{ needs.plan.outputs.mutations != '[]' }}", "${{ fromJSON(needs.plan.outputs.mutations) }}"),
@@ -147,7 +146,6 @@ def _dependency_files(command: str) -> set[str]:
     return files
 
 
-# Zadania planu runu, które wykonują kroki skilli: Mutation checks w CI i nocne skrypty skilli.
 SKILL_STEP_JOBS = {("ci.yml", "mutations"), ("mutacje-nocne.yml", "skill-mutations")}
 
 
@@ -271,11 +269,6 @@ def test_kazde_zadanie_ktore_uruchamia_testy_albo_kroki_skilli_instaluje_chromiu
 def _required(
     tmp_path: Path, plan: plan_runu.Plan | None, results: dict[str, str], *, missing: frozenset[str] = frozenset(), failed: frozenset[str] = frozenset()
 ) -> subprocess.CompletedProcess[str]:
-    """Krok werdyktu Required z ci.yml na planie i zapisach czasów tam, gdzie kładą je kroki pobrania artefaktów.
-
-    Każde zadanie planu zgłasza każdą swoją jednostkę (część pod kluczem całości) poza ``missing``, a ``failed`` z porażką.
-    """
-
     steps = jobs()[REQUIRED]["steps"]
     downloads = {step["with"].get("name") or step["with"]["pattern"]: tmp_path / step["with"]["path"] for step in steps if "download-artifact" in step.get("uses", "")}
     downloads["czasy-zadanie-*"].mkdir(parents=True)
@@ -425,8 +418,6 @@ def _tolerant(workflow: dict[str, Any]) -> list[str]:
 
 
 def _changed(job: str | None, step: str | None, values: Mapping[str, object]) -> dict[str, Any]:
-    """``ci.yml`` z kluczami ``values`` w zadaniu ``job`` (bez zadania: w workflow), a ze ``step`` w jego kroku o tej nazwie."""
-
     workflow: dict[str, Any] = copy.deepcopy(yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
     target = workflow if job is None else workflow["jobs"][job]
     if step is not None:

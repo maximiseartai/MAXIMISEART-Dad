@@ -1,44 +1,3 @@
-"""Rejestr zleceń (INTERMAX) czytany raz: rozpoznanie arkuszy zleceń i dwa obiektywy tych samych bajtów, fakty wierszy
-od dołu bez openpyxl i wiersze okresu w openpyxl.
-
-Skoroszyt bez dokumentu skoroszytu, bez części stylów albo bez arkusza jest nieczytelny (``WorkbookError``), jak zepsuty
-zip albo XML: Excel takiego nie zapisuje, a openpyxl go nie otwiera.
-
-Arkusz zleceń rozpoznaje jedna reguła dla obu procesów (``recognize``): komplet nagłówków ``COLUMNS`` w wierszu 1
-(każdy w którymś przyjmowanym zapisie) i żaden z nich więcej niż raz. Wynik to wartość, a nie wyjątek: arkusze zleceń
-(``OrderSheets``) albo problem nagłówków (``HeadersProblem``), który każdy proces tłumaczy na swój Komunikat. Arkusz
-zleceń z ``AKCJE`` i ``UWAGI`` ma obszar wklejania (``PasteArea``), do którego aplikacja firmowa wkleja Surowe zlecenia
-i który porządkuje Uporządkowanie INTERMAX. Arkusz starszego układu, bez tych kolumn, obszaru nie ma
-(``OrderSheet.paste`` to ``None``): aplikacja do niego nie wkleja, więc Surowych zleceń nikt w nim nie szuka.
-
-Obszar wklejania daje swoje wiersze od dołu jako fakty (``raw_orders.RowFacts``): ~42 tys. wierszy taty to dziesiątki MB
-XML, a rozpoznanie potrzebuje tylko dołu arkusza. Komórki ``ADRES`` i ``NUMER UMOWY`` każdego oddanego wiersza poznaje
-pamięć reguły danych uchwytu (ADR 0025) w jego położeniach (``raw_orders.row_positions``). Zakazane kolumny to te z
-nagłówkiem zakazanej kolumny w wierszu 1 (``client_data.forbidden_columns``): INTERMAX nie ma stałego układu kolumn,
-więc kolumnę zna się po nagłówku, tak jak kolumny ``COLUMNS``.
-
-Wiersze okresu (``OrderSheets.period_rows``) czyta openpyxl ze skoroszytu zawężonego do okresu po kolumnach daty z
-rozpoznania (``workbook_parts.rows_dated_between``), bo wartości, Wyróżnienia, formaty i Hiperłącza tych wierszy
-Przygotowanie pliku zbiorczego przenosi do plików okresu. Ich pamięć i Kopię prowadzi ta sama reguła położenia, a
-pierwszy wiersz bloku daje ``raw_orders.first_in_block`` na wierszach okna od dołu.
-
-Kopia wejścia Uruchomienia z Centrum dostaje bajty Rejestru z chwilą zmiany sprzed odczytu zaraz po
-odczycie, a z każdego obszaru wklejania nagłówki i wklejenie (``raw_orders.pasted_rows``): te same fakty wierszy, które
-rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które Uporządkowanie przenosi
-do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz, bez zakazanych kolumn
-(``input_copy.SheetCopy.row``). Wiersz z siatki (``row_positions.RowPositions.uncertain``) ma w Kopii tylko komórki
-dozwolone w obu położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wiersz ze śladem przesunięcia arkusz ma w
-faktach wklejenia (``input_copy.PasteFacts.traced_rows``). Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie
-ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty niesie części adresu ze słowami sklejonymi ``_``, których
-strażnik nie rozpozna jako wartości ``ADRES``. Nad wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego
-wiersza (``raw_orders.above_paste``), od których Planowanie liczy wiersz dnia, bez ich treści. Wpisanie raportów
-daje Kopii zamiast wklejenia uporządkowane wiersze, które przeczytało (``PasteArea.copy_rows``), w tych samych kolumnach
-i bez zakazanych kolumn.
-
-Części paczki (``RegisterPackage``) czyta tylko pisarz dnia Uporządkowania (``intermax_file``), który przepisuje je
-w zapisie.
-"""
-
 from __future__ import annotations
 
 import zipfile
@@ -121,7 +80,7 @@ _LAST: Final = "UWAGI"
 
 @dataclass(frozen=True)
 class NoOrderSheet:
-    """Żaden arkusz nie ma w wierszu 1 większości wymaganych nagłówków ``COLUMNS``."""
+    ...
 
 
 @dataclass(frozen=True)
@@ -132,9 +91,6 @@ class MissingHeaders:
 
 @dataclass(frozen=True)
 class DuplicatedHeaders:
-    """Pierwszy arkusz z kompletem nagłówków, w którym wymagany nagłówek (w dowolnym przyjmowanym zapisie) stoi więcej
-    niż raz: nie wiadomo, z której kolumny brać dane."""
-
     sheet: str
     labels: tuple[str, ...]
 
@@ -150,13 +106,6 @@ class RecognizedSheet:
 
 
 def recognize(sheets: Iterable[tuple[str, Sequence[object]]]) -> tuple[RecognizedSheet, ...] | HeadersProblem:
-    """Arkusze zleceń z wierszy 1 arkuszy (nazwa i wartości od kolumny A, w kolejności skoroszytu), w tej kolejności.
-
-    Arkusz bez większości wymaganych nagłówków (listy, komentarze, ukryte) nie jest arkuszem zleceń. Pierwszy arkusz z
-    kompletem i powtórzonym nagłówkiem to ``DuplicatedHeaders``, choćby inne arkusze były dobre. Bez arkusza zleceń:
-    arkusz z większością, ale nie kompletem (``MissingHeaders``), albo ``NoOrderSheet``.
-    """
-
     found: list[RecognizedSheet] = []
     closest: MissingHeaders | None = None
     for name, values in sheets:
@@ -192,8 +141,6 @@ def _duplicated(values: Sequence[object]) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class RegisterPackage:
-    """Części zip Rejestru w kolejności z pliku i części, które zmienia zapis dnia: skoroszyt, style i arkusze."""
-
     infos: tuple[zipfile.ZipInfo, ...]
     parts: Mapping[str, bytes]
     workbook_part: str
@@ -203,10 +150,6 @@ class RegisterPackage:
 
 @dataclass(frozen=True)
 class OrderSheet:
-    """Arkusz zleceń: nazwa, kolumna (od 1) każdej kolumny ``COLUMNS``, wartości wiersza 1 od kolumny A i obszar
-    wklejania (``None``: starszy układ bez ``AKCJE`` i ``UWAGI``, do którego aplikacja firmowa nie wkleja, więc Surowych
-    zleceń nikt w nim nie szuka)."""
-
     name: str
     positions: Mapping[Column, int]
     header: tuple[object, ...] = field(repr=False)
@@ -215,9 +158,6 @@ class OrderSheet:
 
     @property
     def look_columns(self) -> frozenset[int]:
-        """Kolumny, z których krój wiersza mówi, czy jest uporządkowany: ``OrderColumns.look_columns`` obszaru
-        wklejania, a w starszym układzie kolumny ``COLUMNS`` bez ``WYKONAWCA``."""
-
         if self.paste is not None:
             return self.paste.columns.look_columns
         return frozenset(self.positions.values()) - {self.positions[WORKER]}
@@ -225,9 +165,6 @@ class OrderSheet:
 
 @dataclass(frozen=True, eq=False)
 class OrderSheets:
-    """Arkusze zleceń Rejestru w kolejności skoroszytu (co najmniej jeden) z obu obiektywów: obszary wklejania od dołu
-    (``paste_areas``) i wiersze okresu (``period_rows``)."""
-
     sheets: tuple[OrderSheet, ...]
     _file: ReadFile = field(repr=False)
     _epoch: datetime = field(repr=False)
@@ -238,12 +175,6 @@ class OrderSheets:
         return tuple(sheet.paste for sheet in self.sheets if sheet.paste is not None)
 
     def workers(self) -> frozenset[str]:
-        """Każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez pustych) wierszy od 2 każdego arkusza zleceń, z XML
-        arkusza bez openpyxl i bez faktów wierszy: ~42 tys. wierszy Rejestru taty to 1 s zamiast 16 s
-        (``workbook_parts.column_texts``). Czyta kolumnę z nagłówka, więc pierwszy wiersz wklejenia przesunięty o
-        ``raw_orders.SHIFT`` kolumn (Surowe zlecenia przed Uporządkowaniem) daje swój ``WYKONAWCA`` dopiero po
-        Uporządkowaniu. ``UnsupportedShape``, gdy arkusz ma kształt spoza ``workbook_parts.SheetData``."""
-
         found: set[str] = set()
         for sheet in self.sheets:
             try:
@@ -255,19 +186,6 @@ class OrderSheets:
         return frozenset(found)
 
     def period_rows(self, period: SettlementPeriod | None) -> tuple[RegisterSheet, ...]:
-        """Arkusze zleceń z wierszami od pierwszego do ostatniego, którego data może leżeć w ``period``; bez ``period``
-        z każdym wierszem od 2. ``WorkbookError``, gdy openpyxl nie przeczyta skoroszytu albo wiersza.
-
-        Każdy wiersz z danymi zna pamięć reguły danych uchwytu w położeniach z ``raw_orders.row_positions``, z pierwszym
-        wierszem bloku wklejenia z ``raw_orders.first_in_block`` na wierszach odczytu od dołu, więc wiersz na górze
-        odczytu bez wiersza nad nim jest pierwszy. Kopia wejścia ma nagłówki wiersza 1 kolumn wklejenia od A do
-        ``UWAGI`` (w starszym układzie do ostatniej kolumny ``COLUMNS``) i każdy wiersz z danymi z komórkami kolumn
-        ``COLUMNS`` według jego położeń (``input_copy.SheetCopy.row``): komórka wiersza z siatki albo przesuniętego
-        pierwszego wiersza jest w Kopii, gdy w każdym jego położeniu stoi w kolumnie wklejenia, tak jak w
-        Uporządkowaniu, a nie pod zakazaną kolumną. Kopia ma też puste wiersze odczytanego zakresu i wiersze ze śladem
-        przesunięcia.
-        """
-
         file = self._file
         sheets = tuple(
             (sheet.name, tuple(sheet.positions[column] for column in COLUMNS), tuple(sorted(sheet.look_columns)))
@@ -306,11 +224,6 @@ class RegisterFile:
 
 
 def read(path: Path, files: DadFiles, *, despite_excel_lock: bool = False) -> RegisterFile:
-    """Rejestr ``path`` uchwytem ``files``; ``WorkbookError``, gdy go nie ma, jest otwarty w Excelu, niedostępny albo
-    nieczytelny. ``despite_excel_lock``: Rejestr otwarty w Excelu to jego ostatnia zapisana wersja, a nie
-    ``WorkbookError``. Przeczytany Rejestr jest w Kopii wejścia uchwytu (bajty z chwilą zmiany sprzed odczytu), także bez
-    arkuszy zleceń, więc Logi Uruchomienia zatrzymanego na nim mają jego odcisk."""
-
     file = files.read(path, despite_excel_lock=despite_excel_lock)
     with workbook_files.unreadable_as_error(file.path):
         infos, parts = unpacked(file.content)
@@ -378,11 +291,6 @@ def _paste_area(
 
 
 def recent_workers(areas: Sequence[PasteArea], since: date) -> Counter[str]:
-    """Ile uporządkowanych zleceń z dni od ``since`` ma każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez
-    pustych), z przeglądu od dołu każdego obszaru wklejania ``areas`` tą samą regułą co zlecenia Wpisania raportów
-    (``raw_orders.ordered_rows``): Surowe zlecenia na dole i starsze dni nie wchodzą. ``UnsupportedShape``, gdy wierszy
-    arkusza nie da się rozdzielić."""
-
     found: Counter[str] = Counter()
     for area in areas:
         for row in raw_orders.ordered_rows(area.rows_from_bottom(), area.columns, since):
@@ -410,12 +318,8 @@ class PasteArea:
         self._values = values
         self._file = file
         self._facts_read: dict[int, RowFacts] = {}
-        """Numer wiersza → fakty wiersza, który któryś przegląd arkusza od dołu już przeczytał, liczone raz."""
-
     @property
     def epoch(self) -> datetime:
-        """Początek systemu dat skoroszytu (1900 albo 1904), w którym pisarz dnia zapisuje daty."""
-
         return self._values.cells.epoch
 
     @cached_property
@@ -438,26 +342,12 @@ class PasteArea:
         return raw_orders.shifted_row(self._facts_from_bottom(), self.columns)
 
     def rows_from_bottom(self) -> Iterator[RowFacts]:
-        """Wiersze arkusza od ostatniego do drugiego jako fakty dla rozpoznania Surowych zleceń.
-
-        Pamięć reguły danych uchwytu zna każdy oddany wiersz w położeniach z ``raw_orders.row_positions``, z pierwszym
-        wierszem każdego bloku wklejenia z ``raw_orders.first_in_block``, także nad uporządkowanymi.
-        ``UnsupportedShape``, gdy przeczytanych wierszy nie da się rozdzielić.
-        """
-
         memory, columns, shifted = self._memory, self.columns, self._shifted_row
         for facts, first in raw_orders.first_in_block(self._facts_from_bottom(), lambda row: raw_orders.look(row, columns)):
             memory.remember(_values(facts), self._positions(facts, first, shifted))
             yield facts
 
     def copy_paste(self) -> None:
-        """Arkusz w Kopii wejścia uchwytu: nagłówki, wklejone wiersze i numery wierszy nad wklejeniem (zob. docstring
-        modułu).
-
-        Arkusza, którego wierszy nie da się rozdzielić (``UnsupportedShape``), Kopia nie dostaje wcale: Komunikat o nim
-        daje Planowanie, więc Kopia nie zmienia Zatrzymania.
-        """
-
         columns = self.columns
         try:
             shifted = self._shifted_row
@@ -480,9 +370,6 @@ class PasteArea:
             sheet.row(facts.number, _values(facts), self._positions(facts, facts is pasted[0], shifted))
 
     def copy_rows(self, rows: Sequence[RowFacts]) -> None:
-        """Arkusz w Kopii wejścia uchwytu z nagłówkami i wierszami ``rows`` (uporządkowanymi wierszami, które
-        przeczytało Wpisanie raportów), w kolumnach od A do ``UWAGI`` bez zakazanych kolumn (ADR 0025)."""
-
         columns = self.columns
         copied = range(1, columns.last + 1)
         header = self._header
@@ -498,9 +385,6 @@ class PasteArea:
             sheet.row(facts.number, _values(facts), self._positions(facts, False, None))
 
     def _positions(self, facts: RowFacts, first: bool, shifted: int | None) -> RowPositions:
-        """Położenia wiersza ``facts`` (``raw_orders.row_positions``); ``first``: pierwszy wiersz bloku wklejenia,
-        ``shifted``: wiersz, który rozpoznanie czyta przesunięty (``raw_orders.shifted_row``)."""
-
         columns = self.columns
         return raw_orders.row_positions(
             first=first,
@@ -537,14 +421,10 @@ class RegisterSheet:
     _positions: tuple[int, ...]
 
     def column_letter(self, column: Column) -> str:
-        """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
-
         return get_column_letter(self._positions[COLUMNS.index(column)])
 
     @property
     def positions(self) -> dict[Column, int]:
-        """Kolumna ``COLUMNS`` → jej numer w arkuszu (od 1)."""
-
         return dict(zip(COLUMNS, self._positions, strict=True))
 
 
@@ -574,18 +454,6 @@ class _Window:
 def _period_read(
     path: Path, content: bytes, sheets: _SheetsKey, epoch: datetime, period: SettlementPeriod
 ) -> tuple[_Window, ...]:
-    """Okna arkuszy zleceń okresu ``period`` z bajtów Rejestru ``content``, zawężonych do dni okresu.
-
-    Centrum robi Podgląd, a potem RUN tego samego okresu w jednym procesie. Okno zależy tylko od bajtów Rejestru,
-    arkuszy zleceń i okresu, więc niezmieniony Rejestr nie jest drugi raz zawężany ani parsowany, a zmieniony jest
-    czytany od nowa. Uruchomienia w różnych wątkach dostają ten sam wynik, więc jest z krotek, zamrożonych dataclass i
-    map w ``MappingProxyType``. Wyjątek to wypełnienie i kolor Wyróżnień: obiekty openpyxl, których nie da się
-    zamrozić, więc Zapis nakłada tylko ich kopie (``Highlights.font_over``, ``Highlights.fill_over``, ``RowLook``).
-
-    Zawężenie liczy dni od początku systemu dat skoroszytu (1900 albo 1904) z dniem zapasu z obu stron, bo openpyxl
-    zaokrągla część dnia do milisekund; wiersz zakresu z datą spoza przedziału czytający i tak pomija.
-    """
-
     day = timedelta(days=1)
     low, high = ((moment - epoch) / day for moment in (period.start - day, period.end + day))
     dates = {name: columns[COLUMNS.index(DATE)] for name, columns, _ in sheets}
@@ -608,11 +476,6 @@ def _windows(path: Path, content: bytes, sheets: _SheetsKey, ranges: Mapping[str
 def _read_rows(
     content: bytes, sheet: Worksheet, columns: Sequence[int], look_columns: Sequence[int], rows: range | None
 ) -> Iterator[_ReadRow]:
-    """Wiersze arkusza od 2 (w zakresie ``rows``, gdy jest): komórki ``COLUMNS`` z wartością, Wyróżnieniami tej samej
-    reguły co w Pliku zbiorczym (``highlights.LookReader``), formatem liczby (ogólnym dla brakującej komórki) i
-    Hiperłączem, a wiersz z tym, czy jest uporządkowany (``raw_orders.ordered_look`` na komórkach z wartością w
-    ``look_columns``)."""
-
     min_row, max_row = 2, None
     if rows is not None:
         min_row, max_row = max(min_row, rows.start), rows.stop - 1
@@ -685,8 +548,6 @@ def _look(found: _ReadRow) -> RowLook:
 
 
 def _forbidden_positions(positions: Mapping[Column, int]) -> tuple[tuple[client_data.ForbiddenColumn, int], ...]:
-    """Zakazane kolumny arkusza zleceń wśród kolumn ``COLUMNS`` z ich numerem w arkuszu."""
-
     return client_data.forbidden_columns({normalize_text(column.target_header): positions[column] for column in COLUMNS})
 
 

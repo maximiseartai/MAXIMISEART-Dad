@@ -18,12 +18,10 @@ from typing import Final
 from tests.fixtures.znane_luki import assert_znane_luki, ruff, ruff_i_mypy, wymaga_ruff, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
-# Sonda modułu Centrum: ścieżka w src/ bez prawa właściciela do SLF001.
 CENTRUM_PROBE = ROOT / "src" / "rozliczenia" / "centrum" / "sonda_skladowej.py"
 
 _USTAWIENIA: Final = "from rozliczenia.centrum.settings.owner import CentrumSettings\n\n\n"
 
-# Postać → moduł, którego prywatne pole Ustawień ruff odrzuca w module Centrum (SLF001).
 DROGI: Final = {
     "zapis pliku Ustawień przez prywatne miejsce właściciela": _USTAWIENIA
     + 'def usun_pracownika(settings: CentrumSettings, data: str) -> None:\n    settings._places["workers"].write(data)\n',
@@ -53,8 +51,6 @@ def miejsce() -> object:
 
 @wymaga_ruff
 def test_prywatna_skladowa_ustawien_w_module_centrum_pada_w_ruff(tmp_path: Path) -> None:
-    """Moduł Centrum, który sięga do prywatnego pola ``CentrumSettings``, pada w ruff (``SLF001``)."""
-
     zgloszenia = ruff(zapisz(DROGI, tmp_path), CENTRUM_PROBE)
 
     assert {opis: lista for opis, lista in zgloszenia.items() if not any("SLF001" in z for z in lista)} == {}
@@ -62,7 +58,4 @@ def test_prywatna_skladowa_ustawien_w_module_centrum_pada_w_ruff(tmp_path: Path)
 
 @wymaga_ruff_i_mypy
 def test_znane_luki_prywatnych_skladowych_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
-    """Każda próbka ``ZNANE_LUKI`` przechodzi przez cały ruff i mypy z konfiguracją repozytorium na ścieżce modułu
-    Centrum."""
-
     assert_znane_luki(ruff_i_mypy(zapisz(ZNANE_LUKI, tmp_path), CENTRUM_PROBE), "tests/test_prywatne_skladowe.py (ZNANE_LUKI)")

@@ -24,8 +24,6 @@ def _prose(line: str) -> bool:
 
 
 def _lines_broken_mid_sentence(text: str) -> Iterator[int]:
-    """Numery linii prozy, które kończą się w środku zdania, choć następna linia ciągnie ten sam akapit."""
-
     lines = text.splitlines()
     fenced = False
     front_matter = lines[:1] == ["---"]

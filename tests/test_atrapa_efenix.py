@@ -97,8 +97,6 @@ def _connection(url: str) -> HTTPConnection:
 
 
 def _answer(connection: HTTPConnection, method: str, path: str, body: str | None = None) -> tuple[int, socket.socket | None]:
-    """Status odpowiedzi na żądanie i gniazdo połączenia, którym poszło."""
-
     connection.request(method, f"/{path}", body=body, headers=_FORM if body is not None else {})
     sent_by = connection.sock
     response = connection.getresponse()
@@ -244,9 +242,6 @@ def test_stojaca_siec_daje_polowe_tresci_i_milknie_bez_konca_polaczenia() -> Non
 
 
 def test_logowanie_z_sesja_w_ciasteczku_daje_ciasteczko_ktorym_przegladarka_jest_w_sesji() -> None:
-    """Efenix trzyma sesję w ciasteczku (``cookie_session``): przekierowanie po zalogowaniu daje ciasteczko sesji, z którym
-    lista otwiera się w sesji, a bez niego przekierowuje na logowanie."""
-
     with atrapa_efenix([], cookie_session=True) as atrapa:
         atrapa.expire_session()
         connection = _connection(atrapa.url)
@@ -332,8 +327,6 @@ def test_zawieszona_strona_zlecenia_nie_odpowiada_i_nie_konczy_polaczenia() -> N
 
 
 def _order() -> EfenixOrder:
-    """Zlecenie z wyceną taty (T, 019: 2) i inną propozycją Emmetta (O, 012: 1)."""
-
     return EfenixOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", quantities={"019": 2}, emmett={"012": 1})
 
 
@@ -386,8 +379,6 @@ def test_zapis_ilosci_liczy_w_cenach_stanu_zero_usuwa_pozycje_a_kod_spoza_katalo
 
 
 def test_model_zmienia_kopie_zlecen_testu_i_oddaje_kopie_stanu() -> None:
-    """Zlecenia testu zostają bez zmian po działaniu okna, a zmiana zlecenia ze ``state`` nie zmienia stanu efenix."""
-
     order = _order()
     stan = StanEfenix([order])
 
@@ -414,13 +405,9 @@ def test_dzialanie_na_zleceniu_ktorego_nie_ma_w_efenix_dostaje_brak_zlecenia_i_n
     assert (answers, stan.state()) == ([NoOrder.NO_ORDER] * 6, ([_order()], True))
 
 
-# Kontrakt okien: okno w procesie i okno przeglądarki na Atrapie efenix na tym samym stanie efenix.
-
 _DAY = date(2026, 9, 9)
 _EARLIEST = earliest_execution_date(TODAY)
-# Kody pozycji z polem Ilość na pełnej stronie zlecenia.
 _QUANTITY_CODES = tuple(position.code for position in CATALOG if position.kind == "ILOSC")
-# Ścieżka żądania Atrapy efenix, które jest działaniem serwera (``expire_after`` Atrapy bierze ścieżkę).
 _PATHS = {
     Action.SEARCH: SEARCH,
     Action.OPEN: ORDER_PAGE,
@@ -475,9 +462,6 @@ _Step = _Search | _Open | _SetDate | _Emmett | _Quantity | _Forward | _Logout
 
 @dataclass(frozen=True)
 class _Row:
-    """Wiersz kontraktu: zlecenia efenix, działania okna po kolei i stan efenix (``expire_after``, ``refuse_dates``,
-    ``logged_in``: sesja przed otwarciem okna)."""
-
     name: str
     orders: tuple[AtrapaOrder, ...]
     steps: tuple[_Step, ...]
@@ -504,8 +488,6 @@ class _Row:
 
 
 def _new(**changes: Any) -> AtrapaOrder:
-    """Zlecenie bez wyceny z propozycją Emmetta 012: 1 i 019: 2."""
-
     return replace(AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", emmett={"012": 1, "019": 2}), **changes)
 
 
@@ -611,9 +593,6 @@ def _listed(order: ListedOrder) -> str:
 
 
 def _observed(open_window: Callable[[], AbstractContextManager[Efenix]], steps: Sequence[_Step], log_out: Callable[[], None]) -> list[str]:
-    """Obserwacja każdego działania okna po kolei; Zatrzymanie z wyjątku okna kończy przebieg. ``log_out`` kończy sesję
-    efenix poza oknem."""
-
     lines: list[str] = []
     found: Sequence[ListedOrder] = ()
     try:
@@ -649,8 +628,6 @@ def _observed(open_window: Callable[[], AbstractContextManager[Efenix]], steps: 
 
 
 def _ended(stan: StanEfenix[AtrapaOrder], resent: frozenset[Action]) -> list[str]:
-    """Stan efenix po przebiegu i liczba każdego działania okna; działanie z ``resent`` co najmniej raz."""
-
     orders, logged_in = stan.state()
     return [
         *(
@@ -678,8 +655,6 @@ def test_okno_w_procesie_daje_przebiegi_z_pliku_kontraktu() -> None:
 
 
 def test_kontrakt_okien_ma_wiersz_z_wylogowaniem_przed_kazdym_dzialaniem_okna() -> None:
-    """Każde działanie okna, także Przekazanie do akceptacji, czyli zmiana statusu."""
-
     assert {row.expire_after[0] for row in _ROWS if row.expire_after is not None} == set(Action)
 
 

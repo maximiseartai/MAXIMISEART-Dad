@@ -409,8 +409,6 @@ class _LoginRequired(BaseHTTPRequestHandler):
 
 @contextmanager
 def origin_asking_for_login() -> Iterator[str]:
-    """Serwer HTTP na tym komputerze, który na każde pytanie Gita odpowiada „401: zaloguj się”, jak GitHub."""
-
     with serwer_http(_LoginRequired, name="github-logowanie") as server:
         yield f"{server.url}/MAXIMISEART-Dad.git"
 

@@ -13,12 +13,10 @@ from typing import Final
 from ._model import SUBJECT_WORD, SubjectFault
 
 _REPLY: Final = re.compile(r"(?:\s*(?:re|odp)\s*:)+", re.IGNORECASE)
-"""Przedrostki odpowiedzi: ``Re:`` i z Outlooka po polsku ``Odp:``, raz albo więcej."""
 _NUMBER: Final = re.compile(r"[0-9]+")
 _WORD: Final = re.compile(r"(?P<before>[\W_]*?)(?P<word>[^\W\d_]+)")
 _LETTER: Final = re.compile(r"[^\W\d_]")
 _TAIL: Final = re.compile(r"(?:[\W_]*r)?[\W_]*\Z")
-"""Koniec tematu po dacie, który temat wybacza: ``r`` albo ``r.`` i interpunkcja."""
 _DATE: Final = re.compile(r"\s*(?P<date>[0-9]+(?:[\W_]+[0-9]+)*)")
 _DAY_BESIDE: Final = re.compile(
     r"(?<![0-9])(?P<day>[0-9]{1,2})[\W_]+(?P<month>[0-9]{1,2})(?:[\W_]+(?P<year>[0-9]{4}|[0-9]{2}))?(?![0-9])"
@@ -26,7 +24,6 @@ _DAY_BESIDE: Final = re.compile(
 """Pierwsza data w temacie z błędem obok daty: dzień i miesiąc z rokiem albo bez, rozdzielone jak w temacie, który
 gramatyka wybacza."""
 _DAY_BESIDE_FAULTS: Final = frozenset({SubjectFault.OTHER_WORDS, SubjectFault.OTHER_TEXT, SubjectFault.NO_YEAR})
-"""Powody, przy których błąd stoi obok daty, a nie w niej: tylko przy nich dzień z tematu da się przeczytać."""
 _BEFORE: Final = timedelta(days=302)
 _AFTER: Final = timedelta(days=62)
 """Dzień z tematu Raportu wykonawcy leży od ``_BEFORE`` przed dniem przyjścia maila do ``_AFTER`` po nim; razem 365 dni,
@@ -54,8 +51,6 @@ class _DayMonth:
 
 
 def reminder_subject(day: date) -> str:
-    """Temat Przypomnienia o raporcie za dzień ``day``: ``Przypomnienie: raport za dzień dd.mm.rrrr``."""
-
     return _REMINDER.format(day=f"{day:%d.%m.%Y}")
 
 
@@ -218,9 +213,6 @@ def _day_beside(rest: str, arrived: date) -> date | None:
 
 
 def _without_year(day: int, month: int, arrived: date) -> date | None:
-    """Dzień ``day`` miesiąca ``month`` w roku, w którym leży w granicach ``_BEFORE`` i ``_AFTER`` od dnia przyjścia;
-    ``None``, gdy w żadnym nie jest dniem w tych granicach."""
-
     for year in (arrived.year - 1, arrived.year, arrived.year + 1):
         try:
             candidate = date(year, month, day)

@@ -24,16 +24,12 @@ from ._subject import reminder_subject
 
 
 class Pora(Enum):
-    """Pora przypomnień: w każdej idzie najwyżej jedno przypomnienie za dzień do Wykonawcy."""
-
     MORNING = "poranna"
     EVENING = "wieczorna"
 
 
 @dataclass(frozen=True)
 class TimeRange:
-    """Pora od ``start`` do ``end``, bez końca pory: przy porze 8:00–17:00 16:59 jest w porze, a 17:00 już nie."""
-
     start: time
     end: time
 
@@ -43,16 +39,12 @@ class TimeRange:
 
 @dataclass(frozen=True)
 class ReminderSchedule:
-    """Pory przypomnień i godzina pierwszego: przypomnienie za dzień X należy się od ``first`` dnia X+1, w porze
-    porannej albo wieczornej; poza nimi przypomnienia nie idą."""
-
     morning: TimeRange
     evening: TimeRange
     first: time
 
 
 DAY_FIELD: Final = "{dzień}"
-"""Jedyne pole w pierwszym zdaniu przypomnienia: dzień raportu w postaci ``dd.mm.rrrr``."""
 
 DEFAULT_SCHEDULE: Final = ReminderSchedule(TimeRange(time(8), time(17)), TimeRange(time(18), time(22)), time(8))
 """Pora poranna od 8:00 do 17:00, wieczorna od 18:00 do 22:00 i pierwsze przypomnienie od 8:00 (ADR 0030). Poranne
@@ -60,7 +52,6 @@ przypomnienie nie nadrabia się od 17:00, żeby laptop włączony tuż przed 18:
 kilka minut (decyzja Maksa 12.11)."""
 
 DEFAULT_TEXT: Final = f"Poproszę o wysłanie raportu za dzień {DAY_FIELD}."
-"""Pierwsze zdanie domyślnego tekstu przypomnienia."""
 
 
 ReminderProblemKind = Literal["empty_morning", "empty_evening", "overlap", "empty_text", "unknown_field", "enabled_without_since"]
@@ -112,7 +103,6 @@ class ReminderSettings:
 
 
 DEFAULT_REMINDERS: Final = ReminderSettings(False, None, DEFAULT_SCHEDULE, DEFAULT_TEXT, "")
-"""Przypomnienia bez pliku Ustawień: wyłączone, bez dnia wdrożenia, z porami i treścią z ADR 0030 i bez stopki."""
 
 
 @dataclass(frozen=True)
@@ -211,8 +201,6 @@ class ReminderInputs:
 
 @dataclass(frozen=True)
 class Reminder:
-    """Przypomnienie do wysłania: Wykonawca, wszystkie jego adresy z listy, dzień zleceń, temat i treść."""
-
     worker: Login
     recipients: tuple[SenderAddress, ...]
     day: date
@@ -221,17 +209,12 @@ class Reminder:
 
 
 def reminder_pora(now: datetime, schedule: ReminderSchedule) -> Pora | None:
-    """Pora chwili ``now``; ``None`` poza porami (przy porach domyślnych od 17:00 do 18:00 i w nocy, od 22:00 do 8:00)."""
-
     if schedule.morning.holds(now.time()):
         return Pora.MORNING
     return Pora.EVENING if schedule.evening.holds(now.time()) else None
 
 
 def reminder_text(day: date, text: str, footer: str) -> str:
-    """Treść Przypomnienia o raporcie za dzień ``day``: pierwsze zdanie taty z dniem w miejscu ``{dzień}``, stały wzór
-    Raportu wykonawcy, a na końcu stopka taty, gdy nie jest pusta."""
-
     shown = f"{day:%d.%m.%Y}"
     lines = [
         text.replace(DAY_FIELD, shown),

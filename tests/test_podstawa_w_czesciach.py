@@ -86,8 +86,6 @@ def test_zla_czesc_centrum_konczy_przebieg_porazka_zanim_cokolwiek_wystartuje(ru
 
 @dataclass
 class _Steps:
-    """Co runner bez procesów zrobił: funkcje każdego drive'u, argumenty fixture'a i jak trzymał maszynę."""
-
     driven: list[list[str]] = field(default_factory=list)
     fixtures: list[list[str]] = field(default_factory=list)
     holds: list[str] = field(default_factory=list)

@@ -79,7 +79,8 @@ od 2021 roku: około 42 tys. wierszy, cztery arkusze, około 6,5 MB, w OneDrive.
 - **Wygląd dnia jak w dniach uporządkowanych ręcznie** (2026-10-28, Uwaga
   taty). Wiersz zlecenia i pusty wiersz między segmentami mają komórki od
   kolumny A do `UWAGI`, wszystkie z cienką ramką, także pustą kolumnę A przed
-  `AKCJE`. `WYKONAWCA` jest pogrubiony (Calibri 9), reszta nie. Kolumny z
+  `AKCJE`. `WYKONAWCA` jest pogrubiony (Calibri 9), reszta to Calibri 8 bez
+  pogrubienia: po tym kroju Planowanie poznaje wiersz uporządkowany. Kolumny z
   aplikacji za `UWAGI` (u taty P:AK po przesunięciu) znikają razem z
   komórkami, tak jak w dniach, które tata porządkował ręcznie. To zastępuje
   historyjki 12 („nic nie pogrubione”) i 22 („kolumny za `UWAGI` zostają”)
@@ -97,6 +98,9 @@ od 2021 roku: około 42 tys. wierszy, cztery arkusze, około 6,5 MB, w OneDrive.
   przeczytać, Uporządkowanie nie używa: dzień porządkuje bez Historii adresu z
   ostrzeżeniem, nie Zatrzymaniem. Baza nie trafia do Kopii wejścia, a Logi mają
   tylko liczby: zlecenia z Historią adresu, skopiowane wiersze i arkusze Bazy.
+  Baza taty ma około 125 tys. wierszy w sześciu arkuszach, więc odczyt bierze z
+  XML tylko kolumnę A, `MIASTO` i granice wierszy, a całe wiersze dopiero dla
+  zleceń z tym samym adresem.
 - **Zapis zmienia też wartości: Wpis urządzenia i czynności INTERMAX**
   (2026-10-27, reguła taty). Surowe zlecenie z rodzajem `Instalacja Hurt` u
   operatora z listy taty (Netia, P4, Plus, VECTRA, SYSTEMIA, ORANGE, TMOBILE)

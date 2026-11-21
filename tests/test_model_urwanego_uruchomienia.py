@@ -36,9 +36,6 @@ def _definitions() -> dict[str, list[str]]:
 
 
 def _source(names: list[str]) -> str:
-    """Plik z każdą definicją z ``names`` (``Klasa.metoda`` jako metoda w swojej klasie, tak samo ``create_app.runs``),
-    każda z własnym wynikiem, i z funkcją oraz metodą każdej klasy, których tabela nie wymienia."""
-
     classes: dict[str, list[str]] = defaultdict(list)
     lines = []
     for name in names:
@@ -55,8 +52,6 @@ def _source(names: list[str]) -> str:
 
 
 def _file_of(name: str) -> str:
-    """Plik definicji ``name`` z tabeli; ``Klasa.obok`` leży w pliku klasy, a ``obok`` w pliku ``guard_logs``."""
-
     owner = name.split(".")[0] + "." if name.endswith(".obok") else None
     wanted = "guard_logs" if name == "obok" else name
     [path] = [
@@ -68,8 +63,6 @@ def _file_of(name: str) -> str:
 
 
 def _repository(root: Path) -> Path:
-    """Tabela definicji skilla i pliki, które ją spełniają, ze skrótami przeliczonymi na nich; zwraca folder skilla."""
-
     copy = root / DEFINITIONS.relative_to(ROOT)
     copy.parent.mkdir(parents=True)
     shutil.copy(DEFINITIONS, copy)
