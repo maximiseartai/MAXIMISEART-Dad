@@ -3,19 +3,21 @@ language: python
 severity: error
 message: >-
   wzorzec re na def albo class nie czyta definicji Pythona: łapie też linię napisu, użycie nazwy po imporcie i definicję
-  w funkcji, a gubi przypisanie; definicje modułu czytaj z ast.parse (FunctionDef, AsyncFunctionDef, ClassDef, cele
-  Assign i AnnAssign)
+  w funkcji, a gubi przypisanie; definicję nazwy w module daje rozjazd_modelu.definiuje, a inne definicje modułu czytaj
+  z ast.parse (FunctionDef, AsyncFunctionDef, ClassDef, cele Assign i AnnAssign)
 files:
   - tools/**/*.py
   - .agents/skills/*/scripts/**/*.py
   - src/**/*.py
   - tests/**/*.py
+ignores:
+  - tools/lib/rozjazd_modelu.py
 metadata:
   przypadki:
     - 2524/W1/r1
 rule:
   kind: string
-  regex: '(^|[^\w])(def|class)\)?( |\\s)'
+  regex: '(^|[^A-Za-z0-9_]|\\[A-Za-z])(def|class)([^A-Za-z0-9_]|$)'
   inside:
     kind: call
     stopBy: end

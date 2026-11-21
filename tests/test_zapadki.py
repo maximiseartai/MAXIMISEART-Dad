@@ -2447,9 +2447,15 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.findall(r"^(def|class)\\s+(\\w+)", "")\n', [3]),
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"^def (\\w+)", re.MULTILINE)\n', [3]),
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.search(rf"^class {{NAZWA}}\\b", "")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"\\bdef\\s+(\\w+)")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"\\bclass\\b")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile("^def\\\\s+(\\\\w+)")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"^def[ \\t]+(\\w+)")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"(?:class|def)")\n', [3]),
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"default +(\\w+)")\n', []),
     ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"subclass(\\w+)")\n', []),
-    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"def")\n', []),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"undef_class_name")\n', []),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"_def +")\n', []),
     ("definicja-pythona-wzorcem", 'import ast\n\nNAZWY = {wezel.name for wezel in ast.parse("").body if isinstance(wezel, ast.FunctionDef)}\n', []),
 ]
 
@@ -2521,6 +2527,7 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "wzorzec w stałej poza wywołaniem re": f'{_PATTERN}r"^def +(\\w+)"\nFOUND = re.compile(LINE)\n',
         "re pod inną nazwą": 'import re as wzorce\n\nFOUND = wzorce.compile(r"^def +(\\w+)")\n',
         "definicja przez startswith bez re": 'def definicja(linia: str) -> bool:\n    return linia.startswith(("def ", "class "))\n',
+        "słowo sklejone z części wzorca": f'{_PATTERN}re.compile("^de" + "f +(\\\\w+)")\n',
     },
 }
 
