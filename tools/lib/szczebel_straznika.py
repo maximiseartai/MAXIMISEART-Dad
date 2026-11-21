@@ -50,18 +50,16 @@ def applies(pull: Pull) -> bool:
 
 @final
 @dataclass(frozen=True)
-class Ruling:
-    thread: Pull
-    mechanism: Mechanism | None
+class Accepted:
     guard: Guard
+    owner: bool
 
-    @property
-    def refusal(self) -> str | None:
-        return _refusal(self.mechanism, self.guard) if applies(self.thread) else None
 
-    @property
-    def owner(self) -> bool:
-        return werdykt_pr.rule_applies(self.thread, werdykt_pr.deployment(self.thread.base, OWNER_MARKER)) and self.mechanism is Mechanism.TEST and self.guard.kind is Kind.PYTEST
+def rule(thread: Pull, mechanism: Mechanism | None, guard: Guard) -> Accepted | str:
+    if applies(thread) and (reason := _refusal(mechanism, guard)):
+        return reason
+    owned = werdykt_pr.rule_applies(thread, werdykt_pr.deployment(thread.base, OWNER_MARKER))
+    return Accepted(guard, owned and mechanism is Mechanism.TEST and guard.kind is Kind.PYTEST)
 
 
 def _refusal(mechanism: Mechanism | None, guard: Guard) -> str | None:

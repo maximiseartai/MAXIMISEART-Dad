@@ -122,7 +122,7 @@ z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyk
 także dla Ważnego z ``Gdzie`` bez miejsca ``plik:linia`` w repo (plik spoza repo), którego inne selektory odmawiają.
 ``--przed-dowodem-testu`` (wątek sprzed wdrożenia dowodu testu, ``bramka_straznika.TEST_MARKER``) przepuszcza
 ``brak - test``, którego poza takim wątkiem dowód odmawia. ``--chroniony-wlasciciel`` (Ważne szczebla ``test``,
-``szczebel_straznika.Ruling.owner``) przyjmuje ``pytest <węzeł>`` tylko, gdy każdy plik z ``Gdzie`` to chroniony
+``szczebel_straznika.rule``) przyjmuje ``pytest <węzeł>`` tylko, gdy każdy plik z ``Gdzie`` to chroniony
 właściciel w drzewie HEAD PR scalonego z bazą (``chroniony_wlasciciel``), a inaczej odmawia bez biegu testu z drogą
 do szczebla ``architektura``. Linia na Ważne i na końcu
 ``DOWÓD OK|ODMOWA | <selektor> | wykryte k/n`` (przy wyjątku ``wyjątek k/n``); ``tools/scal_pr.py`` uruchamia go przy

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import shlex
 import subprocess
 import sys
 import time
-from typing import final
 
 import github
 import potomne
@@ -27,7 +25,7 @@ z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``, a w jakim
 
 Wpis ``strazniki_przeniesione.PLIK``, który PR dodaje albo zmienia (strażnik przeniesiony Ważnego scalonego PR,
 ``strazniki_przeniesione.ZASADY``), dostaje ten sam dowód ze swoim selektorem i Ważnym, także w PR bez werdyktu
-``FAIL``, i tę samą regułę szczebla (``szczebel_straznika.Ruling``) z polem ``Mechanizm:`` tego Ważnego z werdyktów jego PR, w wątku tego
+``FAIL``, i tę samą regułę szczebla (``szczebel_straznika.rule``) z polem ``Mechanizm:`` tego Ważnego z werdyktów jego PR, w wątku tego
 PR; wpis, którego narzędzie nie wczyta, wpis Ważnego tego PR, PR niescalonego albo Ważnego, którego PR nie ma, to odmowa.
 
 Selektor wybiera autor tylko spośród tych, które przyjmuje szczebel z pola ``Mechanizm:`` Ważnego
@@ -107,40 +105,34 @@ def problems(pull: Pull) -> list[str]:
         return [Waiting(f"strażnik: GitHub nie wyrenderował werdyktów albo opisu PR ({error}), uruchom ponownie")]
     blocks = {block.heading: block for block in section.blocks} if section else {}
     refused: list[str] = []
-    wanted: dict[tuple[straznik.Guard, bool], list[_Ruled]] = {}
+    wanted: dict[szczebel_straznika.Accepted, list[str]] = {}
     for heading, major in majors.items():
         guard = blocks[heading].selector() if heading in blocks else None
         if guard is None:
             continue
         label, round_ = heading.split(" r")
-        ruled = _Ruled(szczebel_straznika.Ruling(pull, major.mechanism, guard), f"{pull.number}/{label}/r{round_}")
-        if reason := ruled.ruling.refusal:
+        case = f"{pull.number}/{label}/r{round_}"
+        ruled = szczebel_straznika.rule(pull, major.mechanism, guard)
+        if isinstance(ruled, str):
             refused.append(
-                f"strażnik: Ważne {ruled.case}: {reason}; wpisz w jego bloku sekcji ## Korzeń przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {ruled.case}, "
+                f"strażnik: Ważne {case}: {ruled}; wpisz w jego bloku sekcji ## Korzeń przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}, "
                 f"a gdy ten szczebel nie działa (ADR 0046), recenzent następnej rundy zmienia go punktem „{szablon_werdyktu.MECHANISM_START}{label} r{round_}: <szczebel> - zdanie” w ## {szablon_werdyktu.CHECKED}"
             )
         else:
-            wanted.setdefault((guard, ruled.ruling.owner), []).append(ruled)
+            wanted.setdefault(ruled, []).append(case)
     for entry, found in cited:
         case = f"{entry.pull}/{entry.major.replace(' ', '/')}"
         if isinstance(found, str):
             refused.append(f"strażnik: wpis {case} w {strazniki_przeniesione.PLIK}: {found}")
             continue
         cited_pull, major = found
-        ruled = _Ruled(szczebel_straznika.Ruling(cited_pull, major.mechanism, entry.guard), case)
-        if reason := ruled.ruling.refusal:
-            refused.append(f"strażnik: wpis {case} w {strazniki_przeniesione.PLIK}: {reason}; wpisz w nim przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}")
+        ruled = szczebel_straznika.rule(cited_pull, major.mechanism, entry.guard)
+        if isinstance(ruled, str):
+            refused.append(f"strażnik: wpis {case} w {strazniki_przeniesione.PLIK}: {ruled}; wpisz w nim przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}")
         else:
-            wanted.setdefault((entry.guard, ruled.ruling.owner), []).append(ruled)
+            wanted.setdefault(ruled, []).append(case)
     deadline = time.monotonic() + PROOF_TIMEOUT_S
-    return [*refused, *(reason for rulings in wanted.values() for reason in _proved(pull, rulings, deadline - time.monotonic()))]
-
-
-@final
-@dataclass(frozen=True)
-class _Ruled:
-    ruling: szczebel_straznika.Ruling
-    case: str
+    return [*refused, *(reason for accepted, cases in wanted.items() for reason in _proved(pull, accepted, cases, deadline - time.monotonic()))]
 
 
 def _cited(pull: Pull, entry: strazniki_przeniesione.Moved) -> tuple[Pull, rejestr_korzeni.Major] | str:
@@ -155,8 +147,8 @@ def _cited(pull: Pull, entry: strazniki_przeniesione.Moved) -> tuple[Pull, rejes
     return cited, known[entry.major]
 
 
-def _proved(pull: Pull, rulings: list[_Ruled], left: float) -> list[str]:
-    guard, owner, cases = rulings[0].ruling.guard, rulings[0].ruling.owner, [ruled.case for ruled in rulings]
+def _proved(pull: Pull, accepted: szczebel_straznika.Accepted, cases: list[str], left: float) -> list[str]:
+    guard, owner = accepted.guard, accepted.owner
     before = guard.kind is straznik.Kind.TESTS and not werdykt_pr.rule_applies(pull, werdykt_pr.deployment(pull.base, TEST_MARKER))
     flags = [*(["--przed-dowodem-testu"] if before else []), *(["--chroniony-wlasciciel"] if owner else [])]
     arguments = ["--straznik", str(guard), "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case)), *flags]
