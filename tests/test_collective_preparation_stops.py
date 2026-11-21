@@ -1,11 +1,9 @@
-"""Zatrzymania Przygotowania pliku zbiorczego przy problemach z Rejestrem zleceń i wzorcami."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import cast
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime
 import errno
 import os
 from pathlib import Path
@@ -164,10 +162,25 @@ def test_rejestr_without_required_header_stops_with_header_name(tmp_path: Path, 
     )
 
 
-def test_rejestr_z_dwoma_arkuszami_bez_kompletu_naglowkow_wskazuje_pierwszy_przy_rownym_braku(tmp_path: Path) -> None:
-    """Gdy żaden arkusz nie ma kompletu nagłówków, Komunikat wskazuje arkusz z najmniejszym brakiem, a przy równym
-    braku pierwszy w kolejności skoroszytu."""
+def test_rejestr_z_dwoma_arkuszami_bez_kompletu_naglowkow_wskazuje_arkusz_z_najmniejszym_brakiem(tmp_path: Path) -> None:
+    fixture = make_preparation_fixture(tmp_path)
+    write_register(fixture.register_path, headers=tuple(header for header in REGISTER_HEADERS if header != "SKUTECZNE"))
+    workbook = load_workbook(fixture.register_path)
+    workbook.copy_worksheet(workbook["ZLECENIA"]).title = "ZLECENIA 2"
+    for cell in workbook["ZLECENIA"][1]:
+        if cell.value == "ADRES":
+            cell.value = None
+    workbook.save(fixture.register_path)
 
+    error = stop_preparation(fixture)
+
+    assert (error.message.code, error.message.where) == (
+        "BRAK_NAGLOWKA_REJESTRU",
+        "plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, arkusz ZLECENIA 2, wiersz 1",
+    )
+
+
+def test_rejestr_z_dwoma_arkuszami_bez_kompletu_naglowkow_wskazuje_pierwszy_przy_rownym_braku(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(tmp_path)
     write_register(fixture.register_path, headers=tuple(header for header in REGISTER_HEADERS if header != "SKUTECZNE"))
     workbook = load_workbook(fixture.register_path)
@@ -242,8 +255,6 @@ def add_register_sheet(
     hidden: bool = False,
     first: bool = False,
 ) -> None:
-    """Dopisuje do syntetycznego Rejestru arkusz z nagłówkami w wierszu 1 i wierszami od 2."""
-
     workbook = load_workbook(register_path)
     sheet = workbook.create_sheet(title, 0 if first else None)
     write_register_sheet(sheet, rows, headers=headers)
@@ -301,8 +312,13 @@ def test_sheet_with_orders_of_other_periods_does_not_block_period(tmp_path: Path
     assert (summary.period_order_count, summary.successful_order_count) == (4, 3)
 
 
-# Okres 08_14_09_2026 trwa od wtorku 8.09 do poniedziałku 14.09; zlecenia z dnia tuż obok należą do sąsiedniego okresu.
-@pytest.mark.parametrize("started", [datetime(2026, 9, 7, 18, 0), datetime(2026, 9, 15, 9, 0)])
+@pytest.mark.parametrize(
+    "started",
+    [
+        pytest.param(datetime(2026, 9, 7, 18, 0), id="poniedzialek-przed-okresem-od-wtorku"),
+        pytest.param(datetime(2026, 9, 15, 9, 0), id="wtorek-po-okresie-do-poniedzialku"),
+    ],
+)
 def test_sheet_with_order_from_day_next_to_period_does_not_block_period(tmp_path: Path, started: datetime) -> None:
     fixture = make_preparation_fixture(tmp_path)
     add_register_sheet(fixture.register_path, "ZLECENIA 2", [register_order(7, started)])
@@ -313,8 +329,6 @@ def test_sheet_with_order_from_day_next_to_period_does_not_block_period(tmp_path
 
 
 def raw_order(number: int, started: datetime | None, worker: str | None = "adrian.testowy") -> dict[str, object]:
-    """Zlecenie z aplikacji do wklejenia na dół Rejestru; ``None``: bez daty albo bez Wykonawcy."""
-
     order = register_order(number, datetime(2026, 9, 1) if started is None else started)
     if started is None:
         del order["DATA GODZ. POCZ."]
@@ -325,7 +339,6 @@ def raw_order(number: int, started: datetime | None, worker: str | None = "adria
     return order
 
 
-# Domyślny Rejestr kończy się uporządkowanym zleceniem z poniedziałku 14.09 w wierszu 13; wklejenie zaczyna się w 16.
 @pytest.mark.parametrize(
     ("pasted", "rows"),
     [
@@ -353,8 +366,10 @@ def raw_order(number: int, started: datetime | None, worker: str | None = "adria
 def test_surowe_zlecenia_w_okresie_zatrzymuja_sprawdzanie_bez_plikow(
     tmp_path: Path, pasted: list[dict[str, object]], rows: str, dry_run: bool
 ) -> None:
+    [*_, last_ordered] = default_register_rows()
+    assert last_ordered is not None and cast(datetime, last_ordered["DATA GODZ. POCZ."]).date() == date(2026, 9, 14)
     fixture = make_preparation_fixture(tmp_path)
-    paste_raw_orders(fixture.register_path, pasted)
+    assert paste_raw_orders(fixture.register_path, pasted) == 16
     recorded: list[ProgressEvent] = []
     periods_before = sorted(path.name for path in fixture.periods_directory.iterdir())
     register_before = fixture.register_path.read_bytes()
@@ -397,13 +412,6 @@ def test_surowe_zlecenia_z_dnia_spoza_okresu_nie_zatrzymuja_przygotowania(
 
 
 def register_with_app_look_row(tmp_path: Path, day: int) -> PreparationFixture:
-    """Rejestr, którego dół to trzy uporządkowane zlecenia z ``day``.09, a środkowe ma wygląd z aplikacji (Roboto 8).
-
-    Tak wygląda zlecenie dopisane do uporządkowanego dnia przez skopiowanie z aplikacji albo notatka taty w innej
-    czcionce: wiersz bez Calibri 8 nad uporządkowanym, a na dole nic nie jest wklejone. Środkowe zlecenie jest w
-    wierszu 17.
-    """
-
     fixture = make_preparation_fixture(
         tmp_path,
         [*default_register_rows(), None, None, *(register_order(7 + hour, datetime(2026, 9, day, 8 + hour)) for hour in range(3))],
@@ -460,9 +468,6 @@ def test_surowe_zlecenia_w_jednym_z_dwoch_arkuszy_zlecen_zatrzymuja_okres(tmp_pa
 
 
 def test_powtorzony_naglowek_z_surowymi_zleceniami_w_okresie_zatrzymuje_odczyt_danych_na_naglowku(tmp_path: Path) -> None:
-    """Sprawdzanie rozpoznaje arkusz zleceń tak jak Odczyt danych, więc arkusz z powtórzonym nagłówkiem nie jest
-    arkuszem zleceń: tata słyszy o nagłówku, a nie o wklejonych zleceniach w kolumnach, których nie wiadomo."""
-
     fixture = make_preparation_fixture(tmp_path)
     write_register(fixture.register_path, headers=(*REGISTER_HEADERS, "WYKONAWCA "))
     paste_raw_orders(fixture.register_path, [raw_order(11, datetime(2026, 9, 13, 10)), raw_order(12, datetime(2026, 9, 13, 12))])
@@ -573,8 +578,6 @@ def text_instead_of_number_in_date_of_row_2(data: bytes) -> bytes:
 
 
 def _damaged_in_earlier_period(tmp_path: Path, damage: Callable[[bytes], bytes]) -> PreparationFixture:
-    """Rejestr, w którym wiersz 2 (zlecenie z 2025 r., daleko przed okresem) jest uszkodzony przez ``damage``."""
-
     fixture = make_preparation_fixture(tmp_path, [register_order(1, datetime(2025, 3, 4, 8, 0)), *default_register_rows()])
     rewrite_parts(fixture.register_path, lambda name, data: damage(data) if name == "xl/worksheets/sheet2.xml" else data)
     return fixture
@@ -593,9 +596,6 @@ def test_rejestr_z_tekstem_zamiast_liczby_w_dacie_wiersza_wczesniejszego_okresu_
 def test_zepsuty_znacznik_w_wierszu_wczesniejszego_okresu_nie_zatrzymuje_przygotowania_a_diagnoza_go_widzi(
     tmp_path: Path,
 ) -> None:
-    """Przygotowanie czyta z Rejestru tylko wiersze okresu, więc zepsuty XML w wierszu z 2025 r. go nie zatrzymuje;
-    Diagnoza czyta cały Rejestr i nazywa go uszkodzonym."""
-
     (tmp_path / "caly").mkdir()
     (tmp_path / "zepsuty").mkdir()
     intact = run_preparation(_damaged_in_earlier_period(tmp_path / "caly", lambda data: data))
@@ -800,7 +800,7 @@ def test_wzorzec_changed_after_a_run_stops_the_next_run_in_the_same_process(tmp_
 def test_merged_cells_of_wzorzec_below_written_orders_do_not_stop(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(tmp_path)
     workbook = load_workbook(fixture.collective_template_path, keep_links=True)
-    workbook["Sheet1"].merge_cells("A21:K21")  # pod trzema Zleceniami skutecznymi z wiersza 18
+    workbook["Sheet1"].merge_cells("A21:K21")
     workbook.save(fixture.collective_template_path)
     workbook.close()
 

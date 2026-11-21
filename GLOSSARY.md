@@ -133,6 +133,7 @@ Ma dziesiątki tysięcy wierszy zleceń od 2021 r. i dziesiątki tysięcy tekst�
 Procesy go czytają.
 Uporządkowanie INTERMAX zmienia w nim tylko Surowe zlecenia i widok po otwarciu, Wpisanie raportów tylko zlecenia uporządkowanych dni (`SKUTECZNE`, `CZYNNOŚCI ZREALIZOWANE`, Przeniesienie zlecenia i Zlecenie dopisane z raportu), a przywrócenie Kopii INTERMAX zastępuje go w całości tą kopią.
 Edytują go tata na swoim komputerze i Andrzej na swoim.
+Rejestr w kształcie, którego Excel nie zapisuje (np. zagnieżdżony tekst wspólny albo znaczniki w CDATA, komentarzu lub instrukcji przetwarzania), proces i Diagnoza nazywają uszkodzonym, zamiast zgadywać, który tekst ma komórka.
 
 ## Aplikacja firmowa
 
@@ -223,6 +224,7 @@ Zlecenia, które tata albo jego pracownik wkleił z aplikacji firmowej na dół 
 Jedno wklejenie to zwykle zlecenia jednego dnia.
 Mają wygląd z aplikacji.
 Pierwszy wiersz wklejenia przychodzi przesunięty o dwie kolumny w lewo, ale zlecenia są Surowe także wtedy, gdy ktoś przesunął go już ręcznie.
+Pojedynczy wiersz z wyglądem z aplikacji nad uporządkowanymi wierszami, gdy na dole nic nie jest wklejone, nie jest Surowym zleceniem: tak wygląda zlecenie dopisane do uporządkowanego dnia przez skopiowanie z aplikacji albo notatka taty w innej czcionce.
 W `CZYNNOŚCI` mają tylko nazwę operatora, a w `URZĄDZENIA` rodzaj zlecenia (instalacja, usterka); poza Wpisem urządzenia i czynności INTERMAX resztę dopisują ręcznie tata i pracownicy po Uporządkowaniu INTERMAX.
 _Avoid_: eksport, nowe dane
 
@@ -713,6 +715,7 @@ Bezpieczny tekst dla taty w trzech częściach: Co się stało, Gdzie, Co zrobi�
 Trzy części nie zawierają pełnych ścieżek, treści wyjątków, adresów ani treści wierszy; wskazują tylko nazwę pliku, folder, arkusz, kolumnę, wiersz albo Wykonawcę.
 Jedynym wyjątkiem jest Zatrzymanie o brakach w `SKUTECZNE`: pokazuje dokładną zawartość komórki innej niż `tak` i `nie`, żeby tata od razu widział, co poprawić.
 Komunikat niesie Zatrzymanie, ostrzeżenie, problem z podsumowania albo problem startu Centrum rozliczeń.
+Komunikat Zatrzymania, którego poprawka jest edycją w Rejestrze zleceń albo Pliku zbiorczym, wskazuje ten plik, a karta Zatrzymania proponuje go otworzyć; Komunikat o braku pliku go nie wskazuje, bo nie ma czego otworzyć, a ostrzeżenie też nie, bo karta proponuje otwarcie tylko przy Zatrzymaniu.
 Jego kod jest unikalny w obrębie procesu.
 _Avoid_: błąd, wiadomość
 

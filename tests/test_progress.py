@@ -26,8 +26,6 @@ from rozliczenia.progress import (
 
 
 def until_saving(template_total: int, *, issue_count: int = 0) -> list[ProgressEvent]:
-    """Zdarzenia przebiegu od Sprawdzania do rozpoczęcia Zapisywania, z czasem rosnącym o 1 ms."""
-
     events: list[ProgressEvent] = []
     for phase in (ProgressPhase.CHECKING, ProgressPhase.READING, ProgressPhase.PLANNING):
         events.append(PhaseStarted(phase, elapsed_ms=len(events)))
@@ -43,8 +41,6 @@ START = datetime(2026, 9, 30, 8, 0, tzinfo=timezone.utc)
 
 
 def moment(index: int) -> datetime:
-    """Chwila zdarzenia numer ``index`` (od 0) projekcji z zegarem ``ticking``."""
-
     return START + timedelta(seconds=index)
 
 

@@ -43,10 +43,9 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 - A module with one main operation exposes that operation as its seam and keeps layout constants and helper functions private, so callers do not know how a workbook is loaded, repaired, or saved atomically.
 - Model a domain variation as data: a new case is a new member of an Enum, a row of a table or a variant of a union, not one more branch in an `if` chain repeated across files.
 - Read text the program did not write (a shell command, Markdown, HTML, a cell of Dad's file) with a real parser or the tool that owns the format, such as `gh api markdown` for GitHub Markdown, and accept only the forms the code lists: an unknown form fails closed.
-  Hand-written parsers that grew by listing bad forms failed review 15 times on 7 PRs in October 2026 (#496, #624, #636, #648).
-- A gate or a checker passes only on the result it expects: it lists the units it must see, and a missing unit, a crash or any other outcome is a failure (#445, #479, #554, #667).
-- A best-effort step (a cleanup, a kill with a deadline, a notification) returns and records its failure, and never raises into its caller (#447, fixed in #458).
-- A Centrum rozliczeń feature that is switched off (its start date or setting missing) leaves no trace: no Centrum log entry and no file in `config/`, because tests and the `verify-centrum-rozliczen` drive check that both stay untouched (#1372, #1375).
+- A gate or a checker passes only on the result it expects: it lists the units it must see, and a missing unit, a crash or any other outcome is a failure.
+- A best-effort step (a cleanup, a kill with a deadline, a notification) returns and records its failure, and never raises into its caller.
+- A Centrum rozliczeń feature that is switched off (its start date or setting missing) leaves no trace: no Centrum log entry and no file in `config/`, because tests and the `verify-centrum-rozliczen` drive check that both stay untouched.
 - When a change adds a new way to do something, it moves every caller to it and deletes the old way.
 
 | Rule | Guard |
@@ -54,6 +53,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Classes of one module in `src/` that share state do it through a module-private class with public names, never by reaching a private member (`_name`) of each other. | ruff `SLF001`, whose message names only the access |
 | A Folder okresu file name lives only in `rozliczenia.period_folder`. | ast-grep `nazwa-pliku-okresu-poza-folderem-okresu`, run by `tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii` (gaps: `ZNANE_LUKI_NAZW_PLIKOW_OKRESU`) |
 | Wpisanie raportów and Przypomnienia o raporcie count the day of a report from one memory of Wpisanie: the input of the window read comes only from the operations of `worker_reports.EnteringMemory` (`enter`, `reminders`), and `EnteringMemory` is built only from a `MemorySource`, in `src/` a `ReportState` (`ReportState.load`), so no caller holds a value of the memory it could build, copy or change beside it (#2125 r1–r3 W1: an empty memory or one without the rollout day of Wpisanie gave Przypomnienia another day than the tile of Wpisanie). | mypy on the constructor of `EnteringMemory` (a `MemorySource`, never a `SavedState`), on `dataclasses.replace` (not a dataclass) and on a subclass (`final`), ruff `SLF001` on its value (forms: `DROGI_PAMIECI_WPISANIA`; known gaps and the table of cases: `ZNANE_LUKI_PAMIECI_WPISANIA`, run by `tests/test_centrum_wpisanie_raportow.py::test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza`); a `ReportState` built beside the one of the Centrum work in Przypomnienia: `test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu` and `test_raport_bez_dnia_w_temacie_z_dnia_wdrozenia_wpisania_konczy_przypomnienie_za_ten_dzien` in the same file |
+| In `src/`, only `PhaseRunner` creates Zdarzenia przebiegu. | whole-tree ast-grep `zdarzenie-przebiegu-poza-phase-runner` (gaps: `ZNANE_LUKI_ZDARZEN_PRZEBIEGU` in `tests/test_zapadki.py`) |
 
 ## Error Ownership
 

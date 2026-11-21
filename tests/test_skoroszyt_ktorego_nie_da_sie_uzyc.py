@@ -1,9 +1,3 @@
-"""Skoroszyt, którego nie da się użyć: tłumaczenie powodu (``Problem``) na Komunikat na każdym wejściu.
-
-Komunikat każdej roli pliku przy każdym powodzie pilnują próbki katalogów (``tests/fixtures/message_samples.py``)
-i testy procesów. Tu jest jeden test tłumaczenia na wejście, na drodze, której nie sprawdza nic innego.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable

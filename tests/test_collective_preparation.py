@@ -7,12 +7,13 @@ import os
 import re
 from pathlib import Path
 import time
+from xml.etree import ElementTree
 import zipfile
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Color, PatternFill
 from openpyxl.utils import column_index_from_string
-from openpyxl.utils.datetime import CALENDAR_MAC_1904
+from openpyxl.utils.datetime import CALENDAR_MAC_1904, from_excel
 import pytest
 
 from rozliczenia.period_folder import PeriodFolder
@@ -98,7 +99,6 @@ def internal_row(number: int, started: datetime, successful: str, worker: str) -
 
 
 def test_narzedzie_szuka_w_rejestrze_naglowkow_z_pliku_taty() -> None:
-    # Atrapy budują Rejestr z kopii nagłówków pliku taty, więc ten test pokazuje rozjazd z register_columns wprost.
     assert ("", "AKCJE", *(column.register_header for column in COLUMNS), "ZWROT", "UWAGI") == REGISTER_HEADERS
 
 
@@ -168,9 +168,7 @@ def test_rejestr_in_old_layout_still_fills_both_period_files(tmp_path: Path) -> 
 
 
 def test_rejestr_in_old_layout_has_no_paste_area_so_rows_with_app_look_do_not_stop_preparation(tmp_path: Path) -> None:
-    """Starszy układ Rejestru (bez ``AKCJE`` i ``UWAGI``) nie ma obszaru wklejania, do którego aplikacja firmowa wkleja,
-    więc Sprawdzanie nie szuka w nim Surowych zleceń, choć jego wiersze okresu nie mają Calibri 8."""
-
+    assert {"AKCJE", "UWAGI"}.isdisjoint(OLD_REGISTER_HEADERS)
     fixture = make_preparation_fixture(tmp_path)
     write_register(fixture.register_path, in_old_layout(default_register_rows()), headers=OLD_REGISTER_HEADERS)
     workbook = load_workbook(fixture.register_path)
@@ -189,12 +187,6 @@ def test_rejestr_in_old_layout_has_no_paste_area_so_rows_with_app_look_do_not_st
 def with_drive_to_every_order(
     rows: list[tuple[object, ...]], *, first_column: int, orders: int
 ) -> list[tuple[object, ...]]:
-    """Wiersze Wzorca od ``first_column`` z 1 w V (dojazd) w pierwszych ``orders`` wierszach.
-
-    Domyślne zlecenia mają ``URZĄDZENIA`` ``dekoder``, którego Reguły ilości nie znają, i UMOWA bez druku, więc
-    dostają tylko V.
-    """
-
     drive = column_index_from_string("V") - first_column
     return [row[:drive] + (1,) + row[drive + 1 :] if index < orders else row for index, row in enumerate(rows)]
 
@@ -412,6 +404,10 @@ def test_rejestr_replaced_after_podglad_by_one_of_the_same_size_and_time_is_read
     assert summary.successful_order_count == 2
 
 
+def _without_sheet_dimension(name: str, data: bytes) -> bytes:
+    return re.sub(rb"<dimension [^>]*/>", b"", data) if name.startswith("xl/worksheets/") else data
+
+
 def test_rejestr_row_ending_before_the_last_column_has_an_empty_general_cell_there(tmp_path: Path) -> None:
     path = tmp_path / "Rejestr.xlsx"
     workbook = Workbook()
@@ -419,9 +415,12 @@ def test_rejestr_row_ending_before_the_last_column_has_an_empty_general_cell_the
     sheet.append([column.register_header for column in COLUMNS])
     sheet.append([datetime(2026, 9, 8, 9, 0), "syntetyczne miasto"])
     workbook.save(path)
-    rewrite_parts(  # bez wymiaru arkusza openpyxl daje wiersz tylko do jego ostatniej komórki
-        path, lambda name, data: re.sub(rb"<dimension [^>]*/>", b"", data) if name.startswith("xl/worksheets/") else data
-    )
+    rewrite_parts(path, _without_sheet_dimension)
+    reader = load_workbook(path, read_only=True)
+    try:
+        assert [len(cells) for cells in reader.worksheets[0].iter_rows(min_row=2, values_only=True)] == [2]
+    finally:
+        reader.close()
 
     [register] = period_sheets(read(path, DadFiles()), None)
 
@@ -430,10 +429,11 @@ def test_rejestr_row_ending_before_the_last_column_has_an_empty_general_cell_the
     assert row.cells["MIASTO"].value == "syntetyczne miasto"
 
 
-def test_odczyt_danych_okresu_ma_wiersze_od_dnia_przed_okresem_do_dnia_po_nim(tmp_path: Path) -> None:
-    """Odczyt danych okresu ma wiersze od pierwszego do ostatniego z datą z dniem zapasu z obu stron okresu (openpyxl
-    zaokrągla część dnia do milisekund), a Planowanie bierze z nich tylko zlecenia okresu."""
+def test_openpyxl_zaokragla_czesc_dnia_daty_do_milisekund_wiec_chwila_przed_polnoca_to_juz_nastepny_dzien() -> None:
+    assert (from_excel(46273.99999999), from_excel(46273.9999999999)) == (datetime(2026, 9, 8, 23, 59, 59, 999000), datetime(2026, 9, 9))
 
+
+def test_odczyt_danych_okresu_ma_wiersze_od_dnia_przed_okresem_do_dnia_po_nim(tmp_path: Path) -> None:
     period = parse_period_token(PERIOD)
     days = [period.start + timedelta(days=offset, hours=9) for offset in range(-4, 11)]
     orders: list[RegisterRow] = [register_order(number, day) for number, day in enumerate(days, start=1)]
@@ -549,7 +549,6 @@ def cell_formats(path: Path, coordinates: list[str]) -> dict[str, tuple[object, 
         for coordinate in coordinates:
             cell = sheet[coordinate]
             fill = cell.fill.fgColor.rgb if cell.fill.fill_type == "solid" else None
-            # Kolor motywu (domyślny tekst) nie jest wyróżnieniem.
             color = cell.font.color.rgb if cell.font.color is not None and cell.font.color.type == "rgb" else None
             formats[coordinate] = (fill, color, bool(cell.font.b), bool(cell.font.i))
         return formats
@@ -562,8 +561,6 @@ def test_highlights_from_rejestr_reach_both_files_and_plain_cells_get_none(tmp_p
 
     run_preparation(fixture)
 
-    # Zlecenie 2: ADRES żółty, pogrubiony, czerwoną czcionką; zlecenie 4: ADRES niebieski, WYKONAWCA kursywą;
-    # zlecenie 6 i reszta bez wyróżnień.
     assert cell_formats(fixture.internal_settlement_path, ["B2", "B4", "H4", "A2", "B3", "B5", "H2"]) == {
         "B2": ("FFFFFF00", "FFC00000", True, False),
         "B4": ("FF00B0F0", None, False, False),
@@ -589,7 +586,6 @@ def test_numer_zlecenia_w_obu_plikach_okresu_ma_hiperlacze_z_rejestru_bez_zmiany
 
     run_preparation(fixture)
 
-    # Zlecenia okresu: wiersze Rejestru 4, 6, 9 i 13; skuteczne: 4, 9 i 13. NUMER ZL. jest w I Rejestru i w F obu plików.
     assert hyperlinks(fixture.internal_settlement_path) == {
         "F2": links[4],
         "F3": links[6],
@@ -623,7 +619,6 @@ def test_hiperlacze_wzorca_w_zapisanym_wierszu_znika_a_poza_nim_zostaje(tmp_path
 
     run_preparation(fixture)
 
-    # Zapisane wiersze: 2–5 Rozliczenia wewnętrznego, 18–20 Pliku zbiorczego.
     assert hyperlinks(fixture.internal_settlement_path) == {"A1": "https://przyklad.invalid/wzorzec/A1"}
     assert hyperlinks(fixture.collective_file_path) == {
         "A1": "https://przyklad.invalid/wzorzec/A1",
@@ -686,13 +681,11 @@ def test_column_widths_header_and_frozen_row_equal_wzorzec(tmp_path: Path, kind:
         template, created, header_row = fixture.collective_template_path, fixture.collective_file_path, 17
     expected = sheet_layout(template, header_row=header_row)
     assert expected.freeze_panes == f"A{header_row + 1}"
-    # Szerokości Wzorca, łącznie z jego bardzo wąskimi kolumnami.
     leading = range(1, max(TEMPLATE_NARROW_COLUMN_WIDTHS) + 1)
     assert expected.widths[: len(leading)] == [template_column_width(column) for column in leading]
     assert sheet_layout(created, header_row=header_row) == expected
 
 
-# Widok Wzorca przewinięty w bok i powiększony inaczej niż Wzorce taty: plik okresu bierze widok ze swojego Wzorca.
 SCROLLED_VIEW = View("C1", "D30", 60)
 
 
@@ -701,6 +694,8 @@ SCROLLED_VIEW = View("C1", "D30", 60)
 def test_plik_zbiorczy_i_rozliczenie_wewnetrzne_otwieraja_sie_z_widokiem_swojego_wzorca(
     tmp_path: Path, copied: bool, view: View
 ) -> None:
+    scrolled_and_zoomed = view.top_left_cell != TEMPLATE_VIEW.top_left_cell and view.zoom != TEMPLATE_VIEW.zoom
+    assert view == TEMPLATE_VIEW or scrolled_and_zoomed
     fixture = make_preparation_fixture(tmp_path)
     write_internal_template(fixture.internal_template_path, view=view)
     marked_for_copy(write_collective_template(fixture.collective_template_path, view=view))
@@ -755,10 +750,11 @@ def test_autofilter_covers_header_and_last_order_row_in_both_files(tmp_path: Pat
 
     run_preparation(fixture)
 
-    # Wzorce mają zakres B:C do wiersza +40, który ma zostać zignorowany.
-    # Rozliczenie wewnętrzne: nagłówki A:M i 4 zlecenia okresu.
+    assert (autofilter_range(fixture.internal_template_path), autofilter_range(fixture.collective_template_path)) == (
+        "B1:C41",
+        "B17:C57",
+    )
     assert autofilter_range(fixture.internal_settlement_path) == "A1:M5"
-    # Plik zbiorczy: nagłówki wiersza 17 od A do AP i 3 Zlecenia skuteczne.
     assert autofilter_range(fixture.collective_file_path) == "A17:AP20"
 
 
@@ -893,7 +889,6 @@ def test_period_orders_after_register_history_keep_values_highlights_and_hyperli
 
     summary = run_preparation(fixture)
 
-    # Wiersze Rejestru: historia 2–31, zlecenia okresu 32, 34 i 40 (ADRES w E, NUMER ZL. w I).
     assert (summary.period_order_count, summary.successful_order_count, summary.skipped_empty_rows) == (3, 2, 1)
     assert [row[5] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == [
         "ZL-SYN-002",
@@ -947,10 +942,6 @@ def test_rejestr_with_other_date_notation_gives_same_period_files(
 
 
 def _shared_formula_from_history(tmp_path: Path) -> PreparationFixture:
-    """Rejestr z 10 zleceniami historii w wierszach 2–11, dwoma zleceniami okresu w wierszach 12–13, w których M to
-    wspólna formuła z formułą główną w wierszu 2 historii, jak zapisuje ją Excel, i dwoma zleceniami po okresie w
-    wierszach 14–15 z własną wspólną formułą M z formułą główną w wierszu 14."""
-
     rows: list[RegisterRow] = [
         *earlier_orders(10, 100),
         register_order(2, datetime(2026, 9, 8, 8, 0)),
@@ -965,15 +956,14 @@ def _shared_formula_from_history(tmp_path: Path) -> PreparationFixture:
     workbook.save(fixture.register_path)
     workbook.close()
 
-    def share(name: str, data: bytes) -> bytes:
+    def shared_like_excel(name: str, data: bytes) -> bytes:
         if name != "xl/worksheets/sheet2.xml":
             return data
-        # Jak Excel: formuła główna w wierszu 2, w wierszach okresu tylko odwołanie do niej.
         data = data.replace(b"<f>N2</f>", b'<f t="shared" ref="M2:M13" si="0">N2</f>')
         data = data.replace(b"<f>N12</f>", b'<f t="shared" si="0"/>').replace(b"<f>N13</f>", b'<f t="shared" si="0"/>')
         return data.replace(b"<f>N14</f>", b'<f t="shared" ref="M14:M15" si="1">N14</f>').replace(b"<f>N15</f>", b'<f t="shared" si="1"/>')
 
-    rewrite_parts(fixture.register_path, share)
+    rewrite_parts(fixture.register_path, shared_like_excel)
     return fixture
 
 
@@ -986,10 +976,6 @@ def test_shared_formula_from_register_history_reaches_period_order(tmp_path: Pat
 
 
 def test_kopia_wejscia_rejestru_ma_tylko_wiersze_okresu_bez_wiersza_historii_z_formula_glowna(tmp_path: Path) -> None:
-    """Przygotowanie czyta z Rejestru zleceń tylko wiersze od pierwszego do ostatniego, którego data może leżeć w
-    okresie (``OrderSheets.period_rows``): wiersz historii z formułą główną wspólnej formuły wierszy okresu i wiersz za
-    ostatnim zleceniem okresu nie trafiają do Kopii wejścia ani jako wiersz, ani jako pusty wiersz."""
-
     fixture = _shared_formula_from_history(tmp_path)
     files = DadFiles().for_run()
 
@@ -1234,7 +1220,7 @@ def test_skipped_empty_rows_are_all_empty_rows_from_first_to_last_period_order(t
         None,
         register_order(2, datetime(2026, 9, 8, 8, 0)),
         None,
-        register_order(3, datetime(2026, 9, 15, 8, 0)),  # następny okres, między zleceniami okresu
+        register_order(3, datetime(2026, 9, 15, 8, 0)),
         None,
         None,
         register_order(4, datetime(2026, 9, 14, 8, 0)),
@@ -1360,9 +1346,6 @@ def _orders_around_period() -> list[RegisterRow]:
 def test_komentarz_zaczety_przed_okresem_i_zamkniety_w_wierszach_okresu_ukrywa_ich_zlecenia(
     tmp_path: Path, opening: bytes, closing: bytes
 ) -> None:
-    """Wiersze 3–5 Rejestru są w komentarzu XML (albo CDATA), więc nie są wierszami arkusza: pierwsze zlecenie okresu
-    nie jest zleceniem, a dwa następne są."""
-
     fixture = make_preparation_fixture(tmp_path, _orders_around_period())
 
     def commented(name: str, data: bytes) -> bytes:
@@ -1378,9 +1361,6 @@ def test_komentarz_zaczety_przed_okresem_i_zamkniety_w_wierszach_okresu_ukrywa_i
 
 
 def test_formula_glowna_wspolnej_formuly_w_wierszu_okresu_daje_jedno_zlecenie_tego_wiersza(tmp_path: Path) -> None:
-    """Formuła główna wspólnej formuły stoi w pierwszym wierszu okresu, a drugi wiersz okresu się do niej odwołuje:
-    każdy wiersz okresu jest jednym zleceniem z formułą przeniesioną na swój wiersz."""
-
     fixture = make_preparation_fixture(tmp_path, _orders_around_period())
     workbook = load_workbook(fixture.register_path)
     for row in (5, 6):
@@ -1411,12 +1391,6 @@ _PERIOD_ORDERS_AFTER_HISTORY = (
 
 
 def _excel_register_after_history(tmp_path: Path, lista_rows: int = 1) -> PreparationFixture:
-    """Rejestr zapisany jak w Excelu (teksty wspólne, nagłówek UWAGI tekstem sformatowanym z podpowiedzią wymowy):
-    40 zleceń z 2025 r. w wierszach 2–41, trzy zlecenia okresu 08_14_09_2026 w wierszach 42–44 i pięć z 2025 r. za
-    nimi; UMOWA drugiego zlecenia okresu to liczba 7. Teksty zleceń okresu stoją w tabeli tekstów wspólnych za tekstami
-    wcześniejszych zleceń, a miasto, urządzenie, czynność i wykonawcę dzielą z nimi. Arkusz ``lista`` ma
-    ``lista_rows`` wykonawców pod nagłówkiem, a arkusz ``notatki`` za arkuszem zleceń tekst z końca tabeli."""
-
     rows: list[RegisterRow] = [
         *earlier_orders(40, 100),
         register_order(2, datetime(2026, 9, 8, 8, 0)),
@@ -1432,7 +1406,23 @@ def _excel_register_after_history(tmp_path: Path, lista_rows: int = 1) -> Prepar
     workbook.save(fixture.register_path)
     workbook.close()
     like_excel(fixture.register_path)
+    strings = _shared_strings(fixture.register_path)
+    history = [strings.index(f"syntetyczny adres SYN-{number:03d}") for number in range(100, 140)]
+    period = [strings.index(f"syntetyczny adres SYN-{number:03d}") for number in (2, 3, 4)]
+    assert max(history) < min(period)
+    assert all(strings.index(shared) < min(period) for shared in ("POZNAŃ", "dekoder", "instalacja", "adrian.testowy"))
+    assert strings[-1] == "notatka syntetyczna"
     return fixture
+
+
+_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+
+def _shared_strings(path: Path) -> list[str]:
+    with zipfile.ZipFile(path) as archive:
+        table = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
+    texts = (f"./{_MAIN}t", f"./{_MAIN}r/{_MAIN}t")
+    return ["".join(text.text or "" for path in texts for text in item.iterfind(path)) for item in table]
 
 
 def test_teksty_zlecen_okresu_z_konca_tabeli_tekstow_wspolnych_rejestru_trafiaja_do_rozliczenia_wewnetrznego(
@@ -1449,8 +1439,6 @@ def test_teksty_zlecen_okresu_z_konca_tabeli_tekstow_wspolnych_rejestru_trafiaja
 
 
 def _value_of_period_cell(change: Callable[[bytes], bytes]) -> Callable[[str, bytes], bytes]:
-    """Zmiana ``<v>`` komórki ADRES drugiego zlecenia okresu (E43) przez ``change``."""
-
     def changed(name: str, data: bytes) -> bytes:
         if name != "xl/worksheets/sheet2.xml":
             return data
@@ -1487,10 +1475,6 @@ def _broken_far_after_lista_header(name: str, data: bytes) -> bytes:
 def test_rejestr_w_ksztalcie_ktorego_zawezenie_tekstow_wspolnych_nie_zna_daje_te_same_zlecenia_okresu(
     tmp_path: Path, lista_rows: int, change: Callable[[str, bytes], bytes]
 ) -> None:
-    """Numer tekstu wspólnego zapisany encjami, numer spoza tabeli w wierszu, którego Przygotowanie nie czyta, albo
-    zepsuty XML daleko za wierszem 1 arkusza bez zleceń: zawężony Rejestr ma wtedy całą tabelę tekstów wspólnych, więc
-    zlecenia okresu są takie same jak bez nich."""
-
     fixture = _excel_register_after_history(tmp_path, lista_rows)
     rewrite_parts(fixture.register_path, change)
 
@@ -1519,11 +1503,6 @@ def test_rejestr_w_ksztalcie_ktorego_zawezenie_tekstow_wspolnych_nie_zna_daje_te
 def test_tekst_wspolny_w_ksztalcie_spoza_listy_zatrzymuje_przygotowanie_na_nieczytelnym_rejestrze(
     tmp_path: Path, item: str, odd: str
 ) -> None:
-    """Tabela tekstów wspólnych w kształcie, którego granic ``<si>`` czytnik Rejestru nie zna (zagnieżdżony ``<si>``,
-    ``<si>`` z innej przestrzeni nazw, znaczniki w CDATA, komentarzu albo instrukcji przetwarzania; Excel tak nie
-    zapisuje): Przygotowanie zatrzymuje się na nieczytelnym Rejestrze, a Diagnoza mówi to samo, zamiast zgadywać, który
-    tekst ma komórka."""
-
     fixture = _excel_register_after_history(tmp_path)
     rewrite_parts(
         fixture.register_path,
