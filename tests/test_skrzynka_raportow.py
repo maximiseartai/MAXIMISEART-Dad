@@ -1,10 +1,3 @@
-"""Skrzynka raportów (ADR 0028): port czyta maile Wykonawców z Gmaila tylko do odczytu.
-
-Port rozmawia prawdziwym ``imaplib`` i ``smtplib`` z lokalną ``AtrapaImap`` i ``AtrapaSmtp`` (``tools/lib/atrapy/skrzynka_raportow.py``), bez sieci:
-test sprawdza polecenia, które dostał serwer, i wynik, który oddał port. Prawdziwego Gmaila sprawdza próba IMAP (#1234).
-Maile są syntetyczne, zbudowane w teście bajt po bajcie, żeby było widać każde kodowanie nagłówka i treści.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -27,7 +20,7 @@ import smtplib
 from pathlib import Path
 import quopri
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
@@ -43,6 +36,7 @@ from rozliczenia.worker_report_inbox import (
     ImapInbox,
     InboxState,
     InboxOutcome,
+    InboxSurvey,
     InboxUnreachable,
     MailRefused,
     Mails,
@@ -74,8 +68,6 @@ def surowy(
     kodowanie: str = "quoted-printable",
     message_id: bytes = b"<1@przyklad.invalid>",
 ) -> bytes:
-    """Mail MIME z jedną częścią: treść w ``charset`` zakodowana ``kodowanie`` (quoted-printable albo base64)."""
-
     encoded = tresc.encode(charset if charset != "x-nieznany" else "utf-8")
     body = quopri.encodestring(encoded) if kodowanie == "quoted-printable" else base64.encodebytes(encoded)
     headers = [
@@ -100,8 +92,6 @@ def dostep(config: Path, tresc: bytes = f"{SKRZYNKA}\nabcd efgh ijkl mnop\n".enc
 
 
 def z_pliku(config: Path) -> Callable[[], InboxState]:
-    """Dostęp do skrzynki z pliku w ``config`` tak, jak go czyta właściciel Ustawień Centrum (bez zapisu)."""
-
     return lambda: read_snapshot(config).inbox
 
 
@@ -109,13 +99,20 @@ def port(config: Path, atrapa: AtrapaImap) -> ImapInbox:
     return ImapInbox(z_pliku(config), connect=lambda: imaplib.IMAP4("127.0.0.1", atrapa.port))
 
 
+def z_odpowiedzia(
+    config: Path, atrapa: AtrapaImap, polecenie: str, odpowiedz: Callable[[tuple[str, list[Any]]], tuple[str, list[Any]]]
+) -> ImapInbox:
+    class Polaczenie(imaplib.IMAP4):
+        def uid(self, command: str, *args: str) -> tuple[str, list[Any]]:
+            reply = super().uid(command, *args)
+            return odpowiedz(reply) if command == "FETCH" and polecenie in args[-1] else reply
+
+    return ImapInbox(z_pliku(config), connect=lambda: Polaczenie("127.0.0.1", atrapa.port))
+
+
 def polecenia(atrapa: AtrapaImap) -> list[str]:
-    """Nazwy poleceń, które dostał serwer (``UID FETCH`` jako jedna nazwa), bez ``CAPABILITY``.
-
-    ``imaplib`` z Pythona 3.14 bierze możliwości serwera z powitania, a 3.11 pyta o nie osobno: to nie decyzja portu.
-    """
-
     names = [" ".join(command.split(" ")[:2 if command.startswith("UID ") else 1]) for command in atrapa.commands]
+    # ZEWNĘTRZNE: imaplib z Pythona 3.14 bierze możliwości serwera z powitania, a z 3.11 pyta o nie poleceniem CAPABILITY (CPython Lib/imaplib.py, IMAP4._get_capabilities)
     return [name for name in names if name != "CAPABILITY"]
 
 
@@ -145,6 +142,26 @@ def test_skrzynka_bez_folderu_wszystkich_maili_otwiera_odebrane_tylko_do_odczytu
 
     assert len(maile(outcome)) == 1
     assert 'EXAMINE "INBOX"' in atrapa.commands
+
+
+def test_przeglad_skrzynki_bez_folderu_wszystkich_maili_liczy_odebrane_raz_w_obu_miejscach(tmp_path: Path) -> None:
+    mails = [w_skrzynce(1, surowy()), w_skrzynce(2, surowy(temat=b"Faktura", message_id=b"<2@x.invalid>"))]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails, all_folder=False) as atrapa:
+        survey = port(dostep(tmp_path), atrapa).survey(date(2026, 11, 8))
+
+    assert isinstance(survey, InboxSurvey), survey
+    assert (survey.searched, survey.in_folder, survey.in_inbox) == (2, 1, 1)
+    assert [command for command in atrapa.commands if command.startswith("EXAMINE")] == ['EXAMINE "INBOX"']
+
+
+def test_przeglad_skrzynki_z_flagami_maila_spoza_paczki_to_odpowiedz_ktorej_port_nie_zna(tmp_path: Path) -> None:
+    def z_obcym_uid(reply: tuple[str, list[Any]]) -> tuple[str, list[Any]]:
+        return reply[0], [*reply[1], b"9 (UID 999 FLAGS ())"]
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowy())]) as atrapa:
+        survey = z_odpowiedzia(dostep(tmp_path), atrapa, "FLAGS", z_obcym_uid).survey(date(2026, 11, 8))
+
+    assert survey == InboxUnreachable("UnexpectedReply")
 
 
 def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_maili_samej_skrzynki_i_liczy_maile_bez_nadawcy(
@@ -177,21 +194,18 @@ def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_m
 
 
 def test_skrzynka_szuka_od_dnia_przed_wskazanym_bo_gmail_liczy_dzien_przyjecia_w_swojej_strefie(tmp_path: Path) -> None:
-    # 23:30 UTC 7 listopada to 00:30 8 listopada u taty: Gmail zalicza taki mail do 7 listopada.
-    po_polnocy_u_taty = w_skrzynce(1, surowy(), datetime(2026, 11, 7, 23, 30, tzinfo=timezone.utc))
+    u_taty = datetime(2026, 11, 8, 0, 30, tzinfo=TATA)
+    po_polnocy_u_taty = w_skrzynce(1, surowy(), u_taty.astimezone(timezone.utc))
 
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[po_polnocy_u_taty]) as atrapa:
         found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
 
+    assert (u_taty.date(), u_taty.astimezone(timezone.utc).date()) == (date(2026, 11, 8), date(2026, 11, 7))
     assert [command for command in atrapa.commands if command.startswith("UID SEARCH")] == ["UID SEARCH SINCE 07-Nov-2026"]
-    assert [mail.arrived for mail in found] == [datetime(2026, 11, 8, 0, 30, tzinfo=TATA)]
+    assert [mail.arrived for mail in found] == [u_taty]
 
 
 def test_skrzynka_z_wiecej_maili_niz_paczka_pobierania_oddaje_kazdy_mail(tmp_path: Path) -> None:
-    """UID bez przerw idą zakresem ``a:b``, a polecenie ma najwyżej ``FETCH_BATCH`` zakresów: tu same pojedyncze UID z
-    przerwami między nimi, więc paczek jest kilka. W przerwach leżą starsze Raporty spoza wyszukanych dni, których
-    zakres nie może objąć."""
-
     uids = [2 * n for n in range(1, 2 * FETCH_BATCH + 2)] + [1001, 1002, 1003]
     starsze = [w_skrzynce(uid, surowy(message_id=b"<starszy@x.invalid>"), datetime(2026, 11, 1, 9, 0, tzinfo=TATA)) for uid in (3, 1000)]
     mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in uids] + starsze
@@ -202,12 +216,13 @@ def test_skrzynka_z_wiecej_maili_niz_paczka_pobierania_oddaje_kazdy_mail(tmp_pat
     assert [mail.id for mail in found] == [MailId.of(f"<{uid}@x.invalid>") for uid in uids]
     fetched = [command.split(" ")[2].split(",") for command in atrapa.commands if command.startswith("UID FETCH")]
     assert fetched and max(len(items) for items in fetched) <= FETCH_BATCH
+    assert len([command for command in atrapa.commands if "SUBJECT FROM" in command]) > 1
     assert any("1001:1003" in items for items in fetched)
+    assert all(min(uids) < mail.uid < max(uids) and mail.uid not in uids for mail in starsze)
+    assert _czytane(atrapa) == set(uids)
 
 
 def z_zalacznikami(*, message_id: bytes | None = b"<z-zalacznikami@x.invalid>") -> bytes:
-    """Raport ze zdjęciem, PDF-em i przekazanym mailem, jak z telefonu Wykonawcy: tekst w ``multipart/alternative``."""
-
     tekst = MIMEMultipart("alternative", _subparts=[MIMEText(TRESC, "plain", "utf-8"), MIMEText(f"<p>{TRESC}</p>", "html", "utf-8")])
     zdjecie = MIMEImage(b"\xff\xd8" + bytes(range(256)) * 400, "jpeg")
     zdjecie.add_header("Content-Disposition", "attachment", filename=("utf-8", "", "zdjęcie licznika.jpg"))
@@ -225,10 +240,6 @@ def z_zalacznikami(*, message_id: bytes | None = b"<z-zalacznikami@x.invalid>") 
 
 
 def test_skrzynka_czyta_raport_bez_pobierania_zalacznikow(tmp_path: Path) -> None:
-    """Pełny mail ze zdjęciami to megabajty, a Gmail liczy pobranie treści za każdy mail: port bierze strukturę, nagłówki
-    i treść części ``text/plain``, którą wybiera ``mail_of``, a treść HTML i załączników zostaje w skrzynce (pomiar
-    12.11.2026: 214 MB i 17–34 s dla 121 maili)."""
-
     surowe = z_zalacznikami()
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)]) as atrapa:
         found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
@@ -239,24 +250,20 @@ def test_skrzynka_czyta_raport_bez_pobierania_zalacznikow(tmp_path: Path) -> Non
     assert asked == {"HEADER.FIELDS (SUBJECT FROM)", "HEADER", "1.MIME", "1.1.MIME", "1.1", "1.2.MIME"}
 
 
-def _pobrane(atrapa: AtrapaImap) -> set[int]:
-    """UID maili, z których port pobrał więcej niż nagłówki ``Subject`` i ``From``: strukturę, nagłówek albo treść."""
-
+def _uidy(command: str) -> set[int]:
     found: set[int] = set()
-    for command in atrapa.commands:
-        if command.startswith("UID FETCH") and "HEADER.FIELDS (SUBJECT FROM)" not in command:
-            for part in command.split(" ")[2].split(","):
-                first, _, last = part.partition(":")
-                found.update(range(int(first), int(last or first) + 1))
+    for part in command.split(" ")[2].split(","):
+        first, _, last = part.partition(":")
+        found.update(range(int(first), int(last or first) + 1))
     return found
 
 
-def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tylko_wybranych(tmp_path: Path) -> None:
-    """US 54–55 (ADR 0041): temat z literówką w słowie ``Raport`` port oddaje, choć wyszukiwanie Gmaila po słowie go nie
-    znajduje, tak jak poprawkę raportu w odpowiedzi na mail taty (spec #2032, historia 26), także bez roku, a z
-    ``Montaże …``, ``Zdjęcia do raportu …``, przekazanego raportu, odpowiedzi na mail o czym innym albo bez dnia, innej
-    korespondencji i maili samej skrzynki bierze tylko nagłówki ``Subject`` i ``From``."""
+def _pobrane(atrapa: AtrapaImap) -> set[int]:
+    fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
+    return {uid for command in fetches if "HEADER.FIELDS (SUBJECT FROM)" not in command for uid in _uidy(command)}
 
+
+def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tylko_wybranych(tmp_path: Path) -> None:
     def mail(uid: int, temat: bytes, od: bytes = b"Jan Testowy <jan.testowy@przyklad.invalid>") -> AtrapaMail:
         return w_skrzynce(uid, surowy(temat=temat, od=od, message_id=f"<{uid}@x.invalid>".encode()))
 
@@ -287,25 +294,12 @@ def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tyl
 
 
 def _czytane(atrapa: AtrapaImap) -> set[int]:
-    """UID maili, o które port pytał serwer w jakimkolwiek ``UID FETCH``, także o same nagłówki ``Subject`` i ``From``."""
-
-    found: set[int] = set()
-    for command in atrapa.commands:
-        if command.startswith("UID FETCH"):
-            for part in command.split(" ")[2].split(","):
-                first, _, last = part.partition(":")
-                found.update(range(int(first), int(last or first) + 1))
-    return found
+    return {uid for command in atrapa.commands if command.startswith("UID FETCH") for uid in _uidy(command)}
 
 
 def test_kolejny_odczyt_skrzynki_pyta_serwer_tylko_o_maile_spoza_poprzedniego_i_oddaje_to_co_odczyt_od_zera(
     tmp_path: Path,
 ) -> None:
-    """Kolejne kliknięcie Wpisania raportów (i Przypomnienia o raporcie) na tym samym porcie: UID z tym samym
-    ``UIDVALIDITY`` to zawsze ten sam mail, więc port nie pobiera drugi raz maili, które już przeczytał, ani nagłówków
-    maili bez tematu Raportu wykonawcy, a wynik, także liczba pominiętych i mail usunięty ze skrzynki, jest taki jak
-    odczyt od zera nowym portem."""
-
     def mail(uid: int, temat: bytes = b"Raport 08.11.2026", od: bytes | None = b"Jan <jan.testowy@przyklad.invalid>") -> AtrapaMail:
         return w_skrzynce(uid, surowy(temat=temat, od=od, message_id=f"<{uid}@x.invalid>".encode()))
 
@@ -331,9 +325,6 @@ def test_kolejny_odczyt_skrzynki_pyta_serwer_tylko_o_maile_spoza_poprzedniego_i_
 def test_skrzynka_ze_zmienionym_albo_bez_uidvalidity_port_czyta_kazdy_mail_od_zera(
     tmp_path: Path, uidvalidity: int | None, nowe_uidvalidity: int | None
 ) -> None:
-    """Gdy ``UIDVALIDITY`` folderu się zmieni albo serwer go nie podaje, ten sam UID może wskazywać inny mail, więc
-    port czyta każdy mail od zera i oddaje nowy mail spod starego UID."""
-
     config = dostep(tmp_path)
     przed = w_skrzynce(7, surowy(tresc="40000001 tak", message_id=b"<przed@x.invalid>"))
     po = w_skrzynce(7, surowy(tresc="40000002 nie", message_id=b"<po@x.invalid>"))
@@ -351,10 +342,6 @@ def test_skrzynka_ze_zmienionym_albo_bez_uidvalidity_port_czyta_kazdy_mail_od_ze
 def test_mail_bez_odpowiedzi_serwera_port_czyta_przy_nastepnym_odczycie(
     tmp_path: Path, bez_odpowiedzi: Literal["choice", "content"]
 ) -> None:
-    """Gmail w chwilowej awarii nie oddaje linii jednego maila, choć polecenie kończy się ``OK``: o nagłówki ``Subject``
-    i ``From`` albo o treść wybranego Raportu. Port nie wie wtedy, czy to Raport wykonawcy, więc go nie pamięta, a
-    kolejny odczyt na tym samym porcie, gdy serwer już odpowiada, oddaje ten Raport."""
-
     config = dostep(tmp_path)
     mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in (1, 2)]
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails, unanswered={2: bez_odpowiedzi}) as atrapa:
@@ -368,10 +355,6 @@ def test_mail_bez_odpowiedzi_serwera_port_czyta_przy_nastepnym_odczycie(
 
 
 def test_pamiec_odczytu_jednej_skrzynki_nie_oddaje_maili_innej_skrzynce_ani_innemu_folderowi(tmp_path: Path) -> None:
-    """Pamięć odczytu należy do adresu skrzynki i folderu: po zmianie adresu w pliku dostępu (inna skrzynka z tym samym
-    ``UIDVALIDITY``) albo gdy skrzynka traci folder wszystkich maili, ten sam UID wskazuje inny mail i port czyta go od
-    zera."""
-
     inna = "inna.skrzynka@przyklad.invalid"
     przed = w_skrzynce(7, surowy(tresc="40000001 tak", message_id=b"<przed@x.invalid>"))
     po = w_skrzynce(7, surowy(tresc="40000002 nie", message_id=b"<po@x.invalid>"))
@@ -409,9 +392,6 @@ def test_gdy_serwer_odmawia_czesci_maila_port_pobiera_mail_w_calosci(tmp_path: P
 
 
 def test_gdy_serwer_czyta_typ_czesci_inaczej_niz_email_port_pobiera_mail_w_calosci(tmp_path: Path) -> None:
-    """Mail z tekstem, który serwer opisuje jako zdjęcie: szkielet bez treści tej części zgubiłby Raport, więc port
-    pobiera wtedy cały mail."""
-
     struktura = b'("IMAGE" "JPEG" NIL NIL NIL "BASE64" 10 NIL NIL NIL)'
     mail = AtrapaMail(7, datetime(2026, 11, 8, 18, 5, tzinfo=TATA), surowy(), structure=struktura)
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail]) as atrapa:
@@ -421,10 +401,32 @@ def test_gdy_serwer_czyta_typ_czesci_inaczej_niz_email_port_pobiera_mail_w_calos
     assert any("BODY.PEEK[]" in command for command in atrapa.commands)
 
 
-def _related_ze_start_na_zdjecie() -> list[Message]:
-    """``multipart/related``, którego ``start`` wskazuje zdjęcie, a nie pierwszą część: ``get_body`` szuka treści w
-    zdjęciu i jej nie znajduje, więc szkielet musi mieć ``Content-ID`` zdjęcia z jego nagłówka."""
+def test_gdy_serwer_opisuje_maile_w_postaci_spoza_rfc_port_pobiera_je_w_calosci(tmp_path: Path) -> None:
+    mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in (7, 8)]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
+        inbox = z_odpowiedzia(dostep(tmp_path), atrapa, "BODYSTRUCTURE", lambda reply: ("OK", [b"7 (UID 7"]))
+        found = maile(inbox.mails_since(date(2026, 11, 8)))
 
+    assert [mail.id for mail in found] == [MailId.of("<7@x.invalid>"), MailId.of("<8@x.invalid>")]
+    assert any("BODY.PEEK[]" in command for command in atrapa.commands)
+
+
+def test_przyklady_szkieletu_to_maile_z_trescia_poza_pierwsza_czescia_tekstu() -> None:
+    def rozebrany(czesc: Message) -> EmailMessage:
+        message = email.message_from_bytes(czesc.as_bytes(policy=email.policy.SMTP), policy=email.policy.default)
+        assert isinstance(message, EmailMessage)
+        return message
+
+    [related] = _related_ze_start_na_zdjecie()
+    [mieszany] = _html_obok_tekstu_w_zalaczniku()
+    html = rozebrany(mieszany).get_body(preferencelist=("plain", "html"))
+
+    assert rozebrany(related).get_body(preferencelist=("plain", "html")) is None
+    assert html is not None and html.get_content_type() == "text/html"
+    assert [part.get_content_type() for part in rozebrany(mieszany).iter_attachments()] == ["text/plain"]
+
+
+def _related_ze_start_na_zdjecie() -> list[Message]:
     zdjecie = MIMEImage(b"\xff\xd8\xff", "jpeg")
     zdjecie.add_header("Content-ID", "<zdjecie-1@x.invalid>")
     related = MIMEMultipart("related", _subparts=[MIMEText("40000001 tak", "plain", "utf-8"), zdjecie])
@@ -433,9 +435,6 @@ def _related_ze_start_na_zdjecie() -> list[Message]:
 
 
 def _html_obok_tekstu_w_zalaczniku() -> list[Message]:
-    """Treść w HTML, a ``text/plain`` tylko w załączniku: ``get_body`` wybiera HTML, którego treści port nie wziął w
-    pierwszym poleceniu, bo mail ma część ``text/plain``."""
-
     zalacznik = MIMEText("notatka", "plain", "utf-8")
     zalacznik.add_header("Content-Disposition", "attachment", filename="notatka.txt")
     return [MIMEMultipart("mixed", _subparts=[zalacznik, MIMEText("<p>40000001 tak</p>", "html", "utf-8")])]
@@ -447,9 +446,6 @@ def _tekst(draw: st.DrawFn) -> str:
 
 @st.composite
 def czesc_maila(draw: st.DrawFn, glebokosc: int = 0) -> Message:
-    """Część maila w kształcie, jaki wysyła telefon albo program pocztowy Wykonawcy: tekst, HTML, zdjęcie, PDF, plik
-    tekstowy w załączniku, przekazany mail albo ``multipart`` (``mixed``, ``alternative``, ``related`` ze ``start``)."""
-
     rodzaje = ["plain", "html", "zdjecie", "pdf", "plik-tekstowy", "przekazany"]
     rodzaj = draw(st.sampled_from(rodzaje + (["mixed", "alternative", "related"] if glebokosc < 2 else [])))
     if rodzaj in ("plain", "html"):
@@ -482,9 +478,6 @@ def czesc_maila(draw: st.DrawFn, glebokosc: int = 0) -> Message:
 @example(_related_ze_start_na_zdjecie())
 @example(_html_obok_tekstu_w_zalaczniku())
 def test_skrzynka_bez_tresci_zalacznikow_daje_te_same_maile_co_rozbior_calego_maila(tmp_path: Path, czesci: list[Message]) -> None:
-    """``mail_of`` na mailu ze skrzynki daje to samo co na całym mailu (``mail_skeleton``): nadawca, temat, ``MailId``
-    i treść, którą wybiera ``get_body``, dla każdego kształtu maila z ``czesc_maila``."""
-
     surowe = []
     for uid, oryginal in enumerate(czesci, start=1):
         czesc = copy.deepcopy(oryginal)
@@ -564,13 +557,6 @@ ZEPSUTE = {
 def test_zepsuty_mail_z_raportem_w_temacie_nie_wywraca_odczytu_skrzynki_tylko_liczy_sie_jako_pominiety(
     tmp_path: Path, zepsuty: bytes
 ) -> None:
-    """Maile, na których pakiet ``email`` Pythona 3.11, 3.12 albo 3.14 zgłaszał wyjątek (fuzz recenzenta #1236).
-
-    Który mail parser umie rozebrać, zależy od wersji, więc test żąda tylko, żeby każdy mail był przeczytany albo
-    policzony jako pominięty, a poprawne Raporty przed zepsutym mailem i po nim doszły (skrzynka: zepsuty, dobry,
-    zepsuty, dobry).
-    """
-
     dobre = [surowy(message_id=b"<dobry-1@x.invalid>"), surowy(message_id=b"<dobry-2@x.invalid>")]
     mails = [w_skrzynce(1, zepsuty), w_skrzynce(2, dobre[0]), w_skrzynce(3, zepsuty), w_skrzynce(4, dobre[1])]
 
@@ -582,6 +568,7 @@ def test_zepsuty_mail_z_raportem_w_temacie_nie_wywraca_odczytu_skrzynki_tylko_li
     assert [found.get(MailId.of(f"<dobry-{n}@x.invalid>")) for n in (1, 2)] == [
         ("Raport 08.11.2026", "40000001 tak wymiana routera")
     ] * 2
+    # ZEWNĘTRZNE: ten sam zepsuty mail pakiet email jednej wersji Pythona rozbiera, a innej zgłasza wyjątek, np. nadawca-jako-grupa daje AttributeError w 3.11 i 3.12, a w 3.13 i 3.14 się rozbiera (CPython Lib/email/_header_value_parser.py)
     assert len(outcome.mails) + outcome.skipped == len(mails)
     assert polecenia(atrapa)[-1] == "LOGOUT"
 
@@ -601,9 +588,6 @@ def test_mail_tylko_z_html_daje_tekst_z_linia_na_akapit_bez_stylow_i_skryptow() 
 
 
 def test_mail_tylko_z_html_bez_znacznika_na_koncu_daje_cala_ostatnia_linie_takze_ze_znakiem_ampersand() -> None:
-    """Tekst po ostatnim znaczniku HTML z ``&`` bez średnika (``AT&T``) nie ginie z treści, choć parser HTML czeka z nim
-    na możliwy dalszy ciąg odwołania do znaku."""
-
     raw = surowy(tresc="<p>40000001 tak wymiana routera</p>40000002 tak montaż AT&T", typ="text/html")
 
     mail = mail_of(raw, datetime(2026, 11, 8, 18, 5, tzinfo=TATA))
@@ -699,9 +683,6 @@ def test_zerwane_polaczenie_i_brak_sieci_daja_wynik_niedostepnej_skrzynki_z_sama
 
 
 def test_polaczenie_zerwane_przy_wylogowaniu_oddaje_przeczytane_maile_i_zamyka_gniazdo(tmp_path: Path) -> None:
-    """Gmail zamknął sesję przed ``LOGOUT``: maile są już przeczytane, więc odczyt je oddaje, a port zamyka swoje
-    gniazdo, zamiast zostawić je otwarte."""
-
     sessions: list[imaplib.IMAP4] = []
 
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowy())], cut="logout") as atrapa:
@@ -734,8 +715,6 @@ def test_awaria_gmaila_w_trakcie_sesji_daje_wynik_niedostepnej_skrzynki_a_nie_od
     do_serwera: list[str],
 ) -> None:
     class LimitCzasuPoZalogowaniu(imaplib.IMAP4):
-        """Połączenie, któremu limit czasu (w porcie ``TIMEOUT_S``) mija od razu po zalogowaniu, a nie wcześniej."""
-
         def login(self, user: str, password: str) -> tuple[Literal["OK"], list[bytes]]:
             reply = super().login(user, password)
             self.sock.settimeout(0.01)
@@ -801,8 +780,6 @@ def test_test_bez_atrapy_skrzynki_raportow_pada_zamiast_laczyc_sie_z_gmailem(tmp
 
 
 def test_skrzynka_z_folderu_eml_oddaje_maile_z_tematem_raportu_jak_port(tmp_path: Path) -> None:
-    """Skrypt dla maszyn i skille czytają Raporty z plików ``.eml`` tą samą gramatyką tematu co port (ADR 0041)."""
-
     for name, temat in [("1", b"Rapotr 08.11.2026"), ("2", "Zdjęcia do raportu 08.11.2026".encode()), ("3", b"Faktura")]:
         (tmp_path / f"{name}.eml").write_bytes(b"Date: Sun, 08 Nov 2026 18:05:00 +0100\r\n" + surowy(temat=temat))
 
@@ -812,9 +789,6 @@ def test_skrzynka_z_folderu_eml_oddaje_maile_z_tematem_raportu_jak_port(tmp_path
 
 
 def test_skrzynka_z_folderu_eml_ma_okno_dni_pominiete_maile_i_brak_skrzynki_jak_port(tmp_path: Path) -> None:
-    """Jak ``Mails`` portu: maile od dnia przed wskazanym, mail bez ``Date`` tylko liczy się jako pominięty, a bez
-    folderu Skrypt dla maszyn dostaje niedostępną skrzynkę, nie pustą."""
-
     folder = tmp_path / "maile"
     folder.mkdir()
     for name, sent in [("dzien-przed", b"Sat, 07 Nov 2026 18:05:00 +0100"), ("dwa-dni-przed", b"Fri, 06 Nov 2026 18:05:00 +0100")]:
@@ -828,8 +802,6 @@ def test_skrzynka_z_folderu_eml_ma_okno_dni_pominiete_maile_i_brak_skrzynki_jak_
     assert FolderInbox(tmp_path / "brak").mails_since(date(2026, 11, 8)) == InboxUnreachable("missing")
 
 
-# --- Przypomnienia o raporcie: „Wysłane” i wysyłka przez SMTP (ADR 0030, #1349) ----------------------------------------
-
 PRZYPOMNIENIE = Reminder(
     worker=Login("jan.testowy"),
     recipients=(SenderAddress(WYKONAWCA), SenderAddress("jan.prywatny@przyklad.invalid")),
@@ -838,11 +810,11 @@ PRZYPOMNIENIE = Reminder(
     text="Poproszę o wysłanie raportu za dzień 09.11.2026.\n\nPozdrawiam, zażółć gęślą jaźń\n",
 )
 WYSLANE_O = datetime(2026, 11, 10, 8, 1, tzinfo=TATA)
+DZIEN_PRZED = datetime(2026, 11, 7, 18, 0, tzinfo=TATA)
+ZEPSUTY_ADRESAT = "To: \t[?, :c.]x\\<"
 
 
 def wyslany(uid: int, temat: str, do: str = WYKONAWCA, kiedy: datetime = WYSLANE_O, flagi: tuple[str, ...] = ()) -> AtrapaMail:
-    """Mail w „Wysłanych” skrzynki raportów: od skrzynki do ``do`` z tematem ``temat``."""
-
     message = EmailMessage()
     message["From"] = SKRZYNKA
     message["To"] = do
@@ -863,10 +835,6 @@ def smtp_portu(config: Path, imap: AtrapaImap, smtp: AtrapaSmtp) -> ImapInbox:
 def test_przypomnienie_idzie_przez_smtp_ze_skrzynki_raportow_do_kazdego_adresu_wykonawcy_i_trafia_do_wyslanych(
     tmp_path: Path,
 ) -> None:
-    """Wysyłka loguje się adresem i hasłem aplikacji z pliku dostępu, wysyła jeden mail z tematem, treścią w UTF-8 i datą
-    na wszystkie adresy Wykonawcy, a Gmail (atrapa) kładzie go w „Wysłanych”, skąd czyta go odczyt przypomnień.
-    ``Message-ID`` ma domenę skrzynki raportów, a nie nazwę komputera taty."""
-
     with AtrapaImap(address=SKRZYNKA, password=HASLO) as imap, AtrapaSmtp(imap) as smtp:
         inbox = smtp_portu(dostep(tmp_path), imap, smtp)
         outcome = inbox.send(PRZYPOMNIENIE, WYSLANE_O)
@@ -892,14 +860,13 @@ def test_przypomnienie_idzie_przez_smtp_ze_skrzynki_raportow_do_kazdego_adresu_w
 
 
 def test_wyslane_przypomnienia_czyta_z_folderu_wyslane_tylko_do_odczytu_bez_zmiany_flag(tmp_path: Path) -> None:
-    """Odczyt „Wysłanych” otwiera folder ``\\Sent`` przez ``EXAMINE``, pobiera tylko nagłówki ``Subject`` i ``To`` przez
-    ``BODY.PEEK`` i oddaje tylko maile z tematem przypomnienia, z adresatami i chwilą przyjęcia; flagi zostają."""
-
     sent = [
         wyslany(101, "Przypomnienie: raport za dzień 09.11.2026", flagi=("\\Seen",)),
         wyslany(102, "Przypomnienie: raport za dzień 08.11.2026", do=f"Ewa <ewa@przyklad.invalid>, {WYKONAWCA}"),
         wyslany(103, "Re: Raport 09.11.2026"),
         wyslany(104, "Przypomnienie: raport za dzień 01.11.2026", kiedy=datetime(2026, 11, 2, 8, 0, tzinfo=TATA)),
+        wyslany(105, "Przypomnienie: raport za dzień 06.11.2026", kiedy=DZIEN_PRZED),
+        wyslany(106, "Przypomnienie: raport za dzień 09.11.2026", do=""),
     ]
     with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=sent) as atrapa:
         outcome = port(dostep(tmp_path), atrapa).sent_reminders(date(2026, 11, 8))
@@ -912,23 +879,23 @@ def test_wyslane_przypomnienia_czyta_z_folderu_wyslane_tylko_do_odczytu_bez_zmia
                 date(2026, 11, 8),
                 WYSLANE_O.astimezone(),
             ),
+            SentReminder(frozenset({SenderAddress(WYKONAWCA)}), date(2026, 11, 6), DZIEN_PRZED.astimezone()),
         )
     )
     assert 'EXAMINE "[Gmail]/Wys&AUI-ane"' in atrapa.commands
     assert not WRITES & {name.removeprefix("UID ") for name in polecenia(atrapa)}
     fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
     assert fetches and all("BODY.PEEK[HEADER.FIELDS (SUBJECT TO)]" in command for command in fetches)
-    assert atrapa.flags == {101: {"\\Seen"}, 102: set(), 103: set(), 104: set()}
+    assert atrapa.flags == {101: {"\\Seen"}, 102: set(), 103: set(), 104: set(), 105: set(), 106: set()}
 
 
 def test_zepsuty_naglowek_adresata_w_wyslanych_to_nie_przypomnienie_a_przypomnienie_obok_zostaje(tmp_path: Path) -> None:
-    """Nagłówek ``To`` maila w „Wysłanych”, na którym pakiet ``email`` Pythona 3.11–3.14 zgłasza ``IndexError``, a nie
-    ``ValueError``: ten mail nie jest przypomnieniem, a odczyt oddaje przypomnienie, które leży obok niego."""
-
     zepsuty = (
-        f"From: {SKRZYNKA}\r\nTo: \t[?, :c.]x\\<\r\nSubject: Przypomnienie: raport za dzień 08.11.2026\r\n"
+        f"From: {SKRZYNKA}\r\n{ZEPSUTY_ADRESAT}\r\nSubject: Przypomnienie: raport za dzień 08.11.2026\r\n"
         f"Date: {format_datetime(WYSLANE_O)}\r\n\r\ntreść\r\n"
     ).encode()
+    with pytest.raises(IndexError):
+        str(email.message_from_bytes(zepsuty, policy=email.policy.default)["To"])
     sent = [wyslany(101, "Przypomnienie: raport za dzień 09.11.2026"), AtrapaMail(102, WYSLANE_O, zepsuty, in_inbox=False)]
     with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=sent) as atrapa:
         outcome = port(dostep(tmp_path), atrapa).sent_reminders(date(2026, 11, 8))
@@ -939,8 +906,6 @@ def test_zepsuty_naglowek_adresata_w_wyslanych_to_nie_przypomnienie_a_przypomnie
 
 
 def test_skrzynka_bez_folderu_wyslane_nie_daje_przypomnien_tylko_wynik_niedostepnej(tmp_path: Path) -> None:
-    """Bez folderu ``\\Sent`` nie wiadomo, co już poszło, więc odczyt nie oddaje pustej listy, która wysłałaby wszystko."""
-
     with AtrapaImap(address=SKRZYNKA, password=HASLO, sent_folder=False) as atrapa:
         outcome = port(dostep(tmp_path), atrapa).sent_reminders(date(2026, 11, 8))
 
@@ -948,9 +913,6 @@ def test_skrzynka_bez_folderu_wyslane_nie_daje_przypomnien_tylko_wynik_niedostep
 
 
 def test_odrzucone_haslo_przy_wysylce_i_odczycie_wyslanych_daje_wynik_odrzuconego_hasla(tmp_path: Path) -> None:
-    """Gmail odrzuca hasło aplikacji przy SMTP (``535``) i IMAP (``AUTHENTICATIONFAILED``): oba to ``PasswordRejected``,
-    z którego praca przypomnień zakłada Zgłoszenie do Maksa (US 47)."""
-
     with AtrapaImap(address=SKRZYNKA, password="inne-haslo-maksa") as imap, AtrapaSmtp(imap) as smtp:
         inbox = smtp_portu(dostep(tmp_path), imap, smtp)
         outcomes = [inbox.send(PRZYPOMNIENIE, WYSLANE_O), inbox.sent_reminders(date(2026, 11, 8))]
@@ -988,19 +950,35 @@ def _wynik_wysylki(config: Path, scenariusz: str) -> tuple[ImapInbox, object]:
     ],
 )
 def test_wynik_wysylki_przypomnienia_niesie_sama_nazwe_bledu_bez_hasla(tmp_path: Path, scenariusz: str, wynik: object) -> None:
-    """Brak sieci, zerwane połączenie i serwer zajęty już przy powitaniu (``421``) to ``InboxUnreachable`` (ponowienie
-    w tej samej porze), inna odmowa serwera to ``MailRefused``, a hasło aplikacji nie wychodzi z portu w żadnym
-    wyniku, ``repr`` ani tekście (US 47)."""
-
     inbox, outcome = _wynik_wysylki(dostep(tmp_path), scenariusz)
 
     assert outcome == wynik
     assert not [text for text in (repr(inbox), repr(outcome), str(outcome)) if HASLO in text or "abcd efgh" in text]
 
 
-def test_dostep_do_skrzynki_z_pliku_nie_ma_hasla_w_repr(tmp_path: Path) -> None:
-    """Dostęp, który port dostaje od właściciela Ustawień, jest gotowy, a hasła aplikacji nie ma w jego ``repr`` (US 47)."""
+def test_polaczenie_smtp_zerwane_przy_wylogowaniu_daje_wyslany_mail_i_zamyka_gniazdo(tmp_path: Path) -> None:
+    sessions: list[smtplib.SMTP] = []
 
+    class ZerwanePrzyQuit(smtplib.SMTP):
+        def quit(self) -> tuple[int, bytes]:
+            raise smtplib.SMTPServerDisconnected
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO) as imap, AtrapaSmtp(imap) as smtp:
+
+        def connect() -> smtplib.SMTP:
+            sessions.append(ZerwanePrzyQuit("127.0.0.1", smtp.port, timeout=10))
+            return sessions[-1]
+
+        outcome = ImapInbox(z_pliku(dostep(tmp_path)), connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port), smtp=connect).send(
+            PRZYPOMNIENIE, WYSLANE_O
+        )
+
+    assert outcome == MailSent()
+    assert len(smtp.received) == 1
+    assert [session.sock for session in sessions] == [None]
+
+
+def test_dostep_do_skrzynki_z_pliku_nie_ma_hasla_w_repr(tmp_path: Path) -> None:
     config = dostep(tmp_path)
 
     shown = repr(z_pliku(config)())
@@ -1021,9 +999,6 @@ XLSX = b"PK\x03\x04 syntetyczny skoroszyt"
 def z_zalacznikiem(
     uid: int, nazwa: str, do: str = WYKONAWCA, kiedy: datetime = WYSLANE_O, *, centrum: bool = False, kopie: Sequence[tuple[str, str]] = ()
 ) -> AtrapaMail:
-    """Mail w „Wysłanych” z treścią i plikiem ``nazwa`` (RFC 2231), ze znakiem Centrum albo bez (tata wysłał go sam), z
-    nagłówkami kopii ``kopie`` (nazwa, adresaci); ``do`` pusty: mail bez ``To``."""
-
     message = EmailMessage()
     message["From"] = SKRZYNKA
     if do:
@@ -1040,15 +1015,14 @@ def z_zalacznikiem(
 
 
 def test_zalaczniki_z_wyslanych_czyta_tylko_z_naglowkow_bez_tresci_i_bez_zmiany_flag(tmp_path: Path) -> None:
-    """Odczyt „Wysłanych” Wysyłki rozliczeń bierze ``BODYSTRUCTURE`` i nagłówki maila i części z plikiem, nigdy treści
-    ani bajtów załącznika, i oddaje nazwę pliku z polskimi literami, adresatów, chwilę i znak Centrum; mail bez
-    załącznika nie daje nic, a folder zostaje bez zmian."""
-
     sent = [
         z_zalacznikiem(101, ROZLICZENIE, centrum=True),
         z_zalacznikiem(102, ROZLICZENIE, do=f"Ewa <ewa@przyklad.invalid>, {WYKONAWCA}"),
         wyslany(103, "Przypomnienie: raport za dzień 09.11.2026"),
         z_zalacznikiem(104, ROZLICZENIE, kiedy=datetime(2026, 11, 2, 8, 0, tzinfo=TATA), centrum=True),
+        AtrapaMail(105, WYSLANE_O, z_zalacznikiem(105, ROZLICZENIE).raw.replace(f"To: {WYKONAWCA}".encode(), ZEPSUTY_ADRESAT.encode()), in_inbox=False),
+        z_obrazkiem_bez_nazwy(106),
+        z_zalacznikiem(107, ROZLICZENIE, kiedy=DZIEN_PRZED),
     ]
     with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=sent) as atrapa:
         outcome = port(dostep(tmp_path), atrapa).sent_attachments(date(2026, 11, 8))
@@ -1062,6 +1036,7 @@ def test_zalaczniki_z_wyslanych_czyta_tylko_z_naglowkow_bez_tresci_i_bez_zmiany_
                 WYSLANE_O.astimezone(),
                 by_centrum=False,
             ),
+            SentAttachment(ROZLICZENIE, frozenset({SenderAddress(WYKONAWCA)}), DZIEN_PRZED.astimezone(), by_centrum=False),
         )
     )
     assert 'EXAMINE "[Gmail]/Wys&AUI-ane"' in atrapa.commands
@@ -1069,13 +1044,50 @@ def test_zalaczniki_z_wyslanych_czyta_tylko_z_naglowkow_bez_tresci_i_bez_zmiany_
     fetched = " ".join(command for command in atrapa.commands if command.startswith("UID FETCH"))
     assert "BODYSTRUCTURE" in fetched and "BODY.PEEK[2.MIME]" in fetched
     assert not re.search(r"BODY\.PEEK\[(?:\d+|TEXT)?\]", fetched), "treści i bajtów załącznika port nie pobiera"
-    assert atrapa.flags == {101: set(), 102: set(), 103: set(), 104: set()}
+    naglowki = {uid for command in atrapa.commands if "BODY.PEEK[HEADER]" in command for uid in _uidy(command)}
+    assert naglowki == {101, 102, 105, 106, 107}
+    assert atrapa.flags == dict.fromkeys(range(101, 108), set())
+
+
+def z_obrazkiem_bez_nazwy(uid: int) -> AtrapaMail:
+    message = EmailMessage()
+    message["From"] = SKRZYNKA
+    message["To"] = WYKONAWCA
+    message["Subject"] = "Zdjęcie"
+    message["Date"] = format_datetime(WYSLANE_O)
+    message.set_content("Dzień dobry")
+    message.add_attachment(b"\xff\xd8\xff", maintype="image", subtype="jpeg")
+    return AtrapaMail(uid, WYSLANE_O, bytes(message), in_inbox=False)
+
+
+@pytest.mark.parametrize(
+    ("polecenie", "odpowiedz"),
+    [
+        pytest.param("BODY.PEEK[HEADER]", lambda reply: ("NO", [b"odmowa"]), id="odmowa-naglowkow"),
+        pytest.param("BODY.PEEK[HEADER]", lambda reply: ("OK", [b"101 (UID 101"]), id="naglowki-spoza-rfc"),
+        pytest.param("BODYSTRUCTURE", lambda reply: ("OK", [b"101 (UID 101"]), id="struktura-spoza-rfc"),
+    ],
+)
+def test_wyslane_w_odpowiedzi_spoza_rfc_albo_z_odmowa_nie_daja_pustej_listy_zalacznikow(
+    tmp_path: Path, polecenie: str, odpowiedz: Callable[[tuple[str, list[Any]]], tuple[str, list[Any]]]
+) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=[z_zalacznikiem(101, ROZLICZENIE)]) as atrapa:
+        outcome = z_odpowiedzia(dostep(tmp_path), atrapa, polecenie, odpowiedz).sent_attachments(date(2026, 11, 8))
+
+    assert outcome == InboxUnreachable("UnexpectedReply")
+
+
+def test_mail_z_wyslanych_ze_struktura_spoza_rfc_nie_ma_zalacznikow_a_reszta_zostaje(tmp_path: Path) -> None:
+    nieznany = AtrapaMail(102, WYSLANE_O, z_zalacznikiem(102, ROZLICZENIE).raw, in_inbox=False, structure=b'("X")')
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=[z_zalacznikiem(101, ROZLICZENIE), nieznany]) as atrapa:
+        outcome = port(dostep(tmp_path), atrapa).sent_attachments(date(2026, 11, 8))
+
+    assert outcome == SentAttachments(
+        (SentAttachment(ROZLICZENIE, frozenset({SenderAddress(WYKONAWCA)}), WYSLANE_O.astimezone(), by_centrum=False),)
+    )
 
 
 def test_zalacznik_wyslany_w_kopii_albo_ukrytej_kopii_ma_tez_tych_adresatow(tmp_path: Path) -> None:
-    """Tata wysyła rozliczenie ręcznie także w ``Cc`` albo ``Bcc`` (Gmail zostawia ``Bcc`` w kopii w „Wysłanych”), więc
-    adresaci pliku to ``To``, ``Cc`` i ``Bcc`` razem; inaczej plik zostałby „do wysłania” i poszedł drugi raz (#2029 D1)."""
-
     sent = [
         z_zalacznikiem(101, ROZLICZENIE, do="biuro@przyklad.invalid", kopie=[("Cc", f"Paweł <{WYKONAWCA}>")]),
         z_zalacznikiem(102, ROZLICZENIE, do="", kopie=[("Bcc", f"{WYKONAWCA}, ewa@przyklad.invalid")]),
@@ -1091,10 +1103,6 @@ def test_zalacznik_wyslany_w_kopii_albo_ukrytej_kopii_ma_tez_tych_adresatow(tmp_
 
 
 def test_mail_z_rozliczeniem_idzie_przez_smtp_z_plikiem_xlsx_i_znakiem_centrum_i_wraca_z_wyslanych(tmp_path: Path) -> None:
-    """Wysyłka pliku: jeden mail na wszystkie adresy z treścią w UTF-8 i plikiem xlsx pod dokładną nazwą z polskimi
-    literami; Gmail (atrapa) kładzie go w „Wysłanych”, a odczyt załączników widzi go jako mail Centrum. ``Message-ID``
-    ma domenę skrzynki raportów, a nie nazwę komputera taty."""
-
     mail = AttachmentMail(
         (SenderAddress(WYKONAWCA), SenderAddress("jan.prywatny@przyklad.invalid")),
         "Rozliczenie za 3–9 listopada 2026",
@@ -1125,9 +1133,6 @@ def test_mail_z_rozliczeniem_idzie_przez_smtp_z_plikiem_xlsx_i_znakiem_centrum_i
 
 
 def test_wyslane_bez_folderu_wyslane_albo_z_odrzuconym_haslem_nie_daja_pustej_listy_zalacznikow(tmp_path: Path) -> None:
-    """Pusta lista wysłałaby rozliczenia drugi raz, więc brak „Wysłanych” to ``InboxUnreachable``, a złe hasło
-    ``PasswordRejected``."""
-
     with AtrapaImap(address=SKRZYNKA, password=HASLO, sent_folder=False) as atrapa:
         without_folder = port(dostep(tmp_path), atrapa).sent_attachments(date(2026, 11, 8))
     with AtrapaImap(address=SKRZYNKA, password="inne-haslo-maksa") as atrapa:

@@ -1,18 +1,3 @@
-"""Wykonawca w okresach (ADR 0032): czy login z Listy Wykonawców występuje w którymś okresie i w których okresach leży
-już Rozliczenie pracownika z daną nazwą.
-
-Login występuje w okresie, gdy stoi w ``WYKONAWCA`` Rejestru zleceń albo Pliku zbiorczego któregoś Folderu okresu. Od
-tego zależy, czy tata może usunąć Wykonawcę albo jego login: okres rozliczany ponownie zatrzymałby się na nieznanym
-Wykonawcy. Najpierw Rejestr zleceń, potem Pliki zbiorcze od najnowszego okresu; pierwsze trafienie kończy szukanie, a
-``NotInPeriods`` daje dopiero pełne przejście. Każdy plik, którego nie da się przeczytać, i nieustawiony albo
-niedostępny Rejestr zleceń lub folder okresów to ``Unchecked``: „nie występuje” musi przejść przez każdy plik.
-
-Pliki czyta uchwyt plików taty, tylko kolumnę ``WYKONAWCA`` z XML (``register_file.OrderSheets.workers``,
-``workbook_files.collective_workers``), bez openpyxl. Ostrzeżenie o starej nazwie patrzy tylko na listy plików
-Folderów rozliczeń pracowników, bez czytania skoroszytów: Rozliczenie pracownika leży tylko tam, gdzie Wykonawca miał
-zlecenia.
-"""
-
 from __future__ import annotations
 
 import os
@@ -44,7 +29,7 @@ __all__ = [
 
 @dataclass(frozen=True)
 class InRegister:
-    """Login stoi w ``WYKONAWCA`` Rejestru zleceń."""
+    ...
 
 
 @dataclass(frozen=True)
@@ -54,13 +39,10 @@ class InPeriod:
 
 @dataclass(frozen=True)
 class NotInPeriods:
-    """Loginu nie ma w Rejestrze zleceń ani w żadnym Pliku zbiorczym: każdy plik został przeczytany."""
+    ...
 
 
 UncheckedPlace = Literal["not_set", "register", "periods_directory", "collective_file"]
-"""Czego nie dało się sprawdzić: Rejestr zleceń albo folder okresów nie są ustawione (``not_set``), Rejestru zleceń nie
-ma albo nie da się go przeczytać (``register``), tak samo folderu okresów (``periods_directory``) albo Pliku zbiorczego
-okresu (``collective_file``)."""
 
 
 @dataclass(frozen=True)
@@ -73,24 +55,12 @@ Presence = InRegister | InPeriod | NotInPeriods | Unchecked
 
 
 class WorkerPeriods:
-    """Szukanie loginów w okresach jednym uchwytem plików taty pracy Centrum.
-
-    Pamięta Wykonawców każdego przeczytanego Pliku zbiorczego z jego rozmiarem i chwilą zmiany z listowania Folderu
-    okresu, więc następne szukanie czyta tylko Pliki zbiorcze zmienione od tamtej pory: pełne przejście czyta Plik
-    zbiorczy każdego okresu, a plik „tylko online” OneDrive pobiera się przy każdym odczycie. Rejestr zleceń czyta za
-    każdym razem, bo zmienia się codziennie.
-    Pamięć żyje tyle co praca Centrum.
-    """
-
     def __init__(self, files: DadFiles) -> None:
         self._files = files
         self._lock = threading.Lock()
         self._known: dict[Path, tuple[_Stamp, frozenset[str]]] = {}
 
     def find(self, logins: Iterable[str], register: Path | None, periods_directory: Path | None) -> Presence:
-        """Czy któryś z ``logins`` (porównanych po ``normalize_text``) występuje w okresie: Rejestr zleceń
-        ``register``, potem Pliki zbiorcze Folderów okresu w folderze okresów ``periods_directory`` od najnowszego."""
-
         wanted = frozenset(normalize_text(login) for login in logins)
         if register is None or periods_directory is None:
             return Unchecked("not_set")
@@ -115,10 +85,6 @@ class WorkerPeriods:
         return NotInPeriods()
 
     def _in_collective_file(self, folder: PeriodFolder, wanted: frozenset[str]) -> InPeriod | Unchecked | None:
-        """Login z ``wanted`` w Pliku zbiorczym okresu ``folder``; ``None``: nie ma go tam albo okres nie ma Pliku
-        zbiorczego. Windows i macOS nie rozróżniają wielkości liter, więc Plik zbiorczy może mieć w listowaniu Folderu
-        okresu nazwę w innej wielkości liter: wtedy o tym, czy jest, rozstrzyga ``file_state``."""
-
         token = folder.period.token
         path = folder.collective_file
         try:
@@ -151,13 +117,10 @@ class WorkerPeriods:
 
 
 _Stamp = tuple[int, int]
-"""Rozmiar i chwila zmiany (ns) pliku z listowania folderu."""
 
 
 def _stamp(entry: os.DirEntry[str]) -> _Stamp | None:
-    """Rozmiar i chwila zmiany wpisu; Windows podaje je z listowania, bez otwierania pliku. ``None``: system ich nie
-    podał, więc plik czyta się od nowa."""
-
+    # ZEWNĘTRZNE: os.DirEntry.stat w Windows daje rozmiar i chwilę zmiany z listowania folderu, bez wywołania systemowego na samym pliku (dokumentacja Pythona, os.DirEntry.stat)
     try:
         status = entry.stat()
     except OSError:
@@ -166,13 +129,6 @@ def _stamp(entry: os.DirEntry[str]) -> _Stamp | None:
 
 
 def old_name_periods(old: str, new: str, periods_directory: Path | None) -> tuple[str, ...]:
-    """Tokeny okresów (od najnowszego), w których Folderze rozliczeń pracowników leży Rozliczenie pracownika z nazwą
-    ``old``, gdy ``new`` daje inny plik (``normalize_text``, jak ``WorkerList.of``).
-
-    Ostrzeżenie, nie straż: folder okresów nieustawiony albo niedostępny i Folder okresu, którego nie da się
-    wylistować, nie dają okresu.
-    """
-
     if periods_directory is None or normalize_text(old) == normalize_text(new):
         return ()
     try:
