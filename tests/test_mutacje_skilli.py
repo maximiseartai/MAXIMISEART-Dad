@@ -223,7 +223,6 @@ def test_zadanie_mutations_ci_lokalnie_uruchamia_skrypty_mutacji_skilli(tmp_path
     _tool(tmp_path)
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": script})
 
-    # Poza CI zadanie mutations odmawia startu (``tools/lib/ciezkie_ci.py``).
     result = subprocess.run(
         [sys.executable, str(tmp_path / "tools" / "ci_lokalnie.py"), "--tylko", "mutations"],
         cwd=tmp_path,

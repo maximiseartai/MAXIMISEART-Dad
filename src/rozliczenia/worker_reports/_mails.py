@@ -70,10 +70,6 @@ class WindowMails:
         return sum(isinstance(found, ReadReport) for found in self.__reads)
 
     def said(self, requested: Iterable[RequestedEntry]) -> frozenset[OrderKey]:
-        """Zlecenia (numer, dzień, Wykonawca) z Wpisem Raportów wykonawców Wpisania raportów: Wpis Raportu wykonawcy z
-        dniem z tematu i Wpis na życzenie raportu z błędem tematu z dniem decyzji taty z ``requested``
-        (``requested_reports``); bez decyzji same Wpisy Raportów wykonawców z dniem z tematu."""
-
         reports = [found for found in self.__reads if isinstance(found, ReadReport)]
         unreadable = [found for found in self.__reads if isinstance(found, ReadUnreadable)]
         asked = requested_reports(unreadable, decided(unreadable, requested))

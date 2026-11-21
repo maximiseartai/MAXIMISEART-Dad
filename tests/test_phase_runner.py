@@ -1,16 +1,17 @@
-"""Sekwencer etapów: tylko zachowanie, którego poprawne procesy nie mogą wywołać.
-
-Pełne przebiegi z prawdziwą projekcją postępu jako obserwatorem są w testach
-Przebiegu rozliczeń i Przygotowania pliku zbiorczego.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
 
 import pytest
 
-from rozliczenia.domain import PhaseFailed, ProgressEvent, ProgressProtocolError, StepReached
+from rozliczenia.domain import (
+    PhaseFailed,
+    PhaseStarted,
+    ProgressEvent,
+    ProgressPhase,
+    ProgressProtocolError,
+    StepReached,
+)
 from rozliczenia.phase_runner import PhaseRunner
 
 
@@ -158,3 +159,35 @@ def test_zapisywanie_bez_szablonow_pracownika_z_planu_jest_bledem_kodu() -> None
         runner.save(lambda: None)
 
     assert isinstance(events[-1], PhaseFailed)
+
+
+def test_obserwator_ktory_pada_jest_odlaczony_do_konca_uruchomienia_a_etapy_ida_dalej() -> None:
+    seen: list[ProgressEvent] = []
+
+    def failing(event: ProgressEvent) -> None:
+        seen.append(event)
+        raise RuntimeError("obserwator nie działa")
+
+    runner = PhaseRunner(failing)
+    run_whole(runner)
+
+    assert [type(event) for event in seen] == [PhaseStarted]
+    assert set(runner.durations_ms()) == set(ProgressPhase)
+
+
+@pytest.mark.parametrize(
+    "orders",
+    [{"done": -1, "total": 1}, {"done": 0, "total": -1}, {"done": True, "total": 1}],
+    ids=["ujemne-zrobione", "ujemna-suma", "prawda-zamiast-liczby"],
+)
+def test_krok_zapisywania_z_liczba_zlecen_inna_niz_nieujemna_calkowita_jest_bledem_kodu(orders: dict[str, int]) -> None:
+    events: list[ProgressEvent] = []
+    runner = PhaseRunner(events.append)
+    runner.check(lambda: None)
+    runner.read(lambda: None)
+    runner.plan(lambda: None, issue_count=lambda _planned: 0)
+
+    with pytest.raises(ProgressProtocolError):
+        runner.save(lambda: runner.step("Zlecenia", worker="adrian.testowy", **orders))
+
+    assert not any(isinstance(event, StepReached) for event in events)

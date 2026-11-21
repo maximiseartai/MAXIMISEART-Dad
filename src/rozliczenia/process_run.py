@@ -1,22 +1,3 @@
-"""Uruchomienie procesu: rdzeń wspólny dla każdego rozmówcy.
-
-Rdzeń (``run_process``) prowadzi Uruchomienie procesu od gotowego wejścia
-procesu do wyniku: pomiar ``Czas uruchomienia`` bez czasu decyzji taty, jedną
-projekcję postępu (ADR 0002) z odłączanym obserwatorem, przechwycenie każdego
-wyjątku, widok podsumowania rozmówcy w tej samej osłonie, rekord metryk i
-wynik jako strukturę (``Outcome``). Każde zakończenie to ``Finished`` albo
-``Stop`` z Komunikatem z katalogu procesu. Rozmówca (``Interlocutor``)
-pokazuje tacie Decyzję w trakcie silnika (``decision``), pokazuje postęp i sam
-renderuje wynik. Decyzję składa proces, nie rozmówca. Proces
-opisuje tylko to, co jest jego i wspólne dla każdego rozmówcy (``Process``).
-Tekst wyjątku nigdy nie przechodzi przez ten seam: tata widzi wyłącznie
-Komunikaty podane przez proces.
-
-Rekord metryk Uruchomienia bez wyniku (``Stop``) ma zero dróg zapisu, tak jak
-liczników, bo drogi zapisu są wtedy nieznane: także gdy zatrzymanie przyszło
-dopiero przy pokazaniu wyniku, a pliki z Wzorca już powstały.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -52,17 +33,11 @@ _DETACHED_OBSERVER_NOTE = "Podgląd postępu przestał się aktualizować; wynik
 
 
 class ProcessInputs(Protocol):
-    """Wejście procesu znane rdzeniowi: okres do metryk. Tryb daje opis procesu (``Process.dry_run``)."""
-
     @property
     def period(self) -> str: ...
 
 
 class EngineContext(Protocol):
-    """Kontekst Uruchomienia, jak go widzi rdzeń (``run_context.RunContext``): zegar Uruchomienia i ten sam kontekst z
-    obserwatorem postępu i rozmową rdzenia. Rdzeń nie zna reszty kontekstu (plików taty i czytników), więc nie zależy od
-    warstwy skoroszytu."""
-
     @property
     def clock(self) -> RunClock: ...
 
@@ -70,8 +45,6 @@ class EngineContext(Protocol):
 
 
 class ProcessSummary(Protocol):
-    """Podsumowanie silnika, jak je widzi rdzeń: czasy etapów do rekordu metryk."""
-
     @property
     def phase_durations_ms(self) -> Mapping[ProgressPhase, int]: ...
 
@@ -83,39 +56,14 @@ ContextT = TypeVar("ContextT", bound=EngineContext)
 
 
 class Interlocutor(Conversation, Protocol):
-    """Rozmówca Uruchomienia procesu: Decyzja taty w trakcie silnika i podgląd postępu.
-
-    Podgląd dostaje wyłącznie niemutowalne snapshoty jedynej projekcji postępu
-    (ADR 0002): pusty na starcie, potem po każdym Zdarzeniu przebiegu. Wyjątek z
-    ``show_progress`` odłącza go na resztę Uruchomienia bez wpływu na wynik.
-    """
-
     def show_progress(self, snapshot: ProgressSnapshot) -> None: ...
 
 
 StopEnding = Literal["stop", "declined", "unexpected", "after_engine"]
-"""Sposób zakończenia Uruchomienia procesu Zatrzymaniem (``Stop.kind``)."""
 
 
 @dataclass(frozen=True)
 class Stop:
-    """Zatrzymanie Uruchomienia procesu; zawsze z Komunikatem z katalogu procesu (``message``).
-
-    ``stop``: własne zatrzymanie procesu (``StopError``) z jego Komunikatem.
-    ``declined``: Zatrzymanie po odmowie w Decyzji taty (``Declined``), z Komunikatem procesu.
-    ``unexpected``: inny wyjątek przed końcem silnika, z Komunikatem
-    ``Process.unexpected_failure``. ``after_engine``: silnik skończył, ale nie
-    dało się zbudować podsumowania, z Komunikatem Podglądu bez zapisu procesu
-    (``Process.preview``, DRY-RUN) albo ``Process.summary_not_shown`` (RUN).
-
-    ``trace``: ślad wywołań dla Zgłoszenia do Maksa i Logów Uruchomienia:
-    nieoczekiwanego wyjątku (``unexpected``, ``after_engine``) i każdego
-    własnego zatrzymania, które ma przyczynę w wyjątku (``StopError`` z
-    ``__cause__``), także dla taty, z łańcuchem przyczyn. ``facts``: fakty Zatrzymania procesu
-    dla Logów Uruchomienia (``StopError.facts``). Oba nie należą do tożsamości
-    Zatrzymania i nie trafiają do dziennika ani metryk.
-    """
-
     kind: StopEnding
     message: Message
     trace: CallTrace | None = field(default=None, compare=False, repr=False)
@@ -123,30 +71,15 @@ class Stop:
 
     @property
     def stop_kind(self) -> StopKind:
-        """Rodzaj Zatrzymania, ten sam w metrykach i w Centrum.
-
-        „Do Maksa”: Komunikat ma Rodzaj „do Maksa” (``Message.reports_to_maintainer``)
-        albo zakończenie nie jest własnym zatrzymaniem procesu (nieoczekiwany
-        wyjątek, błąd po silniku).
-        Każde inne, także po odmowie w Decyzji taty, jest „dla taty”.
-        """
-
         own = self.kind in ("stop", "declined")
         return "for_maks" if not own or self.message.reports_to_maintainer else "for_tata"
 
 
 RunResult = Literal[CompletedResult, "BLAD_KRYTYCZNY"]
-"""Wynik Uruchomienia procesu: wynik zakończonego procesu albo ``BLAD_KRYTYCZNY`` po Zatrzymaniu."""
 
 
 @dataclass(frozen=True)
 class Finished:
-    """Fakty zakończonego procesu, te same w metrykach: wynik, liczniki, czasy etapów i drogi zapisu.
-
-    Klucze ``counters`` to dokładnie ``Process.counter_names``. ``routes``: ile zapisanych plików każdego rodzaju
-    powstało każdą drogą zapisu z Wzorca (ADR 0008); proces, który nie pisze z Wzorca, nie ma żadnej.
-    """
-
     result: CompletedResult
     counters: Mapping[str, int]
     phase_durations_ms: Mapping[ProgressPhase, int]
@@ -155,16 +88,12 @@ class Finished:
 
 @dataclass(frozen=True)
 class Counter(Generic[SummaryT]):
-    """Licznik rekordu metryk procesu z wartością z podsumowania silnika."""
-
     name: str
     count: Callable[[SummaryT], int]
 
 
 @dataclass(frozen=True)
 class Preview(Generic[InputsT]):
-    """Podgląd bez zapisu procesu: Komunikat, gdy planu nie da się pokazać, i czy wejście prosi o podgląd (``dry_run``)."""
-
     plan_not_shown: Message
     dry_run: Callable[[InputsT], bool]
 
@@ -175,20 +104,6 @@ def _no_routes(_summary: object) -> RouteCounts:
 
 @dataclass(frozen=True, kw_only=True)
 class Process(Generic[InputsT, SummaryT, ContextT]):
-    """Opis procesu dla rdzenia Uruchomienia procesu, wspólny dla każdego rozmówcy.
-
-    ``name`` to nazwa procesu z GLOSSARY. ``execute`` to sam silnik: dostaje
-    gotowe wejście procesu i Kontekst Uruchomienia.
-    Zatrzymanie zgłasza ``StopError`` z Komunikatem z katalogu procesu.
-    Komunikaty zakończeń z tego samego katalogu (``unexpected_failure``,
-    ``summary_not_shown``, ``preview``) rdzeń dołącza do każdego innego
-    zatrzymania, więc żaden rozmówca nie dobiera treści sam. ``preview`` ``None``: proces bez Podglądu bez zapisu.
-    Fakty zakończonego procesu (``finished``) to wynik z wejścia i podsumowania (``result``), liczniki
-    (``counters``: jedyna definicja nazw i kolejności liczników rekordu metryk) i drogi zapisu z Wzorca (``routes``;
-    proces, który nie pisze z Wzorca, zostawia domyślne: żadnej).
-    Pliku metryk tu nie ma: wybiera go gospodarz Uruchomienia (``run_process(metrics_path=...)``).
-    """
-
     name: str
     counters: tuple[Counter[SummaryT], ...]
     result: Callable[[InputsT, SummaryT], CompletedResult]
@@ -204,8 +119,6 @@ class Process(Generic[InputsT, SummaryT, ContextT]):
         return frozenset(counter.name for counter in self.counters)
 
     def dry_run(self, inputs: InputsT) -> bool:
-        """Uruchomienie z wejściem ``inputs`` to Podgląd bez zapisu; proces bez Podglądu zawsze zapisuje."""
-
         return self.preview is not None and self.preview.dry_run(inputs)
 
     def finished(self, inputs: InputsT, summary: SummaryT) -> Finished:
@@ -219,19 +132,6 @@ class Process(Generic[InputsT, SummaryT, ContextT]):
 
 @dataclass(frozen=True)
 class Outcome(Generic[ViewT]):
-    """Wynik Uruchomienia procesu dla rozmówcy.
-
-    ``view`` to widok podsumowania rozmówcy, gdy proces się zakończył
-    (``Finished``); zrobiła go funkcja rozmówcy w osłonie rdzenia.
-    ``technical_notes`` to uwagi techniczne: niezapisane metryki i odłączony
-    podgląd postępu. ``metrics_saved``: rekord metryk trafił do pliku metryk.
-    ``progress``: ostatni snapshot jedynej projekcji postępu (etapy, Przetworzenia
-    Szablonów pracownika, liczba problemów); po odłączeniu podglądu ten z chwili odłączenia.
-    ``files_unchanged``: Uruchomienie nie zmieniło plików taty, bo było podglądem bez zapisu albo skończyło
-    się, zanim zaczęło się Zapisywanie. Po odłączeniu podglądu nie wiadomo, czy Zapisywanie się zaczęło,
-    więc wtedy tylko podgląd.
-    """
-
     ending: Finished | Stop
     view: ViewT | None
     total_duration_ms: int
@@ -246,8 +146,6 @@ class Outcome(Generic[ViewT]):
 
 
 class _ClockedConversation:
-    """Rozmowa rozmówcy dla silnika; czas czekania na Decyzję taty wstrzymuje zegar Uruchomienia."""
-
     def __init__(self, interlocutor: Interlocutor, clock: RunClock) -> None:
         self._interlocutor = interlocutor
         self._clock = clock
@@ -262,12 +160,6 @@ class _ClockedConversation:
 
 
 class _Observation:
-    """Obserwator silnika: jedna projekcja postępu i podgląd rozmówcy (ADR 0002).
-
-    Wyjątek projekcji albo podglądu oznacza odłączenie: sekwencer etapów
-    przestaje wysyłać zdarzenia, a rdzeń kończy jedną neutralną linią.
-    """
-
     def __init__(self, interlocutor: Interlocutor) -> None:
         self._interlocutor = interlocutor
         self.projection = ProgressProjection()
@@ -291,13 +183,6 @@ class _Observation:
 
 
 def _stop_from(error: Exception, process: Process[Any, Any, Any]) -> Stop:
-    """Własne zatrzymanie procesu z jego Komunikatem i faktami; każdy inny wyjątek to Komunikat nieoczekiwanego błędu.
-
-    Własne zatrzymanie z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn, bo Maks ustala z niego, gdzie proces
-    stanął, także przy Zatrzymaniu dla taty: Wycena w efenix, której okno nie wystartowało, mówi w nim, która droga
-    startu zawiodła (``EfenixUnreachable``, ``BrowserNotStarted``) i z jakim wyjątkiem.
-    """
-
     if isinstance(error, Declined):
         return Stop("declined", error.message)
     if isinstance(error, StopError):
@@ -309,8 +194,6 @@ def _stop_from(error: Exception, process: Process[Any, Any, Any]) -> Stop:
 
 
 _DeferredSummary = Callable[[], tuple[Finished, ViewT]]
-"""Budowa podsumowania i widoku rozmówcy odroczona do chwili po pomiarze Czasu
-uruchomienia, żeby jej czas się nie liczył."""
 
 
 def _run_engine(
@@ -346,14 +229,6 @@ def run_process(
     metrics_path: Path,
     context: ContextT,
 ) -> Outcome[ViewT]:
-    """Prowadzi jedno Uruchomienie procesu z gotowym wejściem procesu i dowolnym rozmówcą.
-
-    ``view`` robi z podsumowania silnika widok rozmówcy; jej wyjątek to błąd po
-    silniku z Komunikatem zakończenia procesu. Rekord metryk trafia do
-    ``metrics_path``; rozmówca renderuje ``Outcome`` sam. Silnik dostaje ``context`` z obserwatorem postępu i rozmową
-    rozmówcy, a rdzeń liczy ``Czas uruchomienia`` zegarem kontekstu (``context.clock``).
-    """
-
     dry_run = process.dry_run(inputs)
     mode = RunMode.of(dry_run=dry_run)
     started_at = utc_now().isoformat()

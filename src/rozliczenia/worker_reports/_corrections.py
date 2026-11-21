@@ -121,10 +121,6 @@ def _corrected(
     sent: tuple[datetime, MailId],
     on: set[date] | None,
 ) -> bool:
-    """Czy mail Wykonawcy ``worker`` z numerami ``numbers``, który przyszedł ``sent``, poprawił późniejszy Raport
-    wykonawcy tego Wykonawcy z dniem z ``on`` (``None``: z każdym dniem): powtarza każdy z tych numerów, który jest
-    zleceniem Wykonawcy z dnia tego Raportu, a takich jest co najmniej jeden."""
-
     return any(
         report.worker == worker
         and (report.arrived, report.mail) > sent

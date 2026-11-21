@@ -241,8 +241,6 @@ def _subject(fault: SubjectFault) -> str:
 
 
 def _said(entry: ReportEntry) -> str:
-    """Wpis tak, jak go napisał Wykonawca: znak (``tak``, ``t``, ``nieskuteczne``) i czynności."""
-
     return " ".join(part for part in (entry.mark, entry.activities) if part)
 
 

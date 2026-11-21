@@ -1,5 +1,3 @@
-"""Przebieg rozliczeń i Przygotowanie pliku zbiorczego przez rdzeń Uruchomienia procesu (``run_process``)."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -100,8 +98,13 @@ SETTLEMENT_COUNTERS = {
     "skipped": 0,
     "issues": 0,
 }
-# Domyślny syntetyczny Rejestr ma tylko urządzenia nieznane Regułom ilości: dwa ostrzeżenia ilości.
-PREPARATION_COUNTERS = {"period_orders": 4, "successful_orders": 3, "skipped_empty_rows": 5, "warnings": 2}
+PREPARATION_WARNINGS = ["NIEZNANE_URZADZENIA", "KOLUMNY_Z_OPISU"]
+PREPARATION_COUNTERS = {
+    "period_orders": 4,
+    "successful_orders": 3,
+    "skipped_empty_rows": 5,
+    "warnings": len(PREPARATION_WARNINGS),
+}
 
 
 def written(**copy_and_openpyxl: tuple[int, int]) -> dict[str, dict[str, int]]:
@@ -114,8 +117,6 @@ def written(**copy_and_openpyxl: tuple[int, int]) -> dict[str, dict[str, int]]:
 NO_ROUTES = written()
 
 
-# Syntetyczne Wzorce (rozliczenia pracownika, pliku zbiorczego i rozliczenia wewnętrznego) przyjmuje kopia (ADR 0008);
-# Podgląd bez zapisu nie zapisuje żadnego pliku.
 @pytest.mark.parametrize(
     ("name", "dry_run", "counters", "result", "routes"),
     [
@@ -241,6 +242,15 @@ def test_nieudany_zapis_metryk_jest_ostrzezeniem_procesu_bez_zmiany_wyniku(tmp_p
     assert (outcome.result, outcome.metrics_saved, outcome.technical_notes) == ("OK", False, (METRICS_NOT_SAVED[name],))
 
 
+def test_przygotowanie_domyslnego_rejestru_ostrzega_o_nieznanych_urzadzeniach_i_kolumnach_z_opisu(
+    tmp_path: Path,
+) -> None:
+    outcome = run(preparation(tmp_path), tmp_path / "metrics.jsonl")
+
+    assert isinstance(outcome.view, PreparationSummary)
+    assert [warning.code for warning in outcome.view.warnings] == PREPARATION_WARNINGS
+
+
 def test_plik_zbiorczy_bez_zlecen_skutecznych_nie_ostrzega_o_ilosciach_z_opisu_technika(tmp_path: Path) -> None:
     rows: list[dict[str, object] | None] = [
         register_order(number, datetime(2026, 9, 14, 8, number), successful="nie") for number in (1, 2)
@@ -255,8 +265,6 @@ def test_plik_zbiorczy_bez_zlecen_skutecznych_nie_ostrzega_o_ilosciach_z_opisu_t
 
 @dataclass
 class TataWithPhasesOf125Ms(Tata):
-    """Tata, przy którym każdy etap trwa 125 ms zegara ``clock``, a odpowiedź na Decyzję 10 minut."""
-
     clock: ManualClock = field(default_factory=ManualClock)
     started: set[ProgressPhase] = field(default_factory=set)
 

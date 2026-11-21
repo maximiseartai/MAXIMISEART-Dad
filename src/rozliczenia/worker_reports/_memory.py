@@ -86,7 +86,6 @@ class EnteringMemory:
 
     @property
     def rollout(self) -> date | None:
-        """Dzień wdrożenia Wpisania (``None``: jeszcze żadnego udanego kliknięcia)."""
         return self._saved.rollout
 
     @property
@@ -96,7 +95,6 @@ class EnteringMemory:
 
     @property
     def requested(self) -> frozenset[RequestedEntry]:
-        """Decyzje taty Wpisu na życzenie z pamięci, z decyzją kliknięcia."""
         return self._saved.requested
 
     def window(self, today: date, closed: ClosedPeriods, *, reminders_since: date | None = None) -> Window:
@@ -126,9 +124,6 @@ class EnteringMemory:
         legend: ActivityLegend,
         rules: QuantityRules,
     ) -> ReportsOutcome:
-        """Operacja Wpisania raportów (``_operation.enter_reports``) na wejściu odczytu okna z tej pamięci
-        (``_inputs``)."""
-
         return _operation.enter_reports(self._inputs(window, intermax, mails, addresses, legend, rules))
 
     def reminders(
