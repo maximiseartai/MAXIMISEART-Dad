@@ -969,13 +969,17 @@ def test_polaczenie_smtp_zerwane_przy_wylogowaniu_daje_wyslany_mail_i_zamyka_gni
             sessions.append(ZerwanePrzyQuit("127.0.0.1", smtp.port, timeout=10))
             return sessions[-1]
 
-        outcome = ImapInbox(z_pliku(dostep(tmp_path)), connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port), smtp=connect).send(
-            PRZYPOMNIENIE, WYSLANE_O
-        )
+        inbox = ImapInbox(z_pliku(dostep(tmp_path)), connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port), smtp=connect)
+        try:
+            outcome = inbox.send(PRZYPOMNIENIE, WYSLANE_O)
+        finally:
+            sockets = [session.sock for session in sessions]
+            for session in sessions:
+                session.close()
 
     assert outcome == MailSent()
     assert len(smtp.received) == 1
-    assert [session.sock for session in sessions] == [None]
+    assert sockets == [None]
 
 
 def test_dostep_do_skrzynki_z_pliku_nie_ma_hasla_w_repr(tmp_path: Path) -> None:
