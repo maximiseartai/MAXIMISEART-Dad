@@ -29,10 +29,14 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenColumn, empty_memory
 from rozliczenia.centrum.run_logs import (
     RUN_LOGS_DIRECTORY,
     Environment,
+    Explanation,
     LoggedActivityLegend,
+    LoggedDiagnosis,
     LoggedInterruption,
     LoggedMessage,
     LoggedOrder,
@@ -807,6 +811,24 @@ def test_regul_ilosci_i_legendy_z_logow_ktore_nie_sa_tekstem_json_nie_da_sie_odc
     legend = LoggedActivityLegend(legend="[adres]").value()
 
     assert (type(rules), type(legend)) == (RulesProblem, LegendProblem)
+
+
+def test_diagnoza_dopisuje_sie_do_logow_sprzed_maski_wiec_wartosc_z_pliku_taty_ma_jedna_maske() -> None:
+    forbidden = empty_memory()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, "adres")
+    cell = LoggedMessage(kind="warning", code="ZLE_SKUTECZNE", what="Co.", where="Komórka „adres”.", action="Zrób.")
+    logs = interrupted_logs(start()).model_copy(update={"messages": [cell]})
+    diagnosis = LoggedDiagnosis(
+        diagnosed_at=SECOND,
+        explanation=Explanation(code="BRAK_WZORCA", what="Co.", where="Gdzie.", action="Zrób."),
+        next_action="report",
+        checks=[],
+    )
+
+    with_diagnosis = guard_logs(logs, forbidden).with_diagnosis(diagnosis, forbidden)
+
+    assert with_diagnosis is not None
+    assert with_diagnosis.record.messages[0].where == "Komórka „[adres]”."
 
 
 def test_logi_kazdego_wydania_przechodza_dzisiejszy_schemat_logow() -> None:

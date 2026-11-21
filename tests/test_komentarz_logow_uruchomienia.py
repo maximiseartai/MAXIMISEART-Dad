@@ -3209,15 +3209,3 @@ def test_kazda_galaz_gramatyki_pola_narzedzia_ma_poprawny_tekst_narzedzia() -> N
     assert sorted(set(DRUGIE_GALEZIE) - set(TOOL_TEXT_GRAMMAR)) == []
     assert brak == []
 
-
-def test_diagnoza_dopisuje_sie_do_logow_sprzed_maski_wiec_wartosc_z_pliku_taty_ma_jedna_maske() -> None:
-    forbidden = empty_memory()
-    forbidden.remember_value(ForbiddenColumn.ADDRESS, "adres")
-    logs = full_logs(messages=[{**FULL_LOGS["messages"][0], "where": "Komórka „adres”."}])
-    diagnosis = full_logs().diagnosis
-    assert diagnosis is not None
-
-    with_diagnosis = guard_logs(logs.model_copy(update={"diagnosis": None}), forbidden).with_diagnosis(diagnosis, forbidden)
-
-    assert with_diagnosis is not None
-    assert with_diagnosis.record.messages[0].where == "Komórka „[adres]”."
