@@ -106,9 +106,6 @@ def _mail(
 
 
 def _letter(text: str, number: str, fault: VerdictFault, activities: str) -> MissingVerdict:
-    """``MissingVerdict`` Wpisu Jana z dnia ``DAY`` ze znakiem ``fault`` z maila ``_mail(JAN, SUBJECT, text)``, z Wpisem
-    na życzenie, który wpisze zamiar znaku i ``activities`` do zlecenia z tego dnia."""
-
     assert fault.leaning is not None, fault
     jan = Login("jan.testowy")
     offer = Offer(_mail(JAN, SUBJECT, text).id, jan, DAY, OrderNumber(number), fault.leaning, activities, DAY)
@@ -156,8 +153,6 @@ def _inputs(
     legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND,
     requested: frozenset[RequestedEntry] = frozenset(),
 ) -> Given:
-    """Wejście rdzenia; bez ``present`` proces przeczytał tylko wiersze zleceń ``orders``, każdy raz."""
-
     logins = {}
     for login, senders in ADDRESSES.items():
         for sender in senders:
@@ -285,8 +280,6 @@ def test_komorka_rowna_wpisowi_nie_daje_zmiany_a_drugie_klikniecie_niczego_nie_z
 
 
 def test_reczny_opis_zostaje_z_roznica_dla_taty_a_puste_skuteczne_obok_dostaje_wpis() -> None:
-    """US 35: ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` liczą się osobno."""
-
     order = _order(completed="wymiana modemu, klient prosi o telefon")
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], [order]))
@@ -447,7 +440,6 @@ def _after(orders: Sequence[RegisterOrder], outcome: ReportsOutcome) -> list[Reg
 
 EWA_ROW = OrderRow("Zlecenia", 125)
 EWA_OWN = _order(EWA_ROW, number="40000005", worker="Ewa.Probna")
-"""Zlecenie Ewy z tego samego dnia: z niego przeniesione zlecenie bierze pisownię ``WYKONAWCA`` Ewy."""
 
 
 @pytest.mark.parametrize(
@@ -595,8 +587,6 @@ def test_reczna_zmiana_miejsca_po_przeniesieniu_wygrywa() -> None:
 
 
 def test_reczna_zmiana_wykonawcy_przed_raportem_poprawia_mail() -> None:
-    """US 16: ręcznie wpisany ``WYKONAWCA`` sprzed Raportu wykonawcy (bez Przeniesienia w pamięci) poprawia mail."""
-
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], [_order(worker="Ewa.Probna")]))
 
     assert outcome.moves == (OrderMove(ROW, DAY, "jan.testowy"),)
@@ -707,7 +697,6 @@ def test_pamiec_wpisow_numeru_pod_dwoma_kluczami_przepada_takze_przy_jednym_wier
 
 SEVENTH, SIXTH = date(2026, 11, 7), date(2026, 11, 6)
 OPEN_DAYS = (SIXTH, SEVENTH, DAY)
-"""Dni uporządkowane arkusza ``Zlecenia``: wszystkie dni otwarte okna od 6.11."""
 
 
 _NAMES = {Login("jan.testowy"): "Jan.Testowy", Login("ewa.probna"): "Ewa.Probna", Login("adam.inny"): "Adam.Inny"}
@@ -738,7 +727,6 @@ _EVENTS_WITH_DAYS = st.lists(
 """Zdarzenia własności z Przeniesieniami między dniami (#1350): mail ma dzień z tematu, a tata zmienia też dzień."""
 
 _Place = tuple[Login, date]
-"""Miejsce zlecenia w tabeli przejść: Wykonawca i dzień."""
 
 
 @dataclass(frozen=True)
@@ -1106,9 +1094,6 @@ def test_zwycieski_wpis_bez_tak_albo_nie_nie_przenosi_zlecenia(text: str, proble
 
 
 def test_dwa_zlecenia_jana_przejete_przez_ewe_bez_segmentu_przechodza_razem_po_wierszach() -> None:
-    """Dwa przejęte zlecenia jednego kliknięcia: każde ma swoje Przeniesienie, po arkuszu i wierszu, i swoje informacje;
-    Ewa bez zleceń w dniach otwartych dostaje swój login."""
-
     second = OrderRow("Zlecenia", 121)
     orders = [_order(), _order(second, number="40000002")]
 
@@ -1287,9 +1272,6 @@ def test_zlecenie_cudze_i_z_innego_dnia_zmienia_wykonawce_zawsze_a_dzien_wedlug_
     ],
 )
 def test_przeniesienie_tylko_do_dnia_uporzadkowanego_arkusza_zlecenia(ordered: tuple[date, ...], bar: MoveBar) -> None:
-    """US 13: Przeniesienie na dzień, który nie jest Dniem uporządkowanym arkusza zlecenia, zostawia INTERMAX bez zmiany
-    i daje problem z powodem w dniu z tematu."""
-
     order = _numbered(1, SEVENTH)
     inputs = _inputs([_mail(JAN, SUBJECT, "40000001 tak")], [order], rollout=SIXTH, ordered=ordered)
     if bar is MoveBar.OTHER_SHEET:
@@ -2573,8 +2555,6 @@ def test_pamiec_z_dwoma_wpisami_jednej_komorki_zlecenia_jest_odrzucona() -> None
         OwnEntries(frozenset(entries))
 
 
-# --- Poprawki od Wykonawcy i pierwszeństwo ręcznej wartości (#1230, US 33–37, 40) ---
-
 # Poprawka Jana: późniejszy mail z innym ``tak``/``nie`` i opisem niż wcześniejszy Wpis. W kolumnie obok stoi już wartość
 # z poprawki, więc każdy przypadek dotyczy tylko jednej komórki.
 CORRECTION = "40000001 nie klient nieobecny"
@@ -2671,9 +2651,6 @@ def test_poprawka_wykonawcy_w_drugim_kliknieciu_podmienia_nietkniety_wlasny_wpis
 
 
 def test_reczna_zmiana_miedzy_kliknieciami_wygrywa_z_poprawka_a_kolumna_obok_dostaje_poprawke() -> None:
-    """Kryterium #1230: tata zmienia ``SKUTECZNE`` wpisane z raportu między kliknięciami, a Jan przysyła poprawkę. Ręczne
-    ``SKUTECZNE`` zostaje z różnicą, a nietknięty własny opis dostaje poprawkę. Różnica nie znika w trzecim kliknięciu."""
-
     correction = _mail(JAN, SUBJECT, CORRECTION, EVENING + timedelta(hours=1))
     first = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], [_order()]))
     by_tata = _order(successful="nie wiem", completed="wymiana routera")
@@ -2690,9 +2667,6 @@ def test_reczna_zmiana_miedzy_kliknieciami_wygrywa_z_poprawka_a_kolumna_obok_dos
 
 
 def test_poprawka_nie_rusza_pamieci_innego_zlecenia_ani_wpisu_wczesniejszego_maila_w_innym_zleceniu() -> None:
-    """Poprawka jednego zlecenia z drugiego maila nie cofa Wpisu innego zlecenia z pierwszego maila: oba zostają w
-    pamięci."""
-
     other = OrderRow("Zlecenia", 121)
     first_mail = _mail(JAN, SUBJECT, "40000001 tak wymiana routera 40000002 tak montaż")
     orders = [_order(), _order(other, number="40000002")]
@@ -3392,9 +3366,6 @@ REPLY = "40000001 tak inst20m"
     ],
 )
 def test_odpowiedz_na_przypomnienie_jest_raportem_wykonawcy_za_dzien_z_tematu_przypomnienia(subject: str) -> None:
-    """US 48–49: ``Re:`` albo ``Odp:`` raz albo więcej, w dowolnej wielkości liter, przed tematem przypomnienia daje dzień
-    zleceń z tematu przypomnienia."""
-
     mail = _mail(JAN, subject, REPLY)
 
     outcome = enter_reports(_inputs([mail], [_order()]))
@@ -3415,9 +3386,6 @@ def test_odpowiedz_na_przypomnienie_jest_raportem_wykonawcy_za_dzien_z_tematu_pr
     ],
 )
 def test_przekazanie_przypomnienia_i_odpowiedz_na_inny_temat_nie_sa_raportem(subject: str) -> None:
-    """US 51: przekazanie dalej (``Fwd:``, ``Fw:``, ``PD:``) gdziekolwiek przed tematem przypomnienia i odpowiedź na
-    temat, którego nie napisało Centrum, nie są Raportem wykonawcy."""
-
     outcome = enter_reports(_inputs([_mail(JAN, subject, REPLY)], [_order()]))
 
     assert (outcome.changes, _problems(outcome), outcome.mails) == ((), (), window_mails())
@@ -3469,8 +3437,6 @@ def test_z_odpowiedzi_na_przypomnienie_licza_sie_tylko_wpisy_nad_cytatem(text: s
 
 
 def test_wpis_pod_linia_cytatu_sie_nie_liczy() -> None:
-    """Treść kończy pierwsza linia ``>``: Wpis pod cytatem (odpowiedź pod spodem) nie jest Wpisem tej odpowiedzi."""
-
     text = f"{REPLY}\n> Poproszę o wysłanie raportu za dzień 08.11.2026.\n40000002 nie brak klienta"
 
     outcome = enter_reports(_inputs([_mail(JAN, f"Re: {REMINDER}", text)], _orders()))
@@ -3591,9 +3557,6 @@ def test_poprawka_w_odpowiedzi_z_tematem_raportu_na_poczatku_jest_raportem_za_je
 
 
 def test_poprawka_w_odpowiedzi_wygrywa_z_wczesniejszym_wpisem_zlecenia_a_cytat_niczego_nie_wpisuje() -> None:
-    """Historie 26–28: po pierwszym kliknięciu INTERMAX ma Wpis z raportu za 8.11, a poprawka w odpowiedzi na mail taty
-    podmienia go jak każdy późniejszy Wpis; Wpis ``nie`` z cytatu nie trafia do zlecenia ``40000002``."""
-
     report = _mail(JAN, SUBJECT, TEXT)
     fixed = _mail(JAN, FIXED, FIXED_TEXT, EVENING + timedelta(hours=14))
     first = enter_reports(_inputs([report], _orders()))
@@ -3604,8 +3567,6 @@ def test_poprawka_w_odpowiedzi_wygrywa_z_wczesniejszym_wpisem_zlecenia_a_cytat_n
     assert second.changes == (CellChange(ROWS[0], ReportColumn.COMPLETED, "wymiana modemu"),)
     assert _problems(second) == ()
 
-
-# --- Rozpoznanie tematu i Wpisów tak, jak piszą Wykonawcy (#1228, US 8–10, 18–26) ---
 
 PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples=150)
 ROWS = (ROW, OrderRow("Zlecenia", 121), OrderRow("Zlecenia", 122))
@@ -3792,9 +3753,6 @@ def test_wlasnosc_temat_z_dniem_i_innymi_slowami_liczy_sie_za_ten_sam_dzien_z_te
 def test_wlasnosc_poprawka_w_odpowiedzi_liczy_sie_za_ten_sam_dzien_co_temat_raportu_bez_przedrostkow(
     written: tuple[date, str], arrived_day: date, prefixes: list[str], words: str
 ) -> None:
-    """Historie 26 i 29: każdy temat, który gramatyka czyta jako dzień, po ``Re:`` albo ``Odp:`` raz albo więcej i z
-    dowolnym dopiskiem, także z liczbami, daje ten sam dzień co sam temat, także z pomylonym rokiem."""
-
     _, subject = written
     arrived = datetime.combine(arrived_day, time(18, 5), TAPA)
 
@@ -3905,8 +3863,6 @@ def _requests(outcome: ReportsOutcome) -> dict[OrderNumber, Offer | None]:
 
 
 def _decisions(offers: Mapping[OrderNumber, Offer | None]) -> frozenset[RequestedEntry]:
-    """Kliknięcie taty przy każdym Wpisie na życzenie z ``offers``."""
-
     return frozenset(offer.decide(EVENING + timedelta(hours=1)) for offer in offers.values() if offer is not None)
 
 
@@ -4202,8 +4158,6 @@ def test_wpisu_na_zyczenie_przy_raporcie_z_bledem_tematu_nie_ma_gdy_centrum_nie_
 def test_nieczytelny_temat_spoza_wykonawcow_albo_z_okresu_z_plikiem_zbiorczym_jest_pomijany_po_cichu(
     sender: str, arrived: datetime, rollout: date | None, closed: tuple[str, ...]
 ) -> None:
-    """Problem ma tylko mail od Wykonawcy, który przyszedł w dniu otwartym (US 10, 40)."""
-
     outcome = enter_reports(_inputs([_mail(sender, "Raport 08.11", TEXT, arrived)], [], rollout=rollout, closed=closed))
 
     assert (_problems(outcome), outcome.mails) == ((), window_mails())
@@ -4276,9 +4230,6 @@ _EXPECTED = (("tak", "wymiana routera, 2 gniazda"), ("nie", "brak klienta, stb2 
 @PROPERTY
 @given(_entries_text())
 def test_wlasnosc_wpisy_w_dowolnym_ukladzie_daja_te_same_komorki(text: str) -> None:
-    """US 19–21, 24, 26: układ linii, ``#``, wielkość liter, interpunkcja przy ``tak``/``nie`` i spacje nie zmieniają
-    komórek, a ``SKUTECZNE`` dostaje ``tak``/``nie`` małymi literami."""
-
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], _orders()))
 
     assert outcome.changes == tuple(
@@ -4295,8 +4246,6 @@ def test_wlasnosc_wpisy_w_dowolnym_ukladzie_daja_te_same_komorki(text: str) -> N
     ],
 )
 def test_tak_albo_nie_bez_wzgledu_na_wielkosc_liter_i_interpunkcje_trafia_malymi_literami(text: str, verdict: str) -> None:
-    """US 21, 26."""
-
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()]))
 
     assert outcome.changes == _both(ROW, verdict, "wymiana routera")
@@ -4333,8 +4282,6 @@ def test_wpis_bez_tak_ani_nie_jest_problemem_a_nie_zgadnieta_wartoscia(
 
 
 def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuje() -> None:
-    """US 37: o zleceniu decyduje najpóźniejszy Wpis, a ten nie mówi, czy zlecenie było skuteczne."""
-
     mails = [_mail(JAN, SUBJECT, TEXT), _mail(JAN, SUBJECT, "40000001 t wymiana routera", EVENING + timedelta(hours=1))]
 
     outcome = enter_reports(_inputs(mails, [_order()]))
@@ -4347,8 +4294,6 @@ def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuj
 
 
 def test_opis_ma_pojedyncze_spacje_bez_spacji_na_brzegach() -> None:
-    """US 24."""
-
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "  40000001\ttak   wymiana \xa0 routera ,  2 gniazda   ")], [_order()]))
 
     assert outcome.changes == _both(ROW, "tak", "wymiana routera , 2 gniazda")
@@ -4385,13 +4330,10 @@ def test_wlasnosc_permutacja_maili_z_problemami_rozpoznania_daje_ten_sam_wynik()
     assert all(outcome == outcomes[0] for outcome in outcomes)
 
 
-# --- Wpis przez kilka linii (#1228 runda 2): granica Wpisu nie zależy od końca linii ---
-
 EWA_ORDERS = (
     _order(OrderRow("Zlecenia", 123), number="40000009", worker="Ewa.Probna"),
     _order(OrderRow("Zlecenia", 124), number="40000009", worker="Adam.Inny"),
 )
-"""Numer 40000009 u dwóch innych Wykonawców: Wpis Jana nie przenosi go, tylko daje ``RepeatedNumber`` z każdym z nich."""
 LONG = "40000001 tak wymiana routera,\nmontaż 2 gniazd"
 LONG_CELLS = ((0, "tak", "wymiana routera, montaż 2 gniazd"),)
 
@@ -4600,8 +4542,6 @@ def test_wlasnosc_dowolne_lamanie_linii_miedzy_slowami_daje_te_same_komorki(gaps
     assert _problems(outcome) == ()
 
 
-# --- Koniec opisu Wpisu (#1228 runda 3): tylko wyliczone znaczniki, reszta pod opisem należy do opisu ---
-
 ROUTER = "40000001 tak wymiana routera"
 ROUTER_CELLS = ((0, "tak", "wymiana routera"),)
 TWO = f"{ROUTER}\n40000002 nie brak klienta"
@@ -4706,9 +4646,6 @@ def test_opis_wpisu_konczy_pusta_linia_pozegnanie_z_tabeli_albo_przedrostek_nast
 
 
 def test_poprawiony_mail_zdejmuje_ostrzezenie_tylko_nieczytelnego_maila_sprzed_niego() -> None:
-    """Dwa maile z tematem bez dnia i jeden Raport z dniem między nimi: ostrzeżenie zostaje tylko przy mailu, który
-    przyszedł po poprawce."""
-
     before = _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>")
     corrected = _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>")
     after = _mail(JAN, "Raport", "40000001 tak wymiana", EVENING + timedelta(minutes=2), "<3@przyklad.invalid>")
@@ -4738,9 +4675,6 @@ def test_poprawiony_mail_nie_zdejmuje_ostrzezenia_drugiego_nieczytelnego_maila_z
 
 
 def test_dwa_nieczytelne_tematy_z_jednym_message_id_chwila_i_powodem_rozstrzygaja_numery_wpisow() -> None:
-    """Remis ``(arrived, MailId)`` i powodu nieczytelnego tematu rozstrzygają numery Wpisów treści, nie kolejność maili
-    na wejściu."""
-
     mails = [
         _mail(JAN, "Raport", "40000001 tak wymiana", EVENING, "<1@przyklad.invalid>"),
         _mail(JAN, "Raport", "40000002 tak wymiana", EVENING, "<1@przyklad.invalid>"),
@@ -4804,8 +4738,6 @@ def test_dwa_nieczytelne_tematy_z_jednym_message_id_i_chwila_przyjscia_daja_ten_
         SubjectFault.YEAR_DIGITS,
     }
 
-
-# --- Stopka w środku ostatniej linii i sprzeczne Wpisy jednego numeru (Część #1224, przegląd prawdziwych Raportów) ---
 
 FOOTER_ORDERS = [_order(row, number=number) for row, number in zip(ROWS, NUMBERS, strict=True)]
 
@@ -5674,9 +5606,6 @@ def test_wpis_tak_wpisuje_caly_opis_a_tata_widzi_problem_z_powodem_tylko_przy_bl
 
 
 def test_pozniejszy_poprawny_wpis_zastepuje_wpis_z_bledem_opisu_a_problem_znika() -> None:
-    """Późniejszy Wpis zlecenia wygrywa, więc poprawiony Wpis Wykonawcy zastępuje Wpis z Błędem opisu w tym samym
-    kliknięciu i w następnym (własny wpis Centrum), a problem znika; Wpis z błędem po poprawnym daje problem znowu."""
-
     faulty = _mail(JAN, SUBJECT, "40000001 tak montaż instutp40m")
     corrected = _mail(JAN, SUBJECT, "40000001 tak inst20m", LATER)
 
@@ -5694,9 +5623,6 @@ def test_pozniejszy_poprawny_wpis_zastepuje_wpis_z_bledem_opisu_a_problem_znika(
 
 
 def test_zlecenie_dopisane_z_raportu_z_bledem_opisu_ma_problem_a_odrzucona_literowka_nie() -> None:
-    """Zlecenie dopisane z raportu z Wpisem ``tak`` z Błędem opisu dopisuje się jak każde, z problemem; numer, który
-    poprawiony mail odrzucił jako literówkę, nie staje się zleceniem, więc nie ma też Błędu opisu (US 40)."""
-
     orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002")]
     typo, resent = (f"40000001 tak instutp40m {number} tak montaż instutp0m" for number in ("40000092", "40000002"))
 

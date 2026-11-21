@@ -1,5 +1,3 @@
-"""Drive features/edytor-regul-ilosci.md."""
-
 from __future__ import annotations
 
 import json

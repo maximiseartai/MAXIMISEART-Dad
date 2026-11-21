@@ -1,5 +1,3 @@
-"""Drive features/konfiguracja.md."""
-
 from __future__ import annotations
 
 from collections.abc import Iterator

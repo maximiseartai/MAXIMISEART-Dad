@@ -450,6 +450,7 @@ def _guard_proof(
     findings: str = werdykty_szablonu.WERDYKTY["wazne"],
     later: str | None = None,
     base: dict[str, str] | None = None,
+    on_main: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     """Dowód ``arguments`` (``--straznik`` z selektorem) dla Ważnego 5/W1/r1 z werdyktu FAIL z treścią ``findings``,
     a z ``later`` także z późniejszym werdyktem PASS HEAD z tą treścią; ``dev`` to dodatkowe piny dodatku dev, a ``base``
@@ -473,6 +474,9 @@ def _guard_proof(
         **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": comments}, "reviews": {**pages, "nodes": []}},
     }
     (github.bin / "state.json").write_text(json.dumps(pull), encoding="utf-8")
+    if on_main is not None:
+        _merge(github, 6, on_main)
+        head = git(github.checkout, "rev-parse", "main").strip()
     return github.run(*arguments, "--z-commita", head, "--wazne", "5/W1/r1"), failed
 
 
@@ -617,6 +621,33 @@ def test_straznik_pytest_szczebla_test_ma_dowod_na_wlascicielu_dopisanym_w_tym_s
     [line, end] = done.stdout.splitlines()
     assert line.startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed"), done.stdout
     assert end == f"DOWÓD OK | {GUARD_NODE} | wykryte 1/1", done.stdout
+
+
+@wymaga_uv
+@pytest.mark.parametrize(
+    ("later_files", "state", "last"),
+    [
+        ({"kod/obok.py": "OBOK = 1\n"}, "WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed", "DOWÓD OK"),
+        ({"tests/test_inne.py": "def test_wazne_wola_tylko_dozwolone() -> None:\n    pass\n"}, "NIEWYKRYTA | zakazane z FAIL: NIEWYKRYTA", "DOWÓD ODMOWA"),
+    ],
+    ids=["pozniejszy-commit-nie-rusza-straznika", "pozniejszy-commit-wylacza-straznika"],
+)
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_ponowny_dowod_straznika_scalonego_pr_na_pozniejszym_main_wykrywa_tylko_gdy_main_nie_wylaczyl_straznika(tmp_path: Path, later_files: dict[str, str], state: str, last: str) -> None:
+    done, failed = _guard_proof(
+        tmp_path,
+        "--straznik",
+        "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone",
+        dev=PYTEST_PINS,
+        findings=werdykty_szablonu.WERDYKTY["wazne-z-nieaktualna-mutacja"],
+        later=werdykty_szablonu.WERDYKTY["pass-z-mutacja"],
+        on_main=later_files,
+    )
+
+    assert done.returncode == (0 if last == "DOWÓD OK" else 1), done.stdout + done.stderr
+    [line, end] = done.stdout.splitlines()
+    assert line.startswith(f"#5 W1 r1 | {failed[:8]} | {state}"), done.stdout
+    assert end.startswith(f"{last} | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte"), done.stdout
 
 
 @needs_ast_grep
