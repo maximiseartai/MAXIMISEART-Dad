@@ -647,8 +647,6 @@ def test_bieg_konczy_sie_verify_fail_gdy_kroki_roznia_sie_od_planu(
 
 
 def _modul_procesow(przebieg: ModuleType, warianty: dict[str, object], **nazwy: object) -> ModuleType:
-    """Moduł z procesami ``nazwy``, wariantami ``warianty`` i planem, który każdemu wariantowi daje jeden krok."""
-
     modul = ModuleType("procesy_proby")
     vars(modul).update(
         WorkflowProcess=przebieg.WorkflowProcess,

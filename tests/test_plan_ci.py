@@ -1,4 +1,4 @@
-"""Plan CI dzieli pytest trzech torów i wybrane kroki skilli na zadania bez zgubionego i bez powtórzonego testu, kroku
+"""Plan CI dzieli pytest torów i wybrane kroki skilli na zadania bez zgubionego i bez powtórzonego testu, kroku
 albo mutacji, mieści run w limicie zadań konta, a Required przyjmuje tylko zapisy tego samego planu, w których każde
 zadanie zgłosiło każdą swoją jednostkę."""
 
@@ -123,7 +123,6 @@ def test_kazdy_plik_testow_biegnie_raz_na_kazdym_torze_a_udzialy_dlugiego_pliku_
         assert set(units.values()) == {1}, lane
         assert {unit for unit in units if "#" not in unit} - {f"pytest:{LONG}"} == {*(f"pytest:{name}" for name in FILES), *(f"krok:{step}" for step in lane.kroki)}
         assert shares == [f"pytest:{LONG}#{share}/{count}" for share in range(1, count + 1)], shares
-        # Cały plik albo jego udziały, a cały tylko wtedy, gdy zmieścił się w celu ściany.
         assert (f"pytest:{LONG}" in units) == (count == 0) == (1100 / plan_ci.WORKERY < longest <= plan.cel_s), (lane, plan.cel_s)
     assert [job.id for job in plan.zadania if "krok:timing" in job.jednostki] != [] == [job for job in plan.zadania if "krok:timing" in job.jednostki and job.tor != WINDOWS]
 
@@ -183,7 +182,6 @@ def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(sk
 
     assert unlimited.cel_s < plan.cel_s
     assert (plan.cel_s - unlimited.cel_s) % plan_ci.KROK_CELU_S == 0
-    # Cel rośnie tylko tyle, ile trzeba: o krok mniej run nie mieści się w limicie.
     assert _run_jobs(plan) <= jobs < _run_jobs(step_less)
     # Jeden cel dla wszystkich torów: Mutation checks dzielą limit zadań z pytest, a nie biorą go przed nimi. Dłużej
     # trwa tylko zadanie z jedną jednostką, której nie da się podzielić (podstawa, skrypt z dwiema mutacjami).
@@ -209,7 +207,6 @@ def test_push_do_main_bierze_25_zadan_runu_a_noc_20_ze_slotow_organizacji_dzielo
 def test_plan_odmawia_gdy_limit_zadan_zdarzenia_nie_miesci_zadania_na_kazdy_tor_i_podaje_ten_limit(event: Zdarzenie, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN", "ZADANIA_RUNU_NOCY"):
         monkeypatch.setattr(plan_ci, name, 1000)
-    # Trzy tory z pracą, a limit zdarzenia zostawia planowi jedno zadanie.
     monkeypatch.setattr(plan_ci, limit, plan_ci.STALE_ZADANIA + 1)
 
     with pytest.raises(ValueError, match=rf"^limit {plan_ci.STALE_ZADANIA + 1} zadań runu nie mieści po jednym zadaniu na tor z pracą$"):
@@ -255,7 +252,6 @@ def test_kazdy_wybrany_krok_skilla_biegnie_raz_a_skrypt_dluzszy_od_zadania_w_cze
         count = sum("#" in unit for unit in parts[key])
         assert parts[key] == ({f"skill:{key}#{part}/{count}" for part in range(1, count + 1)} or {f"skill:{key}"}), parts[key]
         assert count <= SKILL_STEPS[key][1], key
-    # Podstawy się nie dzieli; skrypt dłuższy od zadania tak, ale nie na więcej części, niż ma mutacji.
     capacity = plan.cel_s - 43.0 - plan_ci.DOMYSLNIE.koniec_s
     assert parts["verify-a/ci"] == {"skill:verify-a/ci"}
     assert len(parts["verify-a/check_a_mutations.py"]) == math.ceil(900.0 / capacity) > 1
@@ -302,7 +298,6 @@ def test_podstawa_z_ci_czesci_dluzsza_od_zadania_biegnie_w_czesciach_ktore_sklad
 
     assert units == [f"skill:{key}#{part}/{parts}" for part in range(1, parts + 1)]
     assert werdykt_required.werdykt(plan, {"plan": "success", "mutations": "success"}, complete) == []
-    # Plan bez jednej części: zadania, które biegły, zgłosiły wszystko, a Required i tak widzi, że podstawa nie jest cała.
     assert werdykt_required.werdykt(lost, {"plan": "success", "mutations": "success"}, [_record(lost, job, _reported(job)) for job in lost.zadania]) == [
         f"plan CI: części {', '.join(f'{part}/{parts}' for part in range(2, parts + 1))} jednostki skill:{key} na torze mutacje nie są całością 1..{parts}"
     ]
@@ -320,15 +315,11 @@ def _with_units(plan: plan_runu.Plan, units: dict[str, tuple[str, ...]]) -> plan
 
 
 def _long_shares(plan: plan_runu.Plan) -> tuple[plan_runu.Zadanie, str]:
-    """Zadanie toru Windows 3.13 z pierwszym udziałem ``LONG`` i ten udział."""
-
     job = next(job for job in plan.zadania if job.tor == "windows-3.13" and any(unit.startswith(f"pytest:{LONG}#1/") for unit in job.jednostki))
     return job, next(unit for unit in job.jednostki if unit.startswith(f"pytest:{LONG}#1/"))
 
 
 def _incomplete(case: str) -> tuple[plan_runu.Plan, str]:
-    """Plan, którego części jednej jednostki nie są całością, i przyczyna, którą ma dać Required."""
-
     if case == "pytest":
         plan = _plan(_times(), [*FILES, LONG])
         job, share = _long_shares(plan)
@@ -350,12 +341,10 @@ def test_required_czerwienieje_gdy_czesci_jednostki_nie_sa_kazda_z_1_do_n_doklad
     plan, reason = _incomplete(case)
     results = {"plan": "success", "pytest": "success", "mutations": "success"}
 
-    # Każde zadanie zgłosiło każdą swoją jednostkę bez porażki, więc przyczyną jest sam podział.
     assert werdykt_required.werdykt(plan, results, [_record(plan, job, _reported(job)) for job in plan.zadania]) == [reason]
 
 
 def test_w_zadaniu_podstawa_skilla_biegnie_przed_jego_skryptami_mutacji(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Cel, przy którym podstawa (30 s) i skrypt (60 s) mieszczą się w jednym zadaniu z narzutem Mutation checks.
     monkeypatch.setattr(plan_ci, "CEL_S", 150.0)
     plan = _plan(_with_skill_times(_times()), FILES, steps=_skill_steps(["verify-c/check_c_mutations.py", "verify-c/ci"]))
 
@@ -373,7 +362,6 @@ def test_w_zadaniu_czesci_podstawy_skilla_stoja_miedzy_jego_skryptami_po_kluczu(
 
 
 def test_ten_sam_stan_daje_ten_sam_plan_a_zadania_maja_rozne_nazwy() -> None:
-    # Ten sam stan to te same pliki w dowolnej kolejności; przy równych czasach plików o zadaniu decyduje klucz.
     first, again = _plan(_times(), [*FILES, LONG]), _plan(_times(), [LONG, *reversed(FILES)])
 
     assert first.digest == again.digest
@@ -381,8 +369,6 @@ def test_ten_sam_stan_daje_ten_sam_plan_a_zadania_maja_rozne_nazwy() -> None:
 
 
 def test_tor_windows_313_bez_pomiarow_wazy_prace_czasami_toru_windows_311_ktory_zastapil() -> None:
-    """Do pierwszych pomiarów toru windows-3.13 (``POMIARY_ZASTEPCZE``) plan bierze czasy windows-3.11, a z nimi już nie."""
-
     lane = next(lane for lane in TORY if lane.nazwa == "windows-3.13")
     files = [*FILES, LONG]
     measured = _times()
@@ -653,7 +639,6 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_wypisuje_jednostki_
         assert all(f" {unit}" in job_lines[job.nazwa] for unit in named), job_lines[job.nazwa]
     assert any("krok:" in line for line in job_lines.values()) and any("skill:" in line for line in job_lines.values())
     assert {unit for job in plan.zadania if job.tor == "linux-3.14" for unit in job.jednostki} == {f"pytest:{name}" for name in pliki_testow()}
-    # Plik bez pomiaru waży ``DOMYSLNIE.plik_s``, więc pliki repozytorium nie mieszczą się w jednym zadaniu.
     assert len([job for job in plan.zadania if job.tor == "linux-3.14"]) > 1
     # Push biegnie każdą podstawę ``ci:`` repozytorium, a żadnego skryptu mutacji: te biegną nocą (ADR 0021).
     assert planned_steps == every_baseline != set()
@@ -673,7 +658,6 @@ def test_plan_bez_katalogu_czasow_wazy_czasami_z_gita_checkoutu_pobranymi_przed_
     for folder in (czasy_ci.katalog_checkoutu(root), tmp_path / "czasy"):
         (folder / czasy_ci.ARTEFAKT_NOCY).mkdir(parents=True)
         (folder / "7.json").write_text(artifact, encoding="utf-8")
-        # Pobranie sprzed chwili: lokalnie świeże, więc plan nie pyta GitHuba, który tu odmawia każdemu zapytaniu.
         (folder / "pobrane").touch()
         (folder / czasy_ci.ARTEFAKT_NOCY / "pobrane").touch()
 
@@ -748,7 +732,6 @@ def test_udzialy_pliku_dziela_go_miedzy_zadania_bez_luk_i_powtorzen_a_kazdy_ma_t
 
     assert Counter(name for names in ran for name in names) == Counter(f"test_{index:02}" for index in range(tests))
     assert all(ran), ran
-    # Testy pliku posortowane po id idą po kolei do udziałów 1, 2, …, n, 1, 2, …
     assert ran == [{f"test_{index:02}" for index in range(share - 1, tests, shares)} for share in range(1, shares + 1)]
 
 
@@ -1049,7 +1032,6 @@ def test_zadanie_mutation_checks_uruchamia_po_kolei_swoje_kroki_skilli_a_czesc_s
         ),
         (0, [(script, "ok")], "WYKONANIE OK | Mutation checks (2/2)"),
     ]
-    # Podstawa biegnie cała, a każda część skryptu mutacji dostaje swój numer.
     assert log.read_text(encoding="utf-8").splitlines() == ["sprawdz.py bez-czesci", "check_a_mutations.py 1/2", "check_a_mutations.py 2/2"]
 
 

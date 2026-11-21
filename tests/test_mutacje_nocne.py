@@ -59,7 +59,6 @@ TERAZ = datetime(2026, 10, 29, 1, 30, tzinfo=UTC)
 RUN = "https://github.com/maximiseartai/MAXIMISEART-Dad/actions/runs/7"
 NOCNE = ROOT / ".github" / "workflows" / "mutacje-nocne.yml"
 START_NOCY = ROOT / ".github" / "workflows" / "mutacje-nocne-start.yml"
-# Id artefaktu części w atrapie GitHuba: id runu razy ta liczba plus numer części, a id artefaktu zakresu to id runu.
 ID_CZESCI = 1000
 # Inne artefakty przed zapisami części w liście artefaktów runu w atrapie, tyle co strona API: zapisy części leżą na
 # drugiej stronie, jak w nocy z ok. 75 częściami.
@@ -90,7 +89,6 @@ class GitHubWPamieci:
         # Runy nocy na main każdym zdarzeniem i stanem, z ``created_at``, które API filtruje parametrem ``created``, a
         # ``conclusion`` parametrem ``status``.
         self.utworzone = utworzone or []
-        # Zapis ``czesc.json`` każdej części runu, która wgrała artefakt ``mutacje-nocne-<k>``.
         self.zapisy_czesci = zapisy_czesci or {}
         self.wyslane: list[tuple[str, str, Mapping[str, object]]] = []
 
@@ -215,16 +213,12 @@ def _klucz(nazwa: str) -> str:
 
 
 def _przezyta(nazwa: str) -> dict[str, object]:
-    """Wpis zapisu części dla mutacji, która psuje tylko linię swojej nazwy, z kluczem ze skrótu nazwy."""
-
     miejsce, opis = nazwa.split(" ", 1)
     plik, linia = miejsce.split(":")
     return {"plik": plik, "linia": int(linia), "opis": opis, "linie": [int(linia)], "klucz": _klucz(nazwa)}
 
 
 def _nazwa(wpis: dict[str, object]) -> str:
-    """Nazwa mutacji wpisu zapisu części, jak w linii ``NIEWYKRYTA`` i ``MUTACJA``."""
-
     return f"{wpis['plik']}:{wpis['linia']} {wpis['opis']}"
 
 
@@ -234,8 +228,6 @@ def _zapisy(
     bez_werdyktu: dict[int, list[dict[str, object]]] | None = None,
     przekroczony_czas: dict[int, list[dict[str, object]]] | None = None,
 ) -> Path:
-    """Zapis każdej części (numer → kod wyjścia z ostatnią linią i przeżyte) w postaci ``tools/mutacje_zmiany.py --zapis``."""
-
     for numer, ((kod, wynik), przezyte) in czesci.items():
         (katalog / f"mutacje-nocne-{numer}").mkdir(parents=True)
         zapis = {
@@ -303,7 +295,6 @@ def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_d
     assert RUN in tresc_11 and "nie warto, bo" in tresc_11 and "które ostatnio zmienił #11:" in tresc_11
     tresc_commitu = nowe[f"Przeżyte mutacje z commitu {d[:9]}"]["body"]
     assert f"MUTACJA src/a.py:4 stała | klucz {_klucz('src/a.py:4 stała')}" in tresc_commitu and f"które ostatnio zmienił commit {d}:" in tresc_commitu
-    # Issue #12 ma już mutację „stała”, a #14 zamknięte z powodem dla niej: dostają tylko nowe mutacje.
     komentarze = {issue["number"]: [komentarz["body"] for komentarz in issue["comments"]] for issue in github.issues if issue["number"] in (5, 6)}
     assert [linia for tekst in komentarze[5][2:] for linia in tekst.splitlines() if linia.startswith("MUTACJA")] == [f"MUTACJA src/a.py:2 `20` → `0` | klucz {_klucz('src/a.py:2 `20` → `0`')}"]
     assert [linia for tekst in komentarze[6] for linia in tekst.splitlines() if linia.startswith("MUTACJA")] == [
@@ -462,7 +453,6 @@ def test_flaky_test_z_pokrycia_nocy_trafia_do_artefaktu_ktory_zgloszenia_ci_czyt
 def test_noc_bez_bazy_albo_z_zapisem_bez_pliku_mutacji_konczy_sie_fail_z_przyczyna(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], polecenie: list[str], przyczyna: str
 ) -> None:
-    # Historia ma same dzisiejsze commity, a GitHub nie ma udanego przebiegu nocy.
     repo, baza = _historia(tmp_path)
     wpis = {"linia": 1, "opis": "stała", "linie": [1], "klucz": _klucz("bez pliku")}
     zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [wpis])})
@@ -501,8 +491,6 @@ def _warunek_z_dwoch_pr(tmp_path: Path) -> tuple[Path, str]:
 
 
 def _noc(repo: Path, baza: str) -> list[dict[str, object]]:
-    """Zapis części, w której przeżyła każda mutacja ``src/a.py``, którą noc od ``baza`` mutuje."""
-
     zakres = mutacje_zmiany.ZakresMutacji.od(baza, repo)
     return [mutacje_zmiany.entry(mutant, zakres.teksty[mutant.path]) for mutant in zakres.mutanty if mutant.path == "src/a.py"]
 
@@ -1012,7 +1000,6 @@ def test_noc_z_zalegloscia_mutuje_najwyzej_limit_a_kolejne_noce_przerabiaja_ja_d
         (pr[4], pr[6], "4", "2"),
         (pr[6], pr[8], "4", "2"),
     ]
-    # Udane noce przerobiły razem każdą mutację od pierwszej bazy do HEAD, żadnej dwa razy.
     assert sum(int(noce[numer]["mutacje"]) for numer in (0, 2, 3, 4)) == len(mutacje_zmiany.ZakresMutacji.od(baza, repo).mutanty) == 16
 
 
@@ -1093,7 +1080,6 @@ def _mutacje_zmiany(repo: Path, *argumenty: str) -> subprocess.CompletedProcess[
     return subprocess.run(
         [sys.executable, "tools/mutacje_zmiany.py", "--limit-czesci-s", str(CZAS_CZESCI_S), *argumenty],
         cwd=repo,
-        # Narzędzie biegnie jak w zadaniu CI, bo poza nim odmawia startu (tools/lib/ciezkie_ci.py).
         env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1", "GITHUB_ACTIONS": "true"},
         capture_output=True,
         text=True,
@@ -1141,7 +1127,6 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
         ["MUTACJE NOCNE BEZ ISSUE | bez werdyktu mutacje 2, pliki 1: src/rozliczenia/b.py (2)", "MUTACJE NOCNE OK | części 2 | przeżyło 0 | bez werdyktu 2"],
     )
     assert github.issues == []
-    # Run jest udany, więc następna noc ma tylko PR #3 dopisany po nim.
     github.runy = [{"id": 2, "head_sha": git(repo, "rev-parse", "HEAD")}]
     github.zakresy[2] = Path(plan["zakres"]).read_bytes()
     with (repo / "src" / "rozliczenia" / "a.py").open("a", encoding="utf-8") as kod_a:
@@ -1153,7 +1138,6 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
 
 # Limit czasu części i zadania pokrycia w testach czerwonej nocy: tylko po to, żeby skończyły się przed limitem procesu.
 CZAS_PRZEBIEGU_S = "100"
-# Mutacje PR-u, który zmienia granicę ``x > 1`` na ``x > 2`` w swoim pliku (``_trzy_pr_z_testami``), z werdyktem części.
 MUTACJE_PR = ("WYKRYTA: {plik}:2 granica `x > 2` → `>=`", "ZDOMINOWANA: {plik}:2 zmiana linii 2 cofnięta do bazy")
 
 
@@ -1200,8 +1184,6 @@ def _czerwona_noc(
 
 
 def _werdykty(czesc: subprocess.CompletedProcess[str]) -> list[str]:
-    """Werdykt i nazwa każdej mutacji części, bez ostatniej linii testów po ``→``."""
-
     return sorted(linia.rpartition(" → ")[0] for linia in czesc.stdout.splitlines() if linia.startswith(("WYKRYTA", "NIEWYKRYTA", "ZDOMINOWANA")))
 
 
@@ -1564,7 +1546,6 @@ def test_kazda_czesc_mutuje_od_bazy_planu_i_wgrywa_zapis_pod_nazwa_ktora_czyta_z
     assert "continue-on-error" not in krok
     assert (Path(zapis).name, wgranie["with"]["path"], wgranie["with"]["name"]) == (mutacje_nocne.ZAPIS, zapis, f"{mutacje_nocne.ARTEFAKT}${{{{ matrix.czesc }}}}")
     assert (pobranie["with"]["pattern"], polecenie_zgloszenia[polecenie_zgloszenia.index("--zapisy") + 1]) == (f"{mutacje_nocne.ARTEFAKT}*", pobranie["with"]["path"])
-    # Zgłoszenie biegnie też po części, która padła, i ma prawo zakładać issue.
     assert zgloszenie["if"].startswith("${{ !cancelled() && needs.plan.result == 'success'")
     assert zgloszenie["permissions"]["issues"] == "write"
 
@@ -1730,9 +1711,6 @@ PLAN_SKILLI = plan_runu.Plan(
 def _wykonania(
     katalog: Path, wyniki: dict[str, tuple[str, dict[str, str]]], blisko: dict[str, list[tuple[str, NearLimit]]] | None = None
 ) -> Path:
-    """Zapis wykonania każdego zadania (id → digest planu, klucz → status) w artefakcie, który wgrywa zadanie nocy, z
-    ostrzeżeniami ``CZAS BLISKO LIMITU`` zadania (id → klucz kroku i ostrzeżenie) w postaci zapisu ``tools/ci/wykonaj_zadanie.py``."""
-
     for zadanie, (digest, jednostki) in wyniki.items():
         sciezka = katalog / f"{mutacje_nocne.ARTEFAKT_SKILLI}{zadanie}" / plan_runu.WYKONANIE.name
         sciezka.parent.mkdir(parents=True)
@@ -2063,7 +2041,6 @@ def test_wyslanie_przez_gh_api_przyjmuje_odpowiedz_bez_tresci(tmp_path: Path, mo
 
 
 
-# --- wystąpienia polowania ---
 
 NOC_AUTOR = {"login": "github-actions"}
 AGENT = {"login": "agent-testu"}
