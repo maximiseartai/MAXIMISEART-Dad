@@ -1,10 +1,3 @@
-"""Wygląd Wiersza danych: zapisane Wiersze danych wyglądają jak w plikach taty, bez resztek formatowania Wzorców.
-
-Przygotowanie pliku zbiorczego zapisuje Rozliczenie wewnętrzne (kolumny wyglądu A:M) i Plik zbiorczy (A:L), a Przebieg
-rozliczeń z tego Pliku zbiorczego Rozliczenie pracownika (A:L). Wszystkie trzy Wzorce mają w Wierszach danych resztki
-formatowania jak u taty: inny krój, zawijanie, wyrównanie do góry, brak obramowania, format daty i własną wysokość.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,6 +14,7 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import Cell, MergedCell
 from openpyxl.styles import Font, PatternFill, Protection
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia.period_folder import PeriodFolder
@@ -38,14 +32,15 @@ from atrapy.preparation import (
 from tests.fixtures.operacje import run_preparation
 from tests.fixtures.wyglad_komorek import wyglad, wyglady
 from tests.fixtures.znane_luki import wymaga_ruff
+from atrapy.pliki_taty import ADDRESS_COLUMN, COLLECTIVE_HEADERS
 from atrapy.settlement import worker_list, write_template
 from tests.fixtures.benchmark import WORKER_TEMPLATE, write_synthetic_templates
 from atrapy.workbooks import LEFTOVER_DATE_FORMAT, LEFTOVER_ROW_HEIGHT, active_worksheet, leave_data_row_leftovers
 
 RED = "FFFF0000"
 _SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-# Zlecenie 2 (wiersz 4 Rejestru) jest skuteczne, ma czerwony ADRES i koniec linii w CZYNNOŚCI ZREALIZOWANE; trafia do
-# wiersza 2 Rozliczenia wewnętrznego, 18 Pliku zbiorczego i 18 Rozliczenia pracownika Adriana.
+DATE_COLUMN = COLLECTIVE_HEADERS.index("DATA") + 1
+COMPLETED_ACTIVITIES = get_column_letter(COLLECTIVE_HEADERS.index("CZYNNOŚCI ZREALIZOWANE") + 1)
 MULTILINE = "montaż\ndemontaż"
 LEFTOVER_ROWS = 6
 
@@ -145,14 +140,12 @@ def test_kazda_komorka_kolumn_wygladu_ma_kroj_naglowka_obramowanie_i_wyrownanie_
             )
             for cell in cells
         ] == [(cell.coordinate, faces[cell.column], ("left", "center"), thin) for cell in cells], written.path.name
-    # Nagłówki Wzorców: Rozliczenia wewnętrznego i pliku zbiorczego Calibri 10, rozliczenia pracownika Calibri 11.
-    assert set(_header_faces(chain.collective).values()) == {("Calibri", 10), ("Calibri", 11)}
-    assert set(_header_faces(chain.worker).values()) == {("Calibri", 11)}
+    condition = "warunek: krój nagłówka różni się między kolumnami Wzorca pliku zbiorczego i między Wzorcami"
+    assert set(_header_faces(chain.collective).values()) == {("Calibri", 10), ("Calibri", 11)}, condition
+    assert set(_header_faces(chain.worker).values()) == {("Calibri", 11)}, condition
 
 
 def _borders(path: Path) -> list[bytes]:
-    """Obramowania z ``xl/styles.xml`` skoroszytu ``path``, w kolejności z pliku."""
-
     with zipfile.ZipFile(path) as archive:
         borders = ET.fromstring(archive.read("xl/styles.xml")).find(f"{{{_SPREADSHEET}}}borders")
     assert borders is not None
@@ -160,9 +153,6 @@ def _borders(path: Path) -> list[bytes]:
 
 
 def test_obramowanie_wiersza_danych_to_obramowanie_wzorca_z_pusta_przekatna_bez_nowego_obramowania(tmp_path: Path) -> None:
-    """Obramowanie Wiersza danych ma pustą przekątną jak obramowanie zapisane przez Excel, więc Rozliczenie pracownika z
-    syntetycznego Wzorca kształtu Wzorca taty bierze obramowanie Wzorca i nie dopisuje do stylów nowego."""
-
     templates = write_synthetic_templates(tmp_path / "wzorce")
     (tmp_path / "okres").mkdir()
     fixture = make_preparation_fixture(tmp_path / "okres")
@@ -177,11 +167,10 @@ def test_obramowanie_wiersza_danych_to_obramowanie_wzorca_z_pusta_przekatna_bez_
 def test_zawijany_jest_tylko_tekst_z_koncem_linii(tmp_path: Path) -> None:
     chain = _chain(tmp_path)
 
-    # CZYNNOŚCI ZREALIZOWANE to K we wszystkich trzech plikach.
-    for written, wrapped in ((chain.internal, "K2"), (chain.collective, "K18"), (chain.worker, "K18")):
+    for written, wrapped in ((chain.internal, 2), (chain.collective, 18), (chain.worker, 18)):
         cells = _cells(written)
-        assert {cell.coordinate for cell in cells if cell.alignment.wrap_text} == {wrapped}, written.path.name
-        assert {cell.coordinate for cell in cells if isinstance(cell.value, str) and "\n" in cell.value} == {wrapped}
+        assert {cell.coordinate for cell in cells if cell.alignment.wrap_text} == {f"{COMPLETED_ACTIVITIES}{wrapped}"}, written.path.name
+        assert {cell.coordinate for cell in cells if isinstance(cell.value, str) and "\n" in cell.value} == {f"{COMPLETED_ACTIVITIES}{wrapped}"}
 
 
 def test_zapisane_wiersze_danych_nie_maja_zapisanej_wysokosci_a_pozostale_wiersze_maja_wysokosc_wzorca(
@@ -202,11 +191,9 @@ def test_zapisane_wiersze_danych_nie_maja_zapisanej_wysokosci_a_pozostale_wiersz
 def test_adres_ma_wypelnienie_adresu_tego_zlecenia_w_rejestrze_we_wszystkich_trzech_plikach(tmp_path: Path) -> None:
     chain = _chain(tmp_path)
 
-    # ADRES: kolumna B we wszystkich trzech plikach. W Rejestrze czerwony jest tylko ADRES zlecenia 2; skuteczne
-    # zlecenia 4 i 6 trafiają do wierszy 19 i 20 Pliku zbiorczego.
-    internal = {cell.coordinate: _fill(cell) for cell in _cells(chain.internal) if cell.column == 2}
-    collective = {cell.coordinate: _fill(cell) for cell in _cells(chain.collective) if cell.column == 2}
-    worker = {cell.coordinate: _fill(cell) for cell in _cells(chain.worker) if cell.column == 2}
+    internal = {cell.coordinate: _fill(cell) for cell in _cells(chain.internal) if cell.column == ADDRESS_COLUMN}
+    collective = {cell.coordinate: _fill(cell) for cell in _cells(chain.collective) if cell.column == ADDRESS_COLUMN}
+    worker = {cell.coordinate: _fill(cell) for cell in _cells(chain.worker) if cell.column == ADDRESS_COLUMN}
 
     assert internal == {"B2": RED, "B3": None, "B4": None, "B5": None}
     assert collective == {"B18": RED, "B19": None, "B20": None}
@@ -216,20 +203,15 @@ def test_adres_ma_wypelnienie_adresu_tego_zlecenia_w_rejestrze_we_wszystkich_trz
 def test_format_liczby_jest_z_komorki_zrodlowej_a_data_pracownika_ma_format_pliku_zbiorczego(tmp_path: Path) -> None:
     chain = _chain(tmp_path)
 
-    # DATA: kolumna G we wszystkich trzech plikach; Wzorce mają tam LEFTOVER_DATE_FORMAT, a pozostałe komórki Rejestru
-    # format ogólny.
     for written in (chain.internal, chain.collective, chain.worker):
         cells = _cells(written)
-        # Przez wyglady: jedyna asercja bezwzględna na pamięci stylów pomocnika (w wierszu G ma inny styl niż reszta).
         looks = wyglady(cells)
-        formats = {(cell.column == 7, looks[cell.coordinate].number_format) for cell in cells}
+        formats = {(cell.column == DATE_COLUMN, looks[cell.coordinate].number_format) for cell in cells}
         assert formats == {(True, REGISTER_DATE_FORMAT), (False, "General")}, written.path.name
     assert REGISTER_DATE_FORMAT != LEFTOVER_DATE_FORMAT
 
 
 def _cells_before_look(workbook: Workbook) -> list[Cell | MergedCell]:
-    """Komórki Wzorca w różnym stanie: bez stylu, ze stylem nazwanym i ochroną, z resztkami formatowania, scalona."""
-
     sheet = cast(Worksheet, workbook.active)
     sheet["A1"].value = "bez stylu"
     sheet["A2"].style = "Good"
@@ -273,9 +255,22 @@ def test_cell_look_daje_kazdej_komorce_kazdego_skoroszytu_styl_jak_przypisanie_p
     assert {(resolved[5], resolved[6]) for index, resolved in actual if index == 1} == {(Protection(locked=False), "Good")}
 
 
+def test_wyglad_komorek_jednego_skoroszytu_daje_kazdej_komorce_wyglad_jej_stylu() -> None:
+    sheet = cast(Worksheet, Workbook().active)
+    for coordinate, number_format in (("A1", "0.00"), ("B1", "0%"), ("C1", "0.00")):
+        sheet[coordinate].number_format = number_format
+
+    looks = wyglady([sheet["A1"], sheet["B1"], sheet["C1"], sheet["D1"]])
+
+    assert {coordinate: look.number_format for coordinate, look in looks.items()} == {
+        "A1": "0.00",
+        "B1": "0%",
+        "C1": "0.00",
+        "D1": GENERAL,
+    }
+
+
 def test_wyglad_komorek_z_tym_samym_stylearray_w_dwoch_skoroszytach_bierze_tabele_wlasnego_skoroszytu() -> None:
-    # Numery w StyleArray znaczą co innego w innym skoroszycie, więc pamięć wspólna dla skoroszytów porównywałaby kopię
-    # samą ze sobą (#1455 r1).
     cells = []
     for name in ("Czcionka-A", "Czcionka-B"):
         cell = cast(Worksheet, Workbook().active)["A1"]
@@ -289,11 +284,6 @@ def test_wyglad_komorek_z_tym_samym_stylearray_w_dwoch_skoroszytach_bierze_tabel
 
 @wymaga_ruff
 def test_prawo_wygladu_do_slf001_obejmuje_tylko_styl_komorki_openpyxl() -> None:
-    """``row_look.py`` ustawia indeksy stylu komórki wprost w prywatnym ``StyleArray`` openpyxl (``_style``), bo openpyxl
-    nie ma do niego publicznego API, więc ``ruff.toml`` daje mu prawo właściciela do ``SLF001``. Kod modułu jako
-    sonda obok niego, poza tym prawem, zgłasza w ruff tylko ``_style``: inna prywatna składowa to droga obok jej
-    właściciela."""
-
     module = Path(cast(str, inspect.getsourcefile(RowLook)))
     found = subprocess.run(
         [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json", "--stdin-filename", str(module.with_name("sonda_wygladu.py")), "-"],
@@ -304,4 +294,6 @@ def test_prawo_wygladu_do_slf001_obejmuje_tylko_styl_komorki_openpyxl() -> None:
         check=False,
     )
 
-    assert {(finding["code"], finding["message"]) for finding in json.loads(found.stdout)} == {("SLF001", "Private member accessed: `_style`")}
+    assert {(finding["code"], finding["message"]) for finding in json.loads(found.stdout)} == {("SLF001", "Private member accessed: `_style`")}, (
+        "prawo row_look.py do SLF001 obejmuje tylko _style openpyxl: inna prywatna składowa to droga obok jej właściciela"
+    )

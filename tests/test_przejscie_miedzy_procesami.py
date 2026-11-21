@@ -1,5 +1,3 @@
-"""Plik zbiorczy z Przygotowania pliku zbiorczego jest wejściem Przebiegu rozliczeń bez ręcznych zmian."""
-
 from __future__ import annotations
 
 from datetime import datetime
@@ -52,18 +50,14 @@ def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zlecen
         f"Rozliczenie {PERIOD} - {name}.xlsx" for name in expected_rows
     )
     collective_file_rows = cell_values(preparation.collective_file, min_row=18, max_row=20, min_col=1, max_col=46)
-    collective_file_row_of = {  # Wiersze danych A:AT Pliku zbiorczego, w kolejności Rejestru zleceń
-        "Adrian Testowy": collective_file_rows[0],
-        "Kamil Syntetyczny": collective_file_rows[1],
-        "Darek Fikcyjny": collective_file_rows[2],
-    }
+    in_register_order = ("Adrian Testowy", "Kamil Syntetyczny", "Darek Fikcyjny")
+    collective_file_row_of = dict(zip(in_register_order, collective_file_rows, strict=True))
     for name, expected_row in expected_rows.items():
         settlement_file = target_directory / f"Rozliczenie {PERIOD} - {name}.xlsx"
         assert cell_values(settlement_file, min_row=18, max_row=19, min_col=1, max_col=11) == [
             expected_row,
             (None,) * 11,
         ]
-        # Przebieg rozliczeń kopiuje cały Wiersz danych A:AT po pozycji kolumn.
         assert cell_values(settlement_file, min_row=18, max_row=18, min_col=1, max_col=46) == [
             collective_file_row_of[name]
         ]
@@ -71,8 +65,7 @@ def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zlecen
 
 TUE, FRI, SAT = datetime(2026, 9, 8), datetime(2026, 9, 11), datetime(2026, 9, 12)
 
-# Treść zlecenia w Rejestrze w typach komórek, które zostawia tata: liczby, daty, puste komórki, spacje, wielkie litery.
-ORDER_CONTENTS: list[dict[str, object]] = [
+ORDER_CONTENTS_IN_DAD_CELL_TYPES: list[dict[str, object]] = [
     {"UMOWA": 12345, "URZĄDZENIA": "nokia zte", "CZYNNOŚCI": "instalacja", "DATA GODZ. POCZ.": TUE.replace(hour=9)},
     {"UMOWA": " U 77 ", "URZĄDZENIA": "  Nokia ZTEXG,  2* FUT ", "CZYNNOŚCI": None},
     {"UMOWA": None, "URZĄDZENIA": "usterka", "DATA GODZ. POCZ.": FRI.replace(hour=17, minute=0, second=59)},
@@ -95,7 +88,7 @@ ORDER_CONTENTS: list[dict[str, object]] = [
 def test_swiezo_przygotowany_plik_zbiorczy_daje_kontrole_ilosci_bez_roznic(tmp_path: Path) -> None:
     rows: list[dict[str, object] | None] = [
         register_order(number, TUE.replace(hour=10, minute=number)) | content
-        for number, content in enumerate(ORDER_CONTENTS, start=1)
+        for number, content in enumerate(ORDER_CONTENTS_IN_DAD_CELL_TYPES, start=1)
     ]
     fixture = make_preparation_fixture(tmp_path, rows)
     worker_template = tmp_path / tool_files.WORKER_TEMPLATE.name
@@ -120,8 +113,6 @@ def test_swiezo_przygotowany_plik_zbiorczy_daje_kontrole_ilosci_bez_roznic(tmp_p
 
 
 def test_legenda_kolorujaca_kazda_kolumne_nie_daje_roznic_koloru_na_tle_wzorca_taty(tmp_path: Path) -> None:
-    # Wzorzec pliku zbiorczego ma tło Wzorca taty w N:V, X i AI przygotowanych wierszy; ``każdykolor`` koloruje każdą
-    # kolumnę, którą może wypełnić legenda, więc w wierszach z innym kodem i bez kodu Kontrola widzi tam tło Wzorca.
     every = ActivityCode("każdykolor", ("każdykolor",), fills=tuple(CellFill(column, FillColour.GREEN) for column in FILL_COLUMNS))
     legend = ActivityLegend((*DEFAULT_ACTIVITY_LEGEND.codes, every))
     completed = ("każdykolor", "inst20m", "spawpg", "montaż")
@@ -151,4 +142,5 @@ def test_legenda_kolorujaca_kazda_kolumne_nie_daje_roznic_koloru_na_tle_wzorca_t
         workbook.close()
     assert backgrounds["inst20m"] >= {"N", "V", "X", "AI"}, "warunek: wiersz bez koloru legendy ma tło Wzorca taty"
     assert isinstance(result, quantity_check.QuantityCheck)
-    assert (result.coded, result.coded_matching, result.legend_difference_count) == (3, 3, 0)
+    assert (result.rows, result.coded) == (4, 3), "warunek: obok wiersza każdykolor wiersze z innym kodem i bez kodu"
+    assert (result.coded_matching, result.legend_difference_count) == (3, 0)
