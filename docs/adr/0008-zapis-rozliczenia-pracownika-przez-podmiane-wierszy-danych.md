@@ -55,7 +55,7 @@ Przebieg rozliczeń, za interfejsem `workbook_files.WorkerSettlementTemplate`
   i style, zostają bajt w bajt.
 - `calcPr` dostaje `calcMode="auto"`, `fullCalcOnLoad="1"` i
   `forceFullCalc="1"`, tak jak przy zapisie przez openpyxl.
-- Arkusz jest kompresowany raz przy wczytaniu Wzorca, w kawałkach od granic
+- Arkusz jest kompresowany raz na wczytany Wzorzec, przy pierwszej kopii, w kawałkach od granic
   wierszy (pełne opróżnienie zlib co 64 wiersze). Dla każdego Rozliczenia
   pracownika kompresowany jest tylko początek arkusza z wpisanymi wierszami,
   a reszta to gotowe kawałki.
@@ -455,7 +455,8 @@ wewnętrznego na obu drogach.
 ## Szczegóły kopii zapisane 2026-11-21
 
 Te powody kształtu `template_copy.py` stały dotąd tylko w jego docstringach; decyzja
-się nie zmienia.
+się nie zmienia. Zdanie Decyzji o kompresji arkusza opisuje teraz stan kodu (kawałki
+przy pierwszej kopii, nie przy wczytaniu Wzorca); to poprawka opisu, nie zmiana decyzji.
 
 - Kawałki kompresji arkusza powstają przy pierwszej kopii, nie przy wczytaniu Wzorca,
   bo Sprawdzanie i Planowanie ich nie potrzebują. Kawałek ma 64 wiersze

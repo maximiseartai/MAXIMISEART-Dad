@@ -1322,6 +1322,34 @@ def test_styl_wzorca_z_ochrona_dostaje_wyrownanie_wygladu_przed_ochrona(tmp_path
 
 
 @pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
+def test_wyroznienie_rowne_wypelnieniu_wzorca_za_kolumnami_wygladu_zostaje_na_obu_drogach(
+    tmp_path: Path, copied: bool
+) -> None:
+    template_path = tmp_path / tool_files.WORKER_TEMPLATE.name
+    write_template(template_path)
+    green = PatternFill(fill_type="solid", fgColor="FF92D050")
+    workbook = load_workbook(template_path)
+    try:
+        active_worksheet(workbook)["M18"].fill = green
+        workbook.save(template_path)
+    finally:
+        workbook.close()
+    (marked_for_copy if copied else refused_by_copy)(template_path)
+    target = tmp_path / "Rozliczenie - Wykonawca.xlsx"
+    row = _data_row(_row(A="syntetyczne miasto", M="syntetyczna uwaga"), M=Highlights(fill=green))
+
+    route = TemplateFile.worker_settlement(template_path).create(target, [row])
+
+    assert route is (Route.COPY if copied else Route.OPENPYXL)
+    saved = load_workbook(target)
+    try:
+        written = active_worksheet(saved)["M18"]
+        assert (written.value, written.fill.fill_type, written.fill.fgColor.rgb) == ("syntetyczna uwaga", "solid", "FF92D050")
+    finally:
+        saved.close()
+
+
+@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
 def test_wypelnienie_bez_liczby_zostawia_wartosc_komorki_wzorca(tmp_path: Path, copied: bool) -> None:
     template_path = (marked_for_copy if copied else refused_by_copy)(
         write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
@@ -1499,13 +1527,14 @@ def test_wzorzec_rozliczenia_pracownika_z_wartoscia_w_wierszu_danych_nie_daje_pl
     assert not target.exists()
 
 
-@pytest.mark.parametrize("copied", [True, False], ids=["kopia", "openpyxl"])
 @pytest.mark.parametrize(
-    ("cell", "has_data"),
+    ("cell", "has_data", "copied"),
     [
-        pytest.param('<c r="A19" t="inlineStr"><is><t>wpis taty</t></is></c>', True, id="tekst-w-komorce"),
-        pytest.param('<c r="A19"><v></v></c>', False, id="pusta-wartosc"),
-        pytest.param('<c r="A19"><f>1+1</f><v>2</v></c>', False, id="formula"),
+        pytest.param('<c r="A19" t="inlineStr"><is><t>wpis taty</t></is></c>', True, True, id="tekst-w-komorce-kopia"),
+        pytest.param('<c r="A19" t="inlineStr"><is><t>wpis taty</t></is></c>', True, False, id="tekst-w-komorce-openpyxl"),
+        pytest.param('<c r="A19"><v></v></c>', False, True, id="pusta-wartosc-kopia"),
+        pytest.param('<c r="A19"><v></v></c>', False, False, id="pusta-wartosc-openpyxl"),
+        pytest.param('<c r="A19"><f>1+1</f><v>2</v></c>', False, False, id="formula-tylko-openpyxl-bo-kopia-jej-nie-przyjmuje"),
     ],
 )
 def test_dane_wierszy_danych_wzorca_rozliczenia_pracownika_to_wartosc_bez_formuly_na_obu_drogach(
@@ -1529,6 +1558,7 @@ def test_dane_wierszy_danych_wzorca_rozliczenia_pracownika_to_wartosc_bez_formul
         assert (raised.value.problem, raised.value.fault) == (Problem.HAS_DATA, None)
     else:
         template.check()
+        assert template.create(tmp_path / "Rozliczenie - Wykonawca.xlsx", []) is (Route.COPY if copied else Route.OPENPYXL)
 
 
 def _worker_template_with_merge(tmp_path: Path, merged: str, *, copied: bool) -> Path:
