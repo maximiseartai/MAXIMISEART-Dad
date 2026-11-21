@@ -94,9 +94,10 @@ werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD O
 Przypadki reguł (``--przypadki-regul``, krok zadania CI Frontend): każda reguła z katalogów ``ruleDirs``
 ``sgconfig.yml`` checkoutu ma w polu ``metadata.przypadki`` przypadki, które łapie, i łapie każdy z nich jak Ważne
 dowodu (punkt 1): Ważne ``PR/W<n>/r<k>`` albo ``<pełny SHA> plik:linia``, czyli linie dodane przez commit od jego
-pierwszego rodzica, dla reguły, która nie powstała z Ważnego z polem ``Gdzie``. Pole czyta tylko ten krok, a ast-grep
-je pomija. Kończy się ``PRZYPADKI REGUŁ OK | <n> reguł, <k> przypadków`` albo ``PRZYPADKI REGUŁ FAIL | <reguła>:
-<co zrobić> | …``, także dla reguły bez pola:
+pierwszego rodzica, dla postaci, której nie wskaże ``Gdzie`` żadnego Ważnego w pliku, na którym reguła odpala: reguła
+nie z Ważnego albo Ważne z ``Gdzie`` w pliku samej reguły, a złą postać dodał w kodzie ten commit. Pole czyta tylko ten
+krok, a ast-grep je pomija. Kończy się ``PRZYPADKI REGUŁ OK | <n> reguł, <k> przypadków`` albo
+``PRZYPADKI REGUŁ FAIL | <reguła>: <co zrobić> | …``, także dla reguły bez pola:
 
     .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul
     .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul --z-commita <SHA scalenia HEAD PR z bazą>
