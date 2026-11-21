@@ -622,6 +622,7 @@ def _banning(name: str) -> dict[str, str]:
         pytest.param({**_banning("WARTOSC"), OWNER: '"""Moduł.\n\nWARTOSC daje pakiet.inny.\n"""\n'}, OWNER, False, id="nazwa-zakazana-na-poczatku-linii-docstringu"),
         pytest.param({**_banning("WARTOSC"), OWNER: "def f() -> None:\n    WARTOSC = 1\n"}, OWNER, False, id="nazwa-zakazana-przypisana-w-funkcji"),
         pytest.param({**_banning("WARTOSC"), OWNER: "WARTOSC = (\n"}, OWNER, False, id="modul-ktorego-python-nie-wczyta"),
+        pytest.param({**_banning("WARTOSC"), OWNER: "try:\n    WARTOSC = 1\nexcept ImportError:\n    pass\n"}, OWNER, True, id="nazwa-zakazana-przypisana-w-try-modulu"),
         pytest.param({"ruff.toml": BANNED.format(name="pakiet.modul")}, "src/pakiet/__init__.py", False, id="pakiet-zakazanego-modulu"),
         pytest.param({**_ignoring(OWNER), "ruff.toml": BANNED.format(name="os.name")}, "tests/test_inne.py", False, id="plik-spoza-regul-i-zakazow"),
     ],

@@ -27,7 +27,7 @@ import json
 from pathlib import Path
 import re
 
-__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "TABELA", "bez_klucza", "definicje", "przesun", "rozjazd", "scal", "skille", "skroty", "wiersze_tabeli"]
+__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "TABELA", "bez_klucza", "definicje", "definiuje", "przesun", "rozjazd", "scal", "skille", "skroty", "wiersze_tabeli"]
 
 DEFINICJE = "model/definicje.json"
 CALY_PLIK = "cały plik"
@@ -279,6 +279,10 @@ def _tree(source: str | None) -> ast.Module | None:
         return ast.parse(source)
     except SyntaxError:
         return None
+
+
+def definiuje(source: str | None, name: str) -> bool:
+    return bool(_nodes(_tree(source), name))
 
 
 def _definition(tree: ast.Module | None, name: str) -> str | None:
