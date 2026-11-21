@@ -44,7 +44,6 @@ from ._model import (
 )
 
 MISTAKEN_SUBJECT = 2
-"""Od tylu niezgodnych Wpisów w jednym Raporcie wykonawcy temat jest pomylony, a wygrywa dzień z INTERMAX (ADR 0029)."""
 
 
 @dataclass(frozen=True)
@@ -92,9 +91,6 @@ class Matched:
 
 @dataclass(frozen=True)
 class _Placed:
-    """Zlecenie z dniem i Wykonawcą sprzed Przeniesień Centrum (``day``, ``worker``): z pamięci, gdy INTERMAX ma je tam,
-    gdzie postawiło je Centrum, a inaczej z INTERMAX."""
-
     order: RegisterOrder
     day: date
     worker: Login
@@ -102,8 +98,6 @@ class _Placed:
 
 @dataclass(frozen=True)
 class _New:
-    """Wpisy ``entries`` Raportu wykonawcy ``report`` dopisują numer ``number`` w arkuszu zleceń ``sheet``."""
-
     sheet: str
     number: OrderNumber
     report: ReadReport
@@ -112,10 +106,6 @@ class _New:
 
 @dataclass(frozen=True)
 class _Claim:
-    """Wpisy ``entries`` Raportu wykonawcy ``report`` stawiają zlecenie ``order`` w dniu ``day`` u nadawcy; ``lost``:
-    informacja o przegranym temacie, gdy to Wpis pomylonego tematu; ``refused``: Przeniesienie, do którego nie wolno,
-    więc ten Wpis, gdy jest najpóźniejszy, niczego nie zmienia."""
-
     order: RegisterOrder
     day: date
     report: ReadReport
@@ -322,8 +312,6 @@ class Board:
         return frozenset(found or {day})
 
     def _mistaken(self, other_day: Sequence[OrderNumber]) -> bool:
-        """Pomylony temat: co najmniej ``MISTAKEN_SUBJECT`` niezgodnych numerów bez numerów, które Centrum dopisało."""
-
         return sum(number not in self._added for number in other_day) >= MISTAKEN_SUBJECT
 
     def _other_day_number(self, number: OrderNumber, day: date) -> bool:
@@ -430,9 +418,6 @@ class Board:
         return _Claim(order, day, report, (), lost, refused)
 
     def _movable(self, order: RegisterOrder, report: ReadReport) -> bool:
-        """Czy Wpis ``report`` może zmienić Wykonawcę albo dzień jedynego zlecenia numeru ``order``: ``may_move`` z
-        pamięcią jego numeru (``memories_of``)."""
-
         key = order.key
         return may_move(memories_of(self._memory, key.number), key.worker, key.day, report.arrived)
 
