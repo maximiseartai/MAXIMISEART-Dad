@@ -14,6 +14,7 @@ from typing import Any, Final
 import pytest
 
 from rozliczenia.centrum.github import NO_ANSWER_KEPT_S
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.keyed_box import (
     ACCEPTED_KEPT_S,
     LIST_LAG_S,
@@ -25,7 +26,18 @@ from rozliczenia.centrum.keyed_box import (
 )
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.outbox import RETRY_S
-from rozliczenia.centrum.report_box import _TIMEOUT_S, Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
+from rozliczenia.centrum.report_box import (
+    _TIMEOUT_S,
+    Archive,
+    Asset,
+    Commented,
+    Issue,
+    Label,
+    Refused,
+    Rejected,
+    Sent,
+    Unreachable,
+)
 
 from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import FakeReportBox
@@ -494,7 +506,7 @@ def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_nie_daje_drugiego_issue_t
         keyed.open_issue("zgloszenie", "tytuł", REPORT_LINE)
 
     assert [issue.number for issue in box.issues] == [1]
-    assert keyed.find_issue("zgloszenie", REPORT_LINE, include_closed=False) == 1
+    assert keyed.find_issue("zgloszenie", REPORT_LINE, include_closed=False) == Issue(1, REPORT_LINE)
 
 
 def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_archiwow_nie_zaklada_drugiego_archiwum(
@@ -614,3 +626,84 @@ def test_proces_konczy_sie_mimo_sprawdzenia_klucza_ktore_czeka_na_skrzynke() -> 
         child.stdout.close()
 
     assert (waiting, exit_code) == ("czeka\n", 0)
+
+
+LINIA_OKRESU: Final = "- Logi Uruchomienia okresu: 08_14_09_2026"
+TYTULY_SPRAW_PO_LINII: Final = [
+    pytest.param("Logi Uruchomienia 08_14_09_2026", "tata", id="logi-okresu-taty"),
+    pytest.param("ANDRZEJ Logi Uruchomienia 08_14_09_2026", "andrzej", id="logi-okresu-andrzeja"),
+    pytest.param("ANDRZEJ INTERMAX_OTWARTY: INTERMAX jest otwarty", "andrzej", id="zgloszenie-andrzeja"),
+    pytest.param("Andrzej Logi Uruchomienia 08_14_09_2026", "tata", id="prefiks-bez-wielkich-liter"),
+    pytest.param("ANDRZEJOWI Logi Uruchomienia 08_14_09_2026", "tata", id="prefiks-na-poczatku-dluzszego-slowa"),
+    pytest.param("ANDRZEJ: Logi Uruchomienia 08_14_09_2026", "tata", id="prefiks-sklejony-z-dwukropkiem"),
+    pytest.param("ANDRZEJ", "tata", id="sam-prefiks-bez-tytulu"),
+    pytest.param("Logi Uruchomienia ANDRZEJ 08_14_09_2026", "tata", id="prefiks-w-srodku-tytulu"),
+]
+
+
+def _znalezione_po_linii(box: FakeReportBox, prefix: BoxPrefix | None) -> int | None:
+    found = KeyedBox(box, lambda: KEY, clock=ManualClock(), prefix=prefix).find_issue(
+        "logi-uruchomienia", LINIA_OKRESU, include_closed=True
+    )
+    assert found is None or isinstance(found, Issue), found
+    return None if found is None else found.number
+
+
+@pytest.mark.parametrize(("tytul", "czyja"), TYTULY_SPRAW_PO_LINII)
+def test_szukanie_po_linii_daje_tylko_issue_z_prefiksem_stanowiska_na_poczatku_tytulu(tytul: str, czyja: str) -> None:
+    box = FakeReportBox(issues=[BoxIssue(7, "logi-uruchomienia", tytul, f"{LINIA_OKRESU}\n")])
+
+    znalezione = {"tata": _znalezione_po_linii(box, None), "andrzej": _znalezione_po_linii(box, BoxPrefix.ANDRZEJ)}
+
+    assert znalezione == {stanowisko: 7 if stanowisko == czyja else None for stanowisko in znalezione}
+
+
+SPRAWY_ZNANE_Z_NUMERU: Final = [
+    pytest.param(None, "uwaga-taty", "ANDRZEJ nie może otworzyć INTERMAX", id="uwaga-taty-zaczeta-od-ANDRZEJ"),
+    pytest.param(None, "zgloszenie", "ANDRZEJ BRAK_WZORCA: Nie znaleziono wzorca.", id="zgloszenie-taty-z-tytulem-od-ANDRZEJ"),
+    pytest.param(BoxPrefix.ANDRZEJ, "uwaga-taty", "Nie działa przycisk", id="uwaga-andrzeja-z-tytulem-bez-prefiksu"),
+    pytest.param(BoxPrefix.ANDRZEJ, "zgloszenie", "BRAK_WZORCA: Nie znaleziono wzorca.", id="zgloszenie-andrzeja-z-tytulem-bez-prefiksu"),
+]
+
+
+@pytest.mark.parametrize(("prefix", "etykieta", "tytul"), SPRAWY_ZNANE_Z_NUMERU)
+def test_sprawa_znana_z_numeru_jest_sprawa_stanowiska_jakikolwiek_ma_tytul(
+    prefix: BoxPrefix | None, etykieta: Label, tytul: str
+) -> None:
+    box = FakeReportBox(issues=[BoxIssue(7, etykieta, tytul, "treść")])
+    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), prefix=prefix)
+
+    listed = keyed.labelled_issues(etykieta, include_closed=True)
+
+    assert (keyed.known_issue(etykieta, 7), listed) == (Issue(7, "treść"), (Issue(7, "treść"),))
+
+
+TRESC_WYSYLKI: Final = "Treść Uwagi.\n\nUwaga ogólna · wersja narzędzia 3c1d0a9\n<!-- wysyłka uwaga-taty d12c34b5 część 1 wersja 20261120T234532657484Z-0001 -->"
+
+
+@pytest.mark.parametrize(
+    ("prefix", "opozniona_lista", "wyslana"),
+    [
+        pytest.param(None, False, TRESC_WYSYLKI, id="stanowisko-taty-bez-zmian"),
+        pytest.param(BoxPrefix.ANDRZEJ, False, f"{TRESC_WYSYLKI}\n<!-- Stanowisko Andrzeja -->", id="stanowisko-andrzeja-ze-znakiem-na-koncu"),
+        pytest.param(
+            BoxPrefix.ANDRZEJ,
+            True,
+            f"{TRESC_WYSYLKI}\n<!-- Stanowisko Andrzeja -->",
+            id="issue-andrzeja-spoza-opoznionej-listy-pamietane-ze-znakiem",
+        ),
+    ],
+)
+def test_zakladane_issue_ma_znak_stanowiska_w_ostatniej_linii_tresci_tylko_ze_stanowiska_z_prefiksem(
+    prefix: BoxPrefix | None, opozniona_lista: bool, wyslana: str
+) -> None:
+    box = FakeReportBox(list_lag=opozniona_lista)
+    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), prefix=prefix)
+
+    opened = keyed.open_issue("uwaga-taty", "Nie działa przycisk", TRESC_WYSYLKI)
+
+    assert isinstance(opened, Sent), opened
+    assert ([issue.text for issue in box.issues], keyed.known_issue("uwaga-taty", opened.number)) == (
+        [wyslana],
+        Issue(opened.number, wyslana),
+    )

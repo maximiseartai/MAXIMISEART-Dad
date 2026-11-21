@@ -6,6 +6,7 @@ pilnuje:
   - src/rozliczenia/centrum/opener.py
   - src/rozliczenia/centrum/report_box.py
   - src/rozliczenia/centrum/keyed_box.py
+  - src/rozliczenia/centrum/box_prefix.py
   - src/rozliczenia/centrum/tool_freshness.py
   - tests/test_skrzynka_zgloszen_github.py
   - tests/test_aktualnosc_narzedzia.py
