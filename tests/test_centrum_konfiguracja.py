@@ -1,5 +1,3 @@
-"""Konfiguracja w Centrum rozliczeń przez HTTP API: Wzorce, Wykonawcy i wersja narzędzia, tylko do odczytu."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -294,7 +292,6 @@ NEWER_RELEASE = "2222222222222222222222222222222222222222"
         (None, None, {None}),
         ("token-wymyslony-w-tescie", None, {"Bearer token-wymyslony-w-tescie"}),
         ("token-wymyslony-w-tescie", 401, {"Bearer token-wymyslony-w-tescie", None}),
-        # Takiego klucza nie da się wysłać w nagłówku, a pytanie bez tokenu i tak dostaje odpowiedź.
         ("token-wymyślony-w-teście", None, {None}),
         ("token-wymyslony-1\ntoken-wymyslony-2", None, {None}),
     ],
@@ -320,7 +317,6 @@ def test_konfiguracja_pyta_github_o_wydania_z_tokenem_do_zgloszen_tylko_gdy_jest
         client.stop()
 
     assert {asked.authorization for asked in api.asked} == authorizations
-    # Odmowa tokenu przez GitHub nie zabiera propozycji aktualizacji ani nie odrzuca klucza Skrzynki.
     assert (configuration["update_offered"], configuration["reports"]) == (True, "missing_key" if key is None else "ready")
 
 
