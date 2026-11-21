@@ -82,14 +82,14 @@ def test_core_closes_every_ending_with_a_message(tmp_path: Path, dry_run: bool) 
 
     not_shown = ENDINGS["plan_not_shown" if dry_run else "summary_not_shown"]
     assert {
-        name: (outcome.ending.kind, outcome.ending.message, outcome.view)
+        name: (outcome.ending.kind, outcome.ending.message, outcome.view, outcome.ending.trace is not None)
         for name, outcome in seen.items()
         if isinstance(outcome.ending, Stop)
     } == {
-        "stop": ("stop", own.message, None),
-        "unexpected": ("unexpected", ENDINGS["unexpected_failure"], None),
-        "after_engine": ("after_engine", not_shown, None),
-        "view": ("after_engine", not_shown, None),
+        "stop": ("stop", own.message, None, False),
+        "unexpected": ("unexpected", ENDINGS["unexpected_failure"], None, True),
+        "after_engine": ("after_engine", not_shown, None, True),
+        "view": ("after_engine", not_shown, None, True),
     }
     assert [
         (record["result"], record["completed"], record["counters"], record["stop"])
