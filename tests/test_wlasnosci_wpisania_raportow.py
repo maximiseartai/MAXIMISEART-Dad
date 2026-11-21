@@ -82,6 +82,7 @@ APP_FACE = ("Arial", 10.0)
 UNREAD = date(2026, 10, 29)
 """Dzień przed dniem wdrożenia: proces nie robi z niego zleceń, ale czyta jego numery (``NUMBERS_SINCE``)."""
 CLOSED_DAY = date(2026, 10, 31)
+"""Dzień okresu 27.10–2.11, który ma Plik zbiorczy."""
 SIXTH, SEVENTH, EIGHTH, NINTH = (date(2026, 11, day) for day in (6, 7, 8, 9))
 DAYS = (UNREAD, CLOSED_DAY, SIXTH, SEVENTH, EIGHTH, NINTH)
 ORDER_DAYS = (*DAYS, SIXTH, SEVENTH, SEVENTH, EIGHTH, EIGHTH, EIGHTH)
@@ -497,6 +498,8 @@ class _Register:
         return found[which % len(found)] if found else None
 
     def add(self, seed: tuple[object, ...]) -> _Line:
+        """Wiersz z ``seed``: rodzaj, numer, dzień, Wykonawca, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE``."""
+
         kind, number, day, worker, successful, completed = seed
         assert (
             isinstance(kind, str)
@@ -543,6 +546,8 @@ class _Register:
         )
 
     def said(self, number: int | None) -> list[tuple[_Sent, str | None, str]]:
+        """Wpisy numeru ``number`` ze wszystkich maili skrzynki: mail, ``tak``/``nie`` i opis."""
+
         return [
             (sent, verdict, text)
             for sent in self.sent

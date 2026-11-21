@@ -194,6 +194,8 @@ FILLER = "abcdefghijklmnpqrstuvwxyząćęłńśźż0123456789*"
 
 @st.composite
 def _inea_row(draw: st.DrawFn) -> tuple[dict[str, CellValue], set[str]]:
+    """Wiersz danych z URZĄDZENIA (D), AP i AK oraz kolumnami, których słowo test wstawił do URZĄDZENIA."""
+
     pieces = draw(st.lists(st.text(FILLER, min_size=1, max_size=6), max_size=3))
     columns = {column for column in INEA_ONLY if draw(st.booleans())}
     for column in sorted(columns):
@@ -241,6 +243,8 @@ WITHOUT_ENTRY = {"INEA"}
 
 
 def _placement(activities: str, devices: str) -> Placement:
+    """Surowe zlecenie z ``CZYNNOŚCI`` i ``URZĄDZENIA`` z aplikacji na dole arkusza po rozpoznaniu i planie dnia."""
+
     values = {COLUMNS.date: datetime(2026, 10, 26, 9), COLUMNS.worker: "jan.nowak", COLUMNS.devices: devices, COLUMNS.activities: activities}
     row = RowFacts(30, {column: CellFacts(value, ("Arial", 10.0), False) for column, value in values.items()}, False)
     block = recognize([row], COLUMNS)
@@ -250,6 +254,8 @@ def _placement(activities: str, devices: str) -> Placement:
 
 @st.composite
 def _spaced(draw: st.DrawFn, name: str) -> str:
+    """``name`` w dowolnej wielkości liter ze spacjami i myślnikami między znakami."""
+
     letters = draw(_mixed_case(name))
     return letters[0] + "".join(draw(st.sampled_from(("", "", " ", "-", " - ", "  "))) + letter for letter in letters[1:])
 
@@ -396,6 +402,8 @@ def test_dwa_rozne_miasta_historii_adresu_nie_trafiaja_przy_zadnym_zapisie(data:
     ids=lambda value: str(value),
 )
 def test_miasto_historii_adresu_na_zapisach_z_przegladow_2112(base_city: str, order_city: str, same: bool) -> None:
+    """Zapisy, na których rundy przeglądu #2112 znalazły dwa miasta wzięte za jedno albo jedno za dwa."""
+
     found = AddressIndex([("LIPOWA 5", base_city, "wiersz")]).matching("UL. LIPOWA 5", order_city)
 
     assert (found == ("wiersz",)) is same
