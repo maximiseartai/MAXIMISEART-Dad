@@ -738,6 +738,11 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
     "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
+    "break-skryptu-pythona-to-czekanie": "pętle oceniaj tylko w tekście polecenia powłoki",
+    "program-wzorcem-ze-sciezka": "rozpoznaj program po słowie",
+    "reszta-tekstu-od-kazdego-trafienia": "czytaj tekst raz od początku do końca",
+    "shlex-czyta-polecenie-agenta": "słowa polecenia czytaj czytnikiem hooka w czasie liniowym",
+    "znak-powloki-jako-test-literalu": "sprawdzaj pełnym dopasowaniem postaci literału",
     "krok-mypy-ruff-poza-krokami": "weź krok z kroki_lokalne.static_steps",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
@@ -745,6 +750,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "pytest-current-test-poza-testami": "sesję pytest rozpoznaje PYTEST_VERSION",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "stanowisko-z-tytulu": "weź ze znaku Stanowiska w treści",
     "stosunek-czasow-sciany": "licz kroki budżetu (węzły, wywołania), nie zegar",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
     "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
@@ -2366,6 +2372,11 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 # konfigurację.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
+    "znak-powloki-jako-test-literalu": (("tools", "hooks"), ".py"),
+    "shlex-czyta-polecenie-agenta": (("tools", "hooks"), ".py"),
+    "program-wzorcem-ze-sciezka": (("tools", "hooks"), ".py"),
+    "break-skryptu-pythona-to-czekanie": (("tools", "hooks"), ".py"),
+    "reszta-tekstu-od-kazdego-trafienia": (("tools",), ".py"),
     "krok-mypy-ruff-poza-krokami": (("tools",), ".py"),
     "komunikat-boxa-podlancuchem": (("tools",), ".py"),
     "stosunek-czasow-sciany": (("tests",), ".py"),
@@ -2381,62 +2392,392 @@ _DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
 _OS = "import os\n\n"
 _LINIA = "def komentarz(linia: str) -> bool:\n    return "
 _PATTERN = "import re\n\nLINE = "
+_LITERAL = "def literal(word: str) -> bool:\n"
+_SHLEX = "import shlex\n\n\ndef words(command: str) -> list[str]:\n"
+_PROGRAM = "def python(word: str) -> bool:\n"
+_AST_STOP = "import ast\n\n\ndef stops(tree: ast.AST) -> bool:\n"
+_WORDS = "import re\n\nWORD = re.compile(r'[a-z]+')\n\n\ndef rests(text: str) -> list[str]:\n"
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
 # (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
-_PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\r?$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s*$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s+$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\s?$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\n$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
-    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--no-incremental"]\n', [3]),
-    ("krok-mypy-ruff-poza-krokami", f"{_SYS}POLECENIE = (sys.executable, '-m', 'ruff', 'check')\n", [3]),
-    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "pytest", "-q"]\n', []),
-    ("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', []),
-    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--strict", "format"]\n', [3]),
-    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "ruff", "format", "--check"]\n', []),
-    ("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT in wyjscie\n", [5]),
-    ("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT not in wyjscie\n", [5]),
-    ("komunikat-boxa-podlancuchem", "from box_boat import KOMUNIKAT\n\n\ndef infra(wyjscie: str) -> bool:\n    return KOMUNIKAT in wyjscie\n", [5]),
-    ("komunikat-boxa-podlancuchem", "import box_boat\n\n\ndef komunikat() -> str:\n    return box_boat.KOMUNIKAT\n", []),
-    ("komunikat-boxa-podlancuchem", f'{_BOX}"OK" in wyjscie\n', []),
-    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / (srodek - start) < 2\n", [7]),
-    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.monotonic() - start) / (time.monotonic() - srodek) < 2\n", [7]),
-    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert time.perf_counter() - srodek < start\n", []),
-    ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / 2 < start\n", []),
-    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# mypy:")\n', [5]),
-    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}re.match(r"#\\s*mypy:", linia) is not None\n', [5]),
-    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia[:7] == "# mypy:"\n', [5]),
-    ("dyrektywa-mypy-recznie", 'PROBKI = {"w kolumnie 0": "# mypy: ignore-errors\\n"}\n', []),
-    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith(("# mypy:", "#mypy:"))\n', [5, 5]),
-    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# noqa:")\n', []),
-    ("dyrektywa-mypy-recznie", 'def test_probka(tekst: str) -> None:\n    assert "# mypy: ignore-errors" in tekst\n', []),
-    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=False)\n', [3]),
-    ("follow-symlinks-tylko-posix", f'{_OS}os.chown("plik", 0, 0, follow_symlinks=False)\n', [3]),
-    ("follow-symlinks-tylko-posix", f'{_OS}os.link("a", "b", follow_symlinks=False)\n', [3]),
-    ("follow-symlinks-tylko-posix", f'{_OS}os.access("plik", os.R_OK, follow_symlinks=False)\n', [3]),
-    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1))\n', []),
-    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=True)\n', []),
-    ("follow-symlinks-tylko-posix", f'{_OS}os.chmod("plik", 0o644, follow_symlinks=False)\n', []),
-    ("follow-symlinks-tylko-posix", f'{_OS}os.stat("plik", follow_symlinks=False)\n', []),
-    ("follow-symlinks-tylko-posix", 'import shutil\n\nshutil.copy2("a", "b", follow_symlinks=False)\n', []),
-    ("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("#")\n', [2]),
-    ("komentarz-przez-startswith", f"{_LINIA}linia.lstrip().startswith('#')\n", [2]),
-    ("komentarz-przez-startswith", f'{_LINIA}linia.startswith("#")\n', []),
-    ("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("##")\n', []),
-    (
+_PROBKI_REGUL_POWROTOW: Final = [
+    pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--no-incremental"]\n', [3], id="mypy-w-liscie-polecenia"),
+    pytest.param("krok-mypy-ruff-poza-krokami", f"{_SYS}POLECENIE = (sys.executable, '-m', 'ruff', 'check')\n", [3], id="ruff-w-krotce-polecenia"),
+    pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "pytest", "-q"]\n', [], id="pytest-w-liscie-przechodzi"),
+    pytest.param("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', [], id="nazwy-narzedzi-bez-polecenia-przechodza"),
+    pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--strict", "format"]\n', [3], id="mypy-z-opcjami"),
+    pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "ruff", "format", "--check"]\n', [], id="ruff-format-przechodzi"),
+    pytest.param("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT in wyjscie\n", [5], id="komunikat-boxa-in"),
+    pytest.param("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT not in wyjscie\n", [5], id="komunikat-boxa-not-in"),
+    pytest.param("komunikat-boxa-podlancuchem", "from box_boat import KOMUNIKAT\n\n\ndef infra(wyjscie: str) -> bool:\n    return KOMUNIKAT in wyjscie\n", [5], id="komunikat-boxa-z-from-importu"),
+    pytest.param("komunikat-boxa-podlancuchem", "import box_boat\n\n\ndef komunikat() -> str:\n    return box_boat.KOMUNIKAT\n", [], id="komunikat-boxa-bez-porownania-przechodzi"),
+    pytest.param("komunikat-boxa-podlancuchem", f'{_BOX}"OK" in wyjscie\n', [], id="inny-napis-w-wyjsciu-przechodzi"),
+    pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / (srodek - start) < 2\n", [7], id="stosunek-perf-counter"),
+    pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.monotonic() - start) / (time.monotonic() - srodek) < 2\n", [7], id="stosunek-monotonic"),
+    pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert time.perf_counter() - srodek < start\n", [], id="roznica-bez-stosunku-przechodzi"),
+    pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / 2 < start\n", [], id="dzielenie-przez-stala-przechodzi"),
+    pytest.param(
+        "kotwica-konca-linii",
+        f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n',
+        [3],
+        id="kotwica-po-dowolnym-atomie",
+    ),
+    pytest.param(
+        "kotwica-konca-linii",
+        f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n',
+        [3],
+        id="kotwica-po-sklejonym-wzorcu",
+    ),
+    pytest.param("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3], id="kotwica-w-f-napisie"),
+    pytest.param(
+        "kotwica-konca-linii",
+        f'{_PATTERN}re.compile(r"PONOWIENIE\\r?$")\n',
+        [],
+        id="r-opcjonalne-przed-kotwica-przechodzi",
+    ),
+    pytest.param(
+        "kotwica-konca-linii",
+        f'{_PATTERN}re.compile(r"PONOWIENIE\\s*$")\n',
+        [],
+        id="biale-znaki-gwiazdka-przed-kotwica-przechodza",
+    ),
+    pytest.param(
+        "kotwica-konca-linii",
+        f'{_PATTERN}re.compile(r"PONOWIENIE\\s+$")\n',
+        [],
+        id="biale-znaki-plus-przed-kotwica-przechodza",
+    ),
+    pytest.param(
+        "kotwica-konca-linii",
+        f'{_PATTERN}re.compile(r"PONOWIENIE \\s?$")\n',
+        [3],
+        id="bialy-znak-opcjonalny-przed-kotwica",
+    ),
+    pytest.param(
+        "kotwica-konca-linii",
+        f'{_PATTERN}re.compile(r"PONOWIENIE\\n$")\n',
+        [3],
+        id="nowa-linia-przed-kotwica",
+    ),
+    pytest.param(
+        "kotwica-konca-linii",
+        f'{_PATTERN}re.compile(r"cena w \\$")\n',
+        [],
+        id="dolar-po-ukosniku-przechodzi",
+    ),
+    pytest.param("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', [], id="kotwica-poza-wywolaniem-re-przechodzi"),
+    pytest.param("znak-powloki-jako-test-literalu", _LITERAL + '    return "$" not in word\n', [2], id="dolar-not-in"),
+    pytest.param(
+        "znak-powloki-jako-test-literalu",
+        _LITERAL + "    return '{' in word or \"%\" in word\n",
+        [2, 2],
+        id="klamra-i-procent-in",
+    ),
+    pytest.param(
+        "znak-powloki-jako-test-literalu",
+        f"import re\n\nPID = re.compile(r'[0-9]+')\n\n\n{_LITERAL}    return PID.fullmatch(word) is not None\n",
+        [],
+        id="pelne-dopasowanie-literalu-przechodzi",
+    ),
+    pytest.param(
+        "znak-powloki-jako-test-literalu",
+        _LITERAL + '    return "ab" in word\n',
+        [],
+        id="napis-bez-znaku-powloki-przechodzi",
+    ),
+    pytest.param(
+        "znak-powloki-jako-test-literalu",
+        _LITERAL + '    return "[" not in word and "~" not in word\n',
+        [2, 2],
+        id="glob-i-tylda-not-in",
+    ),
+    pytest.param(
+        "znak-powloki-jako-test-literalu",
+        _LITERAL + '    return "$(" not in word\n',
+        [2],
+        id="podstawienie-polecenia-not-in",
+    ),
+    pytest.param(
+        "znak-powloki-jako-test-literalu",
+        _LITERAL + "    return '\"' not in word and \"\\\\\" not in word and '\\'' not in word\n",
+        [2, 2, 2],
+        id="cudzyslowy-i-ukosnik-not-in",
+    ),
+    pytest.param("shlex-czyta-polecenie-agenta", f"{_SHLEX}    return shlex.split(command)\n", [5], id="shlex-split"),
+    pytest.param(
+        "shlex-czyta-polecenie-agenta",
+        f"{_SHLEX}    return list(shlex.shlex(command, posix=True, punctuation_chars=True))\n",
+        [5],
+        id="shlex-shlex",
+    ),
+    pytest.param(
+        "shlex-czyta-polecenie-agenta",
+        f"{_SHLEX}    return [shlex.quote(command)]\n",
+        [],
+        id="shlex-quote-przechodzi",
+    ),
+    pytest.param(
+        "program-wzorcem-ze-sciezka",
+        "import re\n\nPYTHON = re.compile(r'(?:[\\w.~/-]*/)?python3?(?![\\w.-])')\n",
+        [3],
+        id="prefiks-z-ukosnikiem-w-srodku-klasy",
+    ),
+    pytest.param(
+        "program-wzorcem-ze-sciezka",
+        "import re\n\nPYTHON = re.compile(r'(?:[a-z/]+/)?python')\n",
+        [3],
+        id="prefiks-z-plusem",
+    ),
+    pytest.param(
+        "program-wzorcem-ze-sciezka",
+        "import re\n\nPYTHON = re.compile(r'(?:[/\\w.~-]*/)?python3?')\n",
+        [3],
+        id="prefiks-z-ukosnikiem-na-poczatku-klasy",
+    ),
+    pytest.param(
+        "program-wzorcem-ze-sciezka",
+        "import re\n\nPYTHON = re.compile(r'(?:[\\w.-]+/)*python')\n",
+        [3],
+        id="segment-sciezki-bez-ukosnika-w-klasie",
+    ),
+    pytest.param("program-wzorcem-ze-sciezka", "import re\n\nPYTHON = re.compile(r'(?:[\\w./-]*?/)?python3?')\n", [3], id="prefiks-z-leniwym-kwantyfikatorem"),
+    pytest.param("program-wzorcem-ze-sciezka", "import re\n\nPYTHON = re.compile(r'(?:[\\w./-]{1,}/)?python')\n", [3], id="prefiks-z-liczonym-kwantyfikatorem"),
+    pytest.param("program-wzorcem-ze-sciezka", "import re\n\nOPTION = re.compile(r'[a-z]{2,}')\n", [], id="klasa-z-liczonym-kwantyfikatorem-bez-ukosnika-przechodzi"),
+    pytest.param(
+        "program-wzorcem-ze-sciezka",
+        _PROGRAM + '    return word.rsplit("/", 1)[-1] in {"python", "python3"}\n',
+        [],
+        id="nazwa-programu-po-ukosniku-przechodzi",
+    ),
+    pytest.param(
+        "program-wzorcem-ze-sciezka",
+        "import re\n\nOPTION = re.compile(r'[a-z/]+')\n",
+        [],
+        id="klasa-z-ukosnikiem-bez-ukosnika-za-nia-przechodzi",
+    ),
+    pytest.param(
+        "break-skryptu-pythona-to-czekanie",
+        f"{_AST_STOP}    return any(isinstance(node, ast.Break) for node in ast.walk(tree))\n",
+        [5],
+        id="ast-break",
+    ),
+    pytest.param(
+        "break-skryptu-pythona-to-czekanie",
+        f"{_AST_STOP}    return any(isinstance(node, ast.Return) for node in ast.walk(tree))\n",
+        [5],
+        id="ast-return",
+    ),
+    pytest.param(
+        "break-skryptu-pythona-to-czekanie",
+        f"{_AST_STOP}    return any(isinstance(node, ast.Call) for node in ast.walk(tree))\n",
+        [],
+        id="inny-wezel-ast-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-od-end",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.end(0) :])\n    return rests\n",
+        [9],
+        id="reszta-od-end-z-argumentem",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.end() + 1 :])\n    return rests\n",
+        [9],
+        id="reszta-od-end-z-przesunieciem",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.start() :])\n    return rests\n",
+        [9],
+        id="reszta-od-start",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.start() : found.end()])\n    return rests\n",
+        [],
+        id="wycinek-trafienia-z-koncem-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(found.group())\n    return rests\n",
+        [],
+        id="tekst-trafienia-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    found = WORD.search(text)\n    return [text[found.end() :]] if found else []\n",
+        [],
+        id="reszta-po-jednym-search-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        end = found.end()\n        rests.append(text[end:])\n    return rests\n",
+        [10],
+        id="reszta-od-konca-w-zmiennej",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for number, found in enumerate(WORD.finditer(text)):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-enumerate",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in re.finditer(WORD, text):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-re-finditer",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        "from re import finditer\n\n\ndef rests(text: str) -> list[str]:\n    rests = []\n    for found in finditer(r'[a-z]+', text):\n"
+        "        rests.append(text[found.end() :])\n    return rests\n",
+        [7],
+        id="reszta-w-petli-zaimportowanego-finditer",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in re.finditer(WORD, string=text):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-re-finditer-z-argumentem-nazwanym",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(string=text, pos=1):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-finditer-z-argumentami-nazwanymi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    return [text[found.end() :] for found in WORD.finditer(string=text)]\n",
+        [7],
+        id="reszta-w-wyrazeniu-listowym-z-argumentem-nazwanym",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(string=text.upper()):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [],
+        id="reszta-tekstu-innego-niz-argument-nazwany-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for first, second in zip(WORD.finditer(text), WORD.finditer(text.upper())):\n        rests.append(text[first.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-zip",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text.upper()[found.end() :])\n    return rests\n",
+        [],
+        id="reszta-innego-tekstu-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for start in range(3):\n        rests.append(text[start:])\n    return rests\n",
+        [],
+        id="reszta-w-petli-bez-trafien-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia", f"{_WORDS}    return [text[found.end() :] for found in WORD.finditer(text)]\n", [7], id="reszta-w-wyrazeniu-listowym"
+    ),
+    pytest.param("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# mypy:")\n', [5], id="dyrektywa-mypy-przez-startswith"),
+    pytest.param(
+        "dyrektywa-mypy-recznie",
+        f'{_DYREKTYWA}re.match(r"#\\s*mypy:", linia) is not None\n',
+        [5],
+        id="dyrektywa-mypy-przez-re-match",
+    ),
+    pytest.param("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia[:7] == "# mypy:"\n', [5], id="dyrektywa-mypy-przez-wycinek"),
+    pytest.param(
+        "dyrektywa-mypy-recznie",
+        'PROBKI = {"w kolumnie 0": "# mypy: ignore-errors\\n"}\n',
+        [],
+        id="dyrektywa-mypy-w-napisie-probki-przechodzi",
+    ),
+    pytest.param(
+        "dyrektywa-mypy-recznie",
+        f'{_DYREKTYWA}linia.startswith(("# mypy:", "#mypy:"))\n',
+        [5, 5],
+        id="dyrektywa-mypy-w-krotce-startswith",
+    ),
+    pytest.param("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# noqa:")\n', [], id="noqa-przez-startswith-przechodzi"),
+    pytest.param(
+        "dyrektywa-mypy-recznie",
+        'def test_probka(tekst: str) -> None:\n    assert "# mypy: ignore-errors" in tekst\n',
+        [],
+        id="dyrektywa-mypy-w-asercji-testu-przechodzi",
+    ),
+    pytest.param(
+        "follow-symlinks-tylko-posix",
+        f'{_OS}os.utime("plik", (1, 1), follow_symlinks=False)\n',
+        [3],
+        id="follow-symlinks-w-utime",
+    ),
+    pytest.param("follow-symlinks-tylko-posix", f'{_OS}os.chown("plik", 0, 0, follow_symlinks=False)\n', [3], id="follow-symlinks-w-chown"),
+    pytest.param("follow-symlinks-tylko-posix", f'{_OS}os.link("a", "b", follow_symlinks=False)\n', [3], id="follow-symlinks-w-link"),
+    pytest.param(
+        "follow-symlinks-tylko-posix",
+        f'{_OS}os.access("plik", os.R_OK, follow_symlinks=False)\n',
+        [3],
+        id="follow-symlinks-w-access",
+    ),
+    pytest.param("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1))\n', [], id="utime-bez-follow-symlinks-przechodzi"),
+    pytest.param(
+        "follow-symlinks-tylko-posix",
+        f'{_OS}os.utime("plik", (1, 1), follow_symlinks=True)\n',
+        [],
+        id="follow-symlinks-true-przechodzi",
+    ),
+    pytest.param(
+        "follow-symlinks-tylko-posix",
+        f'{_OS}os.chmod("plik", 0o644, follow_symlinks=False)\n',
+        [],
+        id="follow-symlinks-w-chmod-przechodzi",
+    ),
+    pytest.param(
+        "follow-symlinks-tylko-posix",
+        f'{_OS}os.stat("plik", follow_symlinks=False)\n',
+        [],
+        id="follow-symlinks-w-stat-przechodzi",
+    ),
+    pytest.param(
+        "follow-symlinks-tylko-posix",
+        'import shutil\n\nshutil.copy2("a", "b", follow_symlinks=False)\n',
+        [],
+        id="follow-symlinks-w-shutil-przechodzi",
+    ),
+    pytest.param("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("#")\n', [2], id="komentarz-po-strip"),
+    pytest.param("komentarz-przez-startswith", f"{_LINIA}linia.lstrip().startswith('#')\n", [2], id="komentarz-po-lstrip"),
+    pytest.param("komentarz-przez-startswith", f'{_LINIA}linia.startswith("#")\n', [], id="komentarz-bez-strip-przechodzi"),
+    pytest.param("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("##")\n', [], id="dwa-hasze-przechodza"),
+    pytest.param(
         "komentarz-przez-startswith",
         "import tokenize\n\n\ndef komentarz(token: tokenize.TokenInfo) -> bool:\n    return token.type == tokenize.COMMENT\n",
         [],
+        id="komentarz-z-tokenize-przechodzi",
     ),
-    ("pytest-current-test-poza-testami", f'{_OS}W_TESCIE = "PYTEST_CURRENT_TEST" in os.environ\n', [3]),
-    ("pytest-current-test-poza-testami", f"{_OS}W_TESCIE = os.environ.get('PYTEST_CURRENT_TEST') is not None\n", [3]),
-    ("pytest-current-test-poza-testami", f'{_OS}W_SESJI = "PYTEST_VERSION" in os.environ\n', []),
+    pytest.param(
+        "pytest-current-test-poza-testami",
+        f'{_OS}W_TESCIE = "PYTEST_CURRENT_TEST" in os.environ\n',
+        [3],
+        id="pytest-current-test-in-environ",
+    ),
+    pytest.param(
+        "pytest-current-test-poza-testami",
+        f"{_OS}W_TESCIE = os.environ.get('PYTEST_CURRENT_TEST') is not None\n",
+        [3],
+        id="pytest-current-test-environ-get",
+    ),
+    pytest.param(
+        "pytest-current-test-poza-testami",
+        f'{_OS}W_SESJI = "PYTEST_VERSION" in os.environ\n',
+        [],
+        id="pytest-version-przechodzi",
+    ),
 ]
 
 
@@ -2473,6 +2814,32 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+    },
+    "znak-powloki-jako-test-literalu": {
+        "znaki powłoki wyliczone w napisie przeglądanym w pętli": _LITERAL + '    return not any(char in word for char in "$`{}%")\n',
+        "znak powłoki w nazwanej stałej": f'SUBSTITUTION = "$"\n\n\n{_LITERAL}    return SUBSTITUTION not in word\n',
+        "metoda napisu zamiast operatora in": _LITERAL + '    return word.find("$") < 0\n',
+        "napis ze znakiem powłoki i zwykłym znakiem": _LITERAL + '    return "a$" not in word\n',
+    },
+    "shlex-czyta-polecenie-agenta": {
+        "funkcja zaimportowana z modułu shlex": "from shlex import split\n\n\ndef words(command: str) -> list[str]:\n    return split(command)\n",
+        "moduł shlex pod inną nazwą": "import shlex as lekser\n\n\ndef words(command: str) -> list[str]:\n    return lekser.split(command)\n",
+    },
+    "program-wzorcem-ze-sciezka": {
+        "prefiks ścieżki bez klasy znaków": "import re\n\nPYTHON = re.compile(r'(?:\\S*/)?python3?')\n",
+        "prefiks ścieżki w klasie zanegowanej": "import re\n\nPYTHON = re.compile(r'(?:[^ ]*/)?python3?')\n",
+        "wzorzec sklejony z kilku literałów": "import re\n\nPYTHON = re.compile(r'(?:[a-z/]*' + r'/)?python')\n",
+    },
+    "break-skryptu-pythona-to-czekanie": {
+        "klasa węzła zaimportowana z modułu ast": "import ast\nfrom ast import Break\n\n\ndef stops(tree: ast.AST) -> bool:\n    return any(isinstance(node, Break) for node in ast.walk(tree))\n",
+        "rodzaj węzła po nazwie klasy": f'{_AST_STOP}    return any(type(node).__name__ == "Break" for node in ast.walk(tree))\n',
+    },
+    "reszta-tekstu-od-kazdego-trafienia": {
+        "tekst pętli pod inną nazwą": f"{_WORDS}    rests = []\n    rest = text\n    for found in WORD.finditer(text):\n        rests.append(rest[found.end() :])\n    return rests\n",
+        "iterator trafień w zmiennej": f"{_WORDS}    rests = []\n    found_all = WORD.finditer(text)\n    for found in found_all:\n        rests.append(text[found.end() :])\n    return rests\n",
+        "wycinek w lambdzie map": f"{_WORDS}    return list(map(lambda found: text[found.end() :], WORD.finditer(text)))\n",
+        "koniec wycinka zapisany wprost": f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.end() : len(text)])\n    return rests\n",
+        "pętla while po next": f"{_WORDS}    rests = []\n    found_all = WORD.finditer(text)\n    while (found := next(found_all, None)) is not None:\n        rests.append(text[found.end() :])\n    return rests\n",
     },
     "krok-mypy-ruff-poza-krokami": {
         "program bez -m": 'POLECENIE = ["mypy", "--no-incremental"]\n',
@@ -2912,6 +3279,96 @@ def test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff(t
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_TITLE_RULE = "stanowisko-z-tytulu"
+_IN_CASES = "def workstation_of(title, issue, entry, body, prefixes):\n"
+_PROBKI_STANOWISKA_Z_TYTULU: Final[list[tuple[str, list[int]]]] = [
+    (f'{_IN_CASES}    return next((name for prefix, name in prefixes.items() if title.startswith(f"{{prefix}} ")), "taty")\n', [2]),
+    (f'{_IN_CASES}    return issue["title"].startswith("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return entry.title.removeprefix("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return str(issue.get("title", "")).startswith(prefixes)\n', [2]),
+    (f'{_IN_CASES}    return (entry.title\n        .startswith("ANDRZEJ "))\n', [2]),
+    (f'{_IN_CASES}    return entry.Tytul.startswith("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return body.splitlines()[-1].startswith("<!-- ")\n', []),
+    (f"{_IN_CASES}    return title.split()\n", []),
+    (f'{_IN_CASES}    return issue["body"].startswith("- Logi Uruchomienia okresu: ")\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_STANOWISKA_Z_TYTULU)
+def test_regula_stanowiska_z_tytulu_zglasza_poczatek_tytulu_a_nie_tresc_sprawy(tmp_path: Path, text: str, lines: list[int]) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tools" / "lib").mkdir(parents=True)
+    (tmp_path / "tools" / "lib" / "sprawy.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_TITLE_RULE, tmp_path, base) == [("tools/lib/sprawy.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_stanowiska_z_tytulu_zglasza_src_i_tools_poza_wlascicielem_prefiksu(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    paths = (
+        "src/rozliczenia/centrum/box_prefix.py",
+        "src/rozliczenia/centrum/box_prefix_kopia.py",
+        "tools/lib/naprawia.py",
+        "tests/test_skrzynki.py",
+        ".agents/skills/verify-skrzynki/scripts/sprawy.py",
+    )
+    for path in paths:
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text('def owns(title):\n    return title.startswith("ANDRZEJ ")\n', encoding="utf-8")
+
+    assert _findings_of(_TITLE_RULE, tmp_path, base) == [("src/rozliczenia/centrum/box_prefix_kopia.py", 2), ("tools/lib/naprawia.py", 2)]
+
+
+ZNANE_LUKI_STANOWISKA_Z_TYTULU: Final[dict[str, str]] = {
+    "tytuł pod inną nazwą": """\
+def workstation_of(issue: dict[str, str]) -> bool:
+    heading = issue["name"]
+    return heading.startswith("ANDRZEJ ")
+""",
+    "str.startswith z tytułem w argumencie": """\
+def workstation_of(title: str) -> bool:
+    return str.startswith(title, "ANDRZEJ ")
+""",
+    "wycinek początku tytułu": """\
+def workstation_of(title: str) -> bool:
+    return title[:8] == "ANDRZEJ "
+""",
+    "pierwsze słowo po split": """\
+def workstation_of(title: str) -> bool:
+    return title.split(" ", 1)[0] == "ANDRZEJ"
+""",
+    "wyrażenie regularne": """\
+import re
+
+
+def workstation_of(title: str) -> bool:
+    return re.match("ANDRZEJ ", title) is not None
+""",
+    "operator in": """\
+def workstation_of(title: str) -> bool:
+    return "ANDRZEJ " in title
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_stanowiska_z_tytulu_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tools" / "lib").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_STANOWISKA_Z_TYTULU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tools" / "lib" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanowiska_z_tytulu_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
 _ORACLE_RULE = "wlasna-wyrocznia-numeru"

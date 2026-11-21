@@ -50,7 +50,7 @@ LONG_TEXT: Final = 2000
 # Pola odpowiedzi, które czytają ``report_box`` i ``tool_freshness``, i pola komunikatów błędu GitHuba.
 KEPT: Final = frozenset(
     {
-        "number", "body", "state", "state_reason", "closed_at", "id", "html_url",
+        "number", "title", "body", "state", "state_reason", "closed_at", "id", "html_url",
         "name", "commit", "sha", "object", "status", "ahead_by",
         "merge_commit_sha", "merged_at", "base", "ref",
         "tag_name", "published_at", "draft", "prerelease", "label",

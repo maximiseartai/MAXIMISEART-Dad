@@ -43,8 +43,6 @@ IF = "${{ !cancelled() && steps.deps.outcome == 'success' }}"
 
 
 def test_srodowisko_dowodu_opisuje_zadanie_ruff_mypy_z_ci_main() -> None:
-    """Stałe ``srodowisko_ci`` to Required CI ``main``: PR, który zmienia zadanie „Ruff, mypy” bez nich, tu pada."""
-
     assert srodowisko_ci.mismatch(ROOT) == []
 
 
@@ -113,8 +111,6 @@ def _swap(first: str, second: str) -> Callable[[Job, Job], None]:
 
 
 def _ci(change: Callable[[Job, Job], None], job: str = srodowisko_ci.JOB) -> str:
-    """``ci.yml`` repozytorium ze zmianą ``change`` zadania ``job``."""
-
     workflow = copying.deepcopy(yaml.safe_load(CI))
     change(workflow, workflow["jobs"][job])
     return yaml.safe_dump(workflow, allow_unicode=True)

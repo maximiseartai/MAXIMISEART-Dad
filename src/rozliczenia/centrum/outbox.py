@@ -34,7 +34,6 @@ from rozliczenia.centrum.report_box import (
     Sent,
     Unreachable,
     archive_url,
-    newest_with_line,
 )
 from rozliczenia.centrum.template_archive import ArchivedTemplate, from_queue
 from rozliczenia.client_data import LogsText, Outgoing, logs_text, tool
@@ -648,10 +647,9 @@ def _deliver_new_issue(post: Post, version: Version, issue: NewIssue, box: Keyed
 
 
 def _deliver_open_issue(post: Post, version: Version, target: OpenIssue, box: KeyedBox) -> Delivered | Failure:
-    issues = box.labelled_issues(target.label, include_closed=False)
-    if isinstance(issues, Refused | Unreachable | NoKey):
-        return issues
-    found = newest_with_line(issues, target.line)
+    found = box.find_issue(target.label, target.line, include_closed=False)
+    if isinstance(found, Refused | Unreachable | NoKey):
+        return found
     if found is None:
         (_, body), _ = _opening(post, version)
         opened = box.open_issue(target.label, target.title, body)
@@ -659,7 +657,7 @@ def _deliver_open_issue(post: Post, version: Version, target: OpenIssue, box: Ke
             return opened
         return Delivered(opened.number, ())
     returned = _marked(f"{target.again}{post.parts[0]}", post, 1, version)
-    return _settle(post, version, _issue(issues, found), (returned,), box)
+    return _settle(post, version, found, (returned,), box)
 
 
 def _deliver_to_known(post: Post, version: Version, known: KnownIssue, box: KeyedBox) -> Delivered | Gone | Failure:
@@ -674,11 +672,10 @@ def _deliver_to_known(post: Post, version: Version, known: KnownIssue, box: Keye
 def _deliver_to_period(
     post: Post, version: Version, thread: PeriodThread, box: KeyedBox, *, archive_open: bool
 ) -> Delivered | Failure:
-    issues = box.labelled_issues(thread.label, include_closed=thread.closed == "reuse")
-    if isinstance(issues, Refused | Unreachable | NoKey):
-        return issues
-    found = newest_with_line(issues, thread.line)
-    if found is None:
+    issue = box.find_issue(thread.label, thread.line, include_closed=thread.closed == "reuse")
+    if isinstance(issue, Refused | Unreachable | NoKey):
+        return issue
+    if issue is None:
         step = _deliver_archive(post, version, box, archive_open=archive_open)
         if isinstance(step, Unreachable | NoKey):
             return step
@@ -687,7 +684,6 @@ def _deliver_to_period(
         if not isinstance(opened, Sent):
             return opened
         return _archive_waits(_comment_all(opened.number, comments, box), step)
-    issue = _issue(issues, found)
     seen = _seen(post, issue, box)
     if not isinstance(seen, _Seen):
         return seen
@@ -780,10 +776,6 @@ def _asset_version(asset: Asset, archive: ArchiveFile) -> Version | None:
     start, end = f"{archive.packed_name} (wersja ", ")"
     seen = asset.label.removeprefix(start).removesuffix(end)
     return Version.of(seen) if asset.label == f"{start}{seen}{end}" and seen and " " not in seen else None
-
-
-def _issue(issues: tuple[Issue, ...], number: int) -> Issue:
-    return next(issue for issue in issues if issue.number == number)
 
 
 def _comment_all(number: int, comments: Sequence[Marked], box: KeyedBox) -> Delivered | Failure:

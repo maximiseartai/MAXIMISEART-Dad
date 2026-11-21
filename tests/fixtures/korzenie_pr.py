@@ -41,9 +41,6 @@ def _lines(*lines: str) -> str:
 
 
 def body(*blocks: str, why: str = "Cel.") -> str:
-    """Opis PR z nagłówkami wzoru skilla ``pr`` i sekcją ``## Korzeń`` z ``blocks`` przed ``## Merge Danger``; bez
-    ``blocks`` bez sekcji."""
-
     sections = opisy_pr.wzor(why).split("## Merge Danger")
     root = _lines("## Korzeń", "", "\n\n".join(blocks), "", "") if blocks else ""
     return f"{sections[0]}{root}## Merge Danger{sections[1]}"
@@ -164,8 +161,6 @@ def _saved() -> dict[str, str]:
 
 
 def rendered() -> dict[str, str]:
-    """HTML z renderera GitHuba dla każdej treści z ``korzenie_pr.json``."""
-
     return dict(_saved())
 
 
@@ -174,8 +169,6 @@ def html(text: str) -> str:
 
 
 def bodies() -> list[str]:
-    """Treści, których HTML muszą mieć testy."""
-
     return [*OPISY.values(), *PR_KORZENIA.values(), *SKILL.values(), *WERDYKTY.values()]
 
 

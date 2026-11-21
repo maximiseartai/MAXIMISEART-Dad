@@ -115,7 +115,7 @@ extend-select = [
 "src/rozliczenia/dad_files.py" = ["TID251"]
 "src/rozliczenia/register_file.py" = ["TID251"]
 "src/rozliczenia/template_file.py" = ["TID251"]
-"src/rozliczenia/centrum/{app,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard,template_archive}.py" = ["TID251"]
+"src/rozliczenia/centrum/{app,box_prefix,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard,template_archive}.py" = ["TID251"]
 "src/rozliczenia/centrum/opener.py" = ["TID251"]
 # Treść z Wydania plików Ustawień: właściciel Ustawień (domyślne plików i okno Ustawień), pora Przypomnień sprzed pliku
 # (ADR 0030), wartości domyślne Uruchomienia silnika i pakiet Raportów pracowników, który ją wystawia.
@@ -130,6 +130,7 @@ extend-select = [
 # jako parametr, i Przypomnienia rdzenia, które biorą je jako pole.
 "src/rozliczenia/worker_reports/{_memory,_operation,_reminders}.py" = ["TID251"]
 "tools/lib/import_dynamiczny.py" = ["TID251"]
+"src/rozliczenia/centrum/settings/files.py" = ["TID251"]
 "tools/lib/stawka_przegladu.py" = ["TID251"]
 "tests/conftest.py" = ["TID251"]
 "tests/fixtures/linie_watkow.py" = ["TID251"]
@@ -201,6 +202,31 @@ extend-select = [
 "runpy".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 "pkgutil".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 "zipimport".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"yaml.dump".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.dump_all".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.safe_dump".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.safe_dump_all".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.emit".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.serialize".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.serialize_all".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.Dumper".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.SafeDumper".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.BaseDumper".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.CDumper".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.CSafeDumper".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.CBaseDumper".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.dumper".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.emitter".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.serializer".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.representer".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.cyaml".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml._yaml".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.add_representer".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.add_multi_representer".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.add_implicit_resolver".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.add_path_resolver".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"_yaml".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"yaml.YAMLObject".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
 # Pliki Ustawień Centrum zna tylko rozliczenia.centrum.settings (ADR 0032): ścieżka obok niego omija Historię
 # Ustawień, pamięć właściciela i wykrycie zmiany spoza Centrum.
 "rozliczenia.tool_files.SETTINGS".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"

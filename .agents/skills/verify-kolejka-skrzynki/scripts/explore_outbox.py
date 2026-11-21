@@ -94,7 +94,8 @@ from rozliczenia.centrum.report_box import (
     Commented,
     GitHubReportBox,
     Issue,
-    IssuesOutcome,
+    ListedIssue,
+    ListOutcome,
     Label,
     OpenArchiveOutcome,
     Rejected,
@@ -370,19 +371,19 @@ class MemoryBox:
 
     def labelled_issues(
         self, label: Label, *, include_closed: bool, key: str
-    ) -> IssuesOutcome:
+    ) -> ListOutcome:
         self._removed = None
         if self._scheduler.box_read(f"labelled_issues({label})"):
             return Unreachable()
         found = tuple(
-            Issue(
-                number, issue.body, Closure("completed", None) if issue.closed else None
+            ListedIssue(
+                Issue(number, issue.body, Closure("completed", None) if issue.closed else None), issue.title
             )
             for number, issue in self.issues.items()
             if issue.label == label and (include_closed or not issue.closed) and number not in self.unlisted()
         )
         self._scheduler.say(
-            f"Skrzynka zwraca issue {label}: {[issue.number for issue in found] or 'brak'}"
+            f"Skrzynka zwraca issue {label}: {[entry.issue.number for entry in found] or 'brak'}"
             + (f" (lista jeszcze nie pokazuje {sorted(self.unlisted())})" if self.unlisted() else "")
         )
         return found

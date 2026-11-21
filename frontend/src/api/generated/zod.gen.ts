@@ -2890,7 +2890,8 @@ export const zWorkerListSetting = z.object({
  * strona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
  * jest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum
  * widzi Foldery okresu wszystkich lat (``Załączniki``). Pole Funkcji spoza Zakresu tego Centrum (``workers``,
- * ``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``) to ``None``.
+ * ``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``, ``periods_directory`` z
+ * ``periods_all_years``) to ``None``.
  */
 export const zSettings = z.object({
     order_register: z.discriminatedUnion('state', [
@@ -2906,8 +2907,8 @@ export const zSettings = z.object({
         zInaccessiblePath,
         zUnreadablePath,
         zReadyPath
-    ]),
-    periods_all_years: z.boolean(),
+    ]).nullable(),
+    periods_all_years: z.boolean().nullable(),
     theme: z.enum(['dark', 'light']).nullable(),
     folders_problem: zSettingProblem.nullable(),
     workers: zWorkerListSetting.nullable(),

@@ -455,7 +455,7 @@ def _trasy(app: FastAPI) -> frozenset[str]:
 
 
 def _zakres(functions: Iterable[str]) -> Scope:
-    return Scope(Workstation.DAD, frozenset(CentrumFunction(function) for function in functions))
+    return Scope(Workstation.DAD, frozenset(CentrumFunction(function) for function in functions), None)
 
 
 def _adres(trasa: str) -> tuple[str, str]:
@@ -594,6 +594,46 @@ def test_ustawienia_centrum_andrzeja_nie_oddaja_i_nie_dotykaja_plikow_funkcji_sp
     )
     assert {row["file"] for row in history["rows"]} == {SETTINGS_FILE}
     assert [path for path in written if any(name in path for name in PLIKI_USTAWIEN_SPOZA_ZAKRESU_ANDRZEJA)] == []
+
+
+@pytest.mark.parametrize(
+    ("workstation", "oddany", "siega"),
+    [
+        pytest.param(Workstation.DAD, {"state": "ready", "name": "INEA"}, True, id="stanowisko-taty"),
+        pytest.param(Workstation.ANDRZEJ, None, False, id="stanowisko-andrzeja"),
+    ],
+)
+def test_folder_okresow_skopiowany_do_config_widzi_tylko_centrum_ze_stanowiskiem_z_funkcja_okresow(
+    tmp_path: Path, workstation: Workstation, oddany: dict[str, str] | None, siega: bool
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    periods = tmp_path / "OneDrive" / "INEA"
+    periods.mkdir(parents=True)
+    register = tmp_path / "OneDrive" / REGISTER_NAME
+    register.write_bytes(b"")
+    tool.config.mkdir(parents=True, exist_ok=True)
+    tool.settings.write_bytes(FOLDERS.dump(FolderSettings(periods_directory=periods)))
+
+    with tracing() as trace:
+        client = CentrumClient(centrum_app(tool, scope=SCOPES[workstation], release_changes=RELEASE_CHANGES))
+        client.start()
+        settings = client.get("/api/settings").json()
+        shown = settings["periods_directory"]
+        kept = None if shown is None else shown.get("path")
+        saved = client.put("/api/settings/folders", json={"order_register": str(register), "periods_directory": kept})
+        client.stop()
+
+    reached = any(Path(reach.path) == periods or periods in Path(reach.path).parents for reach in trace)
+
+    assert saved.status_code == 200
+    assert (shown, settings["periods_all_years"]) == (
+        None if oddany is None else {**oddany, "path": str(periods)},
+        None if oddany is None else False,
+    )
+    assert FOLDERS.parse(tool.settings.read_bytes()) == FolderSettings(
+        register=register, periods_directory=periods
+    )
+    assert reached is siega
 
 
 @pytest.mark.parametrize(

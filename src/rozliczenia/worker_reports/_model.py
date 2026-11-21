@@ -46,9 +46,6 @@ def _letters(text: str) -> str:
 
 @dataclass(frozen=True, order=True)
 class MailId:
-    """Mail ze Skrzynki raportów: 16 liter a–p ze skrótu SHA-256 jego Message-ID (``_letters``). Sam Message-ID do
-    rdzenia nie wchodzi."""
-
     digest: str
 
     @classmethod
@@ -151,8 +148,6 @@ class WorkerAddresses:
     workers: Mapping[Login, Login] = field(default_factory=lambda: MappingProxyType({}))
 
     def worker(self, login: Login) -> Login:
-        """Login, pod którym rdzeń zna Wykonawcę z loginem ``login``; login spoza Listy Wykonawców zostaje sobą."""
-
         return self.workers.get(login, login)
 
 
@@ -201,10 +196,6 @@ class RegisterOrder:
         devices: object,
         activities: object,
     ) -> RegisterOrder | None:
-        """Zlecenie z wartości komórek, jak je daje czytnik INTERMAX: numer jako liczba albo tekst (z „#” albo bez),
-        ``DATA GODZ. POCZ.`` jako data, Wykonawca po ``normalize_text``, a z ``ADRES`` tylko to, czy ma wartość.
-        ``None``, gdy wiersz nie ma numeru, dnia albo Wykonawcy."""
-
         found = order_number(number)
         day = started.date() if isinstance(started, datetime) else started
         login = normalize_text(worker)
@@ -314,8 +305,6 @@ class Window:
 
 @dataclass(frozen=True)
 class OwnEntry:
-    """Wartość ``value``, którą Wpisanie raportów samo wpisało do komórki ``column`` zlecenia ``key``."""
-
     key: OrderKey
     column: ReportColumn
     value: str
@@ -349,9 +338,6 @@ class OwnMove:
     added: bool = False
 
     def overridden_at(self, worker: Login, day: date) -> bool:
-        """Czy tata zmienił miejsce zlecenia po Przeniesieniu Centrum, gdy INTERMAX ma je u ``worker`` w dniu ``day``:
-        wcześniej (``overridden``) albo teraz (``left``)."""
-
         return self.overridden or self.left(((worker, day),))
 
     def left(self, places: Iterable[tuple[Login, date]]) -> bool:
@@ -481,8 +467,6 @@ class RequestedEntry:
 
     @property
     def place(self) -> tuple[MailId, Login, date, OrderNumber, Verdict, str]:
-        """Wpis, przy którym tata kliknął, bez chwili kliknięcia."""
-
         return self.mail, self.worker, self.day, self.number, self.verdict, self.activities
 
 
@@ -521,8 +505,6 @@ class Offer:
         return _letters(json.dumps([mail.digest, worker, day.isoformat(), number, verdict.value, activities]))
 
     def decide(self, at: datetime) -> RequestedEntry:
-        """Decyzja taty z kliknięcia tej oferty w chwili ``at``."""
-
         return RequestedEntry(self.mail, self.worker, self.day, self.number, self.verdict, self.activities, at)
 
 
@@ -585,8 +567,6 @@ class ReportInputs:
 
 
 class Verdict(Enum):
-    """``tak`` albo ``nie`` Wpisu raportu, tak jak trafia do ``SKUTECZNE``."""
-
     YES = "tak"
     NO = "nie"
 
@@ -605,8 +585,6 @@ class VerdictFault(Enum):
 
     @property
     def leaning(self) -> Verdict | None:
-        """``tak`` albo ``nie``, które znak ma na myśli; ``None`` bez znaku."""
-
         match self:
             case VerdictFault.MISSING:
                 return None
@@ -921,9 +899,6 @@ skąd albo dokąd nie wolno (także jedyne zlecenie numeru w dniu po dziś), ró
 
 @dataclass(frozen=True)
 class TakenOver:
-    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: zlecenie ``number`` Centrum przeniosło do niego od
-    ``previous`` („przejęte od”)."""
-
     day: date
     worker: Login
     number: OrderNumber
@@ -932,9 +907,6 @@ class TakenOver:
 
 @dataclass(frozen=True)
 class HandedOver:
-    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: jego zlecenie ``number`` Centrum przeniosło do
-    ``successor`` („przekazane”)."""
-
     day: date
     worker: Login
     number: OrderNumber
@@ -943,9 +915,6 @@ class HandedOver:
 
 @dataclass(frozen=True)
 class MovedFrom:
-    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: zlecenie ``number`` Centrum przeniosło tu z dnia
-    ``origin_day`` („przeniesione z”)."""
-
     day: date
     worker: Login
     number: OrderNumber
@@ -954,9 +923,6 @@ class MovedFrom:
 
 @dataclass(frozen=True)
 class MovedTo:
-    """Informacja dla taty przy Wykonawcy ``worker`` z dnia ``day``: jego zlecenie ``number`` Centrum przeniosło na
-    dzień ``target_day`` („przeniesione na”)."""
-
     day: date
     worker: Login
     number: OrderNumber

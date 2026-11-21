@@ -128,6 +128,9 @@ telefony na okres.
   maskę. Pole typowane spoza listy (kwota, data, wartość z zamkniętej listy w
   elemencie listy), które maski nie przyjmuje, zostaje puste albo odpada jego
   element listy z uwagą techniczną (#929), więc maska nie gubi całych Logów.
+  Reguły ilości z Listą Urządzeń i Legenda czynności stoją w Logach jako tekst
+  JSON swojego pliku Ustawień, a nie jako słownik: nazwy pól pliku reguł to
+  słowa narzędzia, a klucze słownika strażnik maskowałby jak dane.
 - **Liczba ma tekst, który pokazuje Excel** (#841): numer Orange albo
   telefon, który tata wpisał w komórkę bez innego tekstu, Excel trzyma jako
   liczbę, a liczba całkowita zapisana jako ułamek to jej cyfry. Format General

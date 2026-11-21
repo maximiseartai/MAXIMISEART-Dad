@@ -86,8 +86,6 @@ def _output(*arguments: str) -> str:
 
 
 def _last_run() -> str:
-    """Numer ostatniego runu ``ci.yml`` gałęzi, którą śledzi bieżąca (bez śledzonej: bieżącej)."""
-
     try:
         head = repo.git(ROOT, "rev-parse", "--symbolic-full-name", "HEAD").strip()
         if not head.startswith("refs/heads/"):
@@ -102,9 +100,6 @@ def _last_run() -> str:
 
 
 def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mutation]:
-    """Każda mutacja raz na każde zadanie pytest runu ``run`` (pusty: ``_last_run``), w którym stoi test zmieniony od
-    ``base``, z poleceniem ``pytest -n 1`` z plikami tego zadania."""
-
     try:
         tested = wplyw_zmiany.changed_since(ROOT, base)
     except subprocess.CalledProcessError as error:
@@ -143,7 +138,7 @@ BASE_LOAD = 3.0
 
 class _Probe(NamedTuple):
     tests: tuple[str, ...]  # pliki albo id testów sprzed zmiany, po odległości od mutacji
-    deferred: int  # pliki z testami sprzed zmiany, które szybko.plan odłożył ponad budżet
+    deferred: int
 
 
 def _key(node: str) -> tuple[str, str]:

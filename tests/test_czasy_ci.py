@@ -113,7 +113,6 @@ PLANNED_UNITS = [
     {"klucz": "krok:e2e", "s": 61.0, "status": "ok"},
     {"klucz": "krok:timing", "s": 35.0, "status": "ok"},
 ]
-# W zapisie zadania jednostka spoza junit ma ``testy`` puste.
 PLANNED_RECORDED = [{**unit, "testy": None} for unit in PLANNED_UNITS]
 PYTEST_UNITS = [*API_UNITS, *JUNIT_UNITS, *PLANNED_RECORDED]
 
@@ -554,8 +553,6 @@ def test_czasy_z_main_to_mediana_trzech_najnowszych_zielonych_runow_z_artefaktem
 
 def test_liczba_testow_pliku_z_main_to_najmniejsza_z_runow_suma_zadan_ostatniej_proby_a_bez_policzenia_jej_nie_ma(tmp_path: Path) -> None:
     def counted(run: int, *jobs: tuple[str, int, int]) -> dict[str, object]:
-        """Artefakt runu, w którym zadania (nazwa, próba, testy) policzyły testy pliku ``test_x.py``."""
-
         observed = [{"run": run, "proba": attempt, "zadanie": job, "s": 1.0, "status": "ok", "testy": tests} for job, attempt, tests in jobs]
         return {"wersja": 1, "runy": [{"run": run, "proba": 1, "sha": f"sha{run}", "zdarzenie": "push"}], "tory": {"windows-3.14": {"pytest:tests/test_x.py": observed}}}
 

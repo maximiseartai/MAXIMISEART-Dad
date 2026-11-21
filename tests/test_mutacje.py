@@ -40,8 +40,6 @@ IMPORT = ("-c", "import rozliczenia")
 
 
 def _appended(module: str, code: str) -> list[str]:
-    """Zmiana mutacji: ``code`` dopisany na końcu modułu."""
-
     source = (ROOT / module).read_text(encoding="utf-8")
     return [module, source, f"{source}{code}\n"]
 
@@ -810,8 +808,6 @@ def _branch_with_new_test(path: Path, old_at_base: str, old_in_branch: str, new:
 
 
 def _two_mutations(repo: Path, tmp_path: Path, selected: str, *arguments: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """Narzędzie w ``repo`` z „m1-ujemna” (0 → -1) i „m2-duza” (0 → 7) na poleceniu pytest z ``selected``."""
-
     plan = tmp_path / "mutacje.json"
     plan.write_text(json.dumps(TWO_MUTATIONS), encoding="utf-8")
     return _in_repository(repo, "--baza", "glowna", "--juz-lapie", *arguments, "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected, env=env or ONE_WORKER)
@@ -1217,8 +1213,6 @@ def _plan(path: Path, count: int) -> Path:
 def _in_repository(
     repo: Path, *arguments: str, env: dict[str, str] = WITHOUT_XDIST_WORKERS, merged: bool = False
 ) -> subprocess.CompletedProcess[str]:
-    """Narzędzie z ``tools/`` repozytorium testu; z ``merged`` stderr trafia do stdout, jak w logu CI."""
-
     return subprocess.run(
         [sys.executable, str(repo / "tools" / "mutacje.py"), *arguments],
         cwd=repo,

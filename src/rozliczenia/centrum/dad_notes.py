@@ -13,10 +13,12 @@ from rozliczenia.centrum.contract import dad_notes as dad_notes_contract
 from rozliczenia.centrum.contract import metrics as metrics_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum import refusal
+from rozliczenia.centrum.box_prefix import titled
 from rozliczenia.centrum.case_delivery import logs_line, note_post, shown_logs_line
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, Outbox
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.version import version_label
 from rozliczenia.centrum.work import CentrumWork
@@ -93,13 +95,14 @@ def send(
     commit: str | None,
     pinned: PinnedRun | None,
     forbidden: ForbiddenValues,
+    prefix: BoxPrefix | None,
 ) -> common_contract.SendState:
     issue = note_issue(request.title, request.body, commit, pinned, forbidden)
     run_id = None if pinned is None else pinned.run.run_id
     note = Case(NOTE, uuid.uuid4().hex, issue.title, commit, utc_now(), number=None, run_id=run_id)
     cases.add(note)
     logs_on_the_way = pinned is not None and pinned.logs is None
-    queued = outbox.post(note_post(note.id, issue.title, issue.body, logs_on_the_way=logs_on_the_way))
+    queued = outbox.post(note_post(note.id, titled(prefix, issue.title), issue.body, logs_on_the_way=logs_on_the_way))
     if not queued:
         cases.forget(NOTE, note.id)
         raise refusal.note_not_queued()
@@ -132,6 +135,7 @@ def dad_notes_router(
 
     @router.post("", operation_id="sendDadNote", responses=refusals)
     def send_note(request: dad_notes_contract.DadNoteRequest) -> common_contract.SendState:
-        return send(request, cases, outbox, box, commit(), _pinned(request.run_id, history, logs), forbidden)
+        pinned = _pinned(request.run_id, history, logs)
+        return send(request, cases, outbox, box, commit(), pinned, forbidden, work.box_prefix)
 
     return router
