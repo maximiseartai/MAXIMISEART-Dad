@@ -362,6 +362,7 @@ def test_w_zadaniu_czesci_podstawy_skilla_stoja_miedzy_jego_skryptami_po_kluczu(
 
 
 def test_ten_sam_stan_daje_ten_sam_plan_a_zadania_maja_rozne_nazwy() -> None:
+    # Ten sam stan to te same pliki w dowolnej kolejności; przy równych czasach plików o zadaniu decyduje klucz.
     first, again = _plan(_times(), [*FILES, LONG]), _plan(_times(), [LONG, *reversed(FILES)])
 
     assert first.digest == again.digest
