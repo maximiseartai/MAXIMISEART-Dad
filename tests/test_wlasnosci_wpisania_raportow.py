@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, fields, replace
@@ -114,6 +115,7 @@ PHRASES = (
     "przełożone na prośbę klienta",
 )
 TAGS = ("", "alfa", "beta", "gamma", "delta")
+"""Słowo na końcu opisu, które zwykle odróżnia opisy dwóch maili."""
 SUCCESSFUL_BY_MARK: dict[str, str | None] = {
     "tak": "tak",
     "Tak": "tak",
@@ -727,7 +729,7 @@ def _added_faults(
             sum(
                 bool(placed[found])
                 and all(
-                    at.key.day != order.day and at.key.worker == worker
+                    at.key.day != order.day
                     for at in placed[found]
                 )
                 and found not in register.moved_or_added_by_centrum
@@ -759,8 +761,8 @@ def _added_faults(
     faults = []
     if all(mistaken(sent) for sent in sources):
         faults.append(
-            f"N8 (GLOSSARY: Zlecenie dopisane z raportu, „Nie powstaje, gdy temat raportu jest pomyłką”; wyrocznia liczy tylko zlecenia "
-            f"nadawcy z innego dnia, przy których ADR 0029 i rdzeń dają ten sam wynik): Zlecenie dopisane z raportu z pomylonym tematem: {order}"
+            f"N8 (GLOSSARY: Zlecenie dopisane z raportu, „Nie powstaje, gdy temat raportu jest pomyłką”): "
+            f"Zlecenie dopisane z raportu z pomylonym tematem: {order}"
         )
     if all(corrected(sent) for sent in sources):
         faults.append(
@@ -1845,7 +1847,11 @@ def test_dzien_zlecen_dopisanych_z_raportu_nie_robi_pomylonego_tematu_kolejnego_
     )
 
     days = {line.number: line.day for line in register.lines if line.ident}
-    assert (days[int(THREE)], days[int(FOUR)]) == (SEVENTH, SEVENTH), register.lines
+    assert (days[int(THREE)], days[int(FOUR)]) == (SEVENTH, SEVENTH), (
+        "dzień Zlecenia dopisanego z raportu policzony do pomylonego tematu; tej reguły nie sprawdza "
+        "test_wlasnosc_kazde_klikniecie_…, bo jego wyrocznie mówią tylko, czego Centrum nie wolno, a nie, co ma zrobić",
+        register.lines,
+    )
 
 
 def test_dni_w_przykladach_leza_tam_gdzie_mowia_ich_nazwy() -> None:
@@ -1867,13 +1873,40 @@ def test_numery_w_przykladach_maja_postac_numeru_z_aplikacji_firmowej_a_literowk
     assert TYPO.isdigit() and len(TYPO) != APP_NUMBER_DIGITS
 
 
+FAREWELLS_ENDING_A_DESCRIPTION = (
+    "pozdrawiam",
+    "pozdrowienia",
+    "pozdr",
+    "pzdr",
+    "pozdro",
+    "serdecznie pozdrawiam",
+    "dziękuję",
+    "dzięki",
+    "z poważaniem",
+    "miłego dnia",
+    "miłego wieczoru",
+)
+
+
+def _folded(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text.casefold().replace("ł", "l"))
+    return " ".join("".join(letter for letter in decomposed if not unicodedata.combining(letter)).split())
+
+
 def test_opisy_wpisow_w_przykladach_nie_maja_cyfr_znaku_wpisu_pozegnania_ani_slowa_przed_numerem() -> None:
     words = {word.casefold() for phrase in PHRASES for word in phrase.split()}
     marks = {mark.casefold().strip(".,") for mark in SUCCESSFUL_BY_MARK if mark}
     prefixes = {prefix.strip().casefold() for prefix in ENTRY_PREFIXES if prefix}
+    farewells = [
+        (phrase, farewell)
+        for phrase in PHRASES
+        for farewell in FAREWELLS_ENDING_A_DESCRIPTION
+        if f" {_folded(farewell)} " in f" {_folded(phrase)} "
+    ]
 
     assert not any(character.isdigit() for phrase in PHRASES for character in phrase)
-    assert words.isdisjoint(marks | prefixes | {"pozdrawiam", "pozdrowienia", "dziękuję", "dziekuje", "dzięki"}), words
+    assert words.isdisjoint(marks | prefixes), words
+    assert farewells == []
 
 
 def test_opis_bez_slowa_na_koncu_bywa_w_przykladach_rowny_recznej_wartosci_taty() -> None:

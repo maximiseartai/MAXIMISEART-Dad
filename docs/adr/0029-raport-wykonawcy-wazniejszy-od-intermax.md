@@ -28,10 +28,11 @@ wklejeniem. Tata poprawia wtedy INTERMAX ręcznie według maila, bo mail mówi, 
 
 - **Mail wygrywa w Wykonawcy.** Wpis raportu ze zleceniem innego Wykonawcy to Przeniesienie zlecenia do nadawcy, nie
   błąd. Późniejszy Wpis tego samego zlecenia wygrywa także wtedy, gdy przysłał go inny Wykonawca.
-- **Mail wygrywa w dniu, chyba że pomylił się temat.** Jeden niezgodny Wpis w raporcie, czyli numer zlecenia tego
-  Wykonawcy z innego dnia, to Przeniesienie na dzień z tematu, bo w pracy coś wyszło. Co najmniej dwa niezgodne Wpisy
-  w jednym raporcie oznaczają pomylony temat: te Wpisy idą do zleceń z ich dnia w INTERMAX, bez Przeniesienia. Tata
-  dostaje informację w obu przypadkach.
+- **Mail wygrywa w dniu, chyba że pomylił się temat.** Jeden niezgodny Wpis w raporcie, czyli numer zlecenia z innego
+  dnia, także zlecenia innego Wykonawcy ([#1344](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1344) US 9),
+  to Przeniesienie na dzień z tematu, bo w pracy coś wyszło. Co najmniej dwa niezgodne Wpisy w jednym raporcie
+  oznaczają pomylony temat: te Wpisy idą do zleceń z ich dnia w INTERMAX, bez Przeniesienia. Tata dostaje informację w
+  obu przypadkach.
 - **Numer bez zlecenia to Zlecenie dopisane z raportu**, pod zleceniami nadawcy w dniu z tematu, z pięcioma kolumnami
   z raportu. Tylko numer w postaci numeru z aplikacji firmowej (8 cyfr, jak w INTERMAX), którego nie ma w żadnym
   wierszu, który Wpisanie raportów czyta: ani w zleceniach na jutro, ani w Surowym zleceniu, ani w wierszu, z którego
