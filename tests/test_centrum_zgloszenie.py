@@ -15,11 +15,14 @@ import pytest
 from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.keyed_box import KEY_CHECK_THREAD
+from rozliczenia.centrum.notifications import CHECK_INTERVAL_S
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.centrum.reports import REPORT_THREAD, SEARCH_DEADLINE_S
+from rozliczenia.centrum.scope import SCOPES, Scope, Workstation
 
 from tests.fixtures.centrum import (
+    ANDRZEJ_PREFIX_SCOPE,
     QUEUED_FOR_INTERNET,
     QUEUED_FOR_KEY,
     REPORT_KEY,
@@ -53,6 +56,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for, wait_for_value
 from atrapy.preparation import PERIOD
+import naprawia
 from atrapy.settlement import write_quantity_source
 
 
@@ -790,3 +794,81 @@ def test_dwa_klikniecia_w_trakcie_wysylki_daja_jedno_zgloszenie_a_centrum_odpowi
     assert (notifications["unread"], [item["state"] for item in notifications["items"]]) == (0, [QUEUED_FOR_INTERNET])
     assert answers == [{"state": "sent"}, {"state": "sent"}]
     assert len(box.sent) == 1
+
+
+STANOWISKA: Final[dict[str, Scope | None]] = {"tata": None, "andrzej": ANDRZEJ_PREFIX_SCOPE}
+STANOWISKA_UWAG: Final[dict[str, Scope]] = {"tata": SCOPES[Workstation.DAD], "andrzej": SCOPES[Workstation.ANDRZEJ]}
+
+
+def _uwaga_stanowiska(tmp_path: Path, stanowisko: str, box: FakeReportBox, title: str = "Nie działa przycisk") -> CentrumClient:
+    tool = ToolDirectory(tmp_path / stanowisko)
+    write_report_key(tool)
+    client = CentrumClient(centrum_app(tool, report_box=box, scope=STANOWISKA_UWAG[stanowisko]))
+    sent = client.post("/api/dad-notes", json={"title": title, "body": "Treść Uwagi."})
+    assert (sent.status_code, sent.json()) == (200, SENT)
+    return client
+
+
+def _tytuly_uwag(client: CentrumClient) -> list[str]:
+    items: list[dict[str, Any]] = client.get("/api/notifications").json()["items"]
+    return [item["title"] for item in items if item["kind"] == "uwaga"]
+
+
+def test_uwaga_ze_stanowiska_andrzeja_ma_w_skrzynce_prefiks_a_w_jego_powiadomieniach_tytul_bez_prefiksu(
+    tmp_path: Path,
+) -> None:
+    box = FakeReportBox()
+
+    tata, andrzej = _uwaga_stanowiska(tmp_path, "tata", box), _uwaga_stanowiska(tmp_path, "andrzej", box)
+
+    assert [(issue.label, issue.title) for issue in box.issues] == [
+        ("uwaga-taty", "Nie działa przycisk"),
+        ("uwaga-taty", "ANDRZEJ Nie działa przycisk"),
+    ]
+    assert (_tytuly_uwag(tata), _tytuly_uwag(andrzej)) == (["Nie działa przycisk"], ["Nie działa przycisk"])
+
+
+def test_uwaga_taty_od_prefiksu_andrzeja_ma_tytul_jak_uwaga_andrzeja_a_narzedzie_maksa_zna_stanowisko_kazdej_ze_znaku_w_tresci(
+    tmp_path: Path,
+) -> None:
+    box = FakeReportBox()
+
+    _uwaga_stanowiska(tmp_path, "tata", box, "ANDRZEJ nie może otworzyć INTERMAX")
+    _uwaga_stanowiska(tmp_path, "andrzej", box, "nie może otworzyć INTERMAX")
+
+    assert [(issue.title, issue.body, naprawia.workstation_of(issue.text)) for issue in box.issues] == [
+        ("ANDRZEJ nie może otworzyć INTERMAX", f"Treść Uwagi.\n\nUwaga ogólna · wersja narzędzia {TOOL_COMMIT[:7]}", "Stanowisko taty"),
+        ("ANDRZEJ nie może otworzyć INTERMAX", f"Treść Uwagi.\n\nUwaga ogólna · wersja narzędzia {TOOL_COMMIT[:7]}", "Stanowisko Andrzeja"),
+    ]
+
+
+def _zgloszenie_stanowiska(tmp_path: Path, stanowisko: str, box: FakeReportBox) -> SettlingCentrum:
+    centrum = settling_centrum(tmp_path / stanowisko, surroundings=Surroundings(report_box=box, scope=STANOWISKA[stanowisko]))
+    write_report_key(centrum.tool)
+    run_id = stopped_for_maks(centrum)
+    assert centrum.client.post(f"/api/runs/{run_id}/diagnosis").json()["next_action"] == "report"
+    sent = centrum.client.post(f"/api/runs/{run_id}/report")
+    assert (sent.status_code, sent.json()) == (200, SENT)
+    return centrum
+
+
+def _stany_zgloszen(centrum: SettlingCentrum) -> list[dict[str, Any]]:
+    centrum.surroundings.clock.advance(CHECK_INTERVAL_S)
+    items: list[dict[str, Any]] = centrum.client.get("/api/notifications").json()["items"]
+    return [item["state"] for item in items if item["kind"] == "zgloszenie"]
+
+
+@pytest.mark.parametrize("kolejnosc", [("tata", "andrzej"), ("andrzej", "tata")], ids=["najpierw-tata", "najpierw-andrzej"])
+def test_zgloszenie_tego_samego_problemu_z_drugiego_stanowiska_to_jego_issue_a_powiadomienia_mowia_tylko_o_jego_sprawie(
+    tmp_path: Path, kolejnosc: tuple[str, str]
+) -> None:
+    box = FakeReportBox()
+    centra = {stanowisko: _zgloszenie_stanowiska(tmp_path, stanowisko, box) for stanowisko in kolejnosc}
+    numery = {"andrzej" if issue.title.startswith("ANDRZEJ ") else "tata": issue.number for issue in box.sent}
+
+    box.close(numery[kolejnosc[0]])
+
+    stany = {stanowisko: _stany_zgloszen(centrum) for stanowisko, centrum in centra.items()}
+    tytuly = {issue.title.removeprefix("ANDRZEJ ") for issue in box.sent}
+    assert (len(box.sent), len(tytuly), [issue.comments for issue in box.sent]) == (2, 1, [[], []])
+    assert stany == {kolejnosc[0]: [RESOLVED], kolejnosc[1]: [SENT]}

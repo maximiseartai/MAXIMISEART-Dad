@@ -157,7 +157,7 @@ from rozliczenia.client_data import guarded
 
 
 def wysylka(komorka: str, log: CentrumLog, zegar: Clock) -> str:
-    return guarded(CentrumWork(Path("config"), log, zegar, print).forbidden, komorka, "treść").text
+    return guarded(CentrumWork(Path("config"), log, zegar, print, box_prefix=None).forbidden, komorka, "treść").text
 """,
         'Missing positional argument "forbidden"',
     ),

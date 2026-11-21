@@ -24,6 +24,9 @@ from typing import cast
 import pytest
 import yaml
 
+from rozliczenia.centrum.box_prefix import stamped
+from rozliczenia.centrum.report_box import REPOSITORY as REPORT_BOX
+from rozliczenia.centrum.scope import BoxPrefix
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
@@ -119,6 +122,11 @@ elif arguments == ["api", "markdown", "--input", "-"]:
     elif html.startswith("gh: "):
         sys.exit(html)
     print(html, end="")
+elif arguments[0] == "api" and arguments[1].startswith("repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/"):
+    number = arguments[1].rpartition("/")[2]
+    if f"skrzynka/{number}" not in issues:
+        sys.exit("gh: Not Found (HTTP 404)")
+    print(issues[f"skrzynka/{number}"])
 elif arguments[0] == "api" and arguments[1].startswith(f"repos/{REPO}/issues/"):
     number = arguments[1].rpartition("/")[2]
     if issues.get(number) == "zawiesza":
@@ -362,6 +370,10 @@ class MergeGitHub(FakeGitHub):
         więc narzędzie bez limitu ``gh`` by je zamknęło."""
 
         self.issues.update(dict.fromkeys(map(str, numbers), answer))
+        self._save()
+
+    def box_issue(self, number: int, title: str, body: str | None) -> None:
+        self.issues[f"skrzynka/{number}"] = json.dumps({"number": number, "state": "open", "title": title, "body": body})
         self._save()
 
     def merges(self) -> list[list[str]]:
@@ -1404,6 +1416,61 @@ def test_po_merge_zamyka_otwarte_issues_z_naprawia_z_komentarzem_a_bez_merge_tyl
     assert _last_line(merged).endswith(f"jako {merge_commit[:7]} (baza {github.start[:7]}) | zamknięte: #3, #4 | sprzątanie: SPRZĄTANIE OK | 0 usuniętych")
     comment = f"Naprawione przez #1, scalone jako {merge_commit}."
     assert github.closed() == [["issue", "close", str(n), "--repo", opisy_pr.REPO, "--comment", comment] for n in (3, 4)]
+
+
+_ZNAK_WYSYLKI = "<!-- wysyłka uwaga-taty d12c34b5 część 1 wersja 20261120T234532657484Z-0001 -->"
+_UWAGA_TATY = f"Excel myśli minutę.\n\nUwaga ogólna · wersja narzędzia 3c1d0a9\n{_ZNAK_WYSYLKI}"
+
+
+@pytest.mark.parametrize(
+    ("tytul", "tresc", "linia"),
+    [
+        pytest.param("BRAK_WZORCA: Nie znaleziono wzorca.", _UWAGA_TATY, "#12 (Stanowisko taty)", id="sprawa-taty"),
+        pytest.param(
+            "ANDRZEJ nie może otworzyć INTERMAX", _UWAGA_TATY, "#12 (Stanowisko taty)", id="uwaga-taty-z-tytulem-od-prefiksu-andrzeja"
+        ),
+        pytest.param(
+            "ANDRZEJ Logi Uruchomienia 08_14_09_2026",
+            stamped(BoxPrefix.ANDRZEJ, _UWAGA_TATY),
+            "#12 (Stanowisko Andrzeja)",
+            id="sprawa-andrzeja-ze-znakiem-stanowiska",
+        ),
+        pytest.param(
+            "Nie działa przycisk",
+            stamped(BoxPrefix.ANDRZEJ, _UWAGA_TATY).replace("\n", "\r\n") + "\r\n",
+            "#12 (Stanowisko Andrzeja)",
+            id="sprawa-andrzeja-poprawiona-na-githubie-z-crlf",
+        ),
+        pytest.param(
+            "Nie działa przycisk",
+            f"{stamped(BoxPrefix.ANDRZEJ, 'Excel myśli minutę.')}\n\nUwaga ogólna · wersja narzędzia 3c1d0a9\n{_ZNAK_WYSYLKI}",
+            "#12 (Stanowisko taty)",
+            id="znak-stanowiska-w-tekscie-taty-przed-znakiem-wysylki",
+        ),
+        pytest.param("Nie działa przycisk", None, None, id="sprawa-bez-tresci"),
+        pytest.param(None, None, None, id="sprawa-ktorej-gh-nie-podaje"),
+    ],
+)
+def test_sprawa_skrzynki_z_naprawia_zostaje_otwarta_a_linia_mowi_ze_znaku_stanowiska_w_tresci_skad_przyszla(
+    tmp_path: Path, tytul: str | None, tresc: str | None, linia: str | None
+) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.open_issues(3)
+    if tytul is not None:
+        github.box_issue(12, tytul, tresc)
+    github.update(1, body=opisy_pr.SCALENIE["skrzynka"])
+    github.comment(1, PASS.format(head=head))
+
+    checked = github.run("1", "--bez-merge")
+    merged = github.run("1")
+
+    box = "UWAGA: nie odczytano #12 ze Skrzynki Zgłoszeń" if linia is None else f"Skrzynka Zgłoszeń zostaje otwarta: {linia}"
+    assert _last_line(checked).endswith(f"bez merge'a (--bez-merge) | po merge'u zamknie: #3 | {box}"), checked.stdout
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert f" | zamknięte: #3 | {box} | sprzątanie: " in _last_line(merged)
+    assert [call[2] for call in github.closed()] == ["3"]
+    assert naprawia.REPORT_BOX == REPORT_BOX
 
 
 def test_merge_do_galezi_innej_niz_domyslna_niczego_nie_zamyka_ani_nie_renderuje_opisu(tmp_path: Path) -> None:

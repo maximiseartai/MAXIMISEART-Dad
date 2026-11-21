@@ -28,7 +28,8 @@ from rozliczenia.centrum.report_box import (
     CommentOutcome,
     CommentsOutcome,
     Issue,
-    IssuesOutcome,
+    ListedIssue,
+    ListOutcome,
     Label,
     OpenArchiveOutcome,
     RemoveOutcome,
@@ -126,9 +127,9 @@ class SharedBox:
     def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
         raise AssertionError("stare Centrum w tych testach wysyła tylko Kontrole ilości, bez plików do Archiwum")
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         return tuple(
-            Issue(int(path.stem), issue["body"])
+            ListedIssue(Issue(int(path.stem), issue["body"]), issue["title"])
             for path in sorted(self._directory.glob("*.json"), key=lambda path: int(path.stem))
             if (issue := json.loads(path.read_text(encoding="utf-8")))["label"] == label
         )
