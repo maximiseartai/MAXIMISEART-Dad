@@ -682,16 +682,22 @@ TRESC_WYSYLKI: Final = "Treść Uwagi.\n\nUwaga ogólna · wersja narzędzia 3c1
 
 
 @pytest.mark.parametrize(
-    ("prefix", "wyslana"),
+    ("prefix", "opozniona_lista", "wyslana"),
     [
-        pytest.param(None, TRESC_WYSYLKI, id="stanowisko-taty-bez-zmian"),
-        pytest.param(BoxPrefix.ANDRZEJ, f"{TRESC_WYSYLKI}\n<!-- Stanowisko Andrzeja -->", id="stanowisko-andrzeja-ze-znakiem-na-koncu"),
+        pytest.param(None, False, TRESC_WYSYLKI, id="stanowisko-taty-bez-zmian"),
+        pytest.param(BoxPrefix.ANDRZEJ, False, f"{TRESC_WYSYLKI}\n<!-- Stanowisko Andrzeja -->", id="stanowisko-andrzeja-ze-znakiem-na-koncu"),
+        pytest.param(
+            BoxPrefix.ANDRZEJ,
+            True,
+            f"{TRESC_WYSYLKI}\n<!-- Stanowisko Andrzeja -->",
+            id="issue-andrzeja-spoza-opoznionej-listy-pamietane-ze-znakiem",
+        ),
     ],
 )
 def test_zakladane_issue_ma_znak_stanowiska_w_ostatniej_linii_tresci_tylko_ze_stanowiska_z_prefiksem(
-    prefix: BoxPrefix | None, wyslana: str
+    prefix: BoxPrefix | None, opozniona_lista: bool, wyslana: str
 ) -> None:
-    box = FakeReportBox()
+    box = FakeReportBox(list_lag=opozniona_lista)
     keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), prefix=prefix)
 
     opened = keyed.open_issue("uwaga-taty", "Nie działa przycisk", TRESC_WYSYLKI)
