@@ -28,6 +28,7 @@ from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
+from rozliczenia.centrum.comment_versions import OwnLogs, post_of
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, empty_memory
@@ -36,6 +37,7 @@ from rozliczenia.centrum.run_logs import (
     Environment,
     Explanation,
     LoggedActivityLegend,
+    LoggedCheck,
     LoggedDiagnosis,
     LoggedInterruption,
     LoggedMessage,
@@ -829,6 +831,31 @@ def test_diagnoza_dopisuje_sie_do_logow_sprzed_maski_wiec_wartosc_z_pliku_taty_m
 
     assert with_diagnosis is not None
     assert with_diagnosis.record.messages[0].where == "Komórka „[adres]”."
+
+
+def test_diagnoza_przechodzi_przez_straznika_razem_z_logami_wiec_plik_logow_i_skrzynka_maja_maske_wartosci_z_pliku_taty() -> None:
+    forbidden = empty_memory()
+    forbidden.remember_value(ForbiddenColumn.ADDRESS, "Kwiatowa 7")
+    cell = "Komórka „Kwiatowa 7”."
+    diagnosis = LoggedDiagnosis(
+        diagnosed_at=SECOND,
+        explanation=Explanation(code="ZLE_SKUTECZNE", what=cell, where=cell, action=cell),
+        next_action="report",
+        checks=[LoggedCheck(label=cell, state="failed", detail=cell, code="ZLE_SKUTECZNE")],
+    )
+
+    with_diagnosis = guard_logs(interrupted_logs(start()), forbidden).with_diagnosis(diagnosis, forbidden)
+
+    assert with_diagnosis is not None
+    post = post_of(OwnLogs(with_diagnosis))
+    assert post.archive is not None
+    sent = [with_diagnosis.text, post.archive.text, *post.parts]
+    assert [text for text in sent if "Kwiatowa 7" in text] == []
+    logged = with_diagnosis.record.diagnosis
+    assert logged is not None
+    explanation, [check] = logged.explanation, logged.checks
+    masked = "Komórka „[adres]”."
+    assert (explanation.what, explanation.where, explanation.action, check.label, check.detail) == (masked,) * 5
 
 
 def test_logi_kazdego_wydania_przechodza_dzisiejszy_schemat_logow() -> None:
