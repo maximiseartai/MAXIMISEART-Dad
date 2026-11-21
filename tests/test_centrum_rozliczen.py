@@ -663,6 +663,9 @@ def test_zadanie_z_obcym_naglowkiem_host_jest_odrzucone(tmp_path: Path) -> None:
     app = centrum(tmp_path)
 
     foreign_domain_remapped_to_localhost_in_dns = {"Host": "zly.example:47811", "Origin": "http://zly.example:47811"}
+    assert foreign_domain_remapped_to_localhost_in_dns["Origin"] == f"http://{foreign_domain_remapped_to_localhost_in_dns['Host']}", (
+        "Origin zgadza się z obcym Host, więc tylko sprawdzenie Host odrzuca zadanie zmieniające stan"
+    )
 
     response = app.client.get("/api/health", headers=foreign_domain_remapped_to_localhost_in_dns)
     allowed = _passed_through(app, foreign_domain_remapped_to_localhost_in_dns)
@@ -754,7 +757,7 @@ def test_okno_wyboru_rejestru_zlecen_pokazuje_tez_rejestr_pod_inna_nazwa(tmp_pat
     chosen = app.client.post("/api/settings/register/choose").json()["settings"]["order_register"]
 
     [filters] = app.platform.file_filters
-    # ZEWNĘTRZNE: okno wyboru pliku Windows dopasowuje filtr typu pliku bez wielkości liter (Microsoft Learn, COMDLG_FILTERSPEC)
+    # ZEWNĘTRZNE: Windows nie rozróżnia wielkości liter w nazwach plików, także w rozszerzeniu (Microsoft Learn, Naming Files, Paths, and Namespaces)
     shown_by = {
         name: [label for label, pattern in filters if fnmatchcase(name.casefold(), pattern.casefold())]
         for name in ("ZLECENIA INTERMAX OD 08_11_2021.xlsx", register.name)
