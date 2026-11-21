@@ -1,13 +1,13 @@
-"""Pomiar u taty przez HTTP API Centrum: czas serwera w ``Server-Timing`` i pomiary widoków w dzienniku Centrum."""
-
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 import re
 
 import pytest
 
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
+from rozliczenia.centrum.log import FOR_LOGS_FILE, MAX_VIEW_TIMINGS, CentrumLog
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import PeriodFolder
 from tests.fixtures.centrum import Centrum, centrum, view_timing
@@ -43,8 +43,6 @@ def test_kazda_odpowiedz_api_takze_odmowa_i_nieoczekiwany_wyjatek_podaje_sam_cza
 
 
 def log_entries(app: Centrum) -> list[str]:
-    """Wpisy dziennika Centrum bez znacznika czasu."""
-
     if not app.log_path.exists():
         return []
     return [line.split(" ", 1)[1] for line in app.log_path.read_text(encoding="utf-8").splitlines()]
@@ -167,3 +165,70 @@ def test_nieudany_zapis_dziennika_nie_zmienia_odpowiedzi_innych_zapytan(tmp_path
     assert timing.status_code == 204
     assert (settings.status_code, settings.json()["theme"]) == (200, "dark")
     assert (theme.status_code, theme.json()["settings"]["theme"]) == (200, "light")
+
+
+_FOLDER_TEXT = r"C:\Users\Tata\OneDrive\INEA\22_28_09_2026 Kowalski\ZBIORCZY.xlsx"
+_KEY_TEXT = "github_pat_11AAAAAAA0wymyslony"
+_FAILURE_ENTRIES: dict[str, Callable[[CentrumLog, OSError], None]] = {
+    "nieoczekiwany-wyjatek": lambda log, failure: log.unexpected_failure(failure, where="/api/periods"),
+    "aktualizacja-wynik-zostaje": CentrumLog.update_result_kept,
+    "dzialania-taty-niedostepne": CentrumLog.dad_actions_unavailable,
+    "dziennik-wyceny-niedostepny": lambda log, failure: log.pricing_journal_unavailable(failure, where="wpis"),
+    "skrzynka-zapisy-niedostepne": CentrumLog.box_notes_unavailable,
+}
+
+
+@pytest.mark.parametrize("event", _FAILURE_ENTRIES)
+def test_z_wyjatku_do_dziennika_trafia_tylko_nazwa_typu_bez_sciezki_folderu_okresow_i_klucza(
+    tmp_path: Path, event: str
+) -> None:
+    lines: list[str] = []
+
+    _FAILURE_ENTRIES[event](
+        CentrumLog(tmp_path / "centrum.log", append=lines.append),
+        PermissionError(13, f"Odmowa dostępu z kluczem {_KEY_TEXT}", _FOLDER_TEXT),
+    )
+
+    [line] = lines
+    assert line.split(" ")[1:3] == [event, "typ=PermissionError"]
+    assert [secret for secret in ("Odmowa", "Tata", "Kowalski", _KEY_TEXT) if secret in line] == []
+
+
+def test_po_limicie_pomiarow_widokow_dziennik_dalej_zapisuje_prace_serwera(tmp_path: Path) -> None:
+    lines: list[str] = []
+    log = CentrumLog(tmp_path / "centrum.log", append=lines.append)
+
+    for _ in range(MAX_VIEW_TIMINGS + 1):
+        log.view_timed(view="przejscie-w-menu", page="okresy", ready_ms=1, fcp_ms=None, skeleton_ms=0, requests=[])
+    log.stopped(port=47811)
+
+    assert [line.split(" ")[1] for line in lines] == ["pomiar"] * MAX_VIEW_TIMINGS + ["stop"]
+
+
+def test_wynik_aktualizacji_zapisany_przed_restartem_centrum_nie_trafia_do_dziennika_drugi_raz(tmp_path: Path) -> None:
+    log = CentrumLog(tmp_path / "centrum.log")
+    log.started(port=47811, version="v1", console=False)
+    log.update_started(before="a1")
+    log.update_finished(result="AKTUALIZACJA_NIEUDANA", before="a1", after=None, installed=False)
+    log.started(port=47811, version="v1", console=False)
+
+    assert log.update_awaits(result="AKTUALIZACJA_NIEUDANA", before="a1", after=None) is False
+
+
+def test_wpisy_dla_logow_ktorych_nie_da_sie_oproznic_dostaja_tez_nastepne_logi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = CentrumLog(tmp_path / "centrum.log")
+    log.stopped(port=47811)
+    write_text = Path.write_text
+
+    def for_logs_locked(self: Path, data: str, encoding: str | None = None) -> int:
+        if self.name == FOR_LOGS_FILE:
+            raise PermissionError(13, "Odmowa dostępu", str(self))
+        return write_text(self, data, encoding=encoding)
+
+    monkeypatch.setattr(Path, "write_text", for_logs_locked)
+
+    takes = [log.take_for_logs() for _ in range(2)]
+
+    assert [([entry.split(" ")[1] for entry in entries], omitted) for entries, omitted in takes] == [(["stop"], 0)] * 2

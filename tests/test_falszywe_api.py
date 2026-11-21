@@ -168,7 +168,6 @@ def test_falszywe_api_odpowiada_strumieniem_zdarzen_jak_messages_api(calls: Path
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
 def test_claude_po_limicie_czasu_ginie_bez_kodu_wyjscia(calls: Path, tmp_path: Path) -> None:
-    # Atrapa po zapytaniu żyje jeszcze 60 s, a limit to 1 s.
     ran = _claude(calls, tmp_path, threading.Event(), timeout=1, ATRAPA_DO=str(time.time() + 60))
 
     assert ran == falszywe_api.Ran(None, True)

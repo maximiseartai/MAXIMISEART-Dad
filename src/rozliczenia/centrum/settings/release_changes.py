@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Final
 
+from rozliczenia.centrum.scope import CentrumFunction
 from rozliczenia.centrum.settings.activity_legend import LEGEND, not_counted_in_fault
 from rozliczenia.centrum.settings.files import Good
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
@@ -32,7 +33,9 @@ def periods_directory_from_layout_root(inputs: ReleaseInputs[FolderSettings]) ->
 
 RELEASE_CHANGES: Final[tuple[ReleaseChange[Any], ...]] = (
     workers_migration.CHANGE,
-    ReleaseChange("2026-11-folder-okresow-od-zalacznikow", FOLDERS, periods_directory_from_layout_root),
+    ReleaseChange(
+        "2026-11-folder-okresow-od-zalacznikow", FOLDERS, periods_directory_from_layout_root, part=CentrumFunction.PERIODS
+    ),
     reminders_migration.CHANGE,
     ReleaseChange("2026-11-rt2-bez-usterek", LEGEND, not_counted_in_fault("rt2")),
 )

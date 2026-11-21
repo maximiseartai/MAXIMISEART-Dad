@@ -109,7 +109,6 @@ MOMENT = "<CHWILA>"
 FOLDER = "<FOLDER>"
 _MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}[:-]\d{2}[:-]\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
 _WRITE_TIME = "docProps/core.xml"
-# Tyle różnych pól JSON nazywa linia scenariusza, a resztę liczy.
 _FIELDS = 5
 
 Process = Literal["settlement", "preparation", "intermax"]
@@ -128,14 +127,9 @@ class Scenario:
 
 @dataclass(frozen=True)
 class Outcome:
-    """Uruchomienie jednej strony: kod wyjścia, zamaskowany JSON (``None``, gdy stdout nie jest JSON) i folder."""
-
     code: int
     result: object
     folder: Path
-
-
-# --- scenariusze -----------------------------------------------------------------------------------------------
 
 
 def _settlement(change: Callable[[Path], None] | None = None, *, preview: bool = False, unmapped: bool = False) -> Callable[[Path], list[str | Path]]:
@@ -291,9 +285,6 @@ SCENARIOS: tuple[Scenario, ...] = (
 )
 
 
-# --- maskowanie i porównanie -----------------------------------------------------------------------------------
-
-
 def masked(value: object, folders: Sequence[Path]) -> object:
     """``folders`` od najgłębszego: folder scenariusza przed folderem strony, który go zawiera."""
 
@@ -329,8 +320,6 @@ def json_differences(base: object, head: object, path: str = "") -> list[str]:
 
 
 def files(folder: Path) -> dict[str, Path]:
-    """Pliki folderu według nazwy z zamaskowaną chwilą; drugi i dalszy plik tej samej nazwy dostaje numer ``(2)``."""
-
     named: dict[str, list[Path]] = {}
     for path in sorted(folder.rglob("*")):
         if path.is_file():
@@ -378,8 +367,6 @@ def _label(outcome: Outcome) -> str:
 
 
 def compare(name: str, base: Outcome, head: Outcome) -> tuple[str, bool]:
-    """Linia scenariusza i czy obie strony dały to samo."""
-
     found = [f"kod {base.code}→{head.code}"] if base.code != head.code else []
     if base.result is None or head.result is None:
         if base.result != head.result:
@@ -393,9 +380,6 @@ def compare(name: str, base: Outcome, head: Outcome) -> tuple[str, bool]:
     if found:
         return f"{name} | RÓŻNICA | {'; '.join(found)}", False
     return f"{name} | TAK SAMO | {_label(base)}", True
-
-
-# --- uruchomienie ----------------------------------------------------------------------------------------------
 
 
 def _relative(argument: str | Path, folder: Path) -> str:
@@ -454,8 +438,6 @@ def _lone_string(node: ast.AST) -> bool:
 
 
 def syntax(source: bytes) -> str:
-    """Drzewo składni bajtów ``source`` bez instrukcji, które są samym napisem, i bez pozycji w źródle."""
-
     tree = ast.parse(source)
     for node in ast.walk(tree):
         for field, value in ast.iter_fields(node):
@@ -465,8 +447,6 @@ def syntax(source: bytes) -> str:
 
 
 def _source(repository: Path, revision: str | None, path: str) -> bytes | None:
-    """Bajty pliku w commicie ``revision``, a bez niego w drzewie roboczym; ``None``, gdy pliku tam nie ma."""
-
     if revision is None:
         file = repository / path
         return file.read_bytes() if file.is_file() else None

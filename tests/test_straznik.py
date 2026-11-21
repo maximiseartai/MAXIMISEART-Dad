@@ -104,8 +104,6 @@ class Pull:
 
 
 def _pull(tmp_path: Path, failed: dict[str, str], head: dict[str, str]) -> Pull:
-    """``main`` z ``BASE``, commit werdyktu ``FAIL`` z plikami ``failed`` i HEAD z ``head`` na nim."""
-
     root = tmp_path / "repo"
     files = {"pyproject.toml": PYPROJECT.format(mypy="", ruff="", banned=""), **BASE}
     for name, text in files.items():

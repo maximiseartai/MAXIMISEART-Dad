@@ -11582,37 +11582,51 @@
             }
           },
           "periods_directory": {
-            "oneOf": [
+            "anyOf": [
               {
-                "$ref": "#/components/schemas/NotSetPath"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NotSetPath"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MissingPath"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InaccessiblePath"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UnreadablePath"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadyPath"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "state",
+                  "mapping": {
+                    "inaccessible": "#/components/schemas/InaccessiblePath",
+                    "missing": "#/components/schemas/MissingPath",
+                    "not_set": "#/components/schemas/NotSetPath",
+                    "ready": "#/components/schemas/ReadyPath",
+                    "unreadable": "#/components/schemas/UnreadablePath"
+                  }
+                }
               },
               {
-                "$ref": "#/components/schemas/MissingPath"
-              },
-              {
-                "$ref": "#/components/schemas/InaccessiblePath"
-              },
-              {
-                "$ref": "#/components/schemas/UnreadablePath"
-              },
-              {
-                "$ref": "#/components/schemas/ReadyPath"
+                "type": "null"
               }
             ],
-            "title": "Periods Directory",
-            "discriminator": {
-              "propertyName": "state",
-              "mapping": {
-                "inaccessible": "#/components/schemas/InaccessiblePath",
-                "missing": "#/components/schemas/MissingPath",
-                "not_set": "#/components/schemas/NotSetPath",
-                "ready": "#/components/schemas/ReadyPath",
-                "unreadable": "#/components/schemas/UnreadablePath"
-              }
-            }
+            "title": "Periods Directory"
           },
           "periods_all_years": {
-            "type": "boolean",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Periods All Years"
           },
           "theme": {
@@ -11717,7 +11731,7 @@
           "settlement_mail"
         ],
         "title": "Settings",
-        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy pliku Folderów bez odczytu ``theme`` to ``None``:\nstrona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``). Pole Funkcji spoza Zakresu tego Centrum (``workers``,\n``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``) to ``None``."
+        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy pliku Folderów bez odczytu ``theme`` to ``None``:\nstrona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``). Pole Funkcji spoza Zakresu tego Centrum (``workers``,\n``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``, ``periods_directory`` z\n``periods_all_years``) to ``None``."
       },
       "SettingsHistory": {
         "properties": {

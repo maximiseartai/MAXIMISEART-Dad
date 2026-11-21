@@ -28,7 +28,7 @@ import repo
 from silnik_mutacji import Mutation, from_json
 
 HEADING = re.compile(r"Mutacja (W\d+) r(\d+)")
-TESTS = "tests"  # katalog testów: zmiana w nim nie jest złą postacią kodu, którą test ma złapać
+TESTS = "tests"
 
 
 @dataclass(frozen=True)
@@ -44,10 +44,6 @@ class Block:
 
 
 def mutations(block: Block, command: tuple[str, ...]) -> list[Mutation]:
-    """Mutacje bloku z poleceniem ``command``, co najmniej jedna, żadna w ``tests/`` w żadnej pisowni, którą macOS scala
-    z ``tests`` (``repo.folded``); tekst innej postaci niż plik mutacji z samymi ``nazwa`` i ``zmiany`` to
-    ``ValueError`` z przyczyną."""
-
     found = from_json(block.text, command, f"blok ### {block}")
     if not found:
         raise ValueError(f"blok ### {block}: lista bez wpisu, a dowód potrzebuje co najmniej jednej mutacji")

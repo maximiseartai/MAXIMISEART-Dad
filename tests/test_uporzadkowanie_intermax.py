@@ -1,6 +1,3 @@
-"""Uporządkowanie INTERMAX przez rdzeń Uruchomienia procesu: wynikowy INTERMAX z dysku, Kopie INTERMAX, Zatrzymania i
-Historia adresu z Bazy zleceń."""
-
 from __future__ import annotations
 
 import errno
@@ -121,9 +118,6 @@ def _register(tmp_path: Path, intermax: Intermax | None = None) -> tuple[Path, L
 
 
 def _expected(order: Order, entry: tuple[str, str] | None = None) -> tuple[object, ...]:
-    """Wartości A:AK zlecenia ``order`` w uporządkowanym dniu, puste za ``UWAGI``; ``entry``: Wpis (``URZĄDZENIA``,
-    ``CZYNNOŚCI``)."""
-
     values: dict[int, object] = {column: value for column, value in order.values().items() if column <= LAST}
     if entry is not None:
         values[DEVICES], values[ACTIVITIES] = entry
@@ -214,8 +208,6 @@ def _row_xml(path: Path, number: int) -> bytes:
 
 
 def test_rekord_metryk_uporzadkowania_liczy_zlecenia_i_wykonawcow_dnia(tmp_path: Path) -> None:
-    """Wklejenie ``Intermax()`` ma 6 zleceń i 3 różnych Wykonawców."""
-
     _register(tmp_path)
 
     outcome = _run(tmp_path)
@@ -277,8 +269,6 @@ def _long_register(tmp_path: Path, raw: Sequence[Order] = Intermax().raw) -> tup
 
 
 def test_dzien_pod_dlugim_arkuszem_staje_w_segmentach_a_wiersze_nad_nim_zostaja_bajt_w_bajt(tmp_path: Path) -> None:
-    """Długie wklejenie pod tygodniem uporządkowanych dni: każde zlecenie staje w swoim segmencie i po godzinie."""
-
     path, layout = _long_register(tmp_path, _LONG_PASTE)
     before = parts(path)[_SHEET]
 
@@ -351,8 +341,6 @@ def test_komentarz_w_starszych_dniach_nad_czytanym_dolem_arkusza_zostaje_bajt_w_
 
 
 def test_wiersz_nie_po_kolei_w_czytanym_dole_arkusza_to_zatrzymanie_do_maksa_bez_zapisu(tmp_path: Path) -> None:
-    """Wiersz w tygodniu przed dzisiejszym dniem z numerem większym niż wiersze pod nim."""
-
     path, layout = _long_register(tmp_path)
     moved = b'<row r="%d"' % (layout.last_ordered - 3)
     rewrite_parts(path, lambda name, data: data.replace(moved, b'<row r="%d"' % (layout.last_ordered + 500), 1) if name == _SHEET else data)
@@ -410,8 +398,6 @@ _GREEN, _ORANGE, _DARK_BLUE, _LIGHT_BLUE, _PINK = "FF99FF66", "FFFFC000", "FF69D
 
 
 def _fills(sheet: Worksheet, row: int) -> dict[int, str | None]:
-    """Wypełnienie RGB każdej komórki kolumn zlecenia wiersza ``row``; ``None``: bez wypełnienia."""
-
     return {
         column: cell.fill.fgColor.rgb if (cell := sheet.cell(row, column)).fill.fill_type == "solid" else None
         for column in range(FIRST, LAST + 1)
@@ -1248,9 +1234,6 @@ def test_wiersz_z_sama_wartoscia_pod_wklejeniem_to_zlecenie_bez_daty_z_wierszem_
 def test_atrapa_stawia_pusty_wiersz_taty_nad_wskazanym_zleceniem_wklejenia_i_ramke_piec_wierszy_pod_wklejeniem(
     tmp_path: Path,
 ) -> None:
-    """Atrapa INTERMAX: pusty wiersz taty stoi we wklejeniu nad zleceniem z ``Intermax.blank_in_paste``, a przygotowane
-    puste wiersze taty z ramką (``Intermax.grid``) sięgają 5 wierszy pod ostatni wiersz wklejenia."""
-
     path, layout = _register(tmp_path, Intermax(blank_in_paste=frozenset({2})))
     first, last = layout.first_raw, layout.first_raw + len(layout.raw)
     sheet = load_workbook(path)[ORDER_SHEET]
@@ -2261,7 +2244,6 @@ def test_wiersz_wklejenia_pozostawiony_na_miejscu_to_niezgodnosc_zapisu(tmp_path
 
 _LOGIN = "jan.nowak"
 P = LAST + 1
-"""Pierwsza kolumna za ``UWAGI``: tu staje pierwszy blok Historii adresu."""
 GRAY, RED = "FFD9D9D9", "FFFF0000"
 
 
@@ -2497,7 +2479,6 @@ ORDER_BASE: Final = (
 ORDERED_HISTORY: Final = tuple(
     _ORDER_VISITS[name] for name in ("2025", "2024", "2021", "2019", "bez daty w najstarszym", "data tekstem")
 )
-"""Historia adresu ``_TOPOLOWA``: od najnowszej daty realizacji, a wiersze bez daty na końcu w kolejności arkuszy."""
 
 
 @pytest.fixture(scope="module")
@@ -2655,7 +2636,6 @@ BASE_PROBLEMS: Final[dict[str, tuple[Callable[[Path], DadFiles], str, str]]] = {
     "komentarz w arkuszu": (_comment, "bo arkusz Bazy zleceń ma układ", ", arkusz 08_11_2021-23_03_2024"),
     "zepsuta komórka trafienia": (_broken_date, "bo Bazy zleceń nie można odczytać jako skoroszytu Excela", ""),
 }
-"""Baza zleceń, której Uporządkowanie nie czyta → uchwyt plików taty, powód w „Co się stało” i koniec „Gdzie”."""
 
 
 @pytest.mark.parametrize("problem", BASE_PROBLEMS)

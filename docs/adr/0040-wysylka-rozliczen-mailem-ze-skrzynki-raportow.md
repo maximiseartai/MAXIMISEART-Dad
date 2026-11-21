@@ -39,8 +39,10 @@ skrzynkę raportów z hasłem aplikacji.
 - **Pamięcią wysłanych jest folder „Wysłane”**, jak dla Przypomnień o raporcie, bez własnego pliku stanu. Mail z
   rozliczeniem rozpoznaje się po nazwie pliku załącznika `Rozliczenie {token} - {nazwa}.xlsx` (bez względu na wielkość
   liter i postać Unicode), a nie po temacie, który zmienia tata, i tylko wtedy, gdy poszedł na któryś adres tego
-  Wykonawcy z Listy: plik przesłany komuś innemu nie jest wysłany Wykonawcy. Dzięki temu widać też rozliczenia, które tata
-  wysłał sam z tej skrzynki. Port czyta „Wysłane” od wtorku najstarszego okresu strony tylko z `BODYSTRUCTURE` i
+  Wykonawcy z Listy: plik przesłany komuś innemu nie jest wysłany Wykonawcy. Adresami maila są `To`, `Cc` i `Bcc` razem,
+  bo tata wysyła rozliczenie ręcznie także w kopii albo ukrytej kopii, a Gmail zostawia `Bcc` w kopii maila w
+  „Wysłanych”; bez nich plik zostałby „do wysłania” i poszedł drugi raz (dopisek #2236, 2026-11-21). Dzięki temu widać
+  też rozliczenia, które tata wysłał sam z tej skrzynki. Port czyta „Wysłane” od wtorku najstarszego okresu strony tylko z `BODYSTRUCTURE` i
   nagłówków maila i części z plikiem, bez treści maili i bajtów załączników.
 - **Znak Centrum.** Mail Centrum ma nagłówek `X-Centrum-Rozliczen: wysylka-rozliczen`; po nim „Wysłane” odróżniają
   „wysłane” od „wysłane ręcznie”.

@@ -49,13 +49,11 @@ Kroki i kopie commitów nie przeżywają ``ci_lokalnie``, także zabitego przez 
 
 # Wygenerowany kontrakt i zbudowany frontend muszą zgadzać się ze źródłami (u taty nie ma Node).
 GENERATED = ("frontend/src/api", "src/rozliczenia/centrum/static")
-# Zadanie w ci.yml, w którym biegną kroki zadania narzędzia, gdy nazywa się inaczej.
 CI_JOB = {"ruff": "ruff-mypy", "mypy": "ruff-mypy", "workflowy": "frontend"}
 JOBS_ELSEWHERE = {
     "plan": "plan zadań pytest i Mutation checks runu (tools/plan_ci.py plan drukuje go lokalnie), nic nie sprawdza",
     "required": "zbiorczy status pozostałych zadań, nic do odtworzenia",
 }
-# Fragment polecenia `run:` w odtwarzanym zadaniu CI, którego narzędzie nie odtwarza, i co je zastępuje.
 COMMANDS_ELSEWHERE = {
     "tests/test_zapadki.py::test_reguly_ast_grep": "reguły ast-grep na dodanych liniach: lokalnie biegną z zapadkami w tools/szybko.py",
     "tests/test_zapadki.py::test_reguly_calego_drzewa": "reguły ast-grep całego drzewa: lokalnie biegną z zapadkami w tools/szybko.py",
@@ -73,8 +71,6 @@ def _npm() -> str:
 
 
 def _reproduced(root: Path) -> list[tuple[str, Step]]:
-    """Każdy krok narzędzia z fragmentem polecenia `run:` w ci.yml, które odtwarza."""
-
     python, npm, frontend = sys.executable, _npm(), root / "frontend"
     ruff, *mypy = static_steps(root)
     zizmor, actionlint, shellcheck_actions = workflow_steps(root)

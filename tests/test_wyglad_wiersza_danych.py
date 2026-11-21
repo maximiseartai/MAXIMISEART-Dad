@@ -113,8 +113,6 @@ def _cells(written: WrittenFile) -> list[Cell]:
 
 
 def _header_faces(written: WrittenFile) -> dict[int, tuple[object, object]]:
-    """Krój i rozmiar czcionki nagłówka każdej kolumny wyglądu we Wzorcu."""
-
     workbook = load_workbook(written.template)
     sheet = active_worksheet(workbook)
     return {

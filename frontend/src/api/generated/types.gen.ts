@@ -4580,7 +4580,8 @@ export type SettingProblem = {
  * strona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
  * jest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum
  * widzi Foldery okresu wszystkich lat (``Załączniki``). Pole Funkcji spoza Zakresu tego Centrum (``workers``,
- * ``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``) to ``None``.
+ * ``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``, ``periods_directory`` z
+ * ``periods_all_years``) to ``None``.
  */
 export type Settings = {
     /**
@@ -4610,11 +4611,11 @@ export type Settings = {
         state: 'unreadable';
     } & UnreadablePath) | ({
         state: 'ready';
-    } & ReadyPath);
+    } & ReadyPath) | null;
     /**
      * Periods All Years
      */
-    periods_all_years: boolean;
+    periods_all_years: boolean | null;
     /**
      * Theme
      */

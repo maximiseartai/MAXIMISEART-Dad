@@ -120,7 +120,6 @@ PROBKA = 100
 POKAZ_LINII = 20
 WYKONANIE_FAIL = re.compile(r"WYKONANIE FAIL \| (.+)")
 MERGE_PR = re.compile(r"Merge pull request #(\d+) from [^/\s]+/(\S+)")
-# Zadania runu, których porażka to porażka pytest i kroków skilli (nazwy z ``zakres_runu.TORY`` i ``MUTACJE``).
 PYTEST, MUTACJE = "pytest (", "Mutation checks ("
 # Wyniki runu, który biegł do końca: tylko taki run ma następną głowę z naprawą i liczy się w oszczędności.
 SKONCZONE = ("success", "failure")
@@ -148,7 +147,7 @@ class BladAudytu(ValueError):
 
 @dataclass(frozen=True)
 class Wariant:
-    kroki: tuple[str, ...]  # klucze kroków skilli (``Step.key``), które wariant uruchomiłby na tym runie
+    kroki: tuple[str, ...]
     sciana_s: float
 
 
@@ -157,13 +156,13 @@ class Glowa:
     run: int
     url: str
     sha: str
-    baza: str  # baza scalenia głowy z ``main`` sprzed jej scalenia (``_baza_pr``)
+    baza: str
 
 
 @dataclass(frozen=True)
 class PlikNaprawy:
-    sciezka: str  # przy następnej głowie
-    sciezka_czerwonej: str  # przy czerwonej głowie i jej bazie: inna, gdy ``main`` przemianował plik między bazami głów
+    sciezka: str
+    sciezka_czerwonej: str
     diff_czerwonej: str  # własny diff PR pliku przy czerwonej głowie: ``git diff <baza>...<głowa> -- <plik>``
     diff_nastepnej: str
     main_zmienil: bool  # ``main`` zmienił treść pliku między bazami głów, więc regułę treści myli przestawienie jego linii
@@ -173,8 +172,8 @@ class PlikNaprawy:
 class Naprawa:
     czerwona: Glowa
     nastepna: Glowa
-    pliki: tuple[PlikNaprawy, ...]  # pliki, w których własna zmiana PR zmieniła się według reguły treści
-    przepisana: bool  # czerwona głowa nie jest przodkiem następnej, więc naprawa mogła usunąć commit bez pliku w ``pliki``
+    pliki: tuple[PlikNaprawy, ...]
+    przepisana: bool
 
     @property
     def sciezki(self) -> tuple[str, ...]:
@@ -186,12 +185,12 @@ class RunPr:
     run: int
     galaz: str
     pytest: Pytest
-    padle: tuple[str, ...]  # kroki skilli z porażką
+    padle: tuple[str, ...]
     # None: run bez kroku z porażką albo bez następnego runu gałęzi z wynikiem w oknie, albo git nie zna którejś głowy
     naprawa: Naprawa | None
     cien: Mapping[str, Wariant] | None  # wariant ``Podstawy`` → jego cień; None: run bez artefaktu planu z cieniem
-    probka: bool = False  # run próbki oszczędności
-    pr: int | None = None  # numer PR-u gałęzi z merge'a do ``main`` w oknie; None: gałąź bez merge'a w oknie
+    probka: bool = False
+    pr: int | None = None
 
 
 @dataclass(frozen=True)
@@ -239,8 +238,6 @@ class Porazka:
 
     @property
     def klucz(self) -> str:
-        """Klucz porażki w wyniku i w pliku audytu."""
-
         return f"{self.run.run} {self.krok}"
 
     @property
@@ -264,16 +261,16 @@ class Porazka:
 
 @dataclass(frozen=True)
 class Rozstrzygniecie:
-    kandydaci: tuple[Porazka, ...]  # porażki kroków NF z naprawą w folderze skilla albo ``src/``
-    niepoliczone: tuple[Porazka, ...]  # porażki kroków NF bez takiej naprawy z przepisaną historią albo bez następnego runu
+    kandydaci: tuple[Porazka, ...]
+    niepoliczone: tuple[Porazka, ...]
     bez_cienia: tuple[Porazka, ...]  # porażki z naprawą runów bez artefaktu planu: nie wiadomo, czy N0 by je puścił
     nie_licza_sie: tuple[tuple[Porazka, str], ...]  # pozostałe porażki czerwonych runów, każda z powodem
-    przyczyny: Mapping[str, tuple[Porazka, ...]] | None  # przyczyna z audytu → jej porażki; None: bez audytu
-    dni: int  # długość okna
+    przyczyny: Mapping[str, tuple[Porazka, ...]] | None
+    dni: int
     oszczednosc_min: float | None  # None: żaden run próbki nie ma cienia
     probka: int
-    ucieczki: tuple[tuple[int, str], ...]  # (run main, podstawa)
-    czerwien_min: float | None  # mediana czerwieni runów main z ucieczką
+    ucieczki: tuple[tuple[int, str], ...]
+    czerwien_min: float | None
 
     @property
     def wymaga_audytu(self) -> tuple[Porazka, ...]:
@@ -457,9 +454,6 @@ def _min(wartosc: float | None) -> str:
     return "brak" if wartosc is None else f"{wartosc:.0f} min"
 
 
-# --- zbieranie z GitHuba i gita ---
-
-
 def zbierz(api: Api, root: Path, od: date, do: date, dzis: date, probka: int) -> Rekordy:
     wszystkie = sorted((r for r in runy(api, od, do, dzis) if r["status"] == "completed"), key=lambda r: r["created_at"])
     pr_wszystkie = [r for r in wszystkie if r["event"] == "pull_request"]
@@ -598,9 +592,6 @@ def _linie(root: Path, rewizja: str, plik: str) -> list[bytes]:
 
 
 def _baza_pr(root: Path, main: str, glowa: str) -> str:
-    """Baza scalenia głowy PR z ``main`` sprzed jej scalenia: z rodzicem pierwszego commitu pierwszego rodzica ``main``,
-    który ją zawiera, a gdy żaden jej nie zawiera, z samym ``main``."""
-
     potomne = set(repo.git(root, "rev-list", "--ancestry-path", f"{glowa}..{main}").split())
     zawierajace = [sha for sha in repo.git(root, "rev-list", "--first-parent", f"{glowa}..{main}").split() if sha in potomne]
     return repo.merge_base(root, glowa, f"{zawierajace[-1]}^1" if zawierajace else main)
@@ -618,8 +609,6 @@ def _pr_scalonych(root: Path, main: str, od: date) -> dict[str, int]:
 
 
 def _glowy_scalonych(root: Path, od: str, do: str) -> list[str]:
-    """Głowy PR-ów scalonych w ``main`` między dwoma runami: drugi rodzic każdego merge'a pierwszego rodzica."""
-
     rodzice = repo.git(root, "log", "--first-parent", "--merges", "--format=%P", f"{od}..{do}").split("\n")
     return [linia.split()[1] for linia in rodzice if len(linia.split()) > 1]
 

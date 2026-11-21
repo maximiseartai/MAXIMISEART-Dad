@@ -6,7 +6,7 @@
   "src/rozliczenia/centrum/run_logs_guard.py": {
     "_guarded": "4c45778b3827b010",
     "guard_logs": "baed6be310b1212e",
-    "GuardedLogs": "1981fd07cdf5faa6"
+    "GuardedLogs": "bf5dfb7140b4996f"
   },
   "src/rozliczenia/centrum/comment_versions.py": {
     "ResultWithoutLogs": "87dbb0bfcaeb4727",
@@ -16,20 +16,21 @@
     "WithoutLogsVersion": "2492cff3fbd85af7",
     "rank_of": "29dce38c5ecbe640",
     "journal_after": "3c8e8c1a646d1c0f",
-    "post_of": "2562b6b465b4823e",
+    "post_of": "2dabbab3de9e0339",
     "Drop": "df188a16b91dac80",
     "close": "0e60c13a15f8bad8"
   },
   "src/rozliczenia/centrum/run_comments.py": {
     "RunComments.run_started": "70962e8b442a8b6d",
-    "RunComments._progress": "e73266097c21cc13",
+    "RunComments._progress": "2c5b89f8aa20a7e5",
     "RunComments.run_ended": "84c25f76a2982ab0",
     "RunComments._own": "f131bbcd41d18531",
     "RunComments._step": "ef0c9d39a1209b24",
-    "RunComments._keep": "8e34996d24064124",
+    "RunComments._keep": "f158aacabb20000a",
     "RunComments.close_left_behind": "9d220279a69a742b",
-    "RunComments.send_left_behind": "e2ea287390da2c8d",
-    "RecordMaker.interrupted": "5eda6e431051633b"
+    "RunComments.send_left_behind": "1aa8427bdc3314bc",
+    "RecordMaker.interrupted": "5eda6e431051633b",
+    "RunComments._sent": "efbbccfe7f6da0ed"
   },
   "src/rozliczenia/centrum/logs_disk.py": {
     "LogsOnDisk.logs": "3398df23668447d5",

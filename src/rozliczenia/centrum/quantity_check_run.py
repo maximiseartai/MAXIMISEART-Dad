@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Final
 
 from rozliczenia import quantity_check
+from rozliczenia.centrum.box_prefix import titled
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.outbox import Outbox, PeriodThread, Post
 from rozliczenia.centrum.runs import EndedRun
@@ -18,6 +19,7 @@ class QuantityCheckAfterRun:
         self._outbox = outbox
         self._commit = commit
         self._forbidden = work.forbidden
+        self._prefix = work.box_prefix
 
     def run_ended(self, run: EndedRun) -> None:
         checked = declaration_of(run.info.process).quantity_check
@@ -42,7 +44,7 @@ class QuantityCheckAfterRun:
                     label=LABEL,
                     line=tool(f"- Kontrola ilości okresu: {period}"),
                     closed="new_issue",
-                    title=title.text,
+                    title=titled(self._prefix, title.text),
                 ),
                 period=period,
                 run_id=tool(run_id),

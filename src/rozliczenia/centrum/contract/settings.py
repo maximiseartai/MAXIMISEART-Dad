@@ -79,11 +79,12 @@ class Settings(Model):
     strona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
     jest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum
     widzi Foldery okresu wszystkich lat (``Załączniki``). Pole Funkcji spoza Zakresu tego Centrum (``workers``,
-    ``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``) to ``None``."""
+    ``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``, ``periods_directory`` z
+    ``periods_all_years``) to ``None``."""
 
     order_register: PathSetting
-    periods_directory: PathSetting
-    periods_all_years: bool
+    periods_directory: PathSetting | None
+    periods_all_years: bool | None
     theme: Theme | None
     folders_problem: SettingProblem | None
     workers: WorkerListSetting | None
