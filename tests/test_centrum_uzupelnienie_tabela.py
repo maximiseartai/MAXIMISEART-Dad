@@ -61,8 +61,6 @@ def _write(centrum: PreparingCentrum, cells: dict[str, int | str | None]) -> Non
 
 
 def _shown(row: dict[str, Any]) -> dict[str, tuple[str, int | str]]:
-    """Komórki wiersza, które coś pokazują: litera kolumny → (czyja wartość, wartość)."""
-
     assert len(row["cells"]) == len(CELL_COLUMNS)
     return {
         column: (cell["source"], cell["value"])

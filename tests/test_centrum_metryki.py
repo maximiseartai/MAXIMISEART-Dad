@@ -72,8 +72,6 @@ def record(
 
 
 def old(new_record: dict[str, object]) -> dict[str, object]:
-    """Ten sam rekord w schemacie metryk 1, sprzed Rodzaju Zatrzymania w rekordzie."""
-
     return {key: value for key, value in new_record.items() if key != "stop"} | {"schema_version": 1}
 
 
@@ -294,7 +292,6 @@ def test_p50_i_p95_dopiero_od_pieciu_ukonczonych_obserwacji_tego_samego_trybu(tm
         },
         "results": {"ok": 5, "needs_review": 0, "stopped": 0, "failed": 0},
     }
-    # Cztery ukończone DRY-RUN i jedno przerwane to za mało: przerwane nie jest ukończoną obserwacją.
     dry_run = statistics(body, "preparation", "DRY-RUN")
     assert (dry_run["completed_runs"], dry_run["percentiles"]) == (4, None)
     assert dry_run["results"] == {"ok": 4, "needs_review": 0, "stopped": 1, "failed": 0}
@@ -348,10 +345,10 @@ def test_niepoprawne_rekordy_metryk_sa_pomijane(tmp_path: Path) -> None:
         app.metrics.preparation,
         preparation("2026-09-01T08:00:00+00:00", period="01_07_09_2026"),
         "{nie json",
-        preparation("2026-09-02T08:00:00"),  # czas bez strefy
+        preparation("2026-09-02T08:00:00"),
         preparation("2026-09-03T08:00:00+00:00", total=True),
-        {**preparation("2026-09-04T08:00:00+00:00"), "schema_version": 4},  # wersja nowszego narzędzia
-        settlement("2026-09-05T08:00:00+00:00"),  # liczniki Przebiegu rozliczeń w pliku Przygotowania
+        {**preparation("2026-09-04T08:00:00+00:00"), "schema_version": 4},
+        settlement("2026-09-05T08:00:00+00:00"),
         '{"schema_version":1,"started_at":"2026-09-06T08:00:00+00:00","mode":"RUN"',
     )
     write_lines(app.metrics.settlement, preparation("2026-09-07T08:00:00+00:00"))
@@ -365,7 +362,7 @@ def test_rozklad_wynikow_z_ostatnich_osmiu_tygodni_obejmuje_oba_procesy(tmp_path
     app = centrum(tmp_path)  # dziś poniedziałek 19.10.2026
     write_lines(
         app.metrics.preparation,
-        preparation("2026-08-23T12:00:00+00:00"),  # przed ostatnimi ośmioma tygodniami
+        preparation("2026-08-23T12:00:00+00:00"),
         preparation("2026-08-25T12:00:00+00:00"),
         preparation("2026-10-06T12:00:00+00:00", stop=FOR_TATA),
     )

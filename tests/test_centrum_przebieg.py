@@ -29,7 +29,6 @@ from tests.fixtures.centrum_processes import (
 from atrapy.settlement import PERIOD, SOURCE_NAME
 from atrapy.workbooks import replace_cells
 
-# Syntetyczny Plik zbiorczy: dwa zlecenia Adriana, jedno Darka, a Kamil bez zleceń ma pusty szablon.
 WORKER_SETTLEMENT_ROWS = [
     {"worker": "Adrian Testowy", "file": f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx", "orders": 2, "empty": False},
     {"worker": "Darek Fikcyjny", "file": f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx", "orders": 1, "empty": False},
