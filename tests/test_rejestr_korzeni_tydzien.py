@@ -328,13 +328,14 @@ def _comment(text: str, created: str, association: str = "OWNER") -> dict[str, o
     return {"body": text, "created_at": created, "author_association": association}
 
 
-def test_historia_ma_ucieczki_z_ostatniego_komentarza_audytu_tygodnia_od_zaufanego_konta_a_bez_audytu_kreske() -> None:
+def test_historia_ma_ucieczki_z_ostatniego_komentarza_tygodnia_od_zaufanego_konta_z_linia_audytu_na_poczatku_a_bez_audytu_kreske() -> None:
     comments = [
         _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 1\n- Ucieczka #1710 W1 r1 jak #1700 W1 r1", "2026-10-19T09:00:00Z"),
         _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 2\n- Ucieczka #1710 W1 r1 jak #1700 W1 r1", "2026-10-19T08:00:00Z"),
         _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 7", "2026-10-19T10:00:00Z", "NONE"),
         _comment("AUDYT POWROTÓW 2026-10-05 | pary 0 | ucieczki 0", "2026-10-12T08:00:00Z"),
         _comment("Uwaga: AUDYT POWROTÓW 2026-09-28 | pary 1 | ucieczki 1", "2026-10-12T09:00:00Z"),
+        _comment("Szkic audytu przed oceną\nAUDYT POWROTÓW 2026-09-28 | pary 1 | ucieczki 1", "2026-10-12T10:00:00Z"),
     ]
 
     text = _body([], date(2026, 10, 19), audited=tydzien.audits(comments))

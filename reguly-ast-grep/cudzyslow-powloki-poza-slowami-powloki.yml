@@ -1,0 +1,20 @@
+id: cudzyslow-powloki-poza-slowami-powloki
+language: python
+severity: error
+message: >-
+  własna gramatyka słowa powłoki w apostrofach ('[^']*' albo '([^']*)') obok tej z tools/lib/slowa_powloki.py: dwa
+  czytniki słów polecenia rozjeżdżają się w ucieczkach i cudzysłowach; wzorzec słowa składaj z QUOTED, a słowo bez
+  cudzysłowów bierz z unquoted z modułu slowa_powloki
+files:
+  - tools/**/*.py
+  - .agents/skills/*/scripts/**/*.py
+ignores:
+  - tools/lib/slowa_powloki.py
+metadata:
+  przypadki:
+    - 6896260c4cf8ac7cf70ae0360c743ca370302f3a tools/hooks/ciezkie.py:17
+rule:
+  # Słowo w apostrofach: apostrof, klasa „wszystko poza apostrofem” z * albo +, apostrof, a klasa w grupie
+  # przechwytującej albo bez przechwytu, albo bez grupy.
+  kind: string
+  regex: "'\\(?(\\?:)?\\[\\^'\\][*+]\\)?'"

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 import json
 import os
+from pathlib import Path
 import posixpath
 import re
 import shlex
@@ -12,15 +13,16 @@ import shutil
 import sys
 from typing import Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+from slowa_powloki import QUOTED, unquoted
+
 SEPARATORS = frozenset({"&&", "&"})
 SEPARATOR_CHARACTERS = ";|()\n"
-_QUOTED = r"\\([\s\S])|'([^']*)'|\"((?:[^\"\\]|\\[\s\S])*)\""
 TOKEN = re.compile(
     rf"[ \t\r]+|#[^\n]*|(?P<separator>[{re.escape(SEPARATOR_CHARACTERS)}]+)"
-    rf"|(?P<word>(?:[^ \t\r'\"\\{re.escape(SEPARATOR_CHARACTERS)}]|{_QUOTED})+)"
+    rf"|(?P<word>(?:[^ \t\r'\"\\{re.escape(SEPARATOR_CHARACTERS)}]|{QUOTED})+)"
 )
-WORD_PART = re.compile(_QUOTED)
-ESCAPED_IN_DOUBLE_QUOTES = re.compile(r"\\([\\\"])")
 KEYWORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "{"})
 ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", re.DOTALL)
 PYTHON = re.compile(r"python(?:3(?:\.\d+)?)?")
@@ -85,17 +87,8 @@ def _words(command: str) -> Optional[list[str]]:
         if token.lastgroup == "separator":
             words.append(token.group())
         elif token.lastgroup == "word":
-            words.append(WORD_PART.sub(_unquoted, token.group()))
+            words.append(unquoted(token.group()))
     return words
-
-
-def _unquoted(part: re.Match[str]) -> str:
-    escaped, single, double = part.groups()
-    if escaped is not None:
-        return escaped
-    if single is not None:
-        return single
-    return ESCAPED_IN_DOUBLE_QUOTES.sub(r"\1", double)
 
 
 def _is_separator(word: str) -> bool:
