@@ -298,7 +298,6 @@ def _banned(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ruff_table(path: Path) -> dict[str, Any] | None:
-    """Tabela ustawień ruff pliku: cały ``ruff.toml``, a z ``pyproject.toml`` tylko ``[tool.ruff]``, bez niej ``None``."""
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     return data.get("tool", {}).get("ruff") if path.name == "pyproject.toml" else data
 

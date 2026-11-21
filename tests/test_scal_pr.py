@@ -258,8 +258,6 @@ def _verdict(kind: str, body: str, association: str = "OWNER", *, when: str) -> 
 
 
 def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
-    """Odpowiedź ``gh pr view --json`` otwartego PR ``number`` z HEAD ``head``, zielonym CI i bez werdyktu, z ``fields``."""
-
     return {
         "number": number,
         "title": f"PR {number}",
@@ -384,8 +382,6 @@ class MergeGitHub(FakeGitHub):
         return self._log("closed.jsonl")
 
     def published(self) -> list[list[str]]:
-        """Komentarze z ``gh pr comment``: numer PR i treść."""
-
         return self._log("comments.jsonl")
 
     def push_pull(self, number: int, files: dict[str, str]) -> str:
@@ -548,8 +544,6 @@ def _pull(**fields: object) -> stan_pr.Pull:
 
 
 def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
-    """PR z komentarzami (``comment``) i recenzjami (stan recenzji) z kontem (domyślnie ``OWNER``) utworzonymi po kolei."""
-
     written = [_verdict(kind, body, *association, when=f"2026-10-24T03:00:{index:02d}Z") for index, (kind, body, *association) in enumerate(verdicts)]
     return _pull(comments=[verdict for verdict in written if "createdAt" in verdict], reviews=[verdict for verdict in written if "submittedAt" in verdict])
 
@@ -2044,7 +2038,6 @@ def test_blad_gh_konczy_sie_linia_fail_z_nazwa_trybu(tmp_path: Path, mode: list[
     path = tmp_path / "runda-1.md"
     path.write_text(f"WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n", encoding="utf-8")
 
-    # Atrapa gh nie zna PR 2, więc ``gh pr view 2`` pada.
     answered = github.run("2", *(str(path) if part == "PLIK" else part for part in mode))
 
     assert answered.returncode == 1, answered.stdout + answered.stderr
@@ -3237,8 +3230,6 @@ PROOF_REFUSED = (1, f"DOWÓD ODMOWA | {GUARD} | wykryte 0/1")
 
 
 def _deploy_guard(github: MergeGitHub, when: str) -> None:
-    """Wdrożenie warunku 5 na ``main`` w ``origin``: commit z ADR 0042 (``bramka_straznika.MARKER``) z datą ``when``."""
-
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("GIT_COMMITTER_DATE", when)
         github.push_main({bramka_straznika.MARKER: "# ADR 0042: Strażnik przy pierwszym Ważnym\n"})
