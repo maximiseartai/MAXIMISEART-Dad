@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import astuple
 import errno
 import os
 import shutil
@@ -54,11 +55,12 @@ from atrapy.workbooks import (
     without_sheet,
     written_by_copy,
 )
-from atrapy.pliki_taty import COLLECTIVE_HEADERS
+from atrapy.pliki_taty import COLLECTIVE_HEADERS, FIRST_DATA_ROW, WORKER_COLUMN
 from atrapy.settlement import (
     NOT_A_PERIOD,
     PERIOD,
     SOURCE_NAME,
+    SOURCE_ROWS,
     WORKER_TEMPLATE_COLUMN_WIDTHS,
     link_order_numbers,
     make_fixture,
@@ -88,10 +90,13 @@ def make_complete_run_fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     return source_path, target_directory, config_path, tmp_path / tool_files.WORKER_TEMPLATE.name
 
 
+def collective_rows_of(worker_id: str) -> dict[int, int]:
+    read = [number for number, row in enumerate(SOURCE_ROWS, start=FIRST_DATA_ROW) if row.worker == worker_id]
+    return dict(enumerate(read, start=FIRST_DATA_ROW))
+
+
 @pytest.fixture(scope="session")
 def synthetic_worker_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Mała odmiana syntetycznego Wzorca rozliczenia pracownika kształtu Wzorca taty (``tools/syntetyczne_wzorce.py``)."""
-
     return write_synthetic_templates(tmp_path_factory.mktemp("syntetyczne-wzorce") / "wzorce") / WORKER_TEMPLATE
 
 
@@ -99,8 +104,6 @@ def synthetic_worker_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def complete_run(
     request: pytest.FixtureRequest, tmp_path: Path, synthetic_worker_template: Path
 ) -> tuple[Path, Path, Path, Path]:
-    """Pełne wejście Przebiegu rozliczeń z małym Wzorcem z fixture albo z małym syntetycznym Wzorcem (#145)."""
-
     source_path, target_directory, config_path, worker_template_path = make_complete_run_fixture(tmp_path)
     if request.param == "syntetyczny-wzorzec":
         shutil.copyfile(synthetic_worker_template, worker_template_path)
@@ -189,7 +192,7 @@ def test_przygotowanie_skoroszytow_pracownikow_publikuje_folder_rozliczen_pracow
     )
     try:
         empty = active_worksheet(empty_workbook)
-        assert [worksheet_input_row(empty, row) for row in (18, 19)] == template_rows  # pusty Szablon to Wzorzec
+        assert [worksheet_input_row(empty, row) for row in (18, 19)] == template_rows, "pusty Szablon pracownika to Wzorzec"
     finally:
         empty_workbook.close()
 
@@ -210,15 +213,11 @@ def style_cells(cells: dict[str, tuple[Font, PatternFill]]) -> Callable[[Path], 
 
 
 def highlights(cell: Cell) -> tuple[object, ...]:
-    """Wyróżnienia komórki tak, jak widzi je tata: wypełnienie, kolor czcionki, pogrubienie, kursywa."""
-
     fill = cell.fill
     return (fill.fill_type, fill.fgColor if fill.fill_type else None, cell.font.color, bool(cell.font.b), bool(cell.font.i))
 
 
 def template_look(cell: Cell) -> tuple[object, ...]:
-    """Krój i rozmiar czcionki, obramowanie i format liczby komórki."""
-
     return (cell.font.name, cell.font.sz, cell.border.left.style, cell.number_format)
 
 
@@ -226,13 +225,14 @@ def test_wiersze_danych_rozliczenia_pracownika_maja_wyroznienia_pliku_zbiorczego
     complete_run: tuple[Path, Path, Path, Path],
 ) -> None:
     source_path, target_directory, config_path, worker_template_path = complete_run
+    adrian = collective_rows_of("adrian.testowy")
     style_cells(
         {
-            "B18": (
+            f"B{adrian[18]}": (
                 Font(name="Arial", sz=8, color="FFFF0000", b=True, i=True),
                 PatternFill(fill_type="solid", fgColor="FFFFFF00"),
             ),
-            "N18": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=Color(theme=5, tint=0.4))),
+            f"N{adrian[18]}": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=Color(theme=5, tint=0.4))),
         }
     )(source_path)
     template_cell = (
@@ -257,16 +257,17 @@ def test_wiersze_danych_rozliczenia_pracownika_maja_wyroznienia_pliku_zbiorczego
         source = active_worksheet(source_workbook)
         header_font = (template["B17"].font.name, template["B17"].font.sz)
         expected_template_look = template_look(template["N18"])
-        # Szablon pracownika Adriana dostaje pierwsze i trzecie zlecenie Pliku zbiorczego: wiersze 18 i 20.
         expected_highlights = {
-            written: highlights(source[read]) for written, read in (("A19", "A20"), ("B18", "B18"), ("N18", "N18"))
+            f"{column}{row}": highlights(source[f"{column}{adrian[row]}"]) for column, row in (("A", 19), ("B", 18), ("N", 18))
         }
-        source_formats = {written: source[read].number_format for written, read in (("A19", "A20"), ("B18", "B18"))}
+        source_formats = {f"{column}{row}": source[f"{column}{adrian[row]}"].number_format for column, row in (("A", 19), ("B", 18))}
+        template_c18 = highlights(template["C18"])
     finally:
         template_workbook.close()
         source_workbook.close()
     assert expected_highlights["B18"] == ("solid", Color("FFFFFF00"), Color("FFFF0000"), True, True)
     assert expected_highlights["A19"][:2] == (None, None)
+    assert template_c18[:2] == ("solid", Color("FF0000FF")), "warunek: C18 Wzorca ma Wyróżnienia"
     assert header_font != ("Times New Roman", 9)
 
     summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
@@ -276,9 +277,7 @@ def test_wiersze_danych_rozliczenia_pracownika_maja_wyroznienia_pliku_zbiorczego
     try:
         written = active_worksheet(written_workbook)
         assert {cell: highlights(written[cell]) for cell in expected_highlights} == expected_highlights
-        # Komórki C18 nie ma w Pliku zbiorczym: bez Wyróżnień.
-        assert highlights(written["C18"]) == (None, None, None, False, False)
-        # A:L: Wygląd Wiersza danych z czcionką nagłówka Wzorca i formatem liczby z Pliku zbiorczego; N poza nim.
+        assert highlights(written["C18"]) == (None, None, None, False, False), "komórki C18 nie ma w Pliku zbiorczym: bez Wyróżnień"
         assert {cell: template_look(written[cell]) for cell in ("A19", "B18", "C18")} == {
             "A19": (*header_font, "thin", source_formats["A19"]),
             "B18": (*header_font, "thin", source_formats["B18"]),
@@ -301,13 +300,14 @@ def test_znacznik_efenix_i_znacznik_przekazania_w_adresie_nie_przechodza_do_rozl
     finally:
         source.close()
     marked = Font(name="Arial", sz=8, color="FFFF0000", b=True, i=True)
+    adrian, darek = collective_rows_of("adrian.testowy"), collective_rows_of("dariusz.fikcyjny2")
     style_cells(
         {
-            # openpyxl zapisuje kolor bez kanału alfa z ``00``, a Excel z ``FF``: oba to Znacznik.
-            "B18": (marked, PatternFill(fill_type="solid", fgColor=Mark.READY.value)),
-            "B19": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{Mark.FORWARDED.value}")),
-            "B20": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor="FFFFFF00")),
-            "C18": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{Mark.READY.value}")),
+            # ZEWNĘTRZNE: openpyxl zapisuje kolor RGB bez kanału alfa jako 00RRGGBB, a Excel jako FFRRGGBB (openpyxl/styles/colors.py RGB.__set__; xl/styles.xml skoroszytu z Excela)
+            f"B{adrian[18]}": (marked, PatternFill(fill_type="solid", fgColor=Mark.READY.value)),
+            f"B{darek[18]}": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{Mark.FORWARDED.value}")),
+            f"B{adrian[19]}": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor="FFFFFF00")),
+            f"C{adrian[18]}": (Font(name="Arial", sz=8), PatternFill(fill_type="solid", fgColor=f"FF{Mark.READY.value}")),
         }
     )(source_path)
     template_cell = (Font(name="Times New Roman", sz=9), PatternFill(fill_type="solid", fgColor="FF0000FF"))
@@ -316,22 +316,20 @@ def test_znacznik_efenix_i_znacznik_przekazania_w_adresie_nie_przechodza_do_rozl
     summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert summary.written_count == 2
-    # Szablon pracownika Adriana dostaje wiersze 18 i 20 Pliku zbiorczego, Darka wiersz 19.
-    adrian = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx")
-    darek = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx")
+    adrian_workbook = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx")
+    darek_workbook = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx")
     try:
-        written = active_worksheet(adrian)
+        written = active_worksheet(adrian_workbook)
         assert highlights(written["B18"]) == (None, None, Color("FFFF0000"), True, True)
-        assert highlights(active_worksheet(darek)["B18"])[:2] == (None, None)
-        # Ręczne zaznaczenie taty w ADRES i kolor Znacznika w innej kolumnie przechodzą jak każde Wyróżnienie.
+        assert highlights(active_worksheet(darek_workbook)["B18"])[:2] == (None, None)
         assert highlights(written["B19"])[:2] == ("solid", Color("FFFFFF00"))
         assert highlights(written["C18"])[:2] == ("solid", Color(f"FF{Mark.READY.value}"))
     finally:
-        adrian.close()
-        darek.close()
+        adrian_workbook.close()
+        darek_workbook.close()
     source = load_workbook(source_path)
     try:
-        assert highlights(active_worksheet(source)["B18"])[:2] == ("solid", Color(f"00{Mark.READY.value}"))
+        assert highlights(active_worksheet(source)[f"B{adrian[18]}"])[:2] == ("solid", Color(f"00{Mark.READY.value}"))
     finally:
         source.close()
 
@@ -345,9 +343,10 @@ def test_numer_zlecenia_w_rozliczeniu_pracownika_ma_hiperlacze_z_pliku_zbiorczeg
     summary = run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
 
     assert (summary.written_count, summary.empty_count, summary.warnings) == (2, 1, [])
-    # Szablon pracownika Adriana dostaje pierwsze i trzecie zlecenie Pliku zbiorczego, Darka drugie.
-    assert hyperlinks(target_directory / f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx") == {"F18": links[18], "F19": links[20]}
-    assert hyperlinks(target_directory / f"Rozliczenie {PERIOD} - Darek Fikcyjny.xlsx") == {"F18": links[19]}
+    for name, worker_id in (("Adrian Testowy", "adrian.testowy"), ("Darek Fikcyjny", "dariusz.fikcyjny2")):
+        assert hyperlinks(target_directory / f"Rozliczenie {PERIOD} - {name}.xlsx") == {
+            f"F{written}": links[read] for written, read in collective_rows_of(worker_id).items()
+        }
     assert hyperlinks(target_directory / f"Rozliczenie {PERIOD} - Kamil Syntetyczny.xlsx") == {}
 
 
@@ -379,8 +378,9 @@ def test_przebieg_rozliczen_na_wzorcu_z_formula_w_wierszu_danych_zapisuje_jak_op
     expected_directory = tmp_path / "przez-openpyxl"
     expected_directory.mkdir()
     adrian = f"Rozliczenie {PERIOD} - Adrian Testowy.xlsx"
-    # Szablon pracownika Adriana dostaje pierwsze i trzecie zlecenie Pliku zbiorczego.
-    adrian_rows = [row for row in read_data_rows(source_path, DadFiles()).rows if row.number in (18, 20)]
+    adrian_rows = [
+        row for row in read_data_rows(source_path, DadFiles()).rows if row.number in collective_rows_of("adrian.testowy").values()
+    ]
     twin = refused_by_copy(Path(shutil.copy(worker_template_path, tmp_path / "bliźniak Wzorca.xlsx")))
     TemplateFile.worker_settlement(twin).create(expected_directory / adrian, adrian_rows)
 
@@ -394,7 +394,7 @@ def test_przebieg_rozliczen_na_wzorcu_z_formula_w_wierszu_danych_zapisuje_jak_op
     assert set(compare_worker_settlements(expected_directory, written_directory).values()) == {0}
     empty_workbook = load_workbook(target_directory / f"Rozliczenie {PERIOD} - Kamil Syntetyczny.xlsx")
     try:
-        assert active_worksheet(empty_workbook)["K18"].value == "=N18+1"  # formuła Wzorca nie jest danymi
+        assert active_worksheet(empty_workbook)["K18"].value == "=N18+1", "formuła Wzorca nie jest Wierszem danych"
     finally:
         empty_workbook.close()
 
@@ -418,7 +418,6 @@ def test_kazde_rozliczenie_pracownika_takze_puste_ma_szerokosci_kolumn_wzorca_ro
             workbook.close()
 
 
-# Widok Wzorca przewinięty w bok i powiększony inaczej niż Wzorce taty: Rozliczenie bierze widok ze swojego Wzorca.
 SCROLLED_VIEW = View("C1", "D30", 60)
 
 
@@ -427,6 +426,9 @@ SCROLLED_VIEW = View("C1", "D30", 60)
 def test_kazde_rozliczenie_pracownika_takze_puste_otwiera_sie_z_widokiem_wzorca_rozliczenia_pracownika(
     tmp_path: Path, copied: bool, view: View
 ) -> None:
+    assert view == TEMPLATE_VIEW or all(
+        mine != dads for mine, dads in zip(astuple(view), astuple(TEMPLATE_VIEW), strict=True)
+    ), "warunek: przewinięty widok różni się od widoku Wzorców taty w każdym polu"
     source_path, target_directory, config_path, worker_template_path = make_complete_run_fixture(tmp_path)
     write_template(worker_template_path, view=view)
     marked_for_copy(worker_template_path)
@@ -453,13 +455,11 @@ def with_unmapped_worker(source_path: Path) -> None:
 
 
 def with_workers(source_path: Path, workers: dict[int, str | None]) -> None:
-    """Zmienia WYKONAWCĘ (kolumna H) w podanych Wierszach danych Pliku zbiorczego."""
-
     workbook = load_workbook(source_path)
     try:
         sheet = active_worksheet(workbook)
         for row, worker in workers.items():
-            sheet.cell(row, 8).value = worker
+            sheet.cell(row, WORKER_COLUMN).value = worker
         workbook.save(source_path)
     finally:
         workbook.close()
@@ -536,7 +536,9 @@ def test_zatrzymanie_i_podglad_nazywaja_kazdego_nieznanego_wykonawce_raz(
 
 def test_podglad_bez_zapisu_pokazuje_problemy_wierszy_danych_i_plan_kazdego_wykonawcy_z_konfiguracji(tmp_path: Path) -> None:
     source_path, target_directory, config_path = make_fixture(tmp_path)
-    with_workers(source_path, {18: "andrzej.nieznany2", 20: None})  # nieznany Wykonawca w pierwszym wierszu, przed znanymi
+    unknown_worker_row, row_without_worker = FIRST_DATA_ROW, 20
+    assert unknown_worker_row < row_without_worker, "warunek: nieznany Wykonawca w pliku przed wierszem bez Wykonawcy"
+    with_workers(source_path, {unknown_worker_row: "andrzej.nieznany2", row_without_worker: None})
     recorded: list[ProgressEvent] = []
 
     summary = run_settlements(
@@ -545,7 +547,7 @@ def test_podglad_bez_zapisu_pokazuje_problemy_wierszy_danych_i_plan_kazdego_wyko
     )
 
     assert [(warning.code, warning.what) for warning in summary.warnings] == [
-        ("BRAK_WYKONAWCY", "Wiersz 20 ma dane, ale nie ma wykonawcy w kolumnie H."),
+        ("BRAK_WYKONAWCY", f"Wiersz {row_without_worker} ma dane, ale nie ma wykonawcy w kolumnie H."),
         ("BRAK_MAPOWANIA", "Nieznany identyfikator WYKONAWCA: andrzej.nieznany2. Nie ma go w Liście Wykonawców."),
     ]
     counted = [(type(event), event.issue_count) for event in recorded if isinstance(event, (IssueCountReady, PlanReady))]
@@ -559,9 +561,6 @@ def test_podglad_bez_zapisu_pokazuje_problemy_wierszy_danych_i_plan_kazdego_wyko
 
 
 def test_wykonawca_z_dwoma_loginami_ma_jedno_rozliczenie_pracownika_z_wierszami_obu_loginow(tmp_path: Path) -> None:
-    """Lista Wykonawców pozwala na kilka loginów jednego Wykonawcy: Przebieg rozliczeń planuje jego plik raz, z
-    Wierszami danych każdego loginu (przegląd #1529 r1, D3)."""
-
     source_path, _target_directory, _config_path = make_fixture(tmp_path)
     with_workers(source_path, {18: "darek.drugi"})
     workers = WorkerList.of(
@@ -586,8 +585,6 @@ def test_wykonawca_z_dwoma_loginami_ma_jedno_rozliczenie_pracownika_z_wierszami_
 
 
 def _stopped_in(phase: ProgressPhase) -> dict[ProgressPhase, PhaseState]:
-    """Stany etapów Uruchomienia zatrzymanego w etapie ``phase``: wcześniejsze ukończone, późniejsze nierozpoczęte."""
-
     order = list(ProgressPhase)
     return {
         each: PhaseState.COMPLETED if order.index(each) < order.index(phase) else PhaseState.FAILED if each is phase else PhaseState.PENDING
@@ -639,9 +636,6 @@ def test_nieczytelny_plik_zbiorczy_zatrzymuje_przebieg_rozliczen_bezpiecznym_kom
 def test_plik_zbiorczy_niedostepny_do_odczytu_nie_jest_nazwany_uszkodzonym(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str, error: OSError, failing_phase: ProgressPhase
 ) -> None:
-    """Plik zbiorczy, którego system nie oddaje, zatrzymuje Przebieg w Odczycie danych po ukończonym Sprawdzaniu; folder
-    bez dostępu (``stat``) już w Sprawdzaniu."""
-
     source_path, target_directory, config_path = make_fixture(tmp_path)
     original = getattr(Path, failing)
 
@@ -1197,9 +1191,6 @@ def test_plik_zbiorczy_z_tokenem_ktory_nie_jest_okresem_zatrzymuje_przebieg_rozl
 def test_failed_przetworzenie_szablonu_pracownika_emits_failure_without_false_completion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: Exception, stopped_as: type[Exception]
 ) -> None:
-    """Błąd zapisu pliku to Komunikat dla taty; każdy inny wyjątek wychodzi z silnika bez zmian, więc granica procesu
-    zgłasza go jako błąd nieoczekiwany ze śladem wywołań."""
-
     source_path, target_directory, config_path = make_fixture(tmp_path)
     real_replace = os.replace
     saved = 0

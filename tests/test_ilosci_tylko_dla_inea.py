@@ -1,8 +1,3 @@
-"""Ilości tylko dla INEA (ADR 0018, #457): Rozliczenie pracownika bez AP przy ``gniazdo`` i bez AK przy ``technicolor``.
-
-Plik zbiorczy jest syntetyczny; wszystkie Wiersze danych należą do Wykonawcy ``adrian.testowy`` („Adrian Testowy”).
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -97,8 +92,6 @@ def test_rozliczenie_pracownika_nie_ma_ilosci_tylko_dla_inea_a_plik_zbiorczy_i_k
     assert "AP18" not in hyperlinks(written)
 
 
-# Ilości tylko dla INEA czytają same URZĄDZENIA (ADR 0018), więc bez nagłówka UMOWA, CZYNNOŚCI albo DATA czyszczą
-# jak przy pustej komórce, a bez nagłówka URZĄDZENIA nie wiadomo, gdzie szukać słowa, i nic nie znika.
 @pytest.mark.parametrize(
     ("header", "emptied"),
     [

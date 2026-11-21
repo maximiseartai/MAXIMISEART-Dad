@@ -1,5 +1,3 @@
-"""Deterministyczne rozdzielanie pliku zbiorczego do szablonów pracowników."""
-
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -31,13 +29,6 @@ from .worker_settlement import Cleared
 
 @dataclass(frozen=True)
 class SettlementInputs:
-    """Wejście procesu Przebiegu rozliczeń, gotowe przed startem silnika.
-
-    Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). ``quantity_rules``: Reguły ilości tego
-    Uruchomienia, z których Przebieg liczy Ilości tylko dla INEA, a Kontrola ilości po nim Ilości usług.
-    ``activity_legend``: Legenda czynności tego Uruchomienia, którą liczy Kontrola ilości po nim.
-    """
-
     source: Path
     workers: WorkerList
     worker_template_path: Path
@@ -52,8 +43,6 @@ class SettlementInputs:
 
 @dataclass(frozen=True)
 class PlannedWorkerResult:
-    """Bezpieczny wynik dla jednego szablonu w Podglądzie bez zapisu: nic nie powstało, więc bez drogi zapisu."""
-
     worker_name: str
     output_file: Path
     rows: int
@@ -65,8 +54,6 @@ class PlannedWorkerResult:
 
 @dataclass(frozen=True)
 class SavedWorkerResult:
-    """Bezpieczny wynik dla jednego zapisanego szablonu; ``route`` to droga zapisu Rozliczenia pracownika."""
-
     worker_name: str
     output_file: Path
     rows: int
@@ -82,19 +69,13 @@ WorkerResult = PlannedWorkerResult | SavedWorkerResult
 
 @dataclass
 class SettlementSummary:
-    """Podsumowanie operacyjne; z treści Wierszy danych tylko kolumny dozwolone regułą prywatności (``order_facts``)."""
-
     period: str
     source_file: Path
     target_directory: Path
     orders: CollectiveOrders = ()
-    """Dozwolona treść każdego Wiersza danych, który Przebieg wczytał: dla Kontroli ilości w Centrum."""
     inea_only_cleared: Cleared = field(default_factory=lambda: MappingProxyType({}))
-    """Liczba wyczyszczonych komórek Ilości tylko dla INEA w każdej kolumnie: tylko dla Logów Uruchomienia."""
     quantity_rules: QuantityRules = field(default=DEFAULT_QUANTITY_RULES, repr=False)
-    """Reguły ilości, z których Przebieg liczył: Kontrola ilości po nim liczy tymi samymi."""
     activity_legend: ActivityLegend = field(default=DEFAULT_ACTIVITY_LEGEND, repr=False)
-    """Legenda czynności ze startu Przebiegu: Kontrola ilości po nim liczy tą samą."""
     results: list[WorkerResult] = field(default_factory=list)
     warnings: list[Message] = field(default_factory=list)
     phase_durations_ms: Mapping[ProgressPhase, int] = field(default_factory=lambda: MappingProxyType({}))
@@ -135,8 +116,6 @@ class SettlementSummary:
 def _read_source_rows(
     source_path: Path, files: DadFiles, rules: QuantityRules
 ) -> tuple[dict[str, list[DataRow]], list[int], CollectiveOrders, Cleared]:
-    """Wiersze danych bez Wykonawcy nie trafiają do grup; zostają ich numery. W grupach nie ma Ilości tylko dla INEA."""
-
     try:
         read = collective_file.read_data_rows(source_path, files, rules)
     except WorkbookError as error:
@@ -178,8 +157,6 @@ def _plan_warnings(source_path: Path, plan: _Plan, *, dry_run: bool) -> list[Mes
 
 
 def run_settlements(inputs: SettlementInputs, context: RunContext) -> SettlementSummary:
-    """Uruchamia pełny proces z ochroną przed błędną lokalizacją i duplikacją."""
-
     phases = PhaseRunner(context.observer, clock=context.clock.now)
     files, dry_run = context.files, inputs.dry_run
     source_path = inputs.source.expanduser().resolve()
