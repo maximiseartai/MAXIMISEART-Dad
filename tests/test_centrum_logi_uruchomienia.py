@@ -44,7 +44,7 @@ from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progr
 from rozliczenia.centrum.log import MAX_FOR_LOGS, CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S, Outbox, Post
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Journal, LogsOnDisk, name_of
-from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
+from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, LoggedOrder, LoggedStep, ProcessLogs, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import guard_text
@@ -228,21 +228,25 @@ def _failing(
     return run
 
 
+def _first_card_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    run_outcome = runs_contract.RunOutcome
+    built: list[str] = []
+
+    def broken_once(**fields: Any) -> runs_contract.RunOutcome:
+        built.append(fields["ending"])
+        if len(built) == 1:
+            raise ValueError("synthetic contract failure SYN-001")
+        return run_outcome(**fields)
+
+    monkeypatch.setattr(runs_contract, "RunOutcome", broken_once)
+
+
 def _adapter_net(
     centrum: Callable[[Path], AnyCentrum], *, dry_run: bool
 ) -> Callable[[Path, pytest.MonkeyPatch], Ran]:
     def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ran:
         steered = centrum(tmp_path)
-        run_outcome = runs_contract.RunOutcome
-        built: list[str] = []
-
-        def broken_once(**fields: Any) -> runs_contract.RunOutcome:
-            built.append(fields["ending"])
-            if len(built) == 1:
-                raise ValueError("synthetic contract failure SYN-001")
-            return run_outcome(**fields)
-
-        monkeypatch.setattr(runs_contract, "RunOutcome", broken_once)
+        _first_card_fails(monkeypatch)
         return steered, run_to_end(steered, dry_run=dry_run)
 
     return run
@@ -380,6 +384,14 @@ ENDINGS = {
         [("stop", "BLAD_WYNIKU")],
         "ValueError",
         files_unchanged=False,
+    ),
+    "bez-rdzenia-podglad": Ending(
+        _core_failed(settling_centrum, dry_run=True),
+        "DRY-RUN",
+        ("BLAD_KRYTYCZNY", "after_engine", "for_maks"),
+        [("stop", "BLAD_WYNIKU")],
+        "ValueError",
+        files_unchanged=True,
     ),
 }
 
@@ -1159,6 +1171,46 @@ def test_dzialanie_po_wyniku_ktore_rzuca_nie_zmienia_wyniku_uruchomienia(
     assert without_times(view["result"]) == without_times(expected["result"])
     log = centrum.log_path.read_text(encoding="utf-8")
     assert 'nieoczekiwany-wyjatek typ=RuntimeError miejsce="po wyniku Uruchomienia procesu"' in log
+
+
+def test_blad_samego_adaptera_po_rdzeniu_daje_zatrzymanie_bez_uwag_technicznych_rdzenia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    views = []
+    for name, adapter_fails in (("bez-bledu", False), ("z-bledem", True)):
+        (tmp_path / name).mkdir()
+        centrum = preparing_centrum(tmp_path / name)
+        centrum.metrics_path.mkdir(parents=True)
+        if adapter_fails:
+            _first_card_fails(monkeypatch)
+        views.append(run_to_end(centrum, dry_run=True)["result"])
+
+    [(clean, net)] = [views]
+    assert clean["technical_notes"] != [], "rdzeń ma uwagę techniczną o niezapisanych metrykach"
+    assert (net["ending"], net["technical_notes"]) == ("after_engine", [])
+
+
+def test_logi_uruchomienia_sa_pierwszym_dzialaniem_po_wyniku_a_ich_wyjatek_nie_zatrzymuje_nastepnych(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    centrum = settling_centrum(tmp_path)
+    logged = RunComments.run_ended
+    checked = QuantityCheckAfterRun.run_ended
+    logs_before_check: list[int] = []
+
+    def logs_then_failure(self: RunComments, run: EndedRun) -> None:
+        logged(self, run)
+        raise RuntimeError("Logi Uruchomienia")
+
+    def counting(self: QuantityCheckAfterRun, run: EndedRun) -> None:
+        logs_before_check.append(len(log_files(centrum)))
+        checked(self, run)
+
+    monkeypatch.setattr(RunComments, "run_ended", logs_then_failure)
+    monkeypatch.setattr(QuantityCheckAfterRun, "run_ended", counting)
+
+    assert run_to_end(centrum, dry_run=False)["result"]["result"] == "OK"
+    assert logs_before_check == [1]
 
 
 def test_katalog_logow_bez_prawa_zapisu_daje_ten_sam_wynik_bez_komunikatu(tmp_path: Path) -> None:

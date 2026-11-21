@@ -1,25 +1,3 @@
-"""Karty Uruchomień z Logów Uruchomienia (ADR 0017): ostatnie Uruchomienie po starcie Centrum i karta wiersza Historii.
-
-Karty czytają pliki z dysku tylko przez Logi na dysku (``logs_disk``): plik ostatniego startu, w którym Centrum przy
-każdym starcie Uruchomienia zapisuje jego bezpieczne fakty, i pliki Logów Uruchomienia. Po starcie Centrum ostatnie
-Uruchomienie to ten start: gdy ma plik Logów, jego karta wraca z Logów. Gdy go nie ma, a Historia ma jego wiersz
-(pierwszy wiersz procesu od jego startu, także jeszcze bez identyfikatora), Centrum zamknęło się po zapisie rekordu
-metryk, a przed zapisem Logów, więc karta pokazuje wynik z Historii. Gdy nie ma ani Logów, ani wiersza Historii, to
-Urwane Uruchomienie (Centrum zamknęło się w jego trakcie), bo Logi powstają przed końcem każdego Uruchomienia, także
-przy Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje, więc nie ma kolejności względem działań po
-wyniku.
-
-Urwana Wycena w efenix ma Logi Urwanego Uruchomienia, które start Centrum zamknął z jej dziennika (``run_comments``),
-zanim karta ostatniego Uruchomienia przeczyta Logi (``LeftBehindClosed``): jej karta po starcie to dalej karta
-Urwanego Uruchomienia, z liczbą zleceń skończonych przed zamknięciem Centrum z każdym wynikiem. Takie Logi nie dają karty wiersza Historii (Urwane Uruchomienie nie ma wiersza Historii) ani karty
-zakończonego Uruchomienia, z której powstaje Powiadomienie, ani karty ostatniego Uporządkowania INTERMAX.
-
-Karta z Logów niesie tylko to, co w nich jest: Komunikaty w trzech częściach, podsumowanie, etapy, sposób
-zakończenia i Rodzaj Zatrzymania. Diagnozy i Zgłoszenia nie ma: żyją tylko przy Zatrzymaniu bieżącego
-Uruchomienia tej pracy Centrum. Plik startu ma te same fakty co linia ``uruchomienie-start`` dziennika Centrum i
-identyfikator Uruchomienia, więc reguła prywatności Logów obowiązuje bez zmian.
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -47,14 +25,10 @@ _PREVIEW_ADVICE: Final = "Podgląd niczego nie zapisał. Uruchom go ponownie."
 _WRITE_ADVICE: Final = "Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić."
 
 History = Callable[[], Iterable[metrics_contract.ProcessRun]]
-"""Wiersze Historii z plików metryk; ``OSError``: plików nie da się odczytać."""
 
 
 @dataclass(frozen=True)
 class LoggedRun:
-    """Zakończone Uruchomienie z jego Logów: karta, koniec i liczba zleceń Wyceny w efenix z każdym wynikiem (``None``:
-    inny proces albo Wycena bez podsumowania, np. po Zatrzymaniu przed pierwszym zleceniem)."""
-
     card: runs_contract.RunRestored
     ended_at: datetime
     orders: Counter[OrderKind] | None
@@ -67,10 +41,6 @@ class RunCards:
         self._ended = disk.viewed(self._ended_of)
 
     def last(self, closed: LeftBehindClosed) -> runs_contract.PastRun | None:
-        """Ostatnie Uruchomienie sprzed tego startu Centrum; ``None``: żadnego albo nie da się go odczytać. ``closed``:
-        start Centrum zamknął już dzienniki Wyceny, więc Urwana Wycena ma tu swoje Logi Urwanego Uruchomienia. Logi,
-        które są, ale są nieczytelne, to też ``None``: wynik był, tylko go nie znamy, więc to nie Urwane Uruchomienie."""
-
         started = self._disk.last_start()
         if started is None:
             return None
@@ -85,9 +55,6 @@ class RunCards:
                 return self._restored(record)
 
     def card(self, run_id: str) -> runs_contract.RunCard:
-        """Karta Uruchomienia ``run_id`` z jego Logów; ``missing`` bez pliku Logów, z plikiem, którego nie da się odczytać,
-        i z Logami Urwanego Uruchomienia, które nie ma wiersza Historii."""
-
         match self._disk.logs(run_id):
             case Found(logs=record) if record.ending != "interrupted":
                 return self._restored(record)
@@ -95,21 +62,13 @@ class RunCards:
                 return runs_contract.RunCardMissing(state="missing")
 
     def latest(self, process: common_contract.ProcessKey) -> runs_contract.RunRestored | None:
-        """Karta ostatniego Uruchomienia procesu ``process`` z Logów (``LogsOnDisk.newest``); ``None``: żadnego, nie da się
-        go odczytać albo to Logi Urwanego Uruchomienia, które nie mają karty wyniku."""
-
         record = self._disk.newest(process)
         return None if record is None or record.ending == "interrupted" else self._restored(record)
 
     def ended(self, process: common_contract.ProcessKey) -> list[LoggedRun]:
-        """Zakończone Uruchomienia procesu ``process`` z Logów, od najnowszego; pliki, których nie da się odczytać, pomija."""
-
         return self._ended.of(process)
 
     def _ended_of(self, record: RunLog) -> LoggedRun | None:
-        """Zakończone Uruchomienie z Logów ``record``; ``None`` dla Urwanego. Po Zatrzymaniu Logi mają zlecenia sprzed
-        niego, ale Powiadomienie liczy zlecenia tylko Wyceny z podsumowaniem."""
-
         if record.ending == "interrupted":
             return None
         orders = (
@@ -164,18 +123,6 @@ class RunCards:
         )
 
     def _recorded(self, started: StartFacts) -> runs_contract.RunRecorded | None:
-        """Karta z wiersza Historii Uruchomienia bez Logów; ``None``: Historia go nie ma albo jej nie da się odczytać.
-
-        Wiersz Uruchomienia to najwcześniejszy wiersz tego procesu ze startem od startu Uruchomienia (reguła
-        ``CentrumRuns.remember``), więc karta go znajduje także wtedy, gdy nie ma jeszcze identyfikatora. Wcześniejsze
-        Uruchomienia startowały przed nim, bo Centrum prowadzi jedno naraz. Uruchomienie spoza Centrum po starcie
-        Urwanego Uruchomienia dałoby mu swój wynik; jak w ``remember`` to rzadkie.
-
-        Bez ``stop_kind`` sposób zakończenia nie zmienia tytułu ani akcji. Wiersz Historii nie mówi, czy Zatrzymanie
-        przyszło po silniku (``after_engine``), więc po zapisie karta proponuje ponowne Uruchomienie, nie otwarcie
-        pliku; ponowne Uruchomienie zostawia pliki, które powstały, i mówi, co z nimi zrobić.
-        """
-
         row = self._row(started.process, started.started_at)
         if row is None:
             return None
@@ -208,8 +155,6 @@ class RunCards:
 
 
 def _orders(record: RunLog) -> runs_contract.CountGroup | None:
-    """Liczba zleceń Wyceny w efenix z Logów Urwanego Uruchomienia z każdym wynikiem; ``None`` bez śladu zleceń."""
-
     if record.efenix_orders is None:
         return None
     return runs_contract.CountGroup(
@@ -241,9 +186,6 @@ def _interrupted_advice(title: str, period: str, *, dry_run: bool) -> common_con
 
 
 def run_cards_router(cards: RunCards) -> APIRouter:
-    """Trasa karty Uruchomienia; brak karty to zwykła odpowiedź (``missing``), nie 404, bo przeglądarka nie odróżniłaby
-    go od porażki odczytu."""
-
     router = APIRouter(prefix="/api/runs", tags=["uruchomienia"])
 
     @router.get("/{run_id}/card", operation_id="getRunCard")
