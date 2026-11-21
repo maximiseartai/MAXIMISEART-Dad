@@ -24,6 +24,8 @@ from .workbook_files import is_blank
 
 
 class FillKind(StrEnum):
+    """Rodzaj Ilości do uzupełnienia, który ma listę wierszy."""
+
     WITHOUT_RULE = "without_rule"
     FROM_DESCRIPTION = "from_description"
 
