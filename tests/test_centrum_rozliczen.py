@@ -1,5 +1,3 @@
-"""Centrum rozliczeń przez jego HTTP API, tak jak widzi je przeglądarka taty."""
-
 from __future__ import annotations
 
 import base64
@@ -105,13 +103,18 @@ from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE, se
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, DEVICES_SECTION, RULES, RULES_FILE
 from rozliczenia.quantity_engine import (
     Component,
+    Action,
+    Condition,
     ContainsComponent,
     DeviceList,
+    DevicesText,
     Fill,
+    Multiplier,
     QuantityRule,
     QuantityRules,
     QuantityRulesRefused,
     RulesProblem,
+    TextMode,
 )
 from rozliczenia.activity_legend import ActivityCode, FixedColumn
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
@@ -239,17 +242,15 @@ def _committed_contract() -> dict[str, Any]:
 
 
 def test_frontend_parsuje_odpowiedzi_kontraktem_ktory_serwer_naprawde_eksportuje(tmp_path: Path) -> None:
-    """Frontend parsuje każdą odpowiedź serwera schematami wygenerowanymi z ``frontend/src/api/openapi.json``."""
-
     assert _exported_contract(tmp_path) == _committed_contract()
 
 
-def _state_changing_actions() -> list[tuple[str, str]]:
-    """Każda trasa kontraktu poza GET; odmowa Host i Origin zapada przed routingiem, więc parametr ścieżki
-    może być byle jaki."""
+ANY_PATH_PARAMETER_AS_HOST_REFUSAL_PRECEDES_ROUTING: Final = "x"
 
+
+def _state_changing_actions() -> list[tuple[str, str]]:
     return [
-        (method, re.sub(r"\{[^}]+\}", "x", path))
+        (method, re.sub(r"\{[^}]+\}", ANY_PATH_PARAMETER_AS_HOST_REFUSAL_PRECEDES_ROUTING, path))
         for path, operations in _committed_contract()["paths"].items()
         for method in operations
         if method != "get"
@@ -257,22 +258,20 @@ def _state_changing_actions() -> list[tuple[str, str]]:
 
 
 def _passed_through(app: Centrum, headers: dict[str, str]) -> list[tuple[str, str]]:
-    """Akcje z ``_state_changing_actions()``, które z ``headers`` nie dostały 403, i wpisy dziennika działań taty.
-
-    Dziennik dostaje wpis za każdą akcję, zanim zadziała jej trasa, więc pusty dziennik znaczy, że odrzucone żądanie
-    nie doszło do routingu. Pomiar widoku dostaje poprawne ciało: bez niego dziennik nic by nie wpisał."""
-
     allowed = []
     for method, path in _state_changing_actions():
-        body = view_timing() if path == "/api/view-timings" else None
-        if app.client.request(method, path, headers=headers, json=body).status_code != 403:
+        body_the_journal_records = view_timing() if path == "/api/view-timings" else None
+        if app.client.request(method, path, headers=headers, json=body_the_journal_records).status_code != 403:
             allowed.append((method, path))
-    journal = app.log_path.parent / DAD_ACTIONS_FILE
-    entries = journal.read_text(encoding="utf-8").splitlines() if journal.exists() else []
+    journal_written_before_each_route = app.log_path.parent / DAD_ACTIONS_FILE
+    entries = (
+        journal_written_before_each_route.read_text(encoding="utf-8").splitlines()
+        if journal_written_before_each_route.exists()
+        else []
+    )
     return allowed + [("dziennik", entry) for entry in entries]
 
 
-# Trasy, których przeglądarka nie mierzy przez `call` (frontend/src/api/client.ts), każda z powodem.
 OUTSIDE_TIMING = {
     "streamRunEvents": "strumień SSE (EventSource) otwarty przez całe życie karty, nie zapytanie z odpowiedzią",
     "recordViewTiming": "sam pomiar widoku, wysyłany po pomiarze; odpowiedź 204 bez treści",
@@ -281,9 +280,6 @@ OUTSIDE_TIMING = {
 
 
 def test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiarem(tmp_path: Path) -> None:
-    """``ApiOperation`` to dokładnie trasy API poza ``OUTSIDE_TIMING``; dziennik działań taty zapisuje przycisk tylko
-    pod operacją z ``ApiOperation``, więc jedyna trasa poza nią, która coś zmienia, to sam pomiar widoku."""
-
     paths = _exported_contract(tmp_path)["paths"].values()
     methods = {operation["operationId"]: method for path in paths for method, operation in path.items()}
     listed = get_args(timing_contract.ApiOperation)
@@ -666,11 +662,10 @@ def test_centrum_bez_wzorcow_w_config_startuje_a_siega_po_wzorce_tylko_ze_stanow
 def test_zadanie_z_obcym_naglowkiem_host_jest_odrzucone(tmp_path: Path) -> None:
     app = centrum(tmp_path)
 
-    # Origin zgodny z obcym Host: tak wygląda zapytanie strony obcej domeny przemapowanej w DNS na 127.0.0.1.
-    foreign = {"Host": "zly.example:47811", "Origin": "http://zly.example:47811"}
+    foreign_domain_remapped_to_localhost_in_dns = {"Host": "zly.example:47811", "Origin": "http://zly.example:47811"}
 
-    response = app.client.get("/api/health", headers=foreign)
-    allowed = _passed_through(app, foreign)
+    response = app.client.get("/api/health", headers=foreign_domain_remapped_to_localhost_in_dns)
+    allowed = _passed_through(app, foreign_domain_remapped_to_localhost_in_dns)
 
     assert response.status_code == 403
     assert "commit" not in response.text
@@ -687,7 +682,6 @@ def test_localhost_jest_dozwolonym_naglowkiem_host(tmp_path: Path) -> None:
 
 NOT_SET = {"state": "not_set"}
 UNREADABLE = {"state": "unreadable"}
-# Sekcja Wykonawcy bez pliku Listy Wykonawców: pusta lista jest dobra (DESIGN D10).
 NO_WORKERS: dict[str, object] = {"state": "good", "workers": [], "unresolved": [], "problem": None}
 DAMAGED = "Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."
 REGISTER_PATH = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
@@ -700,9 +694,6 @@ ADR_0030_REMINDERS: dict[str, object] = {
     "text": "Poproszę o wysłanie raportu za dzień {dzień}.",
     "footer": "",
 }
-"""Formularz sekcji Przypomnienia z wartościami z ADR 0030 i speca #1344: pory 8:00–17:00 i 18:00–22:00, pierwsze
-przypomnienie od 8:00 dnia następnego, pierwsze zdanie ze speca, bez stopki."""
-# Sekcja Przypomnienia bez pliku przypomnień: wartości z ADR 0030, wyłączone (DESIGN D2).
 NO_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "state": "good", "enabled": False, "since": None, "problem": None}
 DEFAULT_SETTLEMENT_MAIL: dict[str, object] = {
     "state": "good",
@@ -710,7 +701,6 @@ DEFAULT_SETTLEMENT_MAIL: dict[str, object] = {
     "text": "Dzień dobry,\nw załączniku rozliczenie za {okres}.",
     "problem": None,
 }
-"""Temat i treść Maila z rozliczeniem bez pliku Ustawień (ADR 0040)."""
 
 
 def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
@@ -756,10 +746,6 @@ def test_wskazany_rejestr_zlecen_i_folder_okresow_sa_zapamietane(tmp_path: Path)
 
 
 def test_okno_wyboru_rejestru_zlecen_pokazuje_tez_rejestr_pod_inna_nazwa(tmp_path: Path) -> None:
-    """Centrum przyjmuje Rejestr zleceń pod każdą nazwą, więc okno wyboru, które podpowiada nazwę z GLOSSARY, ma też
-    filtr, pod którym tata widzi skoroszyt przemianowany albo skopiowany pod inną nazwą. Okno Windows nie rozróżnia
-    w filtrze wielkości liter."""
-
     register = tmp_path / "Rejestr zleceń 2026.xlsx"
     register.touch()
     app = centrum(tmp_path)
@@ -768,11 +754,15 @@ def test_okno_wyboru_rejestru_zlecen_pokazuje_tez_rejestr_pod_inna_nazwa(tmp_pat
     chosen = app.client.post("/api/settings/register/choose").json()["settings"]["order_register"]
 
     [filters] = app.platform.file_filters
+    # ZEWNĘTRZNE: okno wyboru pliku Windows dopasowuje filtr typu pliku bez wielkości liter (Microsoft Learn, COMDLG_FILTERSPEC)
     shown_by = {
         name: [label for label, pattern in filters if fnmatchcase(name.casefold(), pattern.casefold())]
         for name in ("ZLECENIA INTERMAX OD 08_11_2021.xlsx", register.name)
     }
-    assert all(shown_by.values()), shown_by
+    assert all(shown_by.values()), (
+        "Centrum przyjmuje Rejestr zleceń pod każdą nazwą, więc okno wyboru pokazuje też skoroszyt przemianowany albo "
+        f"skopiowany pod inną nazwą: {shown_by}"
+    )
     assert chosen["name"] == register.name
 
 
@@ -789,9 +779,6 @@ def test_anulowane_okno_wyboru_nie_zmienia_ustawien(tmp_path: Path) -> None:
 
 
 def test_nieznane_pole_pliku_ustawien_ma_numer_od_gory_a_nie_nazwe_z_pliku(tmp_path: Path) -> None:
-    """Nazwa pola to tekst z pliku (np. login wpisany ręcznie w złe miejsce), a zdanie trafia do Logów Centrum i do
-    Zgłoszenia, więc mówi tylko, które to pole od góry (przegląd #1529 r2, D2)."""
-
     app = centrum(tmp_path)
     app.settings_path.parent.mkdir(parents=True)
     app.settings_path.write_text(f"schema_version: 1\nmotyw: light\n{LEAKED_LOGIN}: {LEAKED_NAME}\n", encoding="utf-8")
@@ -799,7 +786,10 @@ def test_nieznane_pole_pliku_ustawien_ma_numer_od_gory_a_nie_nazwe_z_pliku(tmp_p
     response = app.client.get("/api/settings")
 
     assert response.json()["folders_problem"] == {"field": None, "message": settings_messages.unknown_key(SETTINGS_FILE, 3)}
-    assert LEAKED_LOGIN not in response.text + app.tool.log_path.read_text(encoding="utf-8")
+    assert LEAKED_LOGIN not in response.text + app.tool.log_path.read_text(encoding="utf-8"), (
+        "nazwa pola to tekst z pliku (np. login wpisany ręcznie w złe miejsce), a zdanie trafia do Logów Centrum i do "
+        "Zgłoszenia, więc mówi tylko, które to pole od góry"
+    )
 
 
 def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosciami_domyslnymi(tmp_path: Path) -> None:
@@ -842,8 +832,6 @@ def test_nieistniejacy_zapamietany_folder_okresow_jest_wyraznie_oznaczony(tmp_pa
 def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a_nie_brakujace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
 ) -> None:
-    """Ustawienia Centrum mówią o nich to, co Diagnoza („Nie da się teraz odczytać”), a nie „Nie ma już” ani błąd."""
-
     onedrive = tmp_path / "OneDrive"
     register = onedrive / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
     periods = onedrive / "INEA"
@@ -878,9 +866,6 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
 
 @NO_ACCESS_ON_WINDOWS
 def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Path) -> None:
-    """Plik Ustawień Centrum trzymany np. przez antywirus: wskazanych ścieżek nie widać, ale nie są „nie wskazano”, a motyw
-    jest nieznany (``None``), więc strona taty z jasnym motywem zostaje przy jasnym zamiast przejść na domyślny ciemny."""
-
     app, _ = with_periods_directory(tmp_path)
     assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
 
@@ -896,7 +881,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
             "order_register": UNREADABLE,
             "periods_directory": UNREADABLE,
             "periods_all_years": False,
-            "theme": None,
+            "theme": THEME_UNKNOWN_SO_A_LIGHT_PAGE_STAYS_LIGHT,
             "folders_problem": None,
             "workers": NO_WORKERS,
             **NO_INBOX,
@@ -988,6 +973,7 @@ AUTOSTART_NOT_CHANGED = (
 )
 AUTOSTART_UNSUPPORTED = "Start razem z Windows działa tylko na komputerze z Windows."
 AUTOSTART_SHOWN_OFF = {"state": "off", "reason": None}
+THEME_UNKNOWN_SO_A_LIGHT_PAGE_STAYS_LIGHT: Final = None
 AUTOSTART_UNREADABLE = "Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę."
 
 
@@ -998,11 +984,9 @@ AUTOSTART_UNREADABLE = "Nie da się teraz sprawdzić folderu Autostart. Odświe�
         "rejestr: [nie zamknięta lista\n".encode(),
         b"schema_version: 1\nmotyw: \xff\n",
     ],
-    ids=["nowszy-schemat", "uszkodzony-yaml", "nie-utf-8"],
+    ids=["nowszy-schemat-po-cofnieciu-aktualizacji", "uszkodzony-yaml", "nie-utf-8"],
 )
 def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tmp_path: Path, content: bytes) -> None:
-    """Tata po cofnięciu Aktualizacji albo z uszkodzonym plikiem wskazuje Ustawienia jeszcze raz i pracuje dalej."""
-
     app = centrum(tmp_path)
     app.settings_path.parent.mkdir(parents=True)
     app.settings_path.write_bytes(content)
@@ -1149,10 +1133,6 @@ def test_cofniecie_przywraca_wartosc_jako_nowy_wiersz_a_cofniecie_cofniecia_przy
 def test_cofniecie_zmiany_ktora_utworzyla_plik_ustawien_usuwa_plik(
     tmp_path: Path, name: str, change: Callable[[Centrum], Any]
 ) -> None:
-    """Tata bez pliku liczy wartościami z Wydania. „Cofnij” pierwszej zmiany (jego albo spoza Centrum) przywraca brak
-    pliku, a nie treść z Wydania w pliku, więc następne Wydanie z nowymi wartościami domyślnymi dociera do niego (ADR
-    0032); wiersz cofnięcia mówi „plik usunięty”, a cofnięcie cofnięcia tworzy plik znowu."""
-
     app = centrum(tmp_path)
     assert change(app).status_code == 200
     [created] = [row for row in history_rows(app) if row["file"] == name]
@@ -1172,9 +1152,6 @@ def test_cofniecie_zmiany_ktora_utworzyla_plik_ustawien_usuwa_plik(
 
 
 def test_cofniecie_zmiany_ktora_utworzyla_plik_zostawia_plik_z_pozniejsza_zmiana_innego_klucza(tmp_path: Path) -> None:
-    """„Cofnij” zmiany motywu, która utworzyła plik Folderów i motywu, przy wskazanym potem folderze okresów zostawia plik
-    z tym folderem: brak pliku zgubiłby późniejszą zmianę taty."""
-
     periods = tmp_path / "INEA"
     periods.mkdir()
     app = centrum(tmp_path)
@@ -1191,9 +1168,6 @@ def test_cofniecie_zmiany_ktora_utworzyla_plik_zostawia_plik_z_pozniejsza_zmiana
 
 
 def _outside(app: Centrum, name: str, old: str, new: str) -> Any:
-    """Plik ``name`` z treścią z Wydania z ``old`` zamienionym na ``new`` zapisany poza Centrum i odczyt, który daje
-    jego wiersz Historii."""
-
     app.client.get("/api/settings/history")
     write_dad_quantity_rules(app.tool, name, old, new)
     return app.client.get("/api/settings/history")
@@ -1212,8 +1186,6 @@ QUANTITY_RULES_URL = "/api/settings/quantity-rules"
 
 
 def rule_sentences(app: Centrum) -> dict[str, str]:
-    """Zdanie każdej reguły z odpowiedzi sekcji Reguły ilości; kolumna jako „nazwa (litera)” albo sama litera."""
-
     response = app.client.get(QUANTITY_RULES_URL)
     assert response.status_code == 200, response.text
     return {
@@ -1235,8 +1207,25 @@ def test_kazda_regula_ilosci_z_wydania_ma_w_ustawieniach_zdanie_jesli_to_a_bez_w
     ]
     assert all(sentence[0].isupper() and sentence.endswith(".") for sentence in sentences.values())
     assert (response["rules_problem"], response["devices_problem"]) == (None, None)
-    # Zdania wybranych reguł, po jednej na każdy rodzaj warunku, działania i mnożnika (ADR 0033).
     assert {rule: sentences[rule] for rule in RULE_SENTENCES} == RULE_SENTENCES
+    assert _rule_kinds(rule for rule in DEFAULT_QUANTITY_RULES.rules if rule.id in RULE_SENTENCES) == _rule_kinds_of_adr_0033(), (
+        "RULE_SENTENCES ma regułę każdego rodzaju warunku, działania i mnożnika"
+    )
+
+
+def _rule_kinds(rules: Iterable[QuantityRule]) -> set[object]:
+    kinds: set[object] = set()
+    for rule in rules:
+        kinds.add(type(rule.action))
+        kinds |= {condition.mode if isinstance(condition, DevicesText) else type(condition) for condition in rule.conditions}
+        if isinstance(rule.action, Fill):
+            kinds |= {write.multiplier for write in rule.action.writes}
+    return kinds
+
+
+def _rule_kinds_of_adr_0033() -> set[object]:
+    conditions = {kind for kind in get_args(Condition) if kind is not DevicesText}
+    return {*get_args(Action), *conditions, *TextMode, *Multiplier}
 
 
 RULE_SENTENCES = {
@@ -1512,9 +1501,6 @@ def test_zmiana_albo_usuniecie_skladnika_ktorego_juz_nie_ma_to_odmowa_bez_zapisu
 def test_zmiana_skladnika_usunietego_po_sprawdzeniu_trasy_nie_rusza_listy_ani_nie_dopisuje_wiersza(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Inny zapis usuwa składnik po sprawdzeniu 404 w trasie, a przed blokadą właściciela: polecenie zmiany tego
-    składnika nie przywraca go i nie zmienia reszty Listy Urządzeń."""
-
     app = centrum(tmp_path)
     change_devices = CentrumSettings.change_devices
     removals: list[Saved | Refused | NotSaved] = []
@@ -1571,18 +1557,15 @@ def test_skladnik_dodany_znowu_po_usunieciu_ma_nowe_id_a_cofniecie_usuniecia_pie
 
     second = again.json()["quantity_rules"]["devices"][-1]["id"]
     assert first != second
-    # Oba składniki mają zapis „ont x”, więc usunięty nie wraca obok nowego: odmowa ze zdaniem, a nowy zostaje, jak był.
-    assert (restored.status_code, bool(restored.json()["message"])) == (422, True), restored.text
+    assert (restored.status_code, bool(restored.json().get("message"))) == (422, True), (
+        f"oba składniki mają zapis „ont x”, więc usunięty nie wraca obok nowego: {restored.text}"
+    )
     assert new_components(app) == {second: _component_sentence(DEVICE_FORMS["X2"])}
 
 
 def test_nowy_skladnik_przy_historii_bez_odczytu_to_odmowa_bez_zapisu_a_dodany_potem_ma_nowe_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Tata dodaje składnik i go usuwa, a potem dodaje go znowu, gdy system nie daje czytać Historii Ustawień (plik trzyma
-    OneDrive): bez kluczy Historii nowy dostałby id usuniętego i zniknąłby po „Cofnij” usunięcia, więc zapis jest odmową
-    bez zmian w plikach. Dodany, gdy Historia znów się czyta, ma własne id."""
-
     app = centrum(tmp_path)
     first = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X"]).json()["quantity_rules"]["devices"][-1]["id"]
     assert app.client.delete(f"{DEVICES_URL}/{first}").status_code == 200
@@ -1591,15 +1574,15 @@ def test_nowy_skladnik_przy_historii_bez_odczytu_to_odmowa_bez_zapisu_a_dodany_p
     with unreadable_history(monkeypatch):
         refused = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X2"])
     devices_after, rows_after = (app.tool.config / DEVICES_FILE).read_bytes(), history_rows(app)
-    second = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X2"]).json()["quantity_rules"]["devices"][-1]["id"]
 
-    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED}), (
+        "bez kluczy Historii nowy składnik dostałby id usuniętego i zniknąłby po „Cofnij” usunięcia"
+    )
     assert (devices_after, rows_after) == (devices_before, rows_before)
+    second = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X2"]).json()["quantity_rules"]["devices"][-1]["id"]
     assert second != first
 
 
-# Krok taty w sekcji Urządzenia: zapis składnika (także nowego, gdy Historii nie da się przeczytać) albo „Cofnij” wiersza
-# Historii Listy Urządzeń; liczba wybiera składnik albo wiersz.
 _DEVICE_STEP = st.one_of(
     st.tuples(st.just("dodaj"), st.sampled_from(sorted(DEVICE_FORMS))),
     st.tuples(st.just("zmien"), st.integers(0, 9), st.sampled_from(sorted(DEVICE_FORMS))),
@@ -1612,11 +1595,6 @@ _DEVICE_STEP = st.one_of(
 def test_po_dowolnych_zapisach_listy_urzadzen_i_cofnieciach_kazdy_nowy_skladnik_ma_wlasne_id_a_cofniecie_zmienia_tylko_jego(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Po dowolnych zapisach taty w sekcji Urządzenia i cofnięciach z Historii: nowy składnik dostaje id, którego nie
-    miał żaden składnik przed nim, a „Cofnij” wiersza zmienia tylko składnik tego wiersza; cofnięcie, którego nie da się
-    wykonać, nie zmienia żadnego składnika i mówi zdaniem dlaczego. Zapis z zapisem innego składnika to odmowa 422, a
-    nowy składnik, gdy Historii nie da się przeczytać, to odmowa bez zmiany listy."""
-
     examples = itertools.count()
     forms = {_component_sentence(form): form for form in DEVICE_FORMS.values()}
 
@@ -1684,9 +1662,6 @@ def test_po_dowolnych_zapisach_listy_urzadzen_i_cofnieciach_kazdy_nowy_skladnik_
 
 
 def _previous_release() -> QuantityRules:
-    """Wcześniejsze Wydanie: Reguły ilości i Lista Urządzeń z Wydania bez składnika „instalacja ręczna” i bez reguł, które
-    go potrzebują."""
-
     devices = DeviceList(tuple(component for component in DEFAULT_QUANTITY_RULES.devices.components if component.id != "instalacja-reczna"))
 
     def fits(rule: Any) -> bool:
@@ -1700,8 +1675,6 @@ def _previous_release() -> QuantityRules:
 
 
 def _released(monkeypatch: pytest.MonkeyPatch, rules: QuantityRules) -> None:
-    """Centrum z Regułami ilości i Listą Urządzeń z Wydania ``rules``, jak po Aktualizacji do tego Wydania."""
-
     monkeypatch.setattr(settings_quantity_rules, "DEFAULT_QUANTITY_RULES", rules)
     settings_quantity_rules._parse_rules.cache_clear()
     settings_quantity_rules._parse_devices.cache_clear()
@@ -1709,9 +1682,6 @@ def _released(monkeypatch: pytest.MonkeyPatch, rules: QuantityRules) -> None:
 
 @pytest.fixture
 def release_without_manual_installation(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[], None]]:
-    """Wcześniejsze Wydanie (``_previous_release``). Wywołanie zwrócone przez fixture to Aktualizacja do dzisiejszego
-    Wydania (reguły znów potrzebują składnika „instalacja ręczna”)."""
-
     _released(monkeypatch, _previous_release())
     yield lambda: _released(monkeypatch, DEFAULT_QUANTITY_RULES)
     monkeypatch.undo()
@@ -1777,9 +1747,6 @@ def _dad_list(app: Centrum) -> tuple[Component, ...] | None:
 def test_skladnik_wydania_zmieniony_w_sekcji_przed_zapisaniem_na_liscie_taty_zapisuje_sie_ze_zmiana(
     tmp_path: Path, release_without_manual_installation: Callable[[], None]
 ) -> None:
-    """Składnik z Wydania, którego lista taty jeszcze nie ma, sekcja pokazuje na liście, więc tata zmienia go jak każdy
-    inny: dopisany zapis trafia na listę taty razem ze składnikiem i liczy się w procesach."""
-
     app = centrum(tmp_path)
     nokia = device_form(app, "nokia")
     assert app.client.put(f"{DEVICES_URL}/nokia", json={**nokia, "other_spellings": ["ont nokia"]}).status_code == 200
@@ -1807,11 +1774,6 @@ def _collective_cell(centrum: PreparingCentrum, cell: str) -> object:
 def test_zapis_taty_ktory_nastepne_wydanie_daje_nowemu_skladnikowi_zostaje_u_taty_a_przygotowanie_liczy_lista_taty(
     tmp_path: Path, release_without_manual_installation: Callable[[], None]
 ) -> None:
-    """Tata dopisał „ont nokia” do „nokia” i dodał z podpowiedzi składnik „instalacja ręczna”, a następne Wydanie daje
-    ten zapis nowemu składnikowi reguł (zapisy „instalacja ręczna” i „wizja”). Zapis taty wygrywa: Przygotowanie liczy
-    listą taty, składnik z Wydania dochodzi z zapisem, którego tata nie ma, a zapisanie go zdaniem sekcji i usunięcie
-    własnego składnika przechodzą."""
-
     orders = ((1, "ont nokia"), (2, "wizja"))
     centrum = preparing_centrum(tmp_path, [{**register_order(number, PERIOD_MONDAY), "URZĄDZENIA": devices} for number, devices in orders])
     nokia = device_form(centrum, "nokia")
@@ -1827,8 +1789,9 @@ def test_zapis_taty_ktory_nastepne_wydanie_daje_nowemu_skladnikowi_zostaje_u_tat
     assert (devices["nokia"]["other_spellings"], devices[own]["name"]) == (["ont nokia"], "instalacja ręczna")
     assert devices["instalacja-reczna"] == {"id": "instalacja-reczna", "name": "wizja", "other_spellings": [], "group": None}
     assert shown["devices_problem"] == {"field": None, "message": settings_messages.needed_by_release_rules("wizja")}
-    # „ont nokia” liczy reguła „nokia” (Z), a „wizja” reguła składnika z Wydania (AN).
-    assert (_collective_cell(centrum, "Z18"), _collective_cell(centrum, "AN19")) == (1, 1)
+    assert (_collective_cell(centrum, "Z18"), _collective_cell(centrum, "AN19")) == (1, 1), (
+        "„ont nokia” liczy reguła „nokia” (Z), a „wizja” reguła składnika z Wydania (AN)"
+    )
     saved = centrum.client.put(f"{DEVICES_URL}/instalacja-reczna", json=device_form(centrum, "instalacja-reczna"))
     assert (saved.status_code, saved.json()["quantity_rules"]["devices_problem"]) == (200, None), saved.text
     assert centrum.client.delete(f"{DEVICES_URL}/{own}").status_code == 200
@@ -1837,10 +1800,6 @@ def test_zapis_taty_ktory_nastepne_wydanie_daje_nowemu_skladnikowi_zostaje_u_tat
 def test_skladnik_wydania_bez_zapisu_spoza_listy_taty_liczy_sie_jakby_go_nie_bylo_a_zwolnienie_zapisu_go_przywraca(
     tmp_path: Path, release_without_manual_installation: Callable[[], None]
 ) -> None:
-    """Tata ma oba zapisy nowego składnika następnego Wydania w swoim składniku: składnik z Wydania nie dochodzi, a reguły z
-    Wydania liczą tak, jakby żadne zlecenie go nie miało (reguła „zawierają” odpada, „nie zawierają” zawsze zachodzi). Lista
-    taty zostaje cała, a sekcja mówi, jak zwolnić zapis; zwolniony składnik z Wydania dochodzi i liczą się wszystkie reguły."""
-
     app = centrum(tmp_path)
     nokia = device_form(app, "nokia")
     assert app.client.put(f"{DEVICES_URL}/nokia", json={**nokia, "other_spellings": ["ont nokia"]}).status_code == 200
@@ -1872,9 +1831,6 @@ def test_skladnik_wydania_bez_zapisu_spoza_listy_taty_liczy_sie_jakby_go_nie_byl
 def test_narzedzia_licza_lista_taty_zmieniona_poza_centrum_gdy_skladnik_wydania_ma_tylko_jej_zapisy(
     tmp_path: Path, release_without_manual_installation: Callable[[], None]
 ) -> None:
-    """Lista taty z oboma zapisami nowego składnika Wydania jest dobra także dla narzędzi: zmieniona poza Centrum, zanim
-    Centrum ją przeczyta, liczy się od razu, a nie ostatnia dobra lista z pamięci."""
-
     app = centrum(tmp_path)
     app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": ["wizja"], "group": None})
     release_without_manual_installation()
@@ -1887,10 +1843,6 @@ def test_narzedzia_licza_lista_taty_zmieniona_poza_centrum_gdy_skladnik_wydania_
 
 
 def test_narzedzia_licza_regulami_z_wydania_gdy_plik_regul_taty_zniknal_poza_centrum(tmp_path: Path) -> None:
-    """Tata ma reguły bez reguł składnika „instalacja ręczna” i listę bez niego, a plik reguł znika poza Centrum, zanim
-    Centrum go przeczyta: narzędzia liczą Regułami ilości z Wydania ze składnikiem z Listy Urządzeń z Wydania, jak
-    procesy, a nie ostatnimi dobrymi regułami taty."""
-
     app = centrum(tmp_path)
     devices = tuple(component for component in DEVICES.default if component.id != "instalacja-reczna")
     rules = tuple(rule for rule in RULES.default if rule.id not in {"v-znane", "instalacja-reczna"})
@@ -1918,9 +1870,6 @@ def test_narzedzia_licza_regulami_z_wydania_gdy_plik_regul_taty_zniknal_poza_cen
 def test_narzedzia_licza_ostatnia_dobra_para_gdy_plik_taty_zmieniony_poza_centrum_nie_pasuje_do_drugiego(
     tmp_path: Path, changed: str, old: str, new: str
 ) -> None:
-    """Tata ma składnik „nowy” spoza Listy Urządzeń z Wydania i regułę z nim, oba przyjęte; potem jeden z plików zmienia
-    się poza Centrum tak, że nie pasuje do drugiego, zanim Centrum go przeczyta: narzędzia liczą ostatnią dobrą parą."""
-
     app = centrum(tmp_path)
     devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
     rules = write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
@@ -1939,10 +1888,6 @@ def test_narzedzia_licza_ostatnia_dobra_para_gdy_plik_taty_zmieniony_poza_centru
 def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skladnikowi_wydania_jego_zapisy(
     tmp_path: Path, release_without_manual_installation: Callable[[], None], others: list[str]
 ) -> None:
-    """Tata dodał składnik „instalacja ręczna” (z zapisem „wizja” albo bez) do Listy Urządzeń z Wydania, a następne
-    Wydanie daje te zapisy nowemu składnikowi reguł. „Cofnij” dodania przechodzi za pierwszym razem: plik taty znika, bo
-    przed dodaniem go nie było, procesy liczą składnikiem z Wydania z oboma zapisami, a sekcja nie ma już zdania."""
-
     app = centrum(tmp_path)
     app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": others, "group": None})
     [added] = history_rows(app)
@@ -1969,9 +1914,6 @@ def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skl
 def test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wartosci_z_wydania_usuwa_plik(
     tmp_path: Path, release_without_manual_installation: Callable[[], None], name: str, change: Callable[[Centrum], Any]
 ) -> None:
-    """Tata bez pliku zmienia Ustawienie, Aktualizacja daje nowe wartości z Wydania, a potem tata klika „Cofnij”: pliku
-    znowu nie ma, więc tata liczy nowymi wartościami z Wydania, a nie wartościami poprzedniego Wydania w swoim pliku."""
-
     app = centrum(tmp_path)
     assert change(app).status_code == 200
     [created] = [row for row in history_rows(app) if row["file"] == name]
@@ -1987,9 +1929,6 @@ def test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wart
 def test_cofniecie_zmiany_ktora_utworzyla_plik_po_cofnieciu_pozniejszej_i_aktualizacji_usuwa_plik(
     tmp_path: Path, release_without_manual_installation: Callable[[], None]
 ) -> None:
-    """Tata bez pliku reguł zmienia regułę dwa razy, cofa drugą zmianę, Aktualizacja daje nowe Reguły ilości, a potem
-    tata cofa pierwszą zmianę: późniejsze zmiany niczego w pliku nie zostawiły, więc pliku znowu nie ma."""
-
     app = centrum(tmp_path)
     for value in (2, 3):
         assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, value)).status_code == 200
@@ -2005,22 +1944,15 @@ def test_cofniecie_zmiany_ktora_utworzyla_plik_po_cofnieciu_pozniejszej_i_aktual
 
 
 def _nokia_rule(app: Centrum, value: int) -> dict[str, Any]:
-    """Formularz reguły „nokia” z sekcji Reguły ilości z wartością ``value``: zmiana, której nic nie łączy ze składnikiem
-    z Wydania."""
-
     rule = next(rule for rule in app.client.get(QUANTITY_RULES_URL).json()["rules"] if rule["id"] == "nokia")["rule"]
     assert isinstance(rule, dict)
+    assert "instalacja-reczna" not in _rule_components(rule), "zmiana reguły „nokia” nie dotyka składnika z Wydania"
     return {**rule, "action": {**rule["action"], "writes": [{**rule["action"]["writes"][0], "value": value}]}}
 
 
 def test_zmiana_reguly_przy_skladniku_wydania_ktorego_zapisy_ma_tata_czeka_na_zwolniony_zapis_tak_samo_w_podgladzie(
     tmp_path: Path, release_without_manual_installation: Callable[[], None]
 ) -> None:
-    """Tata ma oba zapisy nowego składnika następnego Wydania w swoim składniku, więc reguły z Wydania liczą bez niego.
-    Sekcja Reguły ilości mówi, że zmiana reguł czeka na zwolniony zapis, a zapis i podgląd zmiany reguły odmawiają tym
-    samym zdaniem, bez pliku reguł. Po działaniu ze zdania zmiana reguły się zapisuje, a sekcja ma regułę składnika z
-    Wydania."""
-
     app = centrum(tmp_path)
     added = app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": ["wizja"], "group": None})
     own = added.json()["quantity_rules"]["devices"][-1]["id"]
@@ -2037,7 +1969,6 @@ def test_zmiana_reguly_przy_skladniku_wydania_ktorego_zapisy_ma_tata_czeka_na_zw
     assert (saved.status_code, saved.json()["message"]) == (422, waiting)
     assert (previewed.status_code, previewed.json()["message"]) == (422, waiting)
     assert settings_bytes(app.tool.config / RULES_FILE) is None
-    # Działanie ze zdania: zmiana nazwy składnika taty zwalnia zapis „instalacja ręczna”, a „wizja” zostaje u taty.
     freed = app.client.put(f"{DEVICES_URL}/{own}", json={"name": "ręczna", "other_spellings": ["wizja"], "group": None})
     assert freed.status_code == 200, freed.text
     saved = app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=rule)
@@ -2050,10 +1981,6 @@ def test_zmiana_reguly_przy_skladniku_wydania_ktorego_zapisy_ma_tata_czeka_na_zw
 def test_cofniecie_zmiany_reguly_po_usunieciu_pliku_regul_przy_skladniku_wydania_idzie_ta_sama_droga_co_zapis_reguly(
     tmp_path: Path, release_without_manual_installation: Callable[[], None], others: list[str]
 ) -> None:
-    """Tata zmienił regułę dwa razy, Maks usunął jego plik reguł, a Wydanie daje nowy składnik reguł. „Cofnij” drugiej
-    zmiany zapisuje pierwszy plik reguł taty tak jak edytor: przy zderzeniu odmawia tym samym zdaniem bez zmiany plików,
-    a przy składniku z Wydania z wolnym zapisem zapisuje go najpierw na liście taty."""
-
     app = centrum(tmp_path)
     app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": others, "group": None})
     for value in (2, 3):
@@ -2079,10 +2006,6 @@ def test_cofniecie_zmiany_reguly_po_usunieciu_pliku_regul_przy_skladniku_wydania
 def test_zmiana_reguly_przy_skladniku_wydania_spoza_listy_taty_zapisuje_go_na_liscie_taty_osobnym_wierszem(
     tmp_path: Path, release_without_manual_installation: Callable[[], None]
 ) -> None:
-    """Lista taty bez nowego składnika następnego Wydania (procesy biorą go z listy z Wydania). Pierwsza zmiana reguły
-    taty zapisuje się z listą, do której pasuje: najpierw składnik z Wydania na liście taty (wiersz jak „ołówek, Zapisz”
-    przy nim), potem reguła; podgląd tej zmiany przechodzi tak samo."""
-
     app = centrum(tmp_path)
     nokia = device_form(app, "nokia")
     assert app.client.put(f"{DEVICES_URL}/nokia", json={**nokia, "other_spellings": ["ont nokia"]}).status_code == 200
@@ -2101,21 +2024,30 @@ def test_zmiana_reguly_przy_skladniku_wydania_spoza_listy_taty_zapisuje_go_na_li
     ]
 
 
-# Zapisy, które tata daje w sekcji Urządzenia przed Wydaniem: oba zapisy składnika „instalacja ręczna”, który daje dopiero
-# następne Wydanie, i zapisy spoza obu list.
-_DAD_SPELLINGS = ("instalacja ręczna", "wizja", "ont nokia", "ont x")
-# Krok taty przed Wydaniem: nowy składnik z zapisami z puli, zapis z puli dopisany do składnika z listy albo jedyny zapis
-# składnika z listy (reguły z Wydania dalej go potrzebują).
+_RELEASE_PAIR_SPELLINGS = ("instalacja ręczna", "wizja")
+_SPELLINGS_OUTSIDE_BOTH_LISTS = ("ont nokia", "ont x")
+_DAD_SPELLINGS = (*_RELEASE_PAIR_SPELLINGS, *_SPELLINGS_OUTSIDE_BOTH_LISTS)
+_RELEASE_LIST_COMPONENTS_DAD_CHANGES = ("nokia", "fut", "gateway")
 _DAD_LIST_STEP = st.one_of(
     st.tuples(st.just("dodaj"), st.lists(st.sampled_from(_DAD_SPELLINGS), min_size=1, max_size=2, unique=True)),
-    st.tuples(st.sampled_from(("dopisz", "zastap")), st.sampled_from(("nokia", "fut", "gateway")), st.sampled_from(_DAD_SPELLINGS)),
+    st.tuples(st.sampled_from(("dopisz", "zastap")), st.sampled_from(_RELEASE_LIST_COMPONENTS_DAD_CHANGES), st.sampled_from(_DAD_SPELLINGS)),
 )
 
 
-def _proposed(app: Centrum, message: str) -> tuple[str, str, dict[str, Any] | None]:
-    """Działanie, które proponuje zdanie sekcji Urządzenia ``message``, tak jak je wykona formularz: metoda, adres i
-    formularz. Zapis usuwa się tylko × przy innym zapisie (nazwy formularz nie usuwa), a składnik „Usuń składnik"."""
+_SPELLING_ON_COMPONENT_A_RULE_NEEDS_SO_THE_SENTENCE_RENAMES_IT: Final[tuple[list[tuple[Any, ...]], list[int]]] = (
+    [("zastap", "nokia", "instalacja ręczna"), ("dopisz", "gateway", "wizja")],
+    [],
+)
+_UNDO_ADDING_OWN_COMPONENT_WITH_BOTH_RELEASE_SPELLINGS: Final = ([("dodaj", ["instalacja ręczna", "wizja"])], [0])
+_UNDO_ADDING_OWN_COMPONENT_WITH_ONE_RELEASE_SPELLING: Final = ([("dodaj", ["instalacja ręczna"])], [0])
+_UNDO_FUT_CHANGE_WHOSE_OLD_SPELLING_A_NEW_DAD_COMPONENT_HAS: Final = (
+    [("zastap", "fut", "instalacja ręczna"), ("dodaj", ["fut"])],
+    [1],
+)
+_UNDO_OF_UNDONE_ADDING_BRINGS_RELEASE_COMPONENT_WITH_FREE_SPELLING: Final = ([("dodaj", ["instalacja ręczna"])], [0, 0])
 
+
+def _proposed(app: Centrum, message: str) -> tuple[str, str, dict[str, Any] | None]:
     for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]:
         url = f"{DEVICES_URL}/{device['id']}"
         form = {"name": device["name"], "other_spellings": device["other_spellings"], "group": device["group"]}
@@ -2135,8 +2067,6 @@ def _proposed(app: Centrum, message: str) -> tuple[str, str, dict[str, Any] | No
 
 
 def _holds_dad_spellings(app: Centrum, context: object) -> None:
-    """Każdy zapis listy taty należy w procesach do składnika, któremu dał go tata: nigdy cała para z Wydania."""
-
     counted = _tools_rules(app.tool.config)
     for component in _dad_list(app) or ():
         for spelling in component.spellings:
@@ -2144,8 +2074,6 @@ def _holds_dad_spellings(app: Centrum, context: object) -> None:
 
 
 def _release_rule_components() -> frozenset[str]:
-    """Identyfikatory składników, których potrzebują Reguły ilości z Wydania (warunek „zawierają” albo wpis razy składnik)."""
-
     needed = {condition.component for rule in DEFAULT_QUANTITY_RULES.rules for condition in rule.conditions if isinstance(condition, ContainsComponent)}
     needed |= {
         write.component
@@ -2158,11 +2086,6 @@ def _release_rule_components() -> frozenset[str]:
 
 
 def _undo_holds(app: Centrum, row: dict[str, Any], context: object) -> None:
-    """„Cofnij” wiersza Listy Urządzeń przechodzi albo odmawia bez zmiany pliku zdaniem, które jest prawdą: przywrócony
-    składnik ma zapis, który ma już inny składnik listy taty (każdy zapis należy do jednego składnika), albo „Cofnij” usuwa
-    składnik, którego potrzebują Reguły ilości z Wydania, a Lista Urządzeń z Wydania oddałaby go taki sam, więc zmiana
-    nic by nie zmieniła (zdanie reguły z jego nazwą z sekcji)."""
-
     before = settings_bytes(app.tool.config / DEVICES_FILE)
     shown = {device["id"]: device for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]}
     restored = {component.id: component.spellings for component in _dad_list(app) or ()}
@@ -2199,12 +2122,12 @@ def _undo_holds(app: Centrum, row: dict[str, Any], context: object) -> None:
 def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_jej_zapis_a_zdanie_sekcji_i_cofniecie_przechodza(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Tata zmienia Listę Urządzeń, także zapisami składnika, który daje dopiero następne Wydanie, a potem Wydanie daje
-    reguły z tym składnikiem i tata cofa w Historii swoje zmiany listy. Każdy zapis listy taty należy w procesach dalej do
-    składnika, któremu dał go tata (nigdy cała para z Wydania). „Cofnij” przechodzi albo odmawia bez zmiany zdaniem, które
-    jest prawdą, a działanie, które sekcja Urządzenia proponuje zdaniem, przechodzi i zmienia listę; po tych działaniach
-    liczą się wszystkie Reguły ilości z Wydania."""
-
+    assert Component("instalacja-reczna", _RELEASE_PAIR_SPELLINGS) in DEFAULT_QUANTITY_RULES.devices.components
+    assert "instalacja-reczna" not in _previous_release().devices.ids()
+    assert not {spelling for component in DEFAULT_QUANTITY_RULES.devices.components for spelling in component.spellings} & set(
+        _SPELLINGS_OUTSIDE_BOTH_LISTS
+    )
+    assert set(_RELEASE_LIST_COMPONENTS_DAD_CHANGES) <= set(DEFAULT_QUANTITY_RULES.devices.ids())
     examples = itertools.count()
 
     @settings(derandomize=True, database=None, deadline=None, max_examples=30)
@@ -2213,15 +2136,11 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
     @example([("dodaj", ["instalacja ręczna", "wizja"])], [])
     @example([("dodaj", ["instalacja ręczna"]), ("dodaj", ["wizja"])], [])
     @example([("zastap", "fut", "instalacja ręczna"), ("dopisz", "nokia", "wizja")], [])
-    # Zapis ma składnik, którego potrzebuje reguła: zdanie każe zmienić jego nazwę, nie usunąć go.
-    @example([("zastap", "nokia", "instalacja ręczna"), ("dopisz", "gateway", "wizja")], [])
-    # Sonda recenzenta r2: „Cofnij” dodania własnego składnika taty z zapisami składnika z Wydania i bez jednego z nich.
-    @example([("dodaj", ["instalacja ręczna", "wizja"])], [0])
-    @example([("dodaj", ["instalacja ręczna"])], [0])
-    # „Cofnij” zmiany „fut”, gdy jego dawny zapis ma już nowy składnik taty: odmowa, która jest prawdą.
-    @example([("zastap", "fut", "instalacja ręczna"), ("dodaj", ["fut"])], [1])
-    # „Cofnij” cofnięcia dodania: składnik taty wraca, a składnik z Wydania dochodzi z wolnym zapisem, inny niż był.
-    @example([("dodaj", ["instalacja ręczna"])], [0, 0])
+    @example(*_SPELLING_ON_COMPONENT_A_RULE_NEEDS_SO_THE_SENTENCE_RENAMES_IT)
+    @example(*_UNDO_ADDING_OWN_COMPONENT_WITH_BOTH_RELEASE_SPELLINGS)
+    @example(*_UNDO_ADDING_OWN_COMPONENT_WITH_ONE_RELEASE_SPELLING)
+    @example(*_UNDO_FUT_CHANGE_WHOSE_OLD_SPELLING_A_NEW_DAD_COMPONENT_HAS)
+    @example(*_UNDO_OF_UNDONE_ADDING_BRINGS_RELEASE_COMPONENT_WITH_FREE_SPELLING)
     def list_holds(steps: list[tuple[Any, ...]], undos: list[int]) -> None:
         _released(monkeypatch, _previous_release())
         app = centrum(tmp_path / str(next(examples)))
@@ -2245,13 +2164,12 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
 
         assert shown == [component.id for component in counted.devices.components], steps
         _holds_dad_spellings(app, steps)
-        # „Cofnij” zmian listy sprzed Wydania, potem działania ze zdań sekcji, a drugi raz „Cofnij” także tych działań.
-        for _ in range(2):
+        for _undoing_also_section_actions in (False, True):
             for undo in undos:
                 rows = [row for row in history_rows(app) if row["file"] == DEVICES_FILE and row["undoable"] and not row["refused"]]
                 _undo_holds(app, rows[undo % len(rows)], (steps, undos))
                 _holds_dad_spellings(app, (steps, undos))
-            for _ in range(4):
+            for _section_action in range(4):
                 problem = app.client.get(QUANTITY_RULES_URL).json()["devices_problem"]
                 if problem is None:
                     break
@@ -2345,9 +2263,24 @@ def test_usuniecie_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_mu_ten_zapi
     assert [component.spellings for component in dad_list if component.id == "instalacja-reczna"] == [("instalacja ręczna", "wizja")]
 
 
-def _rule_with(component: str) -> dict[str, Any]:
-    """Formularz reguły „Jeśli URZĄDZENIA zawierają składnik, to wpisz 3 × jego liczbę w Z” dla składnika ``component``."""
+def test_zapis_skladnika_z_wydania_u_jedynego_zapisu_skladnika_potrzebnego_regule_ma_zdanie_zmien_nazwe_a_nie_usun(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _released(monkeypatch, _previous_release())
+    app = centrum(tmp_path)
+    [(_, renamed, spelling), (_, extended, other)], _ = _SPELLING_ON_COMPONENT_A_RULE_NEEDS_SO_THE_SENTENCE_RENAMES_IT
+    assert app.client.put(f"{DEVICES_URL}/{renamed}", json={**device_form(app, renamed), "name": spelling, "other_spellings": []}).status_code == 200
+    form = device_form(app, extended)
+    assert app.client.put(f"{DEVICES_URL}/{extended}", json={**form, "other_spellings": [*form["other_spellings"], other]}).status_code == 200
+    _released(monkeypatch, DEFAULT_QUANTITY_RULES)
 
+    problem = app.client.get(QUANTITY_RULES_URL).json()["devices_problem"]
+
+    assert renamed in _release_rule_components()
+    assert problem == {"field": None, "message": settings_messages.release_component_taken(spelling, spelling, "nazwa")}
+
+
+def _rule_with(component: str) -> dict[str, Any]:
     return {
         "scope": "known",
         "conditions": [{"kind": "component", "component": component, "negated": False}],
@@ -2361,10 +2294,6 @@ ONT_Y_RULE = "Jeśli URZĄDZENIA zawierają „ont y”, to wpisz 3 × liczbę �
 def test_cofniecie_dodania_skladnika_potrzebnego_regule_taty_odmawia_zdaniem_tej_reguly_tak_samo_jak_usuniecie_w_sekcji(
     tmp_path: Path,
 ) -> None:
-    """Sonda przeglądu #1577 r3, składnik: tata ma własny plik reguł, dodał składnik „ont y” i regułę z nim. „Usuń
-    składnik” i „Cofnij” dodania to ta sama zmiana, więc obie odmawiają tym samym zdaniem reguły z nazwą składnika, a nie
-    zdaniem o pliku, który jest dobry."""
-
     app = centrum(tmp_path)
     assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
     added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
@@ -2388,10 +2317,6 @@ def test_cofniecie_dodania_skladnika_potrzebnego_regule_taty_odmawia_zdaniem_tej
 def test_cofniecie_usuniecia_reguly_ze_skladnikiem_usunietym_potem_odmawia_zdaniem_reguly_z_nazwa_skladnika_jak_edytor(
     tmp_path: Path,
 ) -> None:
-    """Sonda przeglądu #1577 r3, reguła: tata usunął regułę ze składnikiem „ont y”, potem sam składnik. „Cofnij” usunięcia
-    reguły i ta sama reguła z edytora to ta sama zmiana: obie odmawiają zdaniem reguły ze składnikiem nazwanym tak, jak
-    tata go widział na liście (nie jego identyfikatorem), a edytor stawia je przy polu składnika."""
-
     app = centrum(tmp_path)
     added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
     own = added.json()["quantity_rules"]["devices"][-1]["id"]
@@ -2457,46 +2382,52 @@ def test_odmowa_reguly_ze_skladnikiem_spoza_listy_urzadzen_nazywa_go_tak_jak_tat
     assert (refused.status_code, refused.json()) == (422, {"message": sentence, "field": "jesli[0].skladnik"})
 
 
-# Formularze składnika w teście równoważności: „ont z” bierze zapis „ont x”, a „ont w” zapis „ont y”.
 _PAIR_FORMS: dict[str, dict[str, Any]] = {
     "ont x": {"name": "ont x", "other_spellings": ["ont-x2"], "group": None},
     "ont y": {"name": "ont y", "other_spellings": [], "group": None},
     "ont z": {"name": "ont z", "other_spellings": ["ont x"], "group": "tv"},
     "ont w": {"name": "ont w", "other_spellings": ["ont y"], "group": None},
 }
-# Formularz, który bierze zapis składnika taty z ``_PAIR_FORMS``.
-_PAIR_PARTNER: dict[str, str] = {"ont x": "ont z", "ont z": "ont x", "ont y": "ont w", "ont w": "ont y"}
-# Zmiana taty z formularza sekcji Urządzenia albo Reguły ilości, albo „Cofnij” wiersza Historii. Składnik wskazuje jego
-# nazwa w sekcji (składniki taty z ``_PAIR_FORMS`` i „nokia” z Wydania), regułę jej miejsce od końca listy (reguły taty
-# stoją na końcu), a wiersz Historii liczba. Kroki złożone to kilka formularzy po kolei na składniku taty, który dodają,
-# gdy go nie ma: „składnik z regułą” (reguła z nim), „reguła bez składnika” (reguła z nim, ta reguła zmieniona na „nokia”,
-# usunięcie składnika) i „zastąp składnik” (usunięcie go i dodanie składnika, który bierze jego zapis). Po każdym z nich
-# „Cofnij” jednego z wierszy należy się odmowa, a Hypothesis zaczyna od pierwszych wyborów, więc stoją one pierwsze.
+_SHARES_A_SPELLING_WITH: dict[str, str] = {"ont x": "ont z", "ont z": "ont x", "ont y": "ont w", "ont w": "ont y"}
 _PAIR_FORM = st.sampled_from(("ont y", "ont x", "ont z", "ont w"))
 _PAIR_TARGET = st.sampled_from(("ont y", "ont x", "ont z", "ont w", "nokia"))
-_PAIR_RULE = st.integers(1, 3)
-_PAIR_STEP = st.one_of(
+_PAIR_RULE_FROM_END_AS_DAD_RULES_STAND_LAST = st.integers(1, 3)
+_COMPOUND_STEPS_AFTER_WHICH_AN_UNDO_IS_DUE_A_REFUSAL = (
     st.tuples(st.just("składnik z regułą"), _PAIR_FORM),
     st.tuples(st.just("reguła bez składnika"), _PAIR_FORM),
     st.tuples(st.just("zastąp składnik"), _PAIR_FORM),
+)
+# ZEWNĘTRZNE: st.one_of zmniejsza przykład w stronę wcześniejszych strategii (dokumentacja Hypothesis, one_of)
+_PAIR_STEP = st.one_of(
+    *_COMPOUND_STEPS_AFTER_WHICH_AN_UNDO_IS_DUE_A_REFUSAL,
     st.tuples(st.just("dodaj składnik"), _PAIR_FORM),
     st.tuples(st.just("usuń składnik"), _PAIR_TARGET),
     st.tuples(st.just("zmień składnik"), _PAIR_TARGET, _PAIR_FORM),
     st.tuples(st.just("dodaj regułę"), _PAIR_TARGET),
-    st.tuples(st.just("zmień regułę"), _PAIR_RULE, _PAIR_TARGET),
-    st.tuples(st.just("usuń regułę"), _PAIR_RULE),
+    st.tuples(st.just("zmień regułę"), _PAIR_RULE_FROM_END_AS_DAD_RULES_STAND_LAST, _PAIR_TARGET),
+    st.tuples(st.just("usuń regułę"), _PAIR_RULE_FROM_END_AS_DAD_RULES_STAND_LAST),
     st.tuples(st.just("cofnij"), st.integers(0, 9)),
 )
 
 
-def _compound(app: Centrum, kind: str, component: str, form: str) -> int:
-    """Krok złożony testu równoważności na składniku taty ``component`` z formularza ``form``: status ostatniego
-    formularza, który doszedł do skutku albo odmówił."""
+_UNDO_ADDING_COMPONENT_A_DAD_RULE_NEEDS: Final = (True, [("składnik z regułą", "ont y")])
+_UNDO_REMOVING_RULE_AFTER_ITS_COMPONENT_WENT: Final = (
+    False,
+    [("dodaj składnik", "ont y"), ("dodaj regułę", "ont y"), ("usuń regułę", 1), ("usuń składnik", "ont y")],
+)
+_UNDO_REMOVING_COMPONENT_WHOSE_SPELLING_A_NEW_ONE_HAS: Final = (True, [("zastąp składnik", "ont x")])
+_UNDO_RULE_CHANGE_TO_COMPONENT_REMOVED_LATER: Final = (True, [("reguła bez składnika", "ont y")])
+_UNDO_COMPONENT_CHANGE_WHOSE_SPELLING_ANOTHER_HAS: Final = (
+    True,
+    [("dodaj składnik", "ont y"), ("zmień składnik", "ont y", "ont x"), ("zmień składnik", "nokia", "ont w")],
+)
 
+
+def _compound(app: Centrum, kind: str, component: str, form: str) -> int:
     if kind == "zastąp składnik":
         response = app.client.delete(f"{DEVICES_URL}/{component}")
         if response.status_code == 200:
-            response = app.client.post(DEVICES_URL, json=_PAIR_FORMS[_PAIR_PARTNER[form]])
+            response = app.client.post(DEVICES_URL, json=_PAIR_FORMS[_SHARES_A_SPELLING_WITH[form]])
         return response.status_code
     response = app.client.post(QUANTITY_RULES_URL, json=_rule_with(component))
     if kind == "reguła bez składnika" and response.status_code == 200:
@@ -2507,19 +2438,13 @@ def _compound(app: Centrum, kind: str, component: str, form: str) -> int:
     return response.status_code
 
 
-def _pair_state(app: Centrum) -> tuple[object, ...]:
-    """Stan sekcji Urządzenia i Reguły ilości bez identyfikatorów, które formularz nadaje inaczej niż „Cofnij”: składniki
-    (nazwa, inne zapisy, grupa), zdania reguł i zdania obu sekcji."""
-
+def _pair_state_without_ids_form_and_undo_give_differently(app: Centrum) -> tuple[object, ...]:
     section = app.client.get(QUANTITY_RULES_URL).json()
     devices = sorted((device["name"], tuple(device["other_spellings"]), device["group"] or "") for device in section["devices"])
     return devices, sorted(rule_sentences(app).values()), section["devices_problem"], section["rules_problem"]
 
 
 def _form_doing(app: Centrum, change: dict[str, Any]) -> tuple[str, str, dict[str, Any] | None] | None:
-    """Żądanie formularza, które robi na bieżącym stanie tę samą zmianę co „Cofnij” zmiany ``change``: klucz wraca do
-    wartości sprzed niej (``None``: zmiana nic by nie zrobiła, bo wpisu już nie ma)."""
-
     section, _, identifier = change["key"].partition(".")
     shown = app.client.get(QUANTITY_RULES_URL).json()
     present = identifier in {entry["id"] for entry in shown["devices" if section == DEVICES_SECTION else "rules"]}
@@ -2530,7 +2455,6 @@ def _form_doing(app: Centrum, change: dict[str, Any]) -> tuple[str, str, dict[st
     if section == DEVICES_SECTION:
         form: dict[str, Any] = {"name": entry["zapisy"][0], "other_spellings": entry["zapisy"][1:], "group": entry.get("grupa")}
     else:
-        # Formularz reguły tak, jak edytor dostaje ją z sekcji Reguły ilości (``rule`` reguły w odpowiedzi).
         rule = parse_rule(entry)
         assert not isinstance(rule, RulesProblem), entry
         form = form_of(rule).model_dump(mode="json")
@@ -2538,18 +2462,12 @@ def _form_doing(app: Centrum, change: dict[str, Any]) -> tuple[str, str, dict[st
 
 
 def _rule_components(form: Mapping[str, Any]) -> list[str]:
-    """Składniki, których potrzebuje reguła z formularza ``form``, w kolejności pól: warunki, potem wpisy."""
-
     conditions = [condition.get("component") for condition in form["conditions"]]
     writes = [write.get("component") for write in (form["action"] or {}).get("writes", [])]
     return [component for component in conditions + writes if component is not None]
 
 
 def _due_refusal(app: Centrum, request: tuple[str, str, dict[str, Any] | None], names: Mapping[str, str]) -> str | None:
-    """Początek zdania odmowy, która należy się zmianie ``request`` taty z plikiem reguł, z modelu stanu sekcji, nie z
-    kodu: usunięcie składnika, którego potrzebuje reguła, zapis, który ma już inny składnik, albo reguła ze składnikiem
-    spoza listy, nazwanym tak, jak tata go ostatnio widział (``names``); ``None``: zmiana przechodzi."""
-
     method, url, form = request
     shown = app.client.get(QUANTITY_RULES_URL).json()
     devices = {device["id"]: (device["name"], *device["other_spellings"]) for device in shown["devices"]}
@@ -2574,26 +2492,15 @@ def _due_refusal(app: Centrum, request: tuple[str, str, dict[str, Any] | None], 
 def test_cofniecie_zmiany_taty_listy_urzadzen_albo_regul_ilosci_daje_to_samo_co_formularz_robiacy_ta_sama_zmiane(
     tmp_path: Path,
 ) -> None:
-    """Reguła równoważności granicy (przegląd #1577 r3): po dowolnych zmianach taty z formularzy sekcji Urządzenia i Reguły
-    ilości (dodaj, zmień, usuń składnik albo regułę) i „Cofnij” każdy wiersz Historii takiej zmiany cofa się na kopii stanu
-    tak samo jak formularz, który robi na tym samym stanie tę samą zmianę: ten sam status i to samo zdanie odmowy, albo
-    ten sam stan obu sekcji. Z plikiem reguł taty model stanu sekcji mówi też, czy odmowa się należy i jakim zdaniem:
-    usunięcie składnika, którego potrzebuje reguła, zapis u dwóch składników i reguła ze składnikiem spoza listy, zawsze
-    z nazwą, którą tata widział, a nie identyfikatorem."""
-
     examples = itertools.count()
 
     @settings(derandomize=True, database=None, deadline=None, max_examples=25)
     @given(st.booleans(), st.lists(_PAIR_STEP, min_size=1, max_size=7))
-    # Sonda przeglądu #1577 r3: „Cofnij” dodania składnika, którego potrzebuje reguła taty, i „Cofnij” usunięcia reguły
-    # po usunięciu jej składnika.
-    @example(True, [("składnik z regułą", "ont y")])
-    @example(False, [("dodaj składnik", "ont y"), ("dodaj regułę", "ont y"), ("usuń regułę", 1), ("usuń składnik", "ont y")])
-    # „Cofnij” usunięcia składnika, którego zapis ma już nowy składnik, i zmiany reguły na składnik usunięty potem.
-    @example(True, [("zastąp składnik", "ont x")])
-    @example(True, [("reguła bez składnika", "ont y")])
-    # „Cofnij” zmiany składnika, której zapis ma już inny składnik.
-    @example(True, [("dodaj składnik", "ont y"), ("zmień składnik", "ont y", "ont x"), ("zmień składnik", "nokia", "ont w")])
+    @example(*_UNDO_ADDING_COMPONENT_A_DAD_RULE_NEEDS)
+    @example(*_UNDO_REMOVING_RULE_AFTER_ITS_COMPONENT_WENT)
+    @example(*_UNDO_REMOVING_COMPONENT_WHOSE_SPELLING_A_NEW_ONE_HAS)
+    @example(*_UNDO_RULE_CHANGE_TO_COMPONENT_REMOVED_LATER)
+    @example(*_UNDO_COMPONENT_CHANGE_WHOSE_SPELLING_ANOTHER_HAS)
     def pair_holds(own_rules: bool, steps: list[tuple[Any, ...]]) -> None:
         root = tmp_path / str(next(examples))
         app = centrum(root / "centrum")
@@ -2603,8 +2510,6 @@ def test_cofniecie_zmiany_taty_listy_urzadzen_albo_regul_ilosci_daje_to_samo_co_
             names.update({device["id"]: device["name"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]})
 
         def own(form: str) -> str | None:
-            """Id składnika taty ``form`` w sekcji; dodaje go formularzem, gdy go nie ma (``None``: odmowa dodania)."""
-
             found: dict[str, str] = {device["name"]: device["id"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]}
             if form in found:
                 return found[form]
@@ -2654,7 +2559,6 @@ def test_cofniecie_zmiany_taty_listy_urzadzen_albo_regul_ilosci_daje_to_samo_co_
             if row["source"] == "tata" and row["undoable"] and not row["refused"] and len(row["changes"]) == 1
             and row["file"] in (DEVICES_FILE, RULES_FILE)
         ]
-        # Dwa Centra na kopii stanu: jedno cofa wiersz, drugie robi tę samą zmianę formularzem.
         twins = [centrum(root / "cofnij"), centrum(root / "formularz")]
         undo_side, form_side = twins
         for row in rows:
@@ -2673,7 +2577,9 @@ def test_cofniecie_zmiany_taty_listy_urzadzen_albo_regul_ilosci_daje_to_samo_co_
 
             assert undone.status_code == formed.status_code, (context, undone.text, formed.text)
             if undone.status_code == 200:
-                assert _pair_state(undo_side) == _pair_state(form_side), context
+                assert _pair_state_without_ids_form_and_undo_give_differently(
+                    undo_side
+                ) == _pair_state_without_ids_form_and_undo_give_differently(form_side), context
             else:
                 assert undone.json()["message"] == formed.json()["message"], context
                 assert "folderze config" not in undone.json()["message"], context
@@ -2687,9 +2593,6 @@ def test_cofniecie_zmiany_taty_listy_urzadzen_albo_regul_ilosci_daje_to_samo_co_
 
 
 def _rules_changed_under_damaged_dad_list(app: Centrum) -> Path:
-    """Lista Urządzeń taty ze składnikiem spoza listy z Wydania i reguła z tym składnikiem, obie przyjęte; potem lista
-    się psuje, a reguła zmienia wartość: pasuje tylko do ostatniej dobrej listy z pamięci, nie do listy z Wydania."""
-
     devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
     write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
     rule_sentences(app)
@@ -2728,10 +2631,6 @@ def test_narzedzia_licza_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty
 def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_czekaja_ze_sprawdzeniem_a_okno_pokazuje_liste_z_wydania(
     tmp_path: Path,
 ) -> None:
-    """Reguły ze składnikiem z listy taty przy liście, której system nie daje teraz czytać, nie są złe wobec Listy
-    Urządzeń z Wydania: sekcja Reguły ilości mówi, którego pliku nie da się przeczytać, tym samym zdaniem co sekcja
-    Urządzenia (przegląd #1927 r1, P1)."""
-
     app = centrum(tmp_path)
     devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
     write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
@@ -2785,7 +2684,6 @@ def test_cofniecie_po_ktorym_regula_ma_skladnik_spoza_listy_urzadzen_jest_odmowa
     undone = app.client.post(f"/api/settings/history/{devices_row['id']}/undo")
     removed = app.client.delete(f"{DEVICES_URL}/nowy")
 
-    # „Cofnij” dodania składnika to jego usunięcie: odmowa mówi o tej zmianie tak jak formularz, nie o pliku, który jest dobry.
     refused = {
         "message": "Składnika „nowy” potrzebuje reguła: Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nowy” w Z. "
         "Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości."
@@ -2852,7 +2750,6 @@ def test_regula_ilosci_usunieta_poza_centrum_po_cofnieciu_wraca_na_koniec_listy(
     assert list(rule_sentences(app)) == [*others, "t-umowa-u"]
 
 
-# Reguła z edytora: wpisz 2 w AA (pozostała kolumna N:AP), gdy URZĄDZENIA zawierają „gniazdo” i CZYNNOŚCI „montaż”.
 EDITOR_RULE: dict[str, Any] = {
     "scope": "known",
     "conditions": [
@@ -2923,8 +2820,6 @@ EDITED = {"A": _editor_rule("AA", 2), "A2": _editor_rule("AA", 4), "B": _editor_
 
 
 def _edits(app: Centrum, sequence: tuple[tuple[str, ...], ...]) -> dict[str, str]:
-    """Zapisy taty w edytorze po kolei: ``("dodaj", A)``, ``("zmien", A, A2)``, ``("usun", A)``; daje id reguły po nazwie."""
-
     ids: dict[str, str] = {}
     for step in sequence:
         match step:
@@ -2945,9 +2840,6 @@ def _edits(app: Centrum, sequence: tuple[tuple[str, ...], ...]) -> dict[str, str
 def test_cofniecie_usuniecia_reguly_przywraca_ja_obok_reguly_dodanej_po_niej_a_cofniecie_dodania_jej_nie_rusza(
     tmp_path: Path,
 ) -> None:
-    """Tata dodaje regułę A, usuwa ją i dodaje regułę B: B ma inne id niż usunięta A, więc „Cofnij” usunięcia A
-    przywraca A obok B, a „Cofnij” dodania A zdejmuje tylko A."""
-
     app = centrum(tmp_path)
     ids = _edits(app, (("dodaj", "A"), ("usun", "A"), ("dodaj", "B")))
     added_a, removed_a, _ = reversed(history_rows(app))
@@ -2967,11 +2859,6 @@ def test_cofniecie_usuniecia_reguly_przywraca_ja_obok_reguly_dodanej_po_niej_a_c
 def test_nowa_regula_przy_historii_bez_odczytu_to_odmowa_bez_zapisu_a_cofniecie_usuniecia_nie_rusza_reguly_dodanej_potem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Tata dodaje regułę A i ją usuwa, a potem dodaje B, gdy system nie daje czytać Historii Ustawień (plik trzyma
-    OneDrive), choć dopisanie wiersza działa. Bez kluczy Historii B mogłaby dostać id usuniętej A i zniknąć po „Cofnij”
-    usunięcia A, więc zapis jest odmową ze zdaniem i nic się nie zapisuje. B dodana, gdy Historia znów się czyta, ma
-    własne id, a „Cofnij” usunięcia A przywraca A obok niej."""
-
     app = centrum(tmp_path)
     ids = _edits(app, (("dodaj", "A"), ("usun", "A")))
     rules_before, rows_before = (app.tool.config / RULES_FILE).read_bytes(), history_rows(app)
@@ -2982,7 +2869,9 @@ def test_nowa_regula_przy_historii_bez_odczytu_to_odmowa_bez_zapisu_a_cofniecie_
     b = _edits(app, (("dodaj", "B"),))["B"]
     restored = app.client.post(f"/api/settings/history/{rows_before[0]['id']}/undo")
 
-    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED}), (
+        "bez kluczy Historii B mogłaby dostać id usuniętej A i zniknąć po „Cofnij” usunięcia A"
+    )
     assert (rules_after, rows_after) == (rules_before, rows_before)
     assert b != ids["A"]
     assert restored.status_code == 200, restored.text
@@ -2992,8 +2881,6 @@ def test_nowa_regula_przy_historii_bez_odczytu_to_odmowa_bez_zapisu_a_cofniecie_
     }
 
 
-# Krok taty w oknie Ustawień: zapis w edytorze (także nowej reguły, gdy Historii nie da się przeczytać) albo „Cofnij”
-# wiersza Historii; liczba wybiera regułę albo wiersz.
 _STEP = st.one_of(
     st.tuples(st.just("dodaj"), st.sampled_from(sorted(EDITED))),
     st.tuples(st.just("zmien"), st.integers(0, 9), st.sampled_from(sorted(EDITED))),
@@ -3006,11 +2893,6 @@ _STEP = st.one_of(
 def test_po_dowolnych_zapisach_edytora_i_cofnieciach_kazda_regula_ma_wlasne_id_a_cofniecie_zmienia_tylko_regule_wiersza(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Po dowolnych zapisach taty w edytorze i cofnięciach z Historii: nowa reguła dostaje id, którego nie miała żadna
-    reguła przed nią, a „Cofnij” wiersza zmienia tylko regułę tego wiersza (usuwa ją albo przywraca jej zdanie
-    „przed”), każda inna reguła zostaje, jak była; cofnięcie, którego nie da się wykonać, nie zmienia żadnej reguły i
-    mówi zdaniem dlaczego. Nowa reguła, gdy Historii nie da się przeczytać, to odmowa ze zdaniem bez zmiany reguł."""
-
     examples = itertools.count()
 
     @settings(derandomize=True, database=None, deadline=None, max_examples=25)
@@ -3099,12 +2981,19 @@ def _sentence(rule: dict[str, Any]) -> str:
         (
             {**EDITOR_RULE, "conditions": [{"kind": "component", "component": "nie-ma-takiego", "negated": False}]},
             "jesli[0].skladnik",
-            # Składnika nie było nigdy na liście ani w Historii, więc nazwy nie ma: zostaje identyfikator.
             "Reguła potrzebuje składnika „nie-ma-takiego”, którego nie ma na Liście Urządzeń: Jeśli URZĄDZENIA zawierają "
             "„nie-ma-takiego”, to wpisz 2 w AA. Najpierw dodaj ten składnik w sekcji Urządzenia.",
         ),
     ],
-    ids=["bez-dzialania", "kolumna-spoza-n-ap", "kolumna-wbudowana", "pusta-spoza-n-ap", "tekst-nie-malymi", "godzina", "skladnik"],
+    ids=[
+        "bez-dzialania",
+        "kolumna-spoza-n-ap",
+        "kolumna-wbudowana",
+        "pusta-spoza-n-ap",
+        "tekst-nie-malymi",
+        "godzina",
+        "skladnik-nigdy-na-liscie-ani-w-historii-zostaje-identyfikatorem",
+    ],
 )
 def test_zla_regula_z_edytora_sie_nie_zapisuje_a_odmowa_ma_pole_formularza_i_zdanie(
     tmp_path: Path, rule: dict[str, Any], field: str, message: str
@@ -3123,9 +3012,6 @@ def test_zla_regula_z_edytora_sie_nie_zapisuje_a_odmowa_ma_pole_formularza_i_zda
 def test_podglad_nowej_reguly_dziala_takze_gdy_historii_ustawien_nie_da_sie_przeczytac_a_zapis_sie_nie_udaje(
     tmp_path: Path,
 ) -> None:
-    """Historia, której nie da się przeczytać, nie daje id do pominięcia: podgląd i tak pokazuje regułę, a zapis
-    odmawia, więc inne id w podglądzie niż przy zapisie nigdy nie trafia do pliku."""
-
     app = centrum(tmp_path)
     assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
     history = app.tool.config / HISTORY_FILE
@@ -3136,7 +3022,9 @@ def test_podglad_nowej_reguly_dziala_takze_gdy_historii_ustawien_nie_da_sie_prze
 
     assert previewed.status_code == 200, previewed.json()
     assert saved.status_code == 500
-    assert not (app.tool.config / RULES_FILE).exists()
+    assert not (app.tool.config / RULES_FILE).exists(), (
+        "Historia bez odczytu nie daje id do pominięcia, więc id z podglądu nie trafia do pliku"
+    )
 
 
 def test_zmiana_albo_usuniecie_reguly_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) -> None:
@@ -3176,7 +3064,6 @@ MAIL_SENTENCES = [
     "dzielnik1/2: 50 w Uwagi - kwota (AS).",
     "pz#m: 480 w Uwagi - kwota (AS).",
 ]
-"""Legenda z Wydania bez Wzorca: kolumna Ilości usług to sama litera, a kwota stoi w ``AS`` nazwanej „Uwagi - kwota”."""
 
 
 def plain(parts: list[dict[str, Any]]) -> str:
@@ -3194,8 +3081,6 @@ def legend_sentences(client: CentrumClient) -> tuple[dict[str, str], dict[str, A
 
 
 def legend_history(client: CentrumClient) -> list[dict[str, Any]]:
-    """Wiersze Historii Ustawień o Legendzie czynności, od najnowszego."""
-
     return [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == LEGEND_FILE]
 
 
@@ -3204,8 +3089,6 @@ def own_code(identifier: str, **changes: Any) -> ActivityCode:
 
 
 def with_own(*codes: ActivityCode) -> bytes:
-    """Plik Legendy czynności taty: legenda z Wydania z kodami ``codes`` w miejscu kodów o tym samym id."""
-
     by_id = {code.id: code for code in codes}
     return LEGEND.dump(tuple(by_id.get(code.id, code) for code in DEFAULT_ACTIVITY_LEGEND.codes))
 
@@ -3271,7 +3154,6 @@ def test_zla_legenda_to_zle_ustawienie_z_jednym_zdaniem_a_przygotowanie_liczy_os
 
 
 RT2_IN_AK = ReleaseChange("2026-12-rt2-w-ak", LEGEND, set_codes(own_code("rt2", column=FixedColumn("AK"))))
-"""Jawna zmiana legendy w Wydaniu, np. po odpowiedzi taty, że ``rt2`` daje ``AK``."""
 
 
 def test_jawna_zmiana_legendy_w_wydaniu_wchodzi_raz_jest_w_historii_z_cofnij_i_po_cofnieciu_nie_wraca(tmp_path: Path) -> None:
@@ -3355,13 +3237,9 @@ def test_zmiana_kodu_z_formularza_zostawia_ze_w_usterce_sie_nie_liczy(tmp_path: 
 
 
 RELEASE_LEGEND_SHA256 = "a89bfa2741cf95ba917a5931afdf351f2af3036605d6e6c5017cd39b7ada6e44"
-"""Skrót Legendy czynności z Wydania w zapisie pliku taty: same kody, bez komentarzy i końców linii pliku."""
 
 
 def test_legenda_z_wydania_zmienia_sie_tylko_jawna_zmiana_w_wydaniu() -> None:
-    """Tata bez własnego pliku legendy liczy legendą z Wydania, więc jej zmiana weszłaby u niego bez wiersza Historii i
-    bez „Cofnij” (ADR 0032)."""
-
     assert hashlib.sha256(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes)).hexdigest() == RELEASE_LEGEND_SHA256, (
         "Legendę czynności taty zmienia w Wydaniu tylko wpis ReleaseChange(<id>, LEGEND, set_codes(...)) w "
         "RELEASE_CHANGES (centrum/settings/release_changes.py), nie zmiana legenda_czynnosci_domyslna.yaml. Skrót zmień "
@@ -3377,8 +3255,6 @@ def code_form(
     fills: list[dict[str, str]] | None = None,
     counts_in_fault: bool = True,
 ) -> dict[str, Any]:
-    """Formularz Kodu czynności w sekcji Legenda czynności (``#`` w miejscu liczby)."""
-
     return {"spellings": list(spellings), "column": column, "value": value, "amount": amount, "fills": fills or [], "counts_in_fault": counts_in_fault}
 
 
@@ -3391,9 +3267,8 @@ def ranges(*found: tuple[int, int, str]) -> dict[str, Any]:
 
 
 def code_url(code: str) -> str:
-    """Adres kodu w sekcji: id kodu może mieć „/” (``dzielnik1/2``), więc przeglądarka koduje go jak każdy parametr."""
-
-    return f"{LEGEND_URL}/{quote(code, safe='')}"
+    encoded_as_the_browser_encodes_every_path_parameter = quote(code, safe="")
+    return f"{LEGEND_URL}/{encoded_as_the_browser_encodes_every_path_parameter}"
 
 
 def shown_form(client: CentrumClient, code: str) -> dict[str, Any]:
@@ -3779,7 +3654,6 @@ def test_kolumny_formularza_kodu_to_kolumny_legendy_z_nazwa_cennika_a_kwota_tylk
 
 
 LISTWY = ActivityCode("listwy", ("listwy{n}m",), amount=20)
-"""Kod, którego legenda z Wydania nie ma: np. kwota za listwy po odpowiedzi taty."""
 
 
 def test_jawna_zmiana_legendy_w_wydaniu_dopisuje_kod_ktorego_tata_nie_ma_na_koncu(tmp_path: Path) -> None:
@@ -3877,8 +3751,6 @@ def test_reczna_zmiana_pliku_ustawien_ma_jeden_wiersz_spoza_centrum_z_wartoscia_
 
 
 def test_historia_otwarta_zaraz_po_recznej_zmianie_pliku_ustawien_pokazuje_jej_wiersz(tmp_path: Path) -> None:
-    """Tata otwiera Historię w oknie Ustawień, zanim cokolwiek innego przeczytało Ustawienia po zmianie Maksa."""
-
     app, periods = with_periods_directory(tmp_path)
     other = tmp_path / "Załączniki"
     other.mkdir()
@@ -3939,8 +3811,6 @@ def test_reczne_przepisanie_pliku_ustawien_z_tymi_samymi_wartosciami_ma_wiersz_b
 
 
 def test_migawka_narzedzi_przy_zlej_tresci_pliku_ustawien_ma_ostatni_dobry_folder(tmp_path: Path) -> None:
-    """``tools/proba_przypomnien.py`` czyta Ustawienia bez Centrum: zepsuty ręcznie plik nie zabiera mu folderu okresów."""
-
     app, periods = with_periods_directory(tmp_path)
     app.settings_path.write_text("schema_version: 1\nfolder_okresow: INEA\n", encoding="utf-8")
 
@@ -3948,8 +3818,6 @@ def test_migawka_narzedzi_przy_zlej_tresci_pliku_ustawien_ma_ostatni_dobry_folde
 
 
 def test_zla_tresc_potem_dobra_i_znow_ta_sama_zla_tresc_maja_po_wierszu_spoza_centrum(tmp_path: Path) -> None:
-    """Maks psuje plik, naprawia go innym folderem i psuje tak samo jak za pierwszym razem: Historia mówi o każdym."""
-
     app, periods = with_periods_directory(tmp_path)
     other = tmp_path / "Załączniki"
     other.mkdir()
@@ -4006,8 +3874,6 @@ def test_cofniecie_usuniecia_pliku_ustawien_poza_centrum_przywraca_folder(tmp_pa
 def test_plik_ustawien_sprzed_wydania_jest_stanem_wyjsciowym_a_pozniejsza_reczna_zmiana_ma_wiersz(
     tmp_path: Path,
 ) -> None:
-    """Pierwszy start wersji z Historią zastaje plik taty bez pamięci: przyjmuje go bez wiersza, a dalej już widzi zmiany."""
-
     periods = tmp_path / "INEA"
     other = tmp_path / "Załączniki"
     periods.mkdir()
@@ -4091,8 +3957,6 @@ def test_pierwszy_wybor_taty_ktorego_wiersza_historii_nie_da_sie_dopisac_nie_zos
 def test_reczna_zmiana_przy_historii_ktorej_nie_da_sie_dopisac_dostaje_wiersz_przy_nastepnym_odczycie(
     tmp_path: Path, bad: bool
 ) -> None:
-    """OneDrive albo antywirus trzyma Historię, gdy Maks zmienia plik ręcznie: zmiana działa, a wiersz dochodzi później."""
-
     app, periods = with_periods_directory(tmp_path)
     other = tmp_path / "Załączniki"
     other.mkdir()
@@ -4118,8 +3982,6 @@ def test_reczna_zmiana_przy_historii_ktorej_nie_da_sie_dopisac_dostaje_wiersz_pr
 
 @NO_ACCESS_ON_WINDOWS
 def test_reczna_zmiana_przy_nieczytelnej_pamieci_ustawien_dostaje_wiersz_gdy_pamiec_wroci(tmp_path: Path) -> None:
-    """Pamięci, której system nie daje czytać, Centrum nie zgaduje: zapis taty czeka, a ręczna zmiana nie ginie."""
-
     app, periods = with_periods_directory(tmp_path)
     other = tmp_path / "Załączniki"
     other.mkdir()
@@ -4143,8 +4005,6 @@ def test_reczna_zmiana_przy_nieczytelnej_pamieci_ustawien_dostaje_wiersz_gdy_pam
 
 @NO_ACCESS_ON_WINDOWS
 def test_plik_historii_zajety_na_chwile_przyjmuje_wiersz_po_ponowieniu(tmp_path: Path) -> None:
-    """Antywirus trzyma Historię Ustawień przez chwilę: zmiana taty wchodzi z wierszem, a nie kończy się odmową."""
-
     tool = ToolDirectory(tmp_path)
     periods = tmp_path / "INEA"
     periods.mkdir()
@@ -4184,14 +4044,10 @@ def test_urwana_linia_historii_jest_pominieta_i_policzona(tmp_path: Path) -> Non
 
 
 def config_bytes(config: Path) -> dict[str, bytes]:
-    """Każdy plik folderu ``config`` z jego bajtami, po ścieżce względem ``config``."""
-
     return {path.relative_to(config).as_posix(): path.read_bytes() for path in sorted(config.rglob("*")) if path.is_file()}
 
 
 def started(tool: ToolDirectory, changes: tuple[ReleaseChange[Any], ...], **options: Any) -> CentrumClient:
-    """Centrum uruchomione jak u taty na katalogu narzędzia ``tool``, z Wydaniem, które niesie zmiany ``changes``."""
-
     client = CentrumClient(centrum_app(tool, release_changes=changes, **options))
     client.start()
     return client
@@ -4206,8 +4062,6 @@ LIGHT_THEME = ReleaseChange("2026-11-motyw-jasny", FOLDERS, light_theme)
 
 @dataclass
 class _SettingsAtRhythmStart:
-    """Rytm Przypomnień o raporcie, który przy starcie czyta plik Ustawień Centrum, jak sprawdzenie Przypomnień."""
-
     tool: ToolDirectory
     seen: list[str] = field(default_factory=list)
 
@@ -4229,19 +4083,13 @@ def test_przypomnienia_startuja_po_zmianach_ustawien_z_wydania(tmp_path: Path) -
 
 
 def test_zatrzymane_centrum_konczy_sprawdzanie_przypomnien_co_minute(tmp_path: Path) -> None:
-    """Przypomnienia o raporcie sprawdza co minutę wątek Centrum; po zatrzymaniu Centrum nie zostaje, więc nie przypomina
-    Wykonawcom w imieniu Centrum, które już się zamknęło."""
-
     client = CentrumClient(centrum_app(ToolDirectory(tmp_path), reminder_rhythm=MinuteRhythm()))
     client.start()
 
-    client.stop()  # czeka na każdy wątek Centrum i wywraca test nazwą wątku, który żyje dalej
+    client.stop()
 
 
 def test_sprawdzanie_przypomnien_biegnie_zaraz_po_starcie_a_nastepne_dopiero_po_minucie() -> None:
-    """Centrum sprawdza Przypomnienia o raporcie od razu po starcie, a potem raz na minutę, nie w kółko: każde
-    sprawdzenie czyta pliki taty i pyta skrzynkę raportów."""
-
     since = new_line()
     calls: list[None] = []
     first, again = threading.Event(), threading.Event()
@@ -4259,7 +4107,7 @@ def test_sprawdzanie_przypomnien_biegnie_zaraz_po_starcie_a_nastepne_dopiero_po_
         rhythm.stop()
         join_threads_since(since, named=REMINDERS_THREAD)
 
-    assert (checked, repeated) == (True, False)
+    assert (checked, repeated) == (True, False), "każde sprawdzenie czyta pliki taty i pyta skrzynkę raportów, więc nie w kółko"
 
 
 _ZAMKNIECIE_W_TRAKCIE_SPRAWDZANIA_PRZYPOMNIEN: Final = (
@@ -4273,9 +4121,6 @@ _ZAMKNIECIE_W_TRAKCIE_SPRAWDZANIA_PRZYPOMNIEN: Final = (
 
 
 def test_proces_centrum_konczy_sie_mimo_sprawdzania_przypomnien_ktore_czeka_na_skrzynke() -> None:
-    """Skrzynka raportów bez sieci odpowiada dopiero po limicie czasu, a trwające sprawdzenie Przypomnień o raporcie nie
-    trzyma zamknięcia Centrum: proces kończy się, gdy skończy się jego praca."""
-
     environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
     child = subprocess.Popen(
         [sys.executable, "-c", _ZAMKNIECIE_W_TRAKCIE_SPRAWDZANIA_PRZYPOMNIEN],
