@@ -831,6 +831,7 @@ Nowsza wersja tej samej wysyłki, jak Logi Uruchomienia po Diagnozie albo po pos
 Starsza, która dojdzie po nowszej, niczego w Skrzynce nie zmienia.
 Która wersja jest nowsza, mówi najpierw jej stopień, który wybiera nadawca, a nie zegar komputera (ADR 0015, dopisek #910).
 Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem.
+Zamknięte Centrum rozliczeń zwalnia port od razu, także gdy kolejka jeszcze wysyła: skrót i opiekun ponownego startu startują nowe Centrum, gdy tylko port jest wolny, a wysyłka przy wolnej sieci trwa dowolnie długo, więc port trzymany do jej końca dałby tacie kartę Centrum, które zaraz zniknie.
 Plik w Archiwum Logów okresu też idzie dokładnie raz, a plik nowszej wersji podmienia plik starszej; Wzorzec idzie tylko wtedy, gdy Archiwum nie ma pliku o jego nazwie.
 Plik, który starsze Wydanie zostawiło w kolejce (bez Tokenu do Zgłoszeń, bez sieci albo z treścią odrzuconą przez Skrzynkę), wysyła każde nowsze (ADR 0015, dopisek #2227).
 Starsze Centrum po cofniętej Aktualizacji narzędzia wysyła plik nowszego Wydania bez pól, których nie zna, gdy zna jego schemat, a plik nowszego schematu zostawia w kolejce; od v0.5.0 każde Wydanie zapisuje każdy plik kolejki nowszym schematem, który przyniósł plik do Archiwum Logów okresu, więc Centrum v0.4.x zostawia w kolejce każdy plik z nowszego Wydania.

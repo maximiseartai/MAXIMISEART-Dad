@@ -1,8 +1,3 @@
-"""Serwer Centrum rozliczeń: ``start`` i ``stop`` w dzienniku, póki Centrum trzyma port, wysyłka Logów Urwanego
-Uruchomienia po wpisie ``start``, której wyjątek nie zatrzymuje startu, i port, który zamknięte Centrum zwalnia od razu, także gdy jego kolejka Skrzynki Zgłoszeń jeszcze wysyła, oraz zatrzymanie Centrum w teście, które
-czeka na koniec każdego jego wątku, także każdego Centrum, którego test nie zatrzymał, zanim reguła prywatności czyta
-dziennik, i klient testowy, który nie otwiera pętli zdarzeń na każde żądanie (#975)."""
-
 from __future__ import annotations
 
 import asyncio.base_events
@@ -60,9 +55,7 @@ QUEUED = "20261023T101500000000Z-0001-kontrola-ilosci-3f2a9c1b.json"
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _port_free(port: int) -> bool:
-    """Czy nowe Centrum mogłoby teraz zająć ``port``."""
-
+def _centrum_could_listen(port: int) -> bool:
     try:
         listen_locally(port).close()
     except OSError:
@@ -71,12 +64,10 @@ def _port_free(port: int) -> bool:
 
 
 class _PortAtStop(CentrumLog):
-    """Dziennik, który przy ``stop`` sprawdza, czy nowe Centrum mogłoby już zająć port."""
-
     port_free_at_stop: bool | None = None
 
     def stopped(self, *, port: int) -> None:
-        self.port_free_at_stop = _port_free(port)
+        self.port_free_at_stop = _centrum_could_listen(port)
         super().stopped(port=port)
 
 
@@ -84,9 +75,9 @@ def _events(path: Path) -> list[str]:
     return [line.split(" ")[1] for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
 
-def _centrum(tmp_path: Path, box: FakeReportBox, log: CentrumLog, clock: ManualClock) -> tuple[FastAPI, Shutdown]:
-    """Centrum z kluczem do Zgłoszeń, w którego kolejce czeka Kontrola ilości z poprzedniej pracy Centrum."""
-
+def _centrum_with_queued_quantity_check(
+    tmp_path: Path, box: FakeReportBox, log: CentrumLog, clock: ManualClock
+) -> tuple[FastAPI, Shutdown]:
     tool = ToolDirectory(tmp_path)
     write_report_key(tool)
     queue = tool.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
@@ -134,8 +125,6 @@ def test_nieudany_start_nie_zapisuje_ani_startu_ani_stopu(tmp_path: Path) -> Non
     with pytest.raises(SystemExit):
         serve(FastAPI(lifespan=failing), listener=listener, on_ready=lambda _url: None, shutdown=shutdown, log=log)
     events = _events(path)
-    # Po nieudanym starcie u taty kończy się proces; w teście wątek ``serve``, który czeka na prośbę o zamknięcie,
-    # skończy się dopiero po niej.
     shutdown.request()
     join_threads_since(since)
 
@@ -144,10 +133,6 @@ def test_nieudany_start_nie_zapisuje_ani_startu_ani_stopu(tmp_path: Path) -> Non
 
 
 def test_wpis_z_przygotowania_serwera_zostaje_w_dzienniku_takze_gdy_start_sie_nie_udal(tmp_path: Path) -> None:
-    """Wpis sprzed ``start`` (zmiana Ustawień z Wydania w lifespan) czeka na ``start``, a przy nieudanym starcie
-    zapisuje go ``release_held``: bez niego dziennik nie mówiłby, co Centrum zrobiło z Ustawieniami (przegląd #1529 r2,
-    #1532 r2)."""
-
     path = tmp_path / "centrum-rozliczen.log"
     log = CentrumLog(path)
 
@@ -169,7 +154,24 @@ def test_wpis_z_przygotowania_serwera_zostaje_w_dzienniku_takze_gdy_start_sie_ni
     assert events == ["ustawienia-wydanie"]
 
 
-# Wycena w efenix, którą zgaszone Centrum urwało: jej dziennik w katalogu Logów czeka na następny start.
+def test_wpis_z_przygotowania_serwera_czeka_na_wpis_start(tmp_path: Path) -> None:
+    path = tmp_path / "centrum-rozliczen.log"
+    log = CentrumLog(path)
+
+    @asynccontextmanager
+    async def preparing(_app: FastAPI) -> AsyncIterator[None]:
+        log.settings_release(change="2026-11-zmiana-testowa", result="pozniej")
+        yield
+
+    shutdown = Shutdown(log)
+    since = new_line()
+
+    code = serve(FastAPI(lifespan=preparing), listener=listen_locally(0), on_ready=lambda _url: shutdown.request(), shutdown=shutdown, log=log)
+    join_threads_since(since)
+
+    assert (code, _events(path)) == (0, ["start", "ustawienia-wydanie", "zamkniecie", "stop"])
+
+
 URWANA_WYCENA = StartFacts(
     run_id="627b45fe219e4274b722953c34d4af54",
     process="efenix",
@@ -180,17 +182,12 @@ URWANA_WYCENA = StartFacts(
 
 
 def _left_pricing(tool: ToolDirectory) -> Path:
-    """Dziennik Urwanej Wyceny w efenix, z którego start Centrum robi wersję zastępczą Logów; jego ścieżka."""
-
     return left_journal(
         tool.log_path.parent, URWANA_WYCENA, begun_line(datetime(2026, 9, 10, 8, 1), row=19, place=1, total=2)
     )
 
 
 def _served_once(tool: ToolDirectory, *, before_start: Callable[[int], None] = lambda _port: None) -> tuple[int, list[str]]:
-    """Centrum na ``serve`` jak u taty: start, jedno zapytanie karty i zamknięcie; status zapytania i wpisy dziennika,
-    które Diagnoza i Zgłoszenia biorą jako wpisy tej pracy Centrum (``CentrumLog.recent``), bez czasu."""
-
     log = CentrumLog(tool.log_path)
     shutdown = Shutdown(log)
     app = centrum_app(tool, log=log, shutdown=shutdown)
@@ -230,13 +227,9 @@ def _served_once(tool: ToolDirectory, *, before_start: Callable[[int], None] = l
 def test_wysylka_logow_urwanego_uruchomienia_przy_starcie_jest_we_wpisach_tej_pracy_centrum_dla_diagnozy_i_zgloszen(
     tmp_path: Path, queue_blocked: bool, sent_line: str
 ) -> None:
-    """Wpisy dziennika o Logach Urwanego Uruchomienia, które start Centrum kładzie w Kolejce wysyłki (albo których kolejka
-    nie przyjęła), stoją po wpisie ``start`` tej pracy Centrum, więc Diagnoza („Dziennik Centrum rozliczeń”), treść
-    Zgłoszenia i Zgłoszenie Aktualizacji je widzą."""
-
     tool = ToolDirectory(tmp_path)
     _left_pricing(tool)
-    if queue_blocked:  # na miejscu Kolejki wysyłki stoi plik, więc kolejka nie zapisze wersji zastępczej
+    if queue_blocked:
         queue = tool.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
         queue.parent.mkdir(parents=True, exist_ok=True)
         queue.write_text("", encoding="utf-8")
@@ -251,9 +244,6 @@ def test_wysylka_logow_urwanego_uruchomienia_przy_starcie_jest_we_wpisach_tej_pr
 def test_wyjatek_wysylki_logow_urwanego_uruchomienia_nie_zatrzymuje_startu_centrum_a_dziennik_wyceny_czeka(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Nieoczekiwany wyjątek przy wysyłce wersji zastępczej na starcie trafia do dziennika Centrum (typ), Centrum
-    odpowiada, a dziennik Urwanej Wyceny zostaje na dysku na następny start."""
-
     def failing(_outbox: Outbox, _sent: Post) -> bool:
         raise RuntimeError("nieprzewidziany błąd kolejki")
 
@@ -301,12 +291,10 @@ def test_na_windows_centrum_na_petli_proactor_przestaje_sluchac_po_polaczeniu_po
 
 
 def test_zamkniete_centrum_zwalnia_port_od_razu_takze_gdy_kolejka_czeka_na_skrzynke(tmp_path: Path) -> None:
-    # Skrót i opiekun ponownego startu startują nowe Centrum, gdy tylko port jest wolny, a zapytanie do Skrzynki nie ma
-    # górnego limitu (wolna sieć): port trzymany do końca wysyłki dałby tacie kartę Centrum, które zaraz zniknie.
     hold = threading.Event()
     box = FakeReportBox(open_hold=hold)
     log = CentrumLog(ToolDirectory(tmp_path).log_path)
-    app, shutdown = _centrum(tmp_path, box, log, ManualClock())
+    app, shutdown = _centrum_with_queued_quantity_check(tmp_path, box, log, ManualClock())
     since = new_line()
     served, port = _serving(app, shutdown, log)
 
@@ -315,7 +303,7 @@ def test_zamkniete_centrum_zwalnia_port_od_razu_takze_gdy_kolejka_czeka_na_skrzy
         shutdown.request()
         served.join(30)
         closed = not served.is_alive()
-        port_free = _port_free(port)
+        port_free = _centrum_could_listen(port)
     finally:
         hold.set()
         join_threads_since(since)
@@ -355,12 +343,6 @@ def test_otwarty_strumien_postepu_nie_wstrzymuje_zamkniecia_centrum_bez_konca(tm
 
 
 class _EndingThread(threading.Thread):
-    """Wątek, którego kod już się skończył (zniknął z listy wątków modułu ``threading``), a wątek systemu jeszcze żyje.
-
-    Tak kończy się każdy wątek: ``Thread._delete`` zdejmuje go z ``enumerate()``, zanim skończy się wątek systemu, a
-    ``is_alive()`` do tej chwili zwraca True; tu ta chwila trwa, dopóki test nie ustawi ``end``.
-    """
-
     def __init__(self) -> None:
         super().__init__(name="konczacy-sie", daemon=True)
         self.code_ended = threading.Event()
@@ -373,8 +355,6 @@ class _EndingThread(threading.Thread):
 
 
 def _other_program_listening() -> socket.socket:
-    """Gniazdo innego programu, które słucha na ``HOST``, bez ``SO_REUSEADDR`` i bez ``SO_EXCLUSIVEADDRUSE``."""
-
     program = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         program.bind((HOST, 0))
@@ -382,6 +362,9 @@ def _other_program_listening() -> socket.socket:
     except OSError:
         program.close()
         raise
+    assert program.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR) == 0
+    if sys.platform == "win32":
+        assert program.getsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE) == 0
     return program
 
 
@@ -395,16 +378,10 @@ def _other_program_listening() -> socket.socket:
 def test_port_na_ktorym_slucha_dzialajace_centrum_albo_inny_program_nie_jest_wolny_dla_drugiego_centrum(
     holder: Callable[[], socket.socket],
 ) -> None:
-    """Port, na którym słucha już działające Centrum albo inny program, nie jest wolny dla drugiego Centrum:
-    ``port_free`` mówi, że zajęty, a ``listen_locally`` odmawia. Na Windows dwa gniazda z ``SO_REUSEADDR`` dostają ten
-    sam port, więc z tą opcją także na Windows drugie Centrum zajęłoby port działającego Centrum; przypadek
-    ``dzialajace-centrum`` łapie to tylko na Windows, bo na macOS i Linuksie ta opcja nie pozwala zająć portu, na którym
-    ktoś słucha."""
-
     held = holder()
     try:
         port = held.getsockname()[1]
-        free = (port_free(port), _port_free(port))
+        free = (port_free(port), _centrum_could_listen(port))
     finally:
         held.close()
 
@@ -412,7 +389,6 @@ def test_port_na_ktorym_slucha_dzialajace_centrum_albo_inny_program_nie_jest_wol
 
 
 def test_zatrzymanie_centrum_w_tescie_czeka_na_koniec_watku_systemu_a_nie_tylko_jego_kodu() -> None:
-    # #862: ``stop`` uznał Centrum za zatrzymane, gdy ``skrzynka-klucz`` zniknął już z ``enumerate()``, a jeszcze żył.
     since = new_line()
     ending = _EndingThread()
     ending.start()
@@ -435,7 +411,6 @@ def _ran(name: str) -> None:
 
 
 def test_watki_uruchomione_w_bloku_licza_sie_takze_skonczone_a_watki_wczesniejszej_linii_i_po_bloku_nie() -> None:
-    # Wątek wcześniejszego testu, który został w workerze, uruchamia swój wątek w czasie bloku następnego testu.
     go = threading.Event()
 
     def left_behind() -> None:
@@ -449,14 +424,13 @@ def test_watki_uruchomione_w_bloku_licza_sie_takze_skonczone_a_watki_wczesniejsz
         _ran("w-bloku")
         go.set()
         earlier.join(30)
+        left_behind_ran_in_block = not earlier.is_alive()
     _ran("po-bloku")
 
-    assert (started, earlier.is_alive()) == (["w-bloku"], False)
+    assert (started, left_behind_ran_in_block) == (["w-bloku"], True)
 
 
 def test_klient_testowy_bez_with_nie_otwiera_nowej_petli_zdarzen_na_zadanie(monkeypatch: pytest.MonkeyPatch) -> None:
-    # #975: Starlette poza ``with`` otwierał pętlę z parą gniazd TCP na każde żądanie, a na Windows CI ich porty w
-    # TIME_WAIT szły w tysiące na zadanie pytest (``WinError 10055`` przy ``socket.socketpair()``).
     app = FastAPI()
 
     @app.get("/ping")
@@ -479,8 +453,6 @@ def test_klient_testowy_bez_with_nie_otwiera_nowej_petli_zdarzen_na_zadanie(monk
 
 
 def test_watek_z_obslugi_zadania_we_wspolnej_petli_nalezy_do_linii_testu_a_watek_roboczy_anyio_nie() -> None:
-    # Wspólną pętlę klienta testowego otworzył inny test, a ``CentrumClient.stop`` czeka tylko na wątki linii testu:
-    # wątek, który kod Centrum uruchamia w obsłudze żądania, musi do niej należeć, a bezczynny wątek roboczy AnyIO nie.
     app = FastAPI()
     end = threading.Event()
 
@@ -506,8 +478,6 @@ def test_watek_z_obslugi_zadania_we_wspolnej_petli_nalezy_do_linii_testu_a_watek
 
 
 def test_timer_pytest_timeout_z_watku_testu_nie_nalezy_do_linii_testu() -> None:
-    # Na Windows pytest-timeout mierzy test wątkiem o nazwie „pytest_timeout <test>” z wątku testu; sprawdzenie linii
-    # na końcu modułu widziało timer ostatniego testu jako wątek Centrum (#1080).
     end = threading.Event()
     since = new_line()
     threads = [threading.Thread(target=end.wait, name=name) for name in (f"{PYTEST_TIMEOUT_THREAD}test", "centrum")]
@@ -525,11 +495,8 @@ def test_timer_pytest_timeout_z_watku_testu_nie_nalezy_do_linii_testu() -> None:
 
 @pytest.fixture(scope="module")
 def watki_centrow_po_tescie() -> Iterator[list[threading.Thread]]:
-    """Wątki Centrów testu, żywe na jego końcu, które sprawdza koniec modułu, czyli chwila po ich zatrzymaniu w conftest.
-
-    Sprawdza te wątki, nie linie klientów (``CentrumClient.threads``): z ``--dist worksteal`` worker bierze po tym teście
-    inne testy modułu, a wątki, które one uruchamiają, też należą do linii od ``since`` klientów (#1330).
-    """
+    """Sprawdza wątki Centrów, nie linie klientów (``CentrumClient.threads``): z ``--dist worksteal`` worker bierze po tym
+    teście inne testy modułu, a wątki, które one uruchamiają, też należą do linii od ``since`` klientów."""
 
     threads: list[threading.Thread] = []
     yield threads
@@ -539,8 +506,6 @@ def watki_centrow_po_tescie() -> Iterator[list[threading.Thread]]:
 def test_kazde_centrum_testu_bez_stop_zatrzymuje_sie_po_tescie_razem_z_watkami(
     watki_centrow_po_tescie: list[threading.Thread],
 ) -> None:
-    # Reguła „test nie zostawia wątku” nie zależy od tego, czy autor zawołał ``stop``: conftest po teście zatrzymuje
-    # każde Centrum testu, nie tylko pierwsze albo ostatnie.
     def started(name: str) -> CentrumClient:
         stopping = threading.Event()
 
@@ -560,7 +525,6 @@ def test_kazde_centrum_testu_bez_stop_zatrzymuje_sie_po_tescie_razem_z_watkami(
     assert {"praca-pierwszego-centrum", "praca-drugiego-centrum"} <= {thread.name for thread in watki_centrow_po_tescie}
 
 
-# Centrum testu, które przy zamknięciu (``lifespan``) pisze do swojego dziennika ścieżkę katalogu tymczasowego testów.
 _PRIVACY_PROBE = """
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -596,8 +560,6 @@ def test_ze_stop(tmp_path: Path) -> None:
 
 
 def test_wpis_dziennika_przy_zamknieciu_centrum_bez_stop_lamie_regule_prywatnosci_jak_po_stop(tmp_path: Path) -> None:
-    # Conftest zatrzymuje Centrum, którego test nie zatrzymał, zanim reguła prywatności (ADR 0004) czyta dziennik, więc
-    # wpis z zamknięcia Centrum sprawdza tak samo, jak po ``stop`` w teście; kolejność autouse z nazw by to odwróciła.
     (tmp_path / "test_sonda_prywatnosci.py").write_text(_PRIVACY_PROBE, encoding="utf-8")
     report = tmp_path / "junit.xml"
     done = subprocess.run(
