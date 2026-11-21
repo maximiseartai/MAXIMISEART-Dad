@@ -734,6 +734,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komunikat-boxa-podlancuchem": "bierz własność box_boat.WLASNOSC z junit",
+    "definicja-pythona-wzorcem": "definicje modułu czytaj z ast.parse",
     "dyrektywa-mypy-recznie": "użyj mypy.util.get_mypy_comments",
     "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
     "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
@@ -805,6 +806,7 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
 # linie dodane przez zmianę, i folder, od którego liczy je ``whole_tree_rules``.
 REGULY_CALEGO_DRZEWA: Final = (
+    "definicja-pythona-wzorcem",
     "dyrektywa-mypy-recznie",
     "follow-symlinks-tylko-posix",
     "historia-w-docstringu",
@@ -2366,6 +2368,7 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 # konfigurację.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
+    "definicja-pythona-wzorcem": (("tools",), ".py"),
     "krok-mypy-ruff-poza-krokami": (("tools",), ".py"),
     "komunikat-boxa-podlancuchem": (("tools",), ".py"),
     "stosunek-czasow-sciany": (("tests",), ".py"),
@@ -2437,6 +2440,12 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("pytest-current-test-poza-testami", f'{_OS}W_TESCIE = "PYTEST_CURRENT_TEST" in os.environ\n', [3]),
     ("pytest-current-test-poza-testami", f"{_OS}W_TESCIE = os.environ.get('PYTEST_CURRENT_TEST') is not None\n", [3]),
     ("pytest-current-test-poza-testami", f'{_OS}W_SESJI = "PYTEST_VERSION" in os.environ\n', []),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(rf"^(?:(?:async +)?def +|class +)?{{NAZWA}}\\b", re.MULTILINE)\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.findall(r"^\\s*def\\s+(\\w+)", "")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.search(r"class\\s*(\\w+)", "")\n', [3]),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"default +(\\w+)")\n', []),
+    ("definicja-pythona-wzorcem", f'{_PATTERN}re.compile(r"def")\n', []),
+    ("definicja-pythona-wzorcem", 'import ast\n\nNAZWY = {wezel.name for wezel in ast.parse("").body if isinstance(wezel, ast.FunctionDef)}\n', []),
 ]
 
 
@@ -2502,6 +2511,11 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
     },
     "pytest-current-test-poza-testami": {
         "nazwa zmiennej sklejona z części": f'{_OS}W_TESCIE = "PYTEST_" + "CURRENT_TEST" in os.environ\n',
+    },
+    "definicja-pythona-wzorcem": {
+        "wzorzec w stałej poza wywołaniem re": f'{_PATTERN}r"^def +(\\w+)"\nFOUND = re.compile(LINE)\n',
+        "re pod inną nazwą": 'import re as wzorce\n\nFOUND = wzorce.compile(r"^def +(\\w+)")\n',
+        "definicja przez startswith bez re": 'def definicja(linia: str) -> bool:\n    return linia.startswith(("def ", "class "))\n',
     },
 }
 

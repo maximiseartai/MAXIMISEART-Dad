@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from collections.abc import Iterator, Sequence
 import configparser
 from dataclasses import dataclass
@@ -18,8 +19,8 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 | Źródło | Właściciel |
 |---|---|
 | zakaz ``TID251`` | plik z ``TID251`` w ``[lint.per-file-ignores]`` ``ruff.toml`` korzenia; że ma wiersz ``OWNERS`` z nazwami, których jest właścicielem, pilnuje ``tests/test_zakazy_ruff.py`` w Required CI tego drzewa |
-| nazwa w ``banned-api`` każdego ``ruff.toml`` | moduł, który ją definiuje (``def``, ``class`` albo przypisanie na początku linii), jako ``<katalog importu>/<moduł>.py`` albo ``…/__init__.py`` z katalogów ``src`` i ``repo.IMPORT_ROOTS``: zakaz kieruje do niego resztę kodu |
-| sama reguła | każdy ``ruff.toml`` z ``banned-api`` (korzenia i katalogu, który go rozszerza) i każdy plik reguły ast-grep z ``ruleDirs``, który ma ``id``: lukę we wzorcu albo zasięgu zamyka test jego próbek (``tests/test_zakazy_ruff.py``, ``tests/test_zapadki.py``), a słabszą regułę odrzuca warunek 6 ``tools/scal_pr.py`` |
+| nazwa w ``banned-api`` każdego ``ruff.toml`` | moduł, który ją definiuje (``def``, ``class`` albo przypisanie nazwy najwyższego poziomu w ``ast`` modułu), jako ``<katalog importu>/<moduł>.py`` albo ``…/__init__.py`` z katalogów ``src`` i ``repo.IMPORT_ROOTS``: zakaz kieruje do niego resztę kodu |
+| sama reguła | każdy ``ruff.toml`` z ``banned-api`` (korzenia i katalogu, który go rozszerza) i każdy plik reguły ast-grep z ``ruleDirs``, który ma ``id``: lukę we wzorcu albo zasięgu zamyka test jego próbek (``tests/test_zakazy_ruff.py``, ``tests/test_zapadki.py``), a słabszą regułę ast-grep odrzuca też warunek 6 ``tools/scal_pr.py`` |
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
 
@@ -88,10 +89,19 @@ def _banned(tree: _Tree) -> set[str]:
 
 def _defining(tree: _Tree, banned: str) -> Iterator[str]:
     module, _, name = banned.rpartition(".")
-    defined = re.compile(rf"^(?:(?:async +)?def +|class +)?{re.escape(name)}\b", re.MULTILINE)
     stem = module.replace(".", "/")
     candidates = (f"{root}/{stem}{suffix}".removeprefix("./") for root in IMPORT_ROOTS for suffix in (".py", "/__init__.py"))
-    yield from (path for path in candidates if defined.search(tree.read(path) or ""))
+    yield from (path for path in candidates if name in _definitions(tree.read(path)))
+
+
+def _definitions(source: str | None) -> set[str]:
+    try:
+        statements = ast.parse(source).body if source is not None else []
+    except SyntaxError:
+        return set()
+    named = (target for statement in statements if isinstance(statement, ast.Assign | ast.AnnAssign) for target in (statement.targets if isinstance(statement, ast.Assign) else [statement.target]))
+    defined = {statement.name for statement in statements if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)}
+    return defined | {target.id for target in named if isinstance(target, ast.Name)}
 
 
 def _importers(tree: _Tree) -> set[str]:
