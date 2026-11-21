@@ -103,11 +103,6 @@ WAIT_FOR_TASK = (
 
 
 def judge(event: object, passed: dict[str, str]) -> tuple[list[tuple[str, str]], list[str]]:
-    """ID i opisy żywych zadań ``BLOCKING`` spoza ``passed`` oraz wpisy dziennika z wejścia hooka ``Stop``.
-
-    ``passed`` to zadania przepuszczone przez plik sesji z powodem; odmowa tylko przy żywych zadaniach spoza niego.
-    """
-
     tasks = event.get("background_tasks") if isinstance(event, dict) else None
     if not isinstance(tasks, list):
         return [], ["wejście bez listy background_tasks"]
@@ -150,8 +145,6 @@ def refusal(tasks: list[tuple[str, str]]) -> str:
 
 
 def remembered(event: dict[str, object]) -> list[dict[str, object]]:
-    """Wpisy pliku sesji z wejścia hooka ``PostToolUse``: zadanie podagenta i zadania z wywołania ``WAIT``."""
-
     tool, given, answer, agent = (event.get(key) for key in ("tool_name", "tool_input", "tool_response", "agent_id"))
     if tool == WAIT and isinstance(given, dict) and isinstance(given.get("taskIds"), list):
         passes = given.get("waiting") is not False
@@ -168,8 +161,6 @@ def remembered(event: dict[str, object]) -> list[dict[str, object]]:
 
 
 def passed_in(lines: list[str]) -> dict[str, str]:
-    """Zadania, które przepuszcza plik sesji o liniach ``lines``, z powodem; późniejszy wpis zadania wygrywa."""
-
     passed: dict[str, str] = {}
     for line in lines:
         try:

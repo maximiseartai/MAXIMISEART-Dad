@@ -37,6 +37,7 @@ import rejestr_korzeni
 from rejestr_korzeni import GuardCase, Occurrence, Reviewed
 import rejestr_korzeni_tydzien as tydzien
 import straznik
+import strazniki_przeniesione
 import szablon_werdyktu
 import tydzien_polski
 import werdykt_pr
@@ -328,13 +329,14 @@ def _comment(text: str, created: str, association: str = "OWNER") -> dict[str, o
     return {"body": text, "created_at": created, "author_association": association}
 
 
-def test_historia_ma_ucieczki_z_ostatniego_komentarza_audytu_tygodnia_od_zaufanego_konta_a_bez_audytu_kreske() -> None:
+def test_historia_ma_ucieczki_z_ostatniego_komentarza_tygodnia_od_zaufanego_konta_z_linia_audytu_na_poczatku_a_bez_audytu_kreske() -> None:
     comments = [
         _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 1\n- Ucieczka #1710 W1 r1 jak #1700 W1 r1", "2026-10-19T09:00:00Z"),
         _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 2\n- Ucieczka #1710 W1 r1 jak #1700 W1 r1", "2026-10-19T08:00:00Z"),
         _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 7", "2026-10-19T10:00:00Z", "NONE"),
         _comment("AUDYT POWROTÓW 2026-10-05 | pary 0 | ucieczki 0", "2026-10-12T08:00:00Z"),
         _comment("Uwaga: AUDYT POWROTÓW 2026-09-28 | pary 1 | ucieczki 1", "2026-10-12T09:00:00Z"),
+        _comment("Szkic audytu przed oceną\nAUDYT POWROTÓW 2026-09-28 | pary 1 | ucieczki 1", "2026-10-12T10:00:00Z"),
     ]
 
     text = _body([], date(2026, 10, 19), audited=tydzien.audits(comments))
@@ -1156,7 +1158,10 @@ def test_ponowny_dowod_pokazuje_straznika_bez_dowod_ok_na_main_z_konca_tygodnia_
         [True, "--straznik", "mypy", "--z-commita", week_end, "--wazne", "1481/W1/r1"],
     ]
     section = text.split("## Ponowny dowód strażników\n", 1)[1].split("\n## ", 1)[0]
-    lead = f"Dowód każdego strażnika scalonego do końca tygodnia na main z {week_end[:8]} (tools/na_scalonych_pr.py --straznik) w budżecie 150 min: 2 strażników, 1 bez DOWÓD OK, w tym 0 poza budżetem."
+    lead = (
+        f"Dowód każdego strażnika scalonego do końca tygodnia na main z {week_end[:8]} (tools/na_scalonych_pr.py --straznik) w budżecie 150 min: 2 strażników, 1 bez DOWÓD OK, w tym 0 poza budżetem."
+        f" Ważne, którego strażnik przestał łapać błąd, dostaje nowego wpisem w {strazniki_przeniesione.PLIK}."
+    )
     assert section.splitlines()[1] == lead, text
     assert _rows(text, "Ponowny dowód strażników") == [f"| #1480 | {PYTEST_GUARD} | W1 r1 | {'; '.join(refused).replace('|', chr(92) + '|')} |"], text
     assert lines[-1].endswith(", 1 strażników bez DOWÓD OK"), lines
@@ -1172,6 +1177,46 @@ def test_straznik_ktorego_dowod_przekroczyl_budzet_i_ten_po_nim_stoja_w_ponownym
     assert [proof[2] for proof in _proofs(tmp_path)] == [PYTEST_GUARD]
     assert _rows(text, "Ponowny dowód strażników") == [f"| #1480 | {PYTEST_GUARD} | W1 r1 | {tydzien.REPROOF_LATE} |", f"| #1481 | mypy | W1 r1 | {tydzien.REPROOF_UNSTARTED} |"], text
     assert "2 strażników, 2 bez DOWÓD OK, w tym 2 poza budżetem." in text, text
+
+
+MOVED_NODE = "tests/test_przeniesiony.py::test_wazne[p]"
+MOVED = f'''["1480/W1/r1"]
+straznik = "pytest {MOVED_NODE}"
+
+["1482/W1/r1"]
+straznik = "mypy"
+
+["1479/W1/r1"]
+straznik = "ruff"
+
+["1483/W1/r1"]
+straznik = "mypy"
+'''
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_ponowny_dowod_i_odpalenia_biora_straznika_wpisu_przeniesionego_z_main_z_konca_tygodnia_a_tabele_selektor_z_opisu_pr(tmp_path: Path) -> None:
+    log = tmp_path / "dowody.jsonl"
+    answers = {guard: {"linie": [f"DOWÓD OK | {guard} | wykryte 1/1"], "kod": 0} for guard in (f"pytest {MOVED_NODE}", "mypy")}
+    pulls = [*REPROOF_PULLS, _pull(1490, [], created="2026-10-20T08:00:00Z", branch="feat/praca")]
+    actions = _actions([(1, "feat/praca", "2026-10-21T10:00:00Z", [_pytest_job(11, MOVED_NODE, PYTEST_GUARD.removeprefix("pytest "))])])
+    files = {"tools/na_scalonych_pr.py": f"LOG = {str(log)!r}\nANSWERS = {json.dumps(answers)}\n{FAKE_PROOF}", strazniki_przeniesione.PLIK: MOVED}
+    github = RegistryGitHub(tmp_path / "gh", [], pulls=pulls, actions=actions, files=files)
+    week_end = git(github.checkout, "rev-parse", "main").strip()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("GIT_COMMITTER_DATE", "2026-10-27T10:00:00+00:00")
+        github.push_main({strazniki_przeniesione.PLIK: '["1481/W1/r1"]\nstraznik = "ruff"\n'})
+
+    text = "\n".join(_measure(github, "--tydzien", "2026-10-19", "--bez-zapisu", "--ponowny-dowod")[2:-1])
+
+    assert [proof[1:] for proof in _proofs(tmp_path)] == [
+        ["--straznik", f"pytest {MOVED_NODE}", "--z-commita", week_end, "--wazne", "1480/W1/r1"],
+        ["--straznik", "mypy", "--z-commita", week_end, "--wazne", "1481/W1/r1"],
+        ["--straznik", "mypy", "--z-commita", week_end, "--wazne", "1482/W1/r1"],
+    ]
+    assert _rows(text, "Ponowny dowód strażników") == [f"| #1479 | ruff | W1 r1 | {tydzien.REPROOF_STRAY} |", f"| #1483 | mypy | W1 r1 | {tydzien.REPROOF_STRAY} |"], text
+    assert _rows(text, "Odpalenia strażników") == [f"| #1490 | pytest {MOVED_NODE} | #1480 W1 r1 |"], text
+    assert _rows(text, "Strażniki")[1] == "| Od wdrożenia 2026-10-15 | 3 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 1 | 0 | 33% |", text
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX

@@ -45,8 +45,6 @@ NOT_WORKBOOK_SAVES = {
 
 
 def _cell_address(index: ast.expr) -> bool:
-    """``"A1"``, ``"A1:C3"`` albo ``f"A{row}"``: adres komórki, pod który ``sheet[...] =`` wpisuje wartość."""
-
     if isinstance(index, ast.JoinedStr):
         head = index.values[0]
         return len(index.values) > 1 and isinstance(head, ast.Constant) and re.fullmatch(COLUMN, str(head.value)) is not None

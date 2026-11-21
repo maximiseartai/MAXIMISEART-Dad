@@ -143,9 +143,6 @@ class ZRezerwa:
 
 
 class Api:
-    """``gh api`` z odpowiedziami w ``kopia`` (domyślnie ``api`` w ``kopia_komputera``); ``trwala`` mówi, czy odpowiedź
-    już się nie zmieni (wtedy ją zapisuje)."""
-
     def __init__(self, github: GitHub, kopia: Path | None = None) -> None:
         self.katalog = kopia or kopia_komputera() / "api"
         self.katalog.mkdir(parents=True, exist_ok=True)

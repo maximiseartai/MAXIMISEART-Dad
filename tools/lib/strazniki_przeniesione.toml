@@ -1,0 +1,20 @@
+["2254/W1/r1"]
+straznik = "pytest tests/test_centrum_rozliczen.py::test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wartosci_z_wydania_usuwa_plik[reguly-ilosci.yaml]"
+mutacja = '''
+[{"nazwa": "„Cofnij” wiersza z utworzono znów przywraca brak pliku tylko przy wartości równej dzisiejszemu Wydaniu", "zmiany": [["src/rozliczenia/centrum/settings/owner.py", "        return not isinstance(restored, FieldProblem) and not file.diff(restored, value)", "        return not file.diff(file.default, value)"]]}]
+'''
+
+["2254/W1/r2"]
+straznik = "pytest tests/test_centrum_rozliczen.py::test_cofniecie_zmiany_ktora_utworzyla_plik_po_cofnieciu_pozniejszej_i_aktualizacji_usuwa_plik"
+mutacja = '''
+[{"nazwa": "„Cofnij” wiersza z utworzono przywraca brak pliku tylko przy wartości z dzisiejszego Wydania albo gdy jego wiersz jest najnowszym wierszem pliku", "zmiany": [["src/rozliczenia/centrum/settings/owner.py", "        return not isinstance(restored, FieldProblem) and not file.diff(restored, value)", "        return not file.diff(file.default, value) or rows[0].id == undoes.id"]]}]
+'''
+
+["2289/W1/r3"]
+straznik = "pytest tests/test_zabijanie.py::test_zabijanie_spoza_wlasnego_worktree_dostaje_odmowe[kill-pidu-i-przeglad-pgrep]"
+
+["2289/W2/r1"]
+straznik = "pytest tests/test_zabijanie.py::test_zabijanie_spoza_wlasnego_worktree_dostaje_odmowe[petla-for-kill]"
+
+["2305/W1/r1"]
+straznik = "pytest tests/test_scalanie_skrotow_modelu.py::test_merge_dwoch_galezi_ze_skrotami_przeliczonymi_na_kazdej_przechodzi_bez_konfliktu_a_skroty_zgadzaja_sie_z_kodem[rozne-nowe-definicje-w-roznych-plikach-po-obu-stronach]"

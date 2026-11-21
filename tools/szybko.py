@@ -136,8 +136,6 @@ class Selection:
 
 @dataclass(frozen=True)
 class Plan:
-    """Pliki testów, które biegną, i te zostawione CI (``deferred_s`` to ich czas w CI)."""
-
     run: tuple[str, ...]
     deferred: tuple[str, ...]
     deferred_s: float
@@ -152,9 +150,6 @@ def plan(
     budget_s: float = BUDGET_S,
     wall_s: float = WALL_S,
 ) -> Plan:
-    """Pliki zmienione (odległość 0) biegną zawsze. Dalsze, po odległości i koszcie rosnąco, biegną, gdy suma kosztów
-    na ``workers`` workerów kroku pytest mieści się jeszcze w ``wall_s`` (odległość 1) albo w ``budget_s`` (dalsze)."""
-
     cost = {test: costs.s(test) for test in tests}
     used = 0.0
     run, deferred = [], []
@@ -219,8 +214,6 @@ def _passed(junit: Path, ran: Iterable[str]) -> set[str]:
 
 
 def _merge_workers() -> int:
-    """Workery xdist kroku struktury na mergu: połowa workerów kroku pytest, który biegnie razem z nim."""
-
     return max(1, czasy_ci.workery_lokalne() // 2)
 
 
@@ -301,8 +294,6 @@ def _environment(root: Path, base: str) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class Outcome:
-    """Nazwy kroków, które padły, kroków pytest z nich zakończonych kodem ``box_boat.KOD_WYJSCIA`` i przerwanych."""
-
     failed: list[str]
     box: list[str]
     interrupted: list[str]

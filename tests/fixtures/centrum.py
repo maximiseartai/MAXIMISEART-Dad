@@ -526,8 +526,6 @@ class ToolDirectory:
 
     @property
     def log_path(self) -> Path:
-        """Dziennik Centrum w katalogu Logów."""
-
         return self._moved(tool_files.LOG_PATH)
 
     @property
@@ -548,8 +546,6 @@ class ToolDirectory:
 
     @property
     def worker_list(self) -> Path:
-        """Lista Wykonawców w Ustawieniach Centrum."""
-
         return self.config / WORKERS_FILE
 
     @property
@@ -759,8 +755,6 @@ class CentrumClient(TestClient):
         stop_after_test(self.stop)
 
     def threads(self) -> list[threading.Thread]:
-        """Żywe wątki Centrum: serwera i jego pracy w tle."""
-
         return threads_since(self.since)
 
     def __enter__(self) -> Self:
@@ -888,8 +882,6 @@ def without_times(value: object) -> object:
 
 
 def run_events(client: TestClient) -> Iterator[dict[str, Any]]:
-    """Zdarzenia strumienia SSE Uruchomień procesu, każde jako sparsowany JSON z linii ``data:``."""
-
     with client.stream("GET", "/api/runs/events") as response:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")

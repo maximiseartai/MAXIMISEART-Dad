@@ -1,0 +1,60 @@
+id: reszta-tekstu-od-kazdego-trafienia
+language: python
+severity: error
+message: >-
+  wycinek bez końca tekstu (tekst[m.end():], tekst[m.start():], tekst[m.end() + 1:]) w pętli, której iterowane
+  wyrażenie woła finditer na tym tekście (także w enumerate, zip, sorted i wyrażeniu listowym), czyta od nowa resztę
+  tekstu od każdego trafienia, więc czas rośnie z kwadratem liczby trafień; czytaj tekst raz od początku do końca
+  i rozpoznawaj trafienia po drodze
+files:
+  - tools/**/*.py
+  - src/**/*.py
+metadata:
+  przypadki:
+    - 2295/W1/r1
+rule:
+  # Wycinek bez końca tekstu $S w pętli (for albo wyrażenie listowe), której iterowane wyrażenie zawiera wywołanie
+  # finditer z $S jako argumentem pozycyjnym albo nazwanym: R.finditer(s), re.finditer(W, string=s), enumerate(...),
+  # zip(...) i sorted(...) wokół niego.
+  pattern: $S[$START:]
+  regex: ':\s*\]$'
+  inside:
+    stopBy: end
+    any:
+      - kind: for_statement
+        has:
+          field: right
+          matches: trafienia-tekstu
+      - any:
+          - kind: list_comprehension
+          - kind: set_comprehension
+          - kind: dictionary_comprehension
+          - kind: generator_expression
+        has:
+          kind: for_in_clause
+          has:
+            field: right
+            matches: trafienia-tekstu
+utils:
+  trafienia-tekstu:
+    any:
+      - matches: finditer-tekstu
+      - has:
+          stopBy: end
+          matches: finditer-tekstu
+  finditer-tekstu:
+    kind: call
+    all:
+      - has:
+          field: function
+          regex: '(^|\.)finditer$'
+      - has:
+          field: arguments
+          any:
+            - has:
+                pattern: $S
+            - has:
+                kind: keyword_argument
+                has:
+                  field: value
+                  pattern: $S

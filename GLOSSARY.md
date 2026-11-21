@@ -308,7 +308,7 @@ _Avoid_: mail, raport (bez dopowiedzenia), sprawozdanie
 
 Część Raportu wykonawcy o jednym zleceniu: numer z `NUMER ZL.`, `tak` albo `nie` jak w `SKUTECZNE` i wykonane czynności albo powód nieskuteczności, słowa rozdzielone spacją, bez względu na wielkość liter.
 Dotyczy zlecenia o tym numerze, a jego dzień i Wykonawca to dzień z tematu i nadawca raportu, także gdy Rejestr zleceń mówi inaczej.
-Wyjątek: gdy w jednym raporcie co najmniej dwa Wpisy mają numery zleceń tego Wykonawcy z innego dnia niż dzień z tematu, temat jest pomyłką i te Wpisy dotyczą zleceń z ich dnia w Rejestrze.
+Wyjątek: gdy w jednym raporcie co najmniej dwa Wpisy mają numery zleceń z innego dnia niż dzień z tematu, także zleceń innego Wykonawcy ([#1344](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1344) US 9), temat jest pomyłką i te Wpisy dotyczą zleceń z ich dnia w Rejestrze.
 Późniejszy Wpis raportu tego samego zlecenia, od tego samego albo innego Wykonawcy, wygrywa z wcześniejszym.
 _Avoid_: linia raportu, Wpis urządzenia i czynności INTERMAX (to wpis Uporządkowania)
 
@@ -428,7 +428,7 @@ _Avoid_: Konfiguracja wykonawców, lista adresów Wykonawców, pracownicy
 ## Nieaktywny Wykonawca
 
 Wykonawca z Listy Wykonawców, który już nie pracuje u taty: nie dostaje Przypomnień o raporcie, a okresy z jego zleceniami nadal się rozliczają i Wysyłka rozliczeń wysyła mu jego Rozliczenie pracownika.
-Wykonawcy, którego identyfikator występuje w jakimkolwiek okresie, się nie usuwa, tylko oznacza jako nieaktywnego.
+Wykonawcy, którego identyfikator występuje w jakimkolwiek okresie, się nie usuwa, tylko oznacza jako nieaktywnego, bo okres rozliczany ponownie zatrzymałby się na Wykonawcy spoza Listy Wykonawców.
 _Avoid_: usunięty Wykonawca, były pracownik
 
 ## Historia Ustawień

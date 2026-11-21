@@ -53,7 +53,6 @@ COMPONENTS = (
     "instalacja ręczna",
     "wizja",
 )
-# Litery bez ``x``, bo doklejone ``xg`` znika z URZĄDZENIA (docstring ``quantity_engine``).
 LETTERS = "abcdefghijklmnopqrstuvwyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWYZĄĆĘŁŃÓŚŹŻ"
 SEPARATORS = (" ", "  ", ",", ", ", " ,", ",,", " , ")
 TUESDAY_MORNING = datetime(2026, 10, 27, 9)
@@ -127,8 +126,17 @@ def test_skladnik_z_doklejonymi_literami_to_skladnik_ktorego_reguly_ilosci_nie_z
     assert isinstance(_rules(devices), WithoutRule), devices
 
 
-# Słowo spoza Listy Urządzeń: żaden zapis z Wydania nie zaczyna się od ``q``.
 _UNKNOWN_WORD = st.text(LETTERS, max_size=4).map(lambda letters: "q" + letters)
+
+
+def test_slowo_spoza_listy_urzadzen_w_tescie_podpowiedzi_zaczyna_sie_od_q_bo_zaden_zapis_z_wydania_tak_sie_nie_zaczyna() -> None:
+    spellings = [spelling for component in DEFAULT_QUANTITY_RULES.devices.components for spelling in component.spellings]
+
+    assert [spelling for spelling in spellings if spelling.casefold().startswith("q")] == []
+
+
+def test_litery_doklejane_w_testach_regul_ilosci_nie_maja_x_bo_doklejone_xg_znika_z_urzadzen() -> None:
+    assert "x" not in LETTERS.casefold()
 
 
 @PROPERTY
@@ -138,7 +146,6 @@ def test_podpowiedz_listy_urzadzen_to_kolejne_nieznane_slowa_a_po_ich_dodaniu_li
 ) -> None:
     written = data.draw(_written(items))
     expected: list[list[str]] = []
-    # Kolejne nieznane słowa to jeden zapis, a słowo z krotnością zaczyna nowy (docstring ``unknown_spellings``).
     for index, (count, name) in enumerate(items):
         if name.startswith("q"):
             if index and items[index - 1][1].startswith("q") and count == 1:

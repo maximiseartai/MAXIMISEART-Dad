@@ -95,7 +95,6 @@ TOR_LOKALNY = "linux-3.14"
 WORKERY_LOKALNE = 4
 # Tyle najnowszych artefaktów ``czasy-ci`` przegląda odczyt, szukając ``ILE_RUNOW`` z zielonych runów.
 SZUKANE_ARTEFAKTY = 30
-# Lista zielonych runów main: tylko ich artefakt ``czasy-ci`` liczy odczyt.
 ZIELONE_MAIN = f"{REPO}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page={SZUKANE_ARTEFAKTY}"
 LIMIT_GH_S = 30.0
 # GitHub odczytu czasów: repozytorium checkoutu, a każde zapytanie najwyżej ``LIMIT_GH_S``.
@@ -150,8 +149,6 @@ class Obserwacja:
 
 @dataclass(frozen=True)
 class KosztyPlikow:
-    """Sekundy pracy plików testów toru."""
-
     zmierzone: Mapping[str, float]
 
     def typowy(self, bez_pomiarow: float = 0.0) -> float:
@@ -163,16 +160,12 @@ class KosztyPlikow:
 
 @dataclass(frozen=True)
 class Czasy:
-    """Pomiary ostatnich runów main: tor -> klucz -> obserwacje z ostatniej próby każdego zadania."""
-
     runy: tuple[int, ...]
     tory: Mapping[str, Mapping[str, tuple[Obserwacja, ...]]]
     blad: str | None = None
-    noce: tuple[int, ...] = ()  # runy nocy, z których są czasy skryptów mutacji bez pomiaru main
+    noce: tuple[int, ...] = ()
 
     def praca(self, tor: str, klucz: str) -> float | None:
-        """Mediana po runach sumy klucza w runie: plik testów podzielony między zadania liczy się raz, cały."""
-
         w_runie: dict[int, float] = defaultdict(float)
         for obserwacja in self.tory.get(tor, {}).get(klucz, ()):
             w_runie[obserwacja.run] += obserwacja.s
@@ -200,8 +193,6 @@ class Czasy:
         return KosztyPlikow(self.pliki(tor))
 
     def zadania(self, tor: str) -> list[dict[str, float]]:
-        """Pomiary każdego zadania toru w każdym runie: klucz -> sekundy."""
-
         zadania: dict[tuple[int, str], dict[str, float]] = defaultdict(dict)
         for klucz, obserwacje in self.tory.get(tor, {}).items():
             for obserwacja in obserwacje:
@@ -246,9 +237,6 @@ def _pobierz(katalog: Path, github: GitHub, artefakt: str, zielone: str | None) 
 
 
 def _odswiez(katalog: Path, odswiez_po_s: float, github: GitHub, artefakt: str, zielone: str | None) -> str | None:
-    """Pobiera artefakty ``artefakt`` do ``katalog``, gdy ostatnie udane pobranie (plik ``pobrane``) jest starsze niż
-    ``odswiez_po_s``, i zwraca przyczynę, gdy pobranie padło."""
-
     pobrane = katalog / "pobrane"
     if pobrane.is_file() and time.time() - pobrane.stat().st_mtime < odswiez_po_s:
         return None
@@ -274,8 +262,6 @@ def _dokumenty(katalog: Path) -> tuple[list[dict[str, Any]], list[str]]:
 
 
 def _skrypt_mutacji(klucz: str) -> bool:
-    """Klucz skryptu mutacji skilla (``skill:<skill>/<skrypt>``), a nie jego podstawy (``skill:<skill>/ci``)."""
-
     return jednostka.rodzaj(klucz) is Rodzaj.SKILL and Klucz.z_tekstu(klucz).nazwa.partition("/")[2] != "ci"
 
 

@@ -54,9 +54,6 @@ DECLARATION = "ZMIANA PODEJŚCIA: "
 
 
 def _declares(item: dict[str, object]) -> bool:
-    """Czy komentarz albo recenzja ``item`` to zmiana podejścia konta z prawem zapisu; linie są bez odstępów na
-    brzegach, więc linia z samym ``DECLARATION`` się z nim nie zaczyna, a zdanie po nim nie jest puste."""
-
     if item.get("authorAssociation") not in werdykt_pr.TRUSTED or item.get("state") == "PENDING":
         return False
     lines = werdykt_pr.text_lines(item.get("body", ""))
@@ -65,9 +62,6 @@ def _declares(item: dict[str, object]) -> bool:
 
 @dataclass(frozen=True)
 class Rounds:
-    """Rundy z ``FAIL`` PR: SHA commitów w kolejności pierwszego takiego werdyktu, każdy raz, werdykty ``FAIL`` każdego
-    z nich i liczba rund z ``FAIL`` przed każdą zmianą podejścia."""
-
     failed: tuple[str, ...]
     verdicts: dict[str, list[werdykt_pr.Verdict]]
     changes: tuple[int, ...]

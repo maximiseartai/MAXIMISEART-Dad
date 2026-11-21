@@ -499,8 +499,6 @@ def test_okres_po_uporzadkowaniu_intermax_przechodzi_z_uporzadkowanymi_zleceniam
 
 
 def order_fills(path: Path, number: str) -> dict[str, str | None]:
-    """Wypełnienie RGB komórek ``URZĄDZENIA``, ``CZYNNOŚCI`` i numeru umowy zlecenia ``number`` w pliku okresu."""
-
     workbook = load_workbook(path)
     try:
         sheet = workbook.worksheets[0]
@@ -549,7 +547,7 @@ def test_kolor_operatora_z_uporzadkowania_intermax_przechodzi_do_obu_plikow_okre
 @pytest.mark.parametrize(
     "damage",
     [
-        lambda path: cut_sheet_after_data_rows(path, "xl/worksheets/sheet2.xml"),  # ZLECENIA za arkuszem lista
+        lambda path: cut_sheet_after_data_rows(path, "xl/worksheets/sheet2.xml"),
         without_styles,
         without_sheet,
     ],
@@ -578,7 +576,6 @@ def _damaged_in_earlier_period(tmp_path: Path, damage: Callable[[bytes], bytes])
     """Rejestr, w którym wiersz 2 (zlecenie z 2025 r., daleko przed okresem) jest uszkodzony przez ``damage``."""
 
     fixture = make_preparation_fixture(tmp_path, [register_order(1, datetime(2025, 3, 4, 8, 0)), *default_register_rows()])
-    # ZLECENIA jest za arkuszem lista.
     rewrite_parts(fixture.register_path, lambda name, data: damage(data) if name == "xl/worksheets/sheet2.xml" else data)
     return fixture
 
@@ -760,9 +757,9 @@ def test_wzorzec_with_rejestr_header_instead_of_its_own_stops(
 @pytest.mark.parametrize(
     ("template_name", "merged_range", "sheet"),
     [
-        (tool_files.INTERNAL_TEMPLATE.name, "C5:D5", "Arkusz1"),  # 4. zlecenie okresu
-        (tool_files.COLLECTIVE_TEMPLATE.name, "B19:C20", "Sheet1"),  # 2. i 3. Zlecenie skuteczne
-        (tool_files.COLLECTIVE_TEMPLATE.name, "U19:V19", "Sheet1"),  # Ilości usług 2. Zlecenia skutecznego
+        (tool_files.INTERNAL_TEMPLATE.name, "C5:D5", "Arkusz1"),
+        (tool_files.COLLECTIVE_TEMPLATE.name, "B19:C20", "Sheet1"),
+        (tool_files.COLLECTIVE_TEMPLATE.name, "U19:V19", "Sheet1"),
     ],
 )
 @pytest.mark.parametrize("dry_run", [False, True])

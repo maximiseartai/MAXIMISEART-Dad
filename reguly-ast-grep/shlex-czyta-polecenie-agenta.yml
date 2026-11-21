@@ -1,0 +1,18 @@
+id: shlex-czyta-polecenie-agenta
+language: python
+severity: error
+message: >-
+  hook czyta polecenie agenta słowami shlex: shlex dokleja słowo znak po znaku (czas kwadratowy w długości słowa, więc
+  skrypt -c albo napis rzędu 1 MB przekracza limit 10 s hooka) i ma inną gramatykę niż bash; słowa polecenia czytaj
+  czytnikiem hooka w czasie liniowym (QUOTED i unquoted z tools/lib/slowa_powloki.py, _Scan w
+  tools/hooks/zabijanie.py)
+files:
+  - tools/hooks/**/*.py
+metadata:
+  przypadki:
+    - 2295/W1/r2
+rule:
+  kind: call
+  has:
+    field: function
+    regex: '^shlex\.(split|shlex)$'
