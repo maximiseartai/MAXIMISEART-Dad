@@ -1,5 +1,3 @@
-"""Projekcja postępu: Zdarzenia przebiegu zredukowane do bezpiecznego snapshotu dla Centrum rozliczeń (ADR 0002)."""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -39,14 +37,6 @@ class PhaseState(StrEnum):
 
 @dataclass(frozen=True)
 class TemplateProcessing:
-    """Zakończone Przetworzenie Szablonu pracownika w tym Uruchomieniu, ze Zdarzeń przebiegu jego Wykonawcy.
-
-    ``duration_ms``: od ``WorkerStarted`` do ``WorkerEnded`` albo ``WorkerFailed`` zegarem sekwencera etapów
-    (różnica ``elapsed_ms``), tym samym co czasy etapów. ``failed``: Przetworzenie przerwane; ``rows`` jest wtedy 0.
-    ``started_at`` i ``ended_at``: chwile (UTC) tych samych zdarzeń z zegara ściennego projekcji, więc widać też
-    czekanie, którego ``duration_ms`` nie liczy.
-    """
-
     worker_name: str
     outcome: WorkerStatus | Literal["failed"]
     rows: int
@@ -65,14 +55,10 @@ class SavingStep:
 
 @dataclass(frozen=True)
 class ProgressSnapshot:
-    """Niemutowalne fakty procesu, które podgląd postępu pokazuje bez interpretowania zdarzeń."""
-
     phase_states: Mapping[ProgressPhase, PhaseState]
     phase_durations_ms: Mapping[ProgressPhase, int]
     phase_started_at: Mapping[ProgressPhase, datetime]
-    """Chwila (UTC) rozpoczęcia każdego etapu, który się zaczął; etap, który się nie zaczął, jej nie ma."""
     phase_ended_at: Mapping[ProgressPhase, datetime]
-    """Chwila (UTC) końca albo przerwania każdego etapu, który się skończył."""
     template_total: int
     templates_completed: int
     rows: int
@@ -89,14 +75,7 @@ def _immutable_mapping(values: Mapping[KeyT, ValueT]) -> Mapping[KeyT, ValueT]:
 
 
 class ProgressProjection:
-    """Jedyny interpretator Zdarzeń przebiegu.
-
-    Redukuje zdarzenia bez ponownego sprawdzania kolejności: ``PhaseRunner`` jest jedynym nadawcą i ją sprawdza (ADR 0002).
-    ``now`` to zegar ścienny (UTC), z którego projekcja bierze chwilę każdego zdarzenia: sekwencer wysyła je w chwili,
-    w której się dzieją, więc chwila nadejścia to chwila zdarzenia. Początek Szablonu pracownika (czas i chwila) przed
-    pierwszym ``WorkerStarted`` to zero, bo ``WorkerEnded`` i ``WorkerFailed`` przychodzą zawsze po ``WorkerStarted``
-    (ADR 0002).
-    """
+    """Jedyny interpretator Zdarzeń przebiegu (ADR 0002)."""
 
     def __init__(self, now: Callable[[], datetime] = utc_now) -> None:
         self._now = now

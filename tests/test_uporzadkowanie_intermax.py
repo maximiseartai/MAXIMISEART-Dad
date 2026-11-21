@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import re
 import struct
+import sys
 import zipfile
 import zlib
 from collections.abc import Callable, Iterator, Sequence
@@ -1905,6 +1906,19 @@ def test_kopia_z_eksploratora_plik_tymczasowy_i_plik_blokady_obok_intermax_nie_s
         assert _ordered(outcome).copy_name == COPY_NAME
     else:
         assert _stop(outcome).message.code == code
+
+
+def test_folder_intermax_bez_odczytu_nie_ma_kopii_konfliktu_a_zatrzymanie_daje_odczyt_samego_intermax(tmp_path: Path) -> None:
+    if sys.platform == "win32":
+        pytest.skip("chmod nie odbiera w Windows prawa odczytu folderu")
+    path, _ = _register(tmp_path)
+    path.parent.chmod(0)
+    try:
+        stop = _stop(_run(tmp_path))
+    finally:
+        path.parent.chmod(0o755)
+
+    assert (stop.message.code, stop.stop_kind) == ("NIEDOSTEPNY_INTERMAX", "for_tata")
 
 
 def test_odmowa_podmiany_bez_excela_po_krotkiej_ponownej_probie_to_onedrive_dla_taty(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 # Przegląd PR: porażka w ADR, specyfikacji i issue `decyzja-maksa`
 
-Punkty ciągną listę z sekcji „Co jest porażką” w [`SKILL.md`](SKILL.md), a szczebel (e) dopisuje punkt o ADR, specyfikacji albo issue `decyzja-maksa` tutaj.
+Ciąg listy „Co jest porażką” z [`SKILL.md`](SKILL.md) dla szczebla (e) z [`korzen.md`](korzen.md).
 
 ## Co jest porażką
 
@@ -11,3 +11,4 @@ Punkty ciągną listę z sekcji „Co jest porażką” w [`SKILL.md`](SKILL.md)
 - ADR, w którym wybór autora inny niż prośba Maksa (Maks prosił o X, autor zrobił Y, bo Y bezpieczniejsze) stoi w akapicie „decyzja Maksa” bez nazwy autora i bez tej prośby, więc Maks nie widzi, że jego prośby nie spełniono, a późniejsza zmiana wyboru wygląda na „Reversing Maks”; recenzent porównuje każde zdanie akapitu decyzji z opisem PR (`**Decyzja Maksa:**`) i szuka przy wyborze autora jego nazwy, prośby Maksa i powodu (#2242: przypomnienia wyłączone w `config/` Maca i `--wlaczone-od` stały w ADR 0030 pod „decyzja Maksa”, choć Maks prosił o włączone).
 - ADR, w którym wybór autora z wariantów, które Maks mu oddał, stoi jako chęć Maksa (#2402).
 - droga danych taty przez pośrednika (proxy systemu) jako decyzja autora, bo TLS: to rodzaj „Dad's data” (#2485).
+- zapis wiedzy z usuniętego komentarza w punkcie Decyzji ADR, którą status przypisuje Maksowi: wybór autora stoi wtedy jako jego decyzja, a motywacja domenowa idzie do `GLOSSARY.md` (#2578).

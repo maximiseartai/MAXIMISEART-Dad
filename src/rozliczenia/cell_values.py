@@ -1,14 +1,3 @@
-"""Wartości komórek skoroszytu czytanego po częściach zip, bez openpyxl: jedna reguła wartości dla INTERMAX
-(``register_file``) i Bazy zleceń (``order_base``).
-
-Wartość komórki (``CellValues.value``) to tekst wspólny albo wbudowany, liczba, a w formacie daty data z systemu dat
-skoroszytu (1900 albo 1904), dla liczby poniżej 1 godzina (``time``); inny typ (prawda/fałsz jako 1 i 0, błąd, wynik
-formuły tekstem) to tekst jej zapisu. Pusta komórka i tekst z samych odstępów to ``None``. Formaty dat to wbudowane
-formaty daty Excela i własne formaty skoroszytu, które openpyxl uznaje za daty (``is_date_format``). Liczba w formacie
-daty, której Excel nie pokazuje jako daty, bo jest ujemna albo za ostatnią chwilą 31.12.9999 (``_LAST_MOMENT``), ma w
-Excelu ``#######`` i zostaje liczbą.
-"""
-
 from __future__ import annotations
 
 import html
@@ -30,16 +19,13 @@ __all__ = ["CellValues"]
 
 _HEADER_ROW: Final = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
 _TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
+# ZEWNĘTRZNE: Excel nie pokazuje jako daty liczby za 31.12.9999, a w systemie dat 1900 także liczby ujemnej, tylko ##### (Microsoft Learn: Excel specifications and limits, Latest date allowed for calculation; Microsoft Support: How to correct a ##### error)
 _LAST_MOMENT: Final = datetime(9999, 12, 31, 23, 59, 59, 999000)
-"""Ostatnia chwila, którą Excel pokazuje jako datę; ``from_excel`` zamienia każdą liczbę od 0 do niej."""
 _DAY: Final = timedelta(days=1)
 
 
 @dataclass(frozen=True)
 class CellValues:
-    """Wartości komórek jednego skoroszytu: format liczby każdego stylu komórki, style z formatem daty, teksty wspólne i
-    początek systemu dat."""
-
     number_formats: tuple[int, ...]
     date_formats: frozenset[int]
     shared: SharedStrings
@@ -47,9 +33,6 @@ class CellValues:
 
     @classmethod
     def of(cls, parts: Mapping[str, bytes], workbook: str, rels: Mapping[str, Relationship]) -> CellValues:
-        """Wartości skoroszytu z dokumentu ``workbook`` i jego relacji ``rels``; ``KeyError``, gdy skoroszyt nie ma
-        części stylów, a błąd parsera, gdy XML jest zepsuty (oba to skoroszyt nieczytelny)."""
-
         styles = next((rel.target for rel in rels.values() if rel.kind.endswith("/styles")), None)
         if styles is None:
             raise KeyError("styles")
@@ -69,9 +52,6 @@ class CellValues:
         )
 
     def value(self, cell: SheetCell) -> object:
-        """Wartość komórki: tekst (także prawda/fałsz jako 1 i 0), liczba, data albo godzina w formacie daty (zob.
-        docstring modułu); ``None`` dla pustej."""
-
         kind = cell.kind or b"n"
         if kind == b"inlineStr":
             text: object = html.unescape(b"".join(_TEXT.findall(cell.content or b"")).decode("utf-8"))
@@ -92,8 +72,6 @@ class CellValues:
         return None if is_blank(text) else text
 
     def header(self, xml: bytes) -> list[object]:
-        """Wartości wiersza 1 arkusza ``xml`` od kolumny A; arkusz bez wiersza 1 nie ma żadnych."""
-
         header_row = _HEADER_ROW.search(xml)
         if header_row is None:
             return []

@@ -1,7 +1,4 @@
-"""Polskie dni ustawowo wolne od pracy, które widok Raporty Centrum oznacza w kolumnach dni (#1319).
-
-Oczekiwane daty pochodzą z ustawy o dniach wolnych od pracy i kalendarza Wielkanocy, nie z uruchomienia funkcji.
-"""
+"""Oczekiwane daty pochodzą z ustawy o dniach wolnych od pracy i kalendarza Wielkanocy, nie z uruchomienia funkcji."""
 
 from __future__ import annotations
 
@@ -35,27 +32,22 @@ def test_swieta_roku_to_kazdy_dzien_ustawowo_wolny_z_nazwa() -> None:
 @pytest.mark.parametrize(
     ("easter", "corpus_christi"),
     [
-        (date(2008, 3, 23), date(2008, 5, 22)),
-        (date(2011, 4, 24), date(2011, 6, 23)),
-        (date(2019, 4, 21), date(2019, 6, 20)),
-        (date(2024, 3, 31), date(2024, 5, 30)),
-        (date(2025, 4, 20), date(2025, 6, 19)),
-        (date(2026, 4, 5), date(2026, 6, 4)),
-        (date(2027, 3, 28), date(2027, 5, 27)),
-        (date(2028, 4, 16), date(2028, 6, 15)),
-        (date(2029, 4, 1), date(2029, 5, 31)),
-        (date(2030, 4, 21), date(2030, 6, 20)),
-        (date(2038, 4, 25), date(2038, 6, 24)),
-        (date(2049, 4, 18), date(2049, 6, 17)),
-        (date(2076, 4, 19), date(2076, 6, 18)),
+        pytest.param(date(2008, 3, 23), date(2008, 5, 22), id="2008"),
+        pytest.param(date(2011, 4, 24), date(2011, 6, 23), id="2011"),
+        pytest.param(date(2019, 4, 21), date(2019, 6, 20), id="2019"),
+        pytest.param(date(2024, 3, 31), date(2024, 5, 30), id="2024"),
+        pytest.param(date(2025, 4, 20), date(2025, 6, 19), id="2025"),
+        pytest.param(date(2026, 4, 5), date(2026, 6, 4), id="2026"),
+        pytest.param(date(2027, 3, 28), date(2027, 5, 27), id="2027"),
+        pytest.param(date(2028, 4, 16), date(2028, 6, 15), id="2028"),
+        pytest.param(date(2029, 4, 1), date(2029, 5, 31), id="2029"),
+        pytest.param(date(2030, 4, 21), date(2030, 6, 20), id="2030"),
+        pytest.param(date(2038, 4, 25), date(2038, 6, 24), id="2038"),
+        pytest.param(date(2049, 4, 18), date(2049, 6, 17), id="2049-wyjatek-reguly-gaussa-ksiezycowa-data-cofa-sie-o-tydzien"),
+        pytest.param(date(2076, 4, 19), date(2076, 6, 18), id="2076-wyjatek-reguly-gaussa-ksiezycowa-data-cofa-sie-o-tydzien"),
     ],
 )
 def test_swieta_od_wielkanocy_stoja_w_znanych_datach(easter: date, corpus_christi: date) -> None:
-    """Poniedziałek Wielkanocny to dzień po Wielkanocy, a Zielone Świątki siódma niedziela po niej.
-
-    Lata 2049 i 2076 to dwa wyjątki reguły Gaussa, w których księżycowa data Wielkanocy cofa się o tydzień.
-    """
-
     holidays = public_holidays(easter.year)
 
     assert {day: holidays.get(day) for day in (easter, easter + timedelta(days=1), easter + timedelta(weeks=7), corpus_christi)} == {

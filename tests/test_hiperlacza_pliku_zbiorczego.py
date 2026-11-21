@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
+from openpyxl import load_workbook
 
 from rozliczenia.dad_files import DadFiles
+from rozliczenia.hyperlinks import read_sheet_hyperlinks
 from rozliczenia.workbook_files import read_data_rows
 from atrapy.settlement import write_source
 
@@ -149,3 +152,32 @@ def test_wiersze_danych_maja_hiperlacza_z_adresem_poza_skoroszytem(
     assert _links_by_row(path) == expected
     assert path.read_bytes() == before
 
+
+def test_openpyxl_tylko_do_odczytu_nie_daje_hiperlaczy_ktore_daje_pelny_odczyt(tmp_path: Path) -> None:
+    path = _collective_file(tmp_path)
+    with_hyperlinks(path, '<hyperlink ref="F18" r:id="rId1"/>', _relationship("rId1", ORDER))
+
+    read_only = load_workbook(path, read_only=True)
+    try:
+        cell = read_only.worksheets[0]["F18"]
+    finally:
+        read_only.close()
+    full = load_workbook(path).worksheets[0]["F18"]
+
+    assert getattr(cell, "hyperlink", None) is None
+    assert full.hyperlink is not None and full.hyperlink.target == ORDER_ADDRESS
+
+
+def test_niedomkniety_blok_hiperlaczy_to_blad_parsera_a_nie_arkusz_bez_hiperlaczy(tmp_path: Path) -> None:
+    path = _collective_file(tmp_path)
+    with_hyperlinks(path, '<hyperlink ref="F18" r:id="rId1"/>', _relationship("rId1", ORDER))
+    with zipfile.ZipFile(path) as source:
+        parts = {info.filename: source.read(info) for info in source.infolist()}
+    sheet_title = load_workbook(path).worksheets[0].title
+    parts[SHEET] = parts[SHEET].replace(b"</hyperlinks>", b"", 1)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
+        for name, data in parts.items():
+            target.writestr(name, data)
+
+    with pytest.raises(ElementTree.ParseError):
+        read_sheet_hyperlinks(path.read_bytes(), sheet_title)

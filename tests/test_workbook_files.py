@@ -50,7 +50,7 @@ from rozliczenia.workbook_files import (
 )
 from rozliczenia.template_copy import Package
 from rozliczenia.template_file import TemplateFile
-from rozliczenia.write_routes import Route
+from rozliczenia.write_routes import Route, TemplateKind
 from rozliczenia.workbook_parts import (
     IrregularSheetData,
     RowsFromBottom,
@@ -1990,3 +1990,8 @@ def test_repr_przeczytanego_pliku_taty_to_sciezka_i_chwila_zmiany_bez_bajtow_pam
     read.enter_copy()
 
     assert repr(read) == f"ReadFile(path={path!r}, modified_at={read.modified_at!r})"
+
+
+@pytest.mark.parametrize("kind", list(TemplateKind), ids=[kind.value for kind in TemplateKind])
+def test_rodzaj_pliku_z_wzorca_w_metrykach_to_nazwa_konstruktora_ktory_go_tworzy(kind: TemplateKind) -> None:
+    assert getattr(TemplateFile, kind.value)(Path("Wzorzec.xlsx")).kind is kind
