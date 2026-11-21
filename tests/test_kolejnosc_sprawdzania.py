@@ -1,9 +1,3 @@
-"""Kolejność Sprawdzania: przy usterkach w kilku plikach naraz tata widzi Komunikat tej, którą proces sprawdza pierwszą.
-
-Tabele usterek każdego procesu stoją w kolejności, w jakiej proces je sprawdza, aż do Odczytu danych.
-Para usterek w dwóch różnych wejściach zatrzymuje proces tym samym Komunikatem, co wcześniejsza z nich sama.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -86,13 +80,7 @@ def _invalid_period(world: Preparation) -> None:
     world.period = NOT_A_PERIOD
 
 
-def _periods_directory_missing(world: Preparation) -> None:
-    """Folder okresów z Ustawień zniknął z folderu ``Rozliczenia 2026``, który ma foldery ``INEA`` miesięcy.
-
-    Odszukanie Folderu okresu policzyłoby układ od folderu roku, więc tylko Sprawdzanie folderu okresów
-    przed odszukaniem daje tu Komunikat o folderze okresów.
-    """
-
+def _periods_directory_missing_from_year_with_month_folders(world: Preparation) -> None:
     periods_directory = world.fixture.periods_directory
     month_periods_folder(periods_directory, "09_Wrzesień_2026")
     missing = periods_directory / "Rozliczenia 2026" / "08_Sierpień_2026" / "INEA"
@@ -134,7 +122,7 @@ PREPARATION: Sequence[Fault[Preparation]] = (
         lambda world: _lock(world.fixture.collective_template_path),
         "WZORZEC_OTWARTY",
     ),
-    Fault("brak-folderu-okresow", "folder okresów", _periods_directory_missing, "BRAK_FOLDERU_OKRESOW"),
+    Fault("brak-folderu-okresow", "folder okresów", _periods_directory_missing_from_year_with_month_folders, "BRAK_FOLDERU_OKRESOW"),
     Fault("brak-folderu-okresu", "folder okresów", _period_folder_only_in_other_layout, "BRAK_FOLDERU_OKRESU"),
     Fault("plik-okresu-istnieje", "folder okresów", _period_file_exists, "PLIK_OKRESU_ISTNIEJE"),
     Fault(
@@ -170,11 +158,6 @@ SETTLEMENT: Sequence[Fault[Settlement]] = (
 
 
 def _first_stop(create: Callable[[Path], World], root: Path, faults: Sequence[Fault[World]]) -> Message:
-    """Komunikat Zatrzymania świata taty w ``root / "tata"``, w którym ``faults`` uszkodzono w kolejności tabeli.
-
-    Ten sam folder ``tata`` w każdym świecie daje Komunikaty, które nazywają te same pliki i foldery.
-    """
-
     world = create(root / "tata")
     for fault in faults:
         fault.apply(world)
@@ -182,8 +165,6 @@ def _first_stop(create: Callable[[Path], World], root: Path, faults: Sequence[Fa
 
 
 def _code_and_what(message: Message) -> tuple[str, str]:
-    """Bez „Gdzie”, które nazywa folder pliku, a ten może przenieść późniejsza usterka (``zly-folder-okresu``)."""
-
     return message.code, message.what
 
 

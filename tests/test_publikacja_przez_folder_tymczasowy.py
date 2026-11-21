@@ -1,11 +1,3 @@
-"""Publikacja przez folder tymczasowy (``staged_publication``): pliki trafiają do taty wszystkie albo żaden.
-
-Moduł jest szwem Przebiegu rozliczeń i Przygotowania pliku zbiorczego, więc macierz jego zachowania jest tu raz, na
-jego interfejsie: założenie folderu tymczasowego, błąd dysku w publikacji, zatrzymanie z folderem tymczasowym, którego
-nie dało się usunąć (np. trzyma go OneDrive), i sprzątanie po publikacji. Tłumaczenie na Komunikat każdego procesu
-sprawdzają ``tests/test_settlement_engine.py`` i ``tests/test_collective_preparation_stops.py``.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -19,8 +11,7 @@ from rozliczenia.staged_publication import LOCAL_DISK, Disk, publish_staged
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS
 
 NAME = "Rozliczenia pracowników"
-# Celowa kopia początku nazwy folderu tymczasowego: tata czyta go w Komunikacie i szuka folderu po nim.
-PREFIX = f".{NAME}.staging-"
+STAGING_PREFIX_TATA_SEARCHES_FOR = f".{NAME}.staging-"
 
 
 def failed(tmp_path: Path) -> Message:
@@ -39,10 +30,9 @@ def published(tmp_path: Path, publish: Callable[[Path], object], disk: Disk = LO
 
 
 def left_behind(tmp_path: Path) -> list[str]:
-    return sorted(path.name for path in tmp_path.iterdir() if path.name.startswith(PREFIX))
+    return sorted(path.name for path in tmp_path.iterdir() if path.name.startswith(STAGING_PREFIX_TATA_SEARCHES_FOR))
 
 
-# Folder tymczasowy, którego nie da się usunąć: prawdziwe ``remove_staging`` też nie zgłasza wtedy błędu.
 HELD_BY_ONEDRIVE = Disk(remove_staging=lambda staging: None)
 
 
@@ -62,7 +52,7 @@ def test_folder_tymczasowy_powstaje_obok_miejsca_publikacji_z_poczatkiem_nazwy_z
     published(tmp_path, seen.append)
 
     assert [path.parent for path in seen] == [tmp_path]
-    assert seen[0].name.startswith(PREFIX)
+    assert seen[0].name.startswith(STAGING_PREFIX_TATA_SEARCHES_FOR)
 
 
 def test_folder_tymczasowy_ktorego_nie_da_sie_usunac_po_publikacji_nie_zatrzymuje(tmp_path: Path) -> None:
@@ -123,7 +113,7 @@ def test_zatrzymanie_z_folderem_tymczasowym_ktorego_nie_da_sie_usunac_podaje_poc
         published(tmp_path, publish, HELD_BY_ONEDRIVE)
 
     original = error.message if isinstance(error, StopError) else failed(tmp_path)
-    assert raised.value.message == settlement_messages.staging_left(original, PREFIX)
+    assert raised.value.message == settlement_messages.staging_left(original, STAGING_PREFIX_TATA_SEARCHES_FOR)
     assert len(left_behind(tmp_path)) == 1
 
 
@@ -132,8 +122,6 @@ def test_zatrzymanie_z_folderem_tymczasowym_ktorego_nie_da_sie_usunac_podaje_poc
 def test_zatrzymanie_z_folderem_tymczasowym_w_folderze_bez_dostepu_podaje_poczatek_jego_nazwy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
 ) -> None:
-    """OneDrive odbiera dostęp do folderu, zanim folder tymczasowy zniknie: tata dalej dostaje jego początek nazwy."""
-
     directory = tmp_path / "Folder okresu"
     directory.mkdir()
     stop = settlement_messages.publish_failed(directory / NAME)
@@ -148,7 +136,7 @@ def test_zatrzymanie_z_folderem_tymczasowym_w_folderze_bez_dostepu_podaje_poczat
     finally:
         directory.chmod(0o755)
 
-    assert raised.value.message == settlement_messages.staging_left(stop, PREFIX)
+    assert raised.value.message == settlement_messages.staging_left(stop, STAGING_PREFIX_TATA_SEARCHES_FOR)
     assert len(left_behind(directory)) == 1
 
 

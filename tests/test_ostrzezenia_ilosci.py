@@ -1,12 +1,3 @@
-"""Ostrzeżenia o Ilościach usług „do uzupełnienia” po Przygotowaniu pliku zbiorczego (#271, #1940).
-
-Numery wierszy w ostrzeżeniach to numery wierszy Pliku zbiorczego, bo tata poprawia Plik zbiorczy: Zlecenia
-skuteczne leżą w nim od wiersza 18, bez pustych wierszy i zleceń nieskutecznych z Rejestru zleceń. Wiersz, którego
-``CZYNNOŚCI ZREALIZOWANE`` mają Kody czynności z Legendy czynności z Wydania, także obok zwykłego opisu, nie czeka na
-tatę w kolumnach z opisu technika (ADR 0038, ADR 0041); wiersz bez żadnego kodu czeka, a wiersz z Błędem opisu czeka z
-powodem w ostrzeżeniu (ADR 0039).
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -44,27 +35,25 @@ def _described(number: int, devices: str, completed: str, *, started: datetime |
 
 def _legend_period() -> list[RegisterRow]:
     return [
-        _described(1, "nokia zte", "tak inst15m, dzielnik1/2."),  # Plik zbiorczy 18: same kody
-        _described(2, "nokia zte", "20 m patchcord dzielnik1/2"),  # 19: kod obok zwykłego opisu
-        _described(3, "prewencja", "INSTMDIK"),  # 20: z opisu, same kody
-        _described(4, "prewencja", "spawpg i wymiana gniazda"),  # 21: z opisu, kod obok zwykłego opisu
-        _described(5, "nokia zte", "montaż instutp40m instmdik inst20m"),  # 22: kod z liczbą spoza przedziałów, dwa kody w Y
-        _described(6, "prewencja", "montaż ONT instmdic", started=MONDAY),  # 23: z opisu, bez kodu, literówka w kodzie
+        _described(1, "nokia zte", "tak inst15m, dzielnik1/2."),
+        _described(2, "nokia zte", "20 m patchcord dzielnik1/2"),
+        _described(3, "prewencja", "INSTMDIK"),
+        _described(4, "prewencja", "spawpg i wymiana gniazda"),
+        _described(5, "nokia zte", "montaż instutp40m instmdik inst20m"),
+        _described(6, "prewencja", "montaż ONT instmdic", started=MONDAY),
     ]
 
 
 def _mixed_period() -> list[RegisterRow]:
-    """Rejestr, w którym wiersze Pliku zbiorczego (18–23) mają inne numery niż wiersze Rejestru zleceń (2–9)."""
-
     return [
-        _order(1, "nokia zte"),  # Plik zbiorczy 18
+        _order(1, "nokia zte"),
         None,
-        _order(2, "nokia zte SYN-URZ-2"),  # 19: składnik nieznany Regułom ilości
-        _order(3, "SYN-URZ-3", successful="nie"),  # nieskuteczne: nie trafia do Pliku zbiorczego
-        _order(4, "prewencja"),  # 20
-        _order(5, None),  # 21: puste URZĄDZENIA
-        _order(6, "SYN-URZ-6"),  # 22
-        _order(7, "Niedostępność usług", started=MONDAY),  # 23
+        _order(2, "nokia zte SYN-URZ-2"),
+        _order(3, "SYN-URZ-3", successful="nie"),
+        _order(4, "prewencja"),
+        _order(5, None),
+        _order(6, "SYN-URZ-6"),
+        _order(7, "Niedostępność usług", started=MONDAY),
     ]
 
 

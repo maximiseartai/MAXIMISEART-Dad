@@ -463,3 +463,11 @@ def test_podsumowanie_i_widok_rozmowcy_po_silniku_nie_licza_sie_do_czasu_uruchom
     assert (outcome.result, outcome.total_duration_ms) == ("OK", 250)
     [record] = records(tmp_path / "metrics.jsonl")
     assert record["total_duration_ms"] == 250
+
+
+def test_tekst_bledu_zatrzymania_to_sam_kod_komunikatu_bez_jego_tresci() -> None:
+    message = Message("KOD_PROBNY", "Co syntetyczne.", "plik a.xlsx, folder syntetyczny", "Zrób to syntetycznie.")
+
+    error = StopError(message)
+
+    assert (str(error), error.message) == ("KOD_PROBNY", message)

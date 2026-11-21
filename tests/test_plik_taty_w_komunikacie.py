@@ -1,10 +1,3 @@
-"""Plik taty, który Komunikat każe poprawić: karta Zatrzymania proponuje go otworzyć.
-
-Rejestr zleceń albo Plik zbiorczy jest przy każdym Zatrzymaniu, którego poprawka jest edycją w tym pliku.
-Brak pliku (``BRAK_REJESTRU``, ``BRAK_PLIKU_ZBIORCZEGO``) nie ma go, bo nie ma czego otworzyć, a ostrzeżenia
-nie mają go, bo karta proponuje otwarcie tylko przy Zatrzymaniu.
-"""
-
 from __future__ import annotations
 
 import pytest
