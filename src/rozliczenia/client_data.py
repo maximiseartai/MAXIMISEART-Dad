@@ -1,41 +1,3 @@
-"""Reguła danych (ADR 0025): co z treści plików taty może wyjść z jego komputera do Skrzynki Zgłoszeń.
-
-Nigdy nie wychodzą wartości kolumn ``ADRES`` i ``NUMER UMOWY/ZLECENIA ORANGE`` (w Rejestrze zleceń i INTERMAX także
-``adres`` i ``NUMER UMOWY``) ani dane adresowe ze strony zlecenia efenix, bo wskazują klienta. Każda inna kolumna
-może wyjść, a wolny tekst idzie w całości z zamaskowanymi numerami telefonów (``[telefon]``) i wzmiankami ulic
-(„ul.”, „os.”, „al.”, „pl.” z nazwą i numerem, ``[ulica]``).
-
-Zakazane wartości zna pamięć jednej pracy Centrum (``ForbiddenValues``): Centrum tworzy ją przy starcie i daje
-każdemu czytnikowi Wierszy danych, który czyta dla niego plik taty, i każdemu producentowi wysyłki. Czytnik oddaje
-jej przy odczycie komórki zakazanych kolumn (``remember``, ``remember_value``), a Wycena w efenix dane adresowe
-każdego wiersza listy wyników jako wartość ``ADRES``. Pamięć tylko rośnie i nie trafia na dysk, więc strażnik
-chroni każdą wysyłkę przed wartością z każdego pliku, który ta praca Centrum przeczytała, także Uwagę taty, która nie
-ma swojego Uruchomienia. Proces bez Centrum (Skrypt dla maszyn) nie ma pamięci, bo niczego nie wysyła.
-
-Strażnik (``guarded``) przed zapisem pliku Logów i przed każdą wysyłką maskuje w tekście każdą znaną
-wartość jako ``[adres]`` albo ``[numer Orange]`` i oddaje uwagę techniczną z nazwą kolumny i miejscem w tekście, bez
-wartości. Wartość to ciąg jej słów: tekst ją zawiera, gdy ma te słowa po kolei, całe i bez wielkości liter, a między
-nimi dowolne znaki spoza słów. Wartość w kilku liniach komórki, z „⏎” albo „\\|” tabeli Markdown, w cudzysłowie albo
-z innymi odstępami jest więc zamaskowana tak samo, choć producent zapisał ją po swojemu przed strażnikiem. Z kilku
-wartości od tego samego słowa wygrywa najdłuższa. Wartość krótsza niż ``MIN_VALUE`` znaków jest pomijana: nie
-wskazuje klienta, a pasowałaby do zwykłych słów i liczb. Pomijana jest też wartość z rodzajem zlecenia
-(``order_kind``, na przykład „Instalacja hurt”), bo słowo zamkniętego słownika ``URZĄDZENIA`` nie wskazuje klienta:
-wiersz przeczytany w obu położeniach (``raw_orders.both_positions``) daje pamięci ``URZĄDZENIA`` jako ``ADRES``, a
-zamaskowany rodzaj gubi zleceniu w odtworzeniu Wpis INTERMAX. Czas strażnika zależy od długości tekstu, nie od liczby
-zapamiętanych wartości. Maskowanie wolnego tekstu (``free_text``) uwagi nie daje, bo telefon i ulica w opisie
-technika to zwykła treść, nie wyciek kolumny.
-
-Komórka, którą Excel trzyma jako liczbę (numer Orange albo telefon wpisany bez innego tekstu), ma tekst, który Excel
-pokazuje (``shown``): liczba całkowita zapisana jako ułamek to jej cyfry. Tak ją zapamiętuje pamięć i tak ją sprawdza
-strażnik liczby (``guarded_number``), który maskuje całą liczbę, bo jej cyfry to cała wartość. Format
-General gubi ``+`` i zera z przodu, więc telefon ``+48600123456`` albo ``0048600123456`` to w komórce liczba
-``48600123456``, a strażnik zna ją jako telefon. Tabela form telefonu z wynikiem strażnika i znane granice są w ADR 0025.
-
-Tekst, który kolejka Skrzynki Zgłoszeń przyjmuje (nagłówek, części i każde pole tekstowe celu wysyłki), ma typ
-``Outgoing``, a ``Outgoing`` daje tylko ten moduł: tekst po strażniku (``Guarded.text``), tekst narzędzia (``tool``)
-i ich sklejenie (``+``). Goły ``str`` z pliku taty podany kolejce bez strażnika to błąd mypy.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -57,11 +19,7 @@ MIN_VALUE: Final = 5
 _Position = TypeVar("_Position")
 
 
-class _ReadValues:
-    """Znacznik pola Logów Uruchomienia (``Annotated``), które niesie wartości przeczytane z komórek pliku taty albo ze
-    strony efenix, także liczby: strażnik Logów sprawdza w nim liczbę (``guarded_number``) i maskuje ją z zakazaną
-    wartością albo telefonem jak tekst. Każda inna liczba Logów (numer wiersza, rozmiar, czas, liczba zleceń) to liczba,
-    którą policzyło narzędzie."""
+class _ReadValues: ...
 
 
 READ_VALUES: Final = _ReadValues()
@@ -69,8 +27,6 @@ READ_VALUES: Final = _ReadValues()
 
 
 class ForbiddenColumn(Enum):
-    """Kolumna, której wartość nigdy nie wychodzi z komputera taty; ``value`` to jej nazwa w uwadze technicznej."""
-
     ADDRESS = register_columns.ADDRESS.target_header
     ORANGE = register_columns.CONTRACT_NUMBER.target_header
 
@@ -88,21 +44,11 @@ _HEADERS: Final = {
     )
     for header in (column.target_header, *column.register_headers)
 }
-"""Nagłówek kolumny po ``normalize_text`` (Plik zbiorczy, Rejestr zleceń, INTERMAX i starsza kopia Rejestru)."""
 
 _WORD: Final = re.compile(r"\w+")
 _PHONE: Final = re.compile(
     r"(?<![\w+#])(?:(?:\+|00)?48[ -]?)?(?!0)(?:\d{3}[ -]?\d{3}[ -]?\d{3}|\d{2}[ -]\d{3}[ -]\d{2}[ -]\d{2})(?!\w)"
 )
-"""Polski numer telefonu: komórkowy 3-3-3 (ze spacjami, myślnikami albo bez) i stacjonarny 2-3-2-2, z numerem
-kierunkowym ``+48``, ``0048`` albo ``48`` albo bez. ``48`` bez ``+`` i zer to numer, któremu Excel zgubił je w komórce
-(``+48600123456`` to liczba ``48600123456``).
-
-Cyfry zaraz po ``#`` to ``NUMER ZL.`` (``#`` i numer), który może wyjść, więc nie są telefonem. Numer po numerze
-kierunkowym nie zaczyna się od ``0``, bo w polskim planie numeracji żaden się tak nie zaczyna, a ``NUMER ZL.`` z zerem
-z przodu (``014043137``, tak pisze go Wykonawca w raporcie) ma 9 cyfr. Formy telefonu, których wzorzec nie zna, to
-znane granice z ADR 0025.
-"""
 _STREET: Final = re.compile(
     r"(?<!\w)(?:ul|os|al|pl)\.[ \t]*(?:\w[\w-]*\.?[ \t]+){1,4}?\d+[^\W\d_]?(?:[ \t]*(?:/|m\.?)[ \t]*\d+[^\W\d_]?)?(?!\w)",
     re.IGNORECASE,
@@ -111,20 +57,16 @@ _STREET: Final = re.compile(
 _PHONE_MASK: Final = "[telefon]"
 _STREET_MASK: Final = "[ulica]"
 MASKS: Final = (*_MASKS.values(), _PHONE_MASK, _STREET_MASK)
-"""Każda maska, którą strażnik wpisuje w miejsce wartości taty."""
 
 
 _PASSED: Final = object()
-"""Dowód, że ``Outgoing`` albo ``LogsText`` powstał w tym module; poza nim ruff (``TID251``) odrzuca jego import i atrybut modułu."""
 
 
 _REFUSALS: Final[dict[type, str]] = {}
 
 
 class WithoutSubclasses(type):
-    """Metaklasa klasy bez podklas (typy-dowody reguły danych: ``Outgoing``, ``LogsText``, ``ForbiddenValues``,
-    ``run_logs_guard.GuardedLogs`` i ``GuardedText``, ``comment_versions.LogsPost`` i cztery wersje komentarza, a poza
-    nimi ``process_kind.PreparedRun``): klasa podaje odmowę w nagłówku
+    """Metaklasa klasy bez podklas: klasa podaje odmowę w nagłówku
     (``class K(metaclass=WithoutSubclasses, refusal=…)``), a ``__new__`` metaklasy sam rzuca ``TypeError`` z tą odmową,
     gdy któraś baza nowej klasy ma tę metaklasę. Python wybiera metaklasę po bazach, więc odmawia ``class``, ``type()``
     i ``types.new_class`` przy każdej kolejności baz, a baza z własnym ``__init_subclass__`` stojąca przed klasą bez
@@ -188,7 +130,7 @@ def tool(text: str) -> Outgoing:
 class LogsText(str, metaclass=WithoutSubclasses, refusal=_NO_LOGS_TEXT_SUBCLASSES):
     """Znaki pliku Logów po strażniku Logów (``run_logs_guard.GuardedLogs.text``), jedyny tekst pliku w Archiwum Logów
     okresu (``outbox.ArchiveFile.text``), z ``logs_text``. To nie jest ``Outgoing``: pola Logów z wartością narzędzia
-    (``run_logs_guard.TOOL_FIELDS``) strażnik przepuszcza bez maski, więc inny cel wysyłki tego tekstu nie bierze."""
+    strażnik przepuszcza bez maski, więc inny cel wysyłki tego tekstu nie bierze."""
 
     __slots__ = ()
 
@@ -209,8 +151,6 @@ def logs_text(text: str) -> LogsText:
 
 @dataclass(frozen=True)
 class Guarded:
-    """Tekst po strażniku i uwagi techniczne o każdej zamaskowanej wartości (kolumna i miejsce, bez wartości)."""
-
     text: Outgoing
     notes: tuple[str, ...]
 
@@ -225,15 +165,6 @@ class ForbiddenValues(metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
     Wartość to krotka jej słów bez wielkości liter. Pierwsze słowo daje długości (w słowach) wartości, które od niego
     się zaczynają, od najdłuższej, więc strażnik w każdym miejscu tekstu sprawdza tylko kilka krotek, ile by wartości
     nie było. Czytniki z wątków Uruchomień i producenci z wątków Centrum dzielą ją pod jednym zamkiem.
-
-    Maskowanie i uwagi techniczne daje tylko strażnik modułu, ``guarded`` i ``guarded_number``: pamięć nie ma własnej
-    metody strażnika, więc mypy odrzuca jej wywołanie (``attr-defined``), a oba tuż przed maskowaniem odmawiają obiektu
-    innego typu niż dokładnie ``ForbiddenValues`` (``_memory``). Wartości nie są polami pamięci, tylko jej wpisem
-    w tabeli modułu (``_WORDS``). Pamięć nie ma też podklas ani przypisanej metody: mypy odrzuca ``class`` (``final``),
-    metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także ``type()``
-    i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą metaklasą, gdy
-    nie przesłania go baza bez ``super()`` przed pamięcią (taką podklasę odrzuca ``_memory``), a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
-    przechodzą, pokazują próbki ``ZNANE_LUKI_UWAG`` i ``ZNANE_LUKI_PAMIECI`` w ``tests/test_regula_danych.py``.
     """
 
     __slots__ = ("__weakref__",)
@@ -247,9 +178,6 @@ class ForbiddenValues(metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
         _WORDS[self] = _Words()
 
     def remember_value(self, column: ForbiddenColumn, value: object) -> None:
-        """Zapamiętuje jedną komórkę zakazanej ``column`` przeczytaną z pliku taty; ta sama wartość zostaje przy
-        kolumnie, pod którą przyszła pierwsza."""
-
         words = _value_words(value)
         if words is None:
             return
@@ -264,9 +192,6 @@ class ForbiddenValues(metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
 
 
 class _Words:
-    """Wartości jednej pamięci reguły danych pod jej zamkiem: krotka słów wartości → kolumna i pierwsze słowo → długości
-    wartości, które od niego się zaczynają, od najdłuższej."""
-
     __slots__ = ("columns", "lengths", "lock")
 
     def __init__(self) -> None:
@@ -276,15 +201,9 @@ class _Words:
 
 
 _WORDS: Final[weakref.WeakKeyDictionary[ForbiddenValues, _Words]] = weakref.WeakKeyDictionary()
-"""Wartości każdej żywej pamięci (``ForbiddenValues``); znika razem z nią."""
 
 
 def guarded(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
-    """Tekst bez zakazanych wartości i z zamaskowanym wolnym tekstem; ``place`` nazywa miejsce w uwadze technicznej.
-
-    Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag.
-    """
-
     masked, columns = _masked(_memory(forbidden), str.__str__(text))
     return Guarded(Outgoing(free_text(masked), _PASSED), _notes(columns, place))
 
@@ -329,8 +248,6 @@ def _masked(memory: _Words, text: str) -> tuple[str, set[ForbiddenColumn]]:
 
 
 def _longest(memory: _Words, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
-    """Najdłuższa zapamiętana wartość od słowa ``index``: jej długość w słowach i kolumna."""
-
     for length in memory.lengths.get(folded[index], ()):
         if index + length <= len(folded):
             column = memory.columns.get(tuple(folded[index : index + length]))
@@ -348,37 +265,24 @@ def remembered(forbidden: ForbiddenValues) -> int:
 
 
 def empty_memory() -> ForbiddenValues:
-    """Pusta pamięć jednej pracy Centrum (``app.create_app``, ``CentrumWork.forbidden``) albo odtworzenia Uruchomienia."""
-
     return ForbiddenValues(_PASSED)
 
 
 def _memory(forbidden: ForbiddenValues) -> _Words:
-    """Wartości pamięci tuż przed wywołaniem strażnika: obiekt, którego typ nie jest dokładnie ``ForbiddenValues`` (atrapa
-    albo owijka podana przez ``cast`` lub ``Any``, obiekt z przypisaną obcą klasą, podklasa), daje ``TypeError``, bo
-    dałby własne maskowanie i uwagi techniczne."""
-
     if type(forbidden) is not ForbiddenValues:
         raise TypeError(f"Strażnik reguły danych bierze tylko pamięć ForbiddenValues z empty_memory, nie {type(forbidden).__name__}.")
     return _WORDS[forbidden]
 
 
 def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenColumn, _Position], ...]:
-    """Zakazane kolumny nagłówka (nagłówek po ``normalize_text`` → położenie kolumny) z ich położeniem."""
-
     return tuple((_HEADERS[name], position) for name, position in header.items() if name in _HEADERS)
 
 
 def free_text(text: str) -> str:
-    """Wolny tekst z zamaskowanymi telefonami (``[telefon]``) i wzmiankami ulic (``[ulica]``)."""
-
     return _PHONE.sub(_PHONE_MASK, _STREET.sub(_STREET_MASK, text))
 
 
 def shown(value: object) -> str:
-    """Tekst komórki tak, jak ją pokazuje Excel: liczba całkowita zapisana przez Excel jako ułamek (``4801234567.0``)
-    to jej cyfry, a każda inna wartość jej zapis (``str``)."""
-
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value)
@@ -393,9 +297,6 @@ def _notes(columns: Iterable[ForbiddenColumn], place: str) -> tuple[str, ...]:
 
 
 def _value_words(value: object) -> tuple[str, ...] | None:
-    """Słowa komórki do szukania, bez wielkości liter, w tekście, który pokazuje Excel (``shown``); ``None``: nie ma
-    czego szukać, wartość jest za krótka albo to rodzaj zlecenia z ``URZĄDZENIA``."""
-
     if value is None or isinstance(value, (bool, datetime, date, time)) or order_kind(value) is not OrderKind.OTHER:
         return None
     text = " ".join(shown(value).split())
