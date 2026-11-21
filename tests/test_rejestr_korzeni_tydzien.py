@@ -88,8 +88,6 @@ def _body(pulls: Sequence[Reviewed], week: date, alarms: tydzien.Alarms = NO_ALA
 
 
 def _rows(text: str, section: str) -> list[str]:
-    """Wiersze danych tabeli sekcji ``## section`` treści issue (bez nagłówka i linii ``---``)."""
-
     lines = text.splitlines()
     start = lines.index(f"## {section}")
     end = next((index for index in range(start + 1, len(lines)) if lines[index].startswith("## ")), len(lines))
@@ -145,7 +143,6 @@ def _rows_of(firings: Sequence[tydzien.Firing]) -> list[str]:
     return [firing.row() for firing in firings]
 
 
-# Granice tygodnia: poniedziałek 0:00 czasu polskiego, w czasie letnim (UTC+2) do 25.10.2026 i zimowym (UTC+1) po nim.
 @pytest.mark.parametrize(
     ("when", "week"),
     [
@@ -228,9 +225,6 @@ def test_po_limicie_rund_pokazuje_pr_tygodnia_na_plikach_pr_zamknietego_po_limic
 
 
 def _guard(pull: int, merged: str, text: str | None, major: str = "W1 r1") -> GuardCase:
-    """Ważne PR ``pull`` scalonego w chwili ``merged`` z linią ``Strażnik: text`` (``None``: bez linii), czytaną jak
-    w bramce strażnika."""
-
     return GuardCase(pull, major, _at(merged), straznik.parse(text) if text is not None else None)
 
 
@@ -544,9 +538,6 @@ def _pull(
     files: Sequence[str] = (),
     branch: str = "galaz",
 ) -> dict[str, object]:
-    """PR ``number`` z zapytania GraphQL rejestru: komentarze werdyktów (treść i chwila utworzenia), opis, merge,
-    chwila założenia, zamknięcie bez merge'a i pliki diffu, z HTML każdej treści w ``bodyHTML``."""
-
     comments = [
         {
             "body": text.format(commit=OLD),
@@ -580,13 +571,11 @@ def _pull(
 
 
 PULLS = [
-    # Ważne w tygodniu 5.10, a PR scalony w tygodniu 19.10: Ważne liczy się w chwili werdyktu
     _pull(1436, [(FAIL_W1, "2026-10-07T10:00:00Z")], merged="2026-10-20T08:00:00Z"),
     _pull(1437, [(FAIL_W1, "2026-10-20T10:00:00Z")]),
     _pull(1438, [(FAIL_OTHER, "2026-10-21T10:00:00Z")]),
     # scalony w poniedziałek 19.10 o 0:30 czasu letniego, a w UTC jeszcze w niedzielę 18.10
     _pull(1439, [], body=korzenie_pr.OPISY["czerwony-main"], merged="2026-10-18T22:30:00Z"),
-    # Ważne w poniedziałek 26.10 o 0:30 czasu zimowego, po tygodniu pomiaru
     _pull(1440, [(FAIL_W1, "2026-10-25T23:30:00Z")]),
 ]
 WEEDS = [{"number": 1520, "title": "Chwast: R-DRUGA-DROGA", "body": ""}, {"number": 1519, "title": "Chwast: R-BEZ-TESTU", "body": ""}]
@@ -807,8 +796,6 @@ class RegistryGitHub(FakeGitHub):
         return self._lines("writes.jsonl")
 
     def calls(self) -> list[str]:
-        """Każde wywołanie ``gh`` po kolei: ``repo view``, ``graphql``, ``markdown`` albo ścieżka REST."""
-
         return [" ".join(map(str, call[:2])) if call[0] != "api" else "graphql" if call[1] == "graphql" else str(call[1]) for call in self._lines("calls.jsonl")]
 
     def _lines(self, name: str) -> list[list[object]]:

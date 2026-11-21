@@ -51,8 +51,6 @@ def _commit(cwd: Path, path: str, content: str, message: str) -> None:
 
 
 def _fake_gh(directory: Path, answer: str, code: int = 0, issue: str | None = None) -> str:
-    """``PATH`` z ``gh``, który wypisuje ``answer`` (na ``gh issue`` ``issue``, gdy podane) i kończy się kodem ``code``."""
-
     fake = directory / "gh-na-niby"
     fake.mkdir(exist_ok=True)
     (fake / "odpowiedz.json").write_text(answer, encoding="utf-8")
@@ -67,8 +65,6 @@ def _fake_gh(directory: Path, answer: str, code: int = 0, issue: str | None = No
 
 
 def _report(cwd: Path, *args: str, path: str | None = None) -> str:
-    """Raport bez GitHuba albo z ``gh`` szukanym w ``path``."""
-
     completed = subprocess.run(
         [sys.executable, str(TOOL), *(["--lokalnie"] if path is None else []), *args],
         cwd=cwd,
@@ -286,8 +282,6 @@ def test_kopia_narzedzia_ma_te_same_moduly_co_z_grafu_calego_repozytorium() -> N
 
 
 def _compared(checkout: Path) -> str:
-    """Koniec werdyktu, który nazywa ``origin/main``, z którym porównano gałąź."""
-
     return f" | origin/main {git(checkout, 'log', '-1', '--format=%h', 'origin/main')}"
 
 

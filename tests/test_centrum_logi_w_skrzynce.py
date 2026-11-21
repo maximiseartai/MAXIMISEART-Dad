@@ -152,13 +152,10 @@ from rozliczenia.efenix_address import AddressPart, address_differences
 LABEL: Final = "logi-uruchomienia"
 LINE = f"- Logi Uruchomienia okresu: {PERIOD}"
 ARCHIVE = f"logi-{PERIOD}"
-# Ostatnia linia komentarza: odnośnik do pliku w Archiwum Logów okresu (adres pobrania pliku GitHub Release).
 LINK = re.compile(r"- Pełne Logi: \[(?P<name>[^\]]+)\]\(https://github\.com/(?P<repo>[^/]+/[^/]+)/releases/download/(?P<tag>[^/]+)/(?P<file>[^)]+)\)")
 
 
 def watched_centrum(tmp_path: Path, *, key: bool = True, include_unmapped: bool = False) -> SettlingCentrum:
-    """Centrum, którego fałszywa Skrzynka pokazuje Logi Uruchomienia w ``issues``, a nie w ruchu w tle."""
-
     centrum = settling_centrum(tmp_path, include_unmapped=include_unmapped)
     box(centrum).background = frozenset()
     if key:
@@ -1706,7 +1703,6 @@ def test_odtworzenie_przygotowania_liczy_legenda_czynnosci_taty_z_logow_i_jest_z
     assert _quantity(kept / "okresy" / collective.parent.name / collective.name, "AA18") == 2
 
 
-# Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.
 ONE_FILE = {
     "settlement": "proces",
     "preparation": "Przygotowanie pliku zbiorczego",
@@ -2912,7 +2908,6 @@ def _second_form(entering: dict[str, Any]) -> None:
     entering["mails"][0]["entries"].append({"number": "0040000002", "verdict": "nie", "fault": None, "activities": ""})
 
 
-# Zmiana Logów Wpisania raportów z ``_entering_facts`` i początek powodu, dla którego odtworzenie nie ma wejścia.
 UNREPLAYABLE: Final[dict[str, tuple[Callable[[dict[str, Any]], None], str]]] = {
     "numer_wpisu_z_maska": (
         lambda entering: entering["mails"][0]["entries"][1].update(number="[telefon]"),
@@ -3216,8 +3211,6 @@ def _page(amount: str, quantities: dict[str, int | str]) -> dict[str, Any]:
 
 
 def _typed(position: str, quantity: int, amount: str | None) -> dict[str, Any]:
-    """Wpisanie ilości pozycji w śladzie z kwotą końcową po zapisie (``None``: zapis bez kwoty)."""
-
     return {"action": "ilość", "duration_ms": 1, "found": None, "execution_date": None, "amount": amount,
             "quantities": None, "position": position, "quantity": quantity, "accepted": True}
 
@@ -3232,7 +3225,6 @@ def _traced(row: int, *steps: dict[str, Any]) -> LoggedOrder:
 
 
 _UNKNOWN_012 = ("ceny pozycji 012 nie wynikają z kwot w Logach: Atrapa liczy je swoimi cenami", False)
-# Kroki śladu każdego zlecenia w Logach, ceny, które z nich wynikają, i granice Atrapy (tekst, czy blokuje).
 PRICES_FROM_LOGS: dict[str, tuple[list[list[dict[str, Any]]], dict[str, Decimal], tuple[tuple[str, bool], ...]]] = {
     "zmiana_kwoty_po_wpisaniu_ilosci": ([[_page("0.00", {}), _typed("012", 1, "99.00")]], {"012": Decimal(99)}, ()),
     "zmiana_jednej_z_dwoch_pozycji_strony": (
@@ -3322,7 +3314,6 @@ def _without_saving(phases: list[dict[str, Any]]) -> None:
     phases.pop()
 
 
-# Lista w Logach dłuższa i krótsza niż w odtworzeniu przy równym początku: etap Zapisywania dopisany drugi raz i usunięty.
 LENGTHS: dict[str, tuple[Callable[[list[dict[str, Any]]], None], str, str, str]] = {
     "dluzsza_w_logach": (_twice_saving, "4: etap Zapisywanie", "Logi", "Odtworzenie"),
     "krotsza_w_logach": (_without_saving, "3: etap Zapisywanie", "Odtworzenie", "Logi"),
@@ -3389,7 +3380,7 @@ def test_wartosc_roznicy_do_300_znakow_raport_pokazuje_cala_a_dluzsza_ucina(shar
     kończy się na 297 znakach i „...”."""
 
     record = RunLog.model_validate(shared_logs("settlement").record)
-    whole, cut = "a" * 298, "b" * 299  # z cudzysłowami JSON 300 i 301 znaków
+    whole, cut = "a" * 298, "b" * 299
 
     lines = Report(Verdict.DIFFERS, Difference("pole", whole, cut), ()).lines(record, "kod")
 
@@ -3903,8 +3894,6 @@ def test_logi_i_kontrola_ilosci_obu_stanowisk_z_jednego_okresu_ida_do_osobnych_i
 
 
 def _template_asset(produced: Produced) -> str:
-    """Nazwa w Archiwum Wzorca rozliczenia pracownika z Logów Przebiegu rozliczeń ``produced``."""
-
     [file] = [file for file in produced.record["environment"]["files"] if file["name"] == _WORKER_TEMPLATE]
     return asset_name(file["sha256"])
 

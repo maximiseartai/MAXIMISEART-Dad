@@ -70,7 +70,6 @@ def test_pr_mieszany_liczy_linie_poza_testami_od_bazy_scalenia_bez_zmian_bialych
         repo,
         {
             "src/nowy.py": _linie(12),
-            # Same wcięcia i puste linie nie są efektywną zmianą.
             "src/stary.py": "".join(
                 f"    {linia}\n\n" for linia in _linie(20).splitlines()
             ),
@@ -264,7 +263,6 @@ def test_licznik_szopy_liczy_maszynerie_z_jej_testami_z_listy_i_nowy_plik_narzed
 
 
 def test_nowe_pliki_testow_narzedzi_i_skilli_bez_wpisu_na_liscie_biora_grupe_z_reguly_katalogu(szopa: Path) -> None:
-    # Testy: produkt; tools/: maszyneria; skill verify-*: weryfikacja; inny skill: maszyneria; docs/: poza szopą.
     _zapisz(
         szopa,
         {
@@ -326,7 +324,6 @@ def test_pr_liczy_grupy_wedlug_listy_bazy_a_nastepny_pr_wedlug_listy_po_scaleniu
     ids=["diff-na-pliku-maszynerii", "binary-na-katalogach-szopy-i-src", "diff-w-podkatalogu", "plik-z-core-attributesfile"],
 )
 def test_atrybut_diff_albo_binary_spoza_bajtow_pliku_nie_zeruje_linii_licznika_szopy(szopa: Path, plik: str, atrybuty: str) -> None:
-    # Przegląd #1646 r3, W1: jedna linia .gitattributes na main zerowała numstat każdego kolejnego PR.
     _zapisz(szopa, {plik: atrybuty})
     if plik == "atrybuty-z-konfiguracji":
         git(szopa, "config", "core.attributesFile", str(szopa / plik))
@@ -342,7 +339,6 @@ def test_atrybut_diff_albo_binary_spoza_bajtow_pliku_nie_zeruje_linii_licznika_s
 
 
 _POWIEKSZA = rozmiar_pr.POWIEKSZA
-# Linie licznika i wywołania GitHuba dla etykiety ``POWIEKSZA``.
 _Akcje = tuple[list[str], list[tuple[str, str, Mapping[str, object]]]]
 _ZALOZONA_I_NADANA: _Akcje = (
     [f"SZOPA | założona etykieta {_POWIEKSZA.nazwa}", f"SZOPA | nadana {_POWIEKSZA.nazwa} #7"],
