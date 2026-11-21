@@ -81,7 +81,11 @@ Wykonawców przez tatę (15), takich Wpisów `tak` było 116 z 213, w tym 104 be
   zakolorowanych na czerwono i na zielono (decyzja koordynatora: tata zaznacza kolorem także `ADRES`, `URZĄDZENIA`,
   `UMOWA` i inne kolumny tekstowe, a „liczba” tam to np. numer domu w adresie, którego skasowanie, tak samo jak 1 w
   miejscu adresu, zepsułoby Rozliczenie pracownika; liczbę i 1 w odpowiedzi 5 czytamy jako ilość albo kwotę). Plik
-  zbiorczy zostaje bez zmian, bo jest podstawą rozliczenia z INEA.
+  zbiorczy zostaje bez zmian, bo jest podstawą rozliczenia z INEA. Zielone pole wygrywa z regułą „zostaw pustą” Reguł
+  ilości: opis [#2014](https://github.com/maximiseartai/MAXIMISEART-Dad/pull/2014) podaje to w sekcji „Decyzja
+  Maksa”, czyli jako wybór autora #2014, który Maks może odwrócić: „(1) Zielone pole wygrywa z Regułą ilości „zostaw
+  pustą”: zielone `AP` przy `gniazdo` ma u pracownika 1 i nie liczy się w Logach jako Ilość tylko dla INEA; inaczej
+  zostałoby puste.” (dopisek #2236, 2026-11-21).
 - **Dane legendy z Wydania**: `pz#m` daje 480 w `AS` przy każdej liczbie metrów (6). Legenda nie ma dodatkowych zapisów
   (`instmdic`, `dzielnika1/2`), bo dodaliśmy je sami (9). Każde `rt2` daje `AM` (1, 2; decyzja koordynatora: „nie
   uwzględniamy usterek” czytamy jako „bez osobnej reguły dla usterek”, a gdy tata miał na myśli, że w usterce `rt2` się

@@ -193,8 +193,6 @@ def test_numer_budynku_z_ukosnikiem_rozni_sie_od_numeru_bez_niego_i_od_innej_cze
     ],
 )
 def test_numer_budynku_z_wiecej_niz_dwiema_czesciami_albo_pusta_czescia_nie_jest_rowny_nawet_sobie(address: str) -> None:
-    """Ukośnik stoi tylko w numerze budynku i lokalu, więc słowo z ukośnikiem przed numerem nie jest słowem nazwy ulicy."""
-
     assert not same_address(address, address)
 
 
@@ -238,8 +236,6 @@ def test_adres_pliku_bez_rodzaju_rozni_sie_nazwa_ulicy_numerem_albo_lokalem(
 
 
 def _changed_part(address: Address) -> st.SearchStrategy[tuple[Address, AddressPart]]:
-    """Adres ``address`` ze zmianą jednej części i ta część; numer z ``/`` zostaje z lokalem, jak w ``addresses``."""
-
     def kept(changed: Address) -> bool:
         return changed.flat is not None or "/" not in changed.number
 
