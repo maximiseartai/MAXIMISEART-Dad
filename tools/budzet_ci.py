@@ -121,7 +121,6 @@ POKRYCIE = 0.5
 JEDNOSTKI = 8
 PLIK_PAMIECI = "pamiec.json"
 WERSJA_PAMIECI = 1
-# Pola runu z listy API, których potrzebują ``pomiar_ci.zadania`` i ``pomiar_ci.zmierz``.
 POLA_RUNU = ("id", "event", "head_branch", "head_sha", "created_at", "run_attempt", "conclusion", "status")
 POMIARY_TORU = {tor.nazwa: tor.pomiary for tor in (*TORY, MUTACJE)}
 GITHUB = ZRezerwa(GhApi(limit_s=60), REZERWA_POMIARU)
@@ -158,7 +157,7 @@ class Rekord:
 
     pomiar: Pomiar
     jednostki: tuple[str, ...] | None = None
-    tor: str | None = None  # tor czasów krytycznego zadania w czasy-ci (``Tor.pomiary``)
+    tor: str | None = None
     bez_planu: str | None = None  # czemu jednostek nie ma: artefakt wygasł albo plan nie ma krytycznego zadania
 
     @property
@@ -374,8 +373,6 @@ def _z_planem(rekord: Rekord, github: GitHub) -> Rekord:
 
 
 def _sredni(odcinki: list[dict[Odcinek, float]], szablony: list[str | None]) -> dict[Odcinek, dict[str, float]]:
-    """Średni odcinek grupy rozdzielony na szablony krytycznego zadania: suma w runach z szablonem przez liczbę runów."""
-
     srednie: dict[Odcinek, dict[str, float]] = {odcinek: defaultdict(float) for odcinek in Odcinek}
     for sciezka, szablon in zip(odcinki, szablony, strict=True):
         for odcinek, s in sciezka.items():
@@ -419,8 +416,6 @@ class Tydzien:
 
     @property
     def gardlo(self) -> tuple[Odcinek, str] | None:
-        """Odcinek o największym wkładzie i szablon krytycznego zadania o największej części tego wkładu."""
-
         if not self.ogon:
             return None
         odcinek = max(Odcinek, key=self.wklad)
@@ -432,8 +427,6 @@ class Tydzien:
 
     @property
     def przekroczony(self) -> bool:
-        """p90 okna ponad budżet; p90 równy 5 min mieści się w D2 „p90 ≤ 5 min”."""
-
         return self.p90 is not None and self.p90 > BUDZET_S
 
 

@@ -34,10 +34,10 @@ class Pull:
     state: str
     draft: bool
     from_fork: bool
-    verdicts: tuple[dict[str, object], ...]  # komentarze i recenzje w kolejności utworzenia
-    repository: str  # właściciel/nazwa
+    verdicts: tuple[dict[str, object], ...]
+    repository: str
     body: str
-    closed_by_github: frozenset[int]  # issues tego repozytorium z ``closingIssuesReferences``
+    closed_by_github: frozenset[int]
     checks: tuple[dict[str, str | None], ...]
     mergeable: str  # MERGEABLE, CONFLICTING albo UNKNOWN, gdy GitHub jeszcze liczy scalenie z bazą
 
@@ -81,8 +81,6 @@ def from_view(found: dict[str, Any]) -> Pull:
 
 @dataclass(frozen=True)
 class CiRun:
-    """Run workflow ``CI`` na HEAD: identyfikator runu i jego checki z rollupu."""
-
     id: int
     checks: tuple[dict[str, str | None], ...]
 
@@ -95,14 +93,10 @@ class CiRun:
 
     @property
     def running(self) -> list[dict[str, str | None]]:
-        """Checki runu, które się jeszcze nie skończyły, na przykład zadania ponowione w tym samym runie."""
-
         return [check for check in self.checks if check.get("status") != "COMPLETED"]
 
 
 class UnknownRun(Exception):
-    """Check workflow ``CI``, którego ``detailsUrl`` nie ma postaci ``…/actions/runs/<run>/job/<zadanie>``."""
-
     def __init__(self, name: str, url: str) -> None:
         self.name = name
         self.url = url

@@ -231,8 +231,6 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
 
 
 def _quoted(command: str, start: int) -> tuple[str, int]:
-    """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``."""
-
     if command[start] == "'":
         close = command.find("'", start + 1)
         end, kept = (len(command) if close < 0 else close + 1), "''"
@@ -323,8 +321,6 @@ def _found(pattern: re.Pattern[str], command: str) -> _Matches:
 
 
 def _in_one_command(command: str, head: re.Pattern[str], tail: re.Pattern[str]) -> _Matches:
-    """Każde ``head``, za którym w tym samym poleceniu prostym stoi ``tail``."""
-
     tail_starts = [match.start() for match in tail.finditer(command)]
     command_ends = [match.start() for match in SIMPLE_COMMAND_END.finditer(command)]
     return _Matches(
@@ -335,9 +331,6 @@ def _in_one_command(command: str, head: re.Pattern[str], tail: re.Pattern[str]) 
 
 
 def _loop_bodies(command: str) -> Iterator[tuple[int, int]]:
-    """Początek i koniec każdej pętli na pierwszym planie od słowa ``until``/``while``/``for`` do jej ``done``
-    (albo do końca polecenia)."""
-
     loops: list[list[int]] = []
     unclosed: list[int] = []
     for word in LOOP_WORD.finditer(command):
@@ -380,7 +373,6 @@ def _list_parts(command: str) -> tuple[list[int], list[bool]]:
         elif kind == "close":
             in_background[index] = in_background[index + 1]
         else:
-            # Lista kończy się na `;`, ale grupa, w której stoi, biegnie dalej: `{ pętla; } &` idzie w tło cała.
             group = enclosing[index]
             in_background[index] = group is not None and in_background[closing[group]]
     return [part.start() for part in parts], in_background
@@ -437,13 +429,6 @@ def _reruns(shell: str) -> bool:
 
 
 def _task_files(text: str, variables: frozenset[str]) -> list[int]:
-    """Początki plików wyjścia zadania w ``text``: wprost i przez odwołanie do zmiennej z ``variables``.
-
-    Zmienne to te, którym polecenie przypisuje plik (``F=…/tasks/b1.output``, ``ASSIGNMENT``). Odwołanie ``"${F}"``
-    jest w kodzie po ``_code`` napisem ``"$_F_"``, bo napis bez spacji ma nawiasy zamienione na podkreślenia, stąd
-    ``rstrip("_")``.
-    """
-
     named = [found.start() for found in TASK_OUTPUT.finditer(text)]
     referred = [found.start() for found in REFERENCE.finditer(text) if found.group(1).rstrip("_") in variables]
     return sorted(named + referred)
@@ -453,7 +438,7 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
     try:
         kept = _without_heredocs(command)
         shell, _ = _code(kept)
-    except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
+    except RecursionError:
         return None
     if _reruns(shell):
         return RERUN
