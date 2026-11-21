@@ -19,6 +19,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import chroniony_wlasciciel
 import ciezkie_ci
 import github
 import mutacja_recenzenta
@@ -117,7 +118,10 @@ z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyk
 (``mutacja_recenzenta``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``),
 także dla Ważnego z ``Gdzie`` bez miejsca ``plik:linia`` w repo (plik spoza repo), którego inne selektory odmawiają.
 ``--przed-dowodem-testu`` (wątek sprzed wdrożenia dowodu testu, ``bramka_straznika.TEST_MARKER``) przepuszcza
-``brak - test``, którego poza takim wątkiem dowód odmawia. Linia na Ważne i na końcu
+``brak - test``, którego poza takim wątkiem dowód odmawia. ``--chroniony-wlasciciel`` (Ważne szczebla ``test``,
+``szczebel_straznika.needs_owner``) przyjmuje ``pytest <węzeł>`` tylko, gdy każdy plik z ``Gdzie`` to chroniony
+właściciel w drzewie HEAD PR scalonego z bazą (``chroniony_wlasciciel``), a inaczej odmawia bez biegu testu z drogą
+do szczebla ``architektura``. Linia na Ważne i na końcu
 ``DOWÓD OK|ODMOWA | <selektor> | wykryte k/n`` (przy wyjątku ``wyjątek k/n``); ``tools/scal_pr.py`` uruchamia go przy
 merge'u każdego PR z Ważnym (``bramka_straznika``):
 
@@ -407,15 +411,19 @@ def checked(name: str, rule: Rule, majors: list[tuple[int, str, int]], numbers: 
     return 0 if ok else 1
 
 
-def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]], *, before_test_proof: bool = False) -> int:
+def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]], *, before_test_proof: bool = False, owner: bool = False) -> int:
     """Dowód strażnika z pola ``Strażnik:`` (``straznik``) na HEAD PR-u ``head`` dla Ważnych ``majors``; reguła
     ast-grep idzie dowodem reguły (``proof_on``), test dowodem z mutacją recenzenta (``straznik.prove_test``),
-    ``before_test_proof`` to wątek sprzed dowodu testu (``straznik.exempt``), a kod 0 jest tylko z ``DOWÓD OK``."""
+    ``before_test_proof`` to wątek sprzed dowodu testu (``straznik.exempt``), ``owner`` żąda chronionego właściciela
+    przy teście (``chroniony_wlasciciel``), a kod 0 jest tylko z ``DOWÓD OK``."""
 
     try:
         guard = straznik.parse(text)
     except ValueError as error:
         print(f"DOWÓD ODMOWA | {text} | {error}")
+        return 1
+    if owner and guard.kind is not straznik.Kind.PYTEST:
+        print(f"DOWÓD ODMOWA | {guard} | --chroniony-wlasciciel dotyczy tylko {straznik.FIELD} pytest <węzeł>")
         return 1
     try:
         if problem := fetched(head):
@@ -426,6 +434,9 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]], *, bef
             return _rule_guard(head, target, guard, majors)
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         cases = [_case(guard, major_probe(repository, *one)) for one in majors]
+        if owner and (refused := _outside_owners(head, target, cases)):
+            print(f"DOWÓD ODMOWA | {guard} | {refused}")
+            return 1
         if guard.kind in straznik.EXEMPT:
             found = straznik.exempt(ROOT, guard, head, repo.merge_base(ROOT, target, head), cases, before_test_proof=before_test_proof)
         elif guard.kind is straznik.Kind.PYTEST:
@@ -442,6 +453,15 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]], *, bef
     ok = detected == len(found)
     print(f"DOWÓD {'OK' if ok else 'ODMOWA'} | {guard} | {'wyjątek' if guard.kind in straznik.EXEMPT else 'wykryte'} {detected}/{len(found)}")
     return 0 if ok else 1
+
+
+def _outside_owners(head: str, target: str, cases: list[straznik.Case]) -> str:
+    merged = repo.merge_tree(ROOT, target, head)
+    if merged.conflicts:
+        return f"HEAD {head[:7]} scala się z bazą {target[:7]} z konfliktem ({', '.join(merged.conflicts)}): zaktualizuj PR z bazy"
+    protected = chroniony_wlasciciel.owners(ROOT, merged.tree)
+    found = ((case.label, chroniony_wlasciciel.refusal([path for path, _, _ in case.places], protected)) for case in cases)
+    return "; ".join(f"{label}: {reason}" for label, reason in found if reason)
 
 
 def _rule_guard(head: str, target: str, guard: straznik.Guard, majors: list[tuple[int, str, int]]) -> int:
@@ -580,6 +600,7 @@ def main(argv: list[str] | None = None) -> int:
     rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
     rule.add_argument("--straznik", metavar="SELEKTOR", help=f"Dowód strażnika z pola Strażnik: na HEAD PR --z-commita ({straznik.FORMS}).")
     parser.add_argument("--przed-dowodem-testu", action="store_true", help="Wątek sprzed wdrożenia dowodu testu: brak - test przechodzi, jak przed tym dowodem.")
+    parser.add_argument("--chroniony-wlasciciel", action="store_true", help="Ważne szczebla test: pytest <węzeł> tylko, gdy każdy plik z Gdzie to chroniony właściciel.")
     parser.add_argument("--z-commita", metavar="REV", help="HEAD PR: z niego --regula-id bierze regułę, --straznik kopię, a --przypadki-regul reguły z przypadkami.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
     rule.add_argument("--przypadki-regul", action="store_true", help="Każda reguła z reguly-ast-grep/ łapie przypadki ze swojego pola metadata.przypadki.")
@@ -588,12 +609,12 @@ def main(argv: list[str] | None = None) -> int:
         if command or args.wazne or args.pr or args.ostatnie or args.commit:
             parser.error("--przypadki-regul bierze przypadki z reguł checkoutu albo --z-commita REV, bez innych argumentów")
         return founding(commit_of(args.z_commita) if args.z_commita else None)
-    if args.przed_dowodem_testu and args.straznik is None:
-        parser.error("--przed-dowodem-testu dotyczy tylko dowodu strażnika (--straznik)")
+    if (args.przed_dowodem_testu or args.chroniony_wlasciciel) and args.straznik is None:
+        parser.error("--przed-dowodem-testu i --chroniony-wlasciciel dotyczą tylko dowodu strażnika (--straznik)")
     if args.straznik is not None:
         if command or not args.wazne or args.z_commita is None:
             parser.error("dowód strażnika: --straznik SELEKTOR z --z-commita REV i co najmniej jednym --wazne PR/W<n>/r<k>, bez polecenia po --")
-        return guard_proof(commit_of(args.z_commita), args.straznik, args.wazne, before_test_proof=args.przed_dowodem_testu)
+        return guard_proof(commit_of(args.z_commita), args.straznik, args.wazne, before_test_proof=args.przed_dowodem_testu, owner=args.chroniony_wlasciciel)
     if args.regula is not None or args.regula_id is not None:
         if command or not args.wazne or (args.regula_id is None) != (args.z_commita is None):
             parser.error("dowód reguły: --regula PLIK.yml albo --regula-id ID z --z-commita REV i co najmniej jedno --wazne PR/W<n>/r<k>, bez polecenia po --")

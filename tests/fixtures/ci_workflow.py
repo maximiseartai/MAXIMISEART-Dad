@@ -19,8 +19,6 @@ def jobs() -> dict[str, dict[str, Any]]:
 
 
 def action(uses: str) -> dict[str, Any]:
-    """Plik ``action.yml`` akcji złożonej, którą krok woła jako ``uses: ./.github/actions/<nazwa>``."""
-
     loaded: dict[str, Any] = yaml.safe_load((GITHUB.parent / uses / "action.yml").read_text(encoding="utf-8"))
     return loaded
 

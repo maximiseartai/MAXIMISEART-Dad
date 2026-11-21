@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from rozliczenia.centrum.tool_freshness import ToolFreshness
+from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.version import commit_since, tool_commit
 
 SWITCHED_AFTER_MIDNIGHT_IN_POLAND = "2026-10-13T00:15:00+02:00"
@@ -102,3 +102,14 @@ def test_centrum_zostaje_przy_wersji_ze_startu_po_przesunieciu_klonu(tmp_path: P
 
     assert tool_commit(clone) != started_on
     assert (running.local(), running.since()) == (started_on, date(2026, 10, 13))
+
+
+def test_narzedzie_na_nowszym_commicie_main_niz_wydanie_jest_aktualne_a_bez_commitu_wydania_ma_nowsza_wersje(
+    tmp_path: Path,
+) -> None:
+    clone = tmp_path / "narzedzie"
+    released = _clone(clone)
+    _git(clone, "commit", "--quiet", "--allow-empty", "--message", "nowszy commit main")
+    freshness = ToolFreshness.of_clone(clone, release=lambda: None, published=lambda: None)
+
+    assert [freshness.judge(lambda: GitHubReleases(commit, None)) for commit in (released, OTHER)] == ["current", "newer"]

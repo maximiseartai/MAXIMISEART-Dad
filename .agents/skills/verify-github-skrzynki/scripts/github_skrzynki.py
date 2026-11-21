@@ -155,9 +155,6 @@ def _run_case(
     return Result(case.id, facts, exchanges, describe(outcome), case.expected, problems), outcome
 
 
-# --- przebieg na żywo -----------------------------------------------------------------------------------------------
-
-
 def live_skrzynka(context: LiveRun) -> list[Result]:
     key, admin, root, pace = context.key, context.admin, context.root, context.admin.pace
     recorder = Recorder()
@@ -252,9 +249,6 @@ def live_aktualnosc(context: LiveRun) -> list[Result]:
             result, _ = _run_case(case, None, partial(case.prepare, live, {}), check, aktualnosc.describe)
             results.append(result)
     return results
-
-
-# --- odtwarzanie ----------------------------------------------------------------------------------------------------
 
 
 def stored_recordings() -> dict[str, dict[str, object]]:
@@ -359,9 +353,6 @@ def replay_aktualnosc(
         ]
 
 
-# --- Doctor ---------------------------------------------------------------------------------------------------------
-
-
 def client_key(path: Path | None) -> str:
     return gh_token() if path is None else path.read_text(encoding="utf-8").strip().lstrip("﻿")
 
@@ -459,9 +450,6 @@ def _archive_baseline(admin: Admin) -> list[str]:
     return problems
 
 
-# --- rejestr funkcji ------------------------------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class Feature(Generic[Live, Client]):
     """Funkcja ``--feature``: jej plik ``features/<name>.md`` i wszystko, czego tryby potrzebują.
@@ -524,9 +512,6 @@ LIVE: Final = tuple(each.name for each in FEATURES if each.live is not None)
 def feature(name: str) -> Feature[Any, Any]:
     [found] = [each for each in FEATURES if each.name == name]
     return found
-
-
-# --- wynik ----------------------------------------------------------------------------------------------------------
 
 
 def unchecked(kinds: dict[str, str]) -> list[str]:

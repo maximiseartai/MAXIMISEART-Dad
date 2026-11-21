@@ -49,8 +49,9 @@ class FakeGitHub:
     """Checkout na ``main`` z repozytorium bare jako ``origin`` (PR-y w ``refs/pull/N/head`` jak na GitHubie) i atrapa ``gh``.
 
     ``files`` i kopia narzędzia checkoutu ``tool`` (to, które uruchamia ``run``) z jego importami są w commicie ``start``
-    z datą ``started`` (domyślnie chwila budowy). Oba repozytoria proces testów buduje raz na ``tool``, ``files`` i
-    ``started``, a test dostaje ich kopię (``built_once``). Atrapa ``gh`` wykonuje kod ``gh`` i trzyma swój stan w
+    z datą ``started`` (domyślnie chwila budowy), poza plikami ``held`` kopii, które test dodaje później (``push_main``).
+    Oba repozytoria proces testów buduje raz na ``tool``, ``files``, ``started`` i ``held``, a test dostaje ich kopię
+    (``built_once``). Atrapa ``gh`` wykonuje kod ``gh`` i trzyma swój stan w
     katalogu ``bin``, który ``environment`` stawia na początku ``PATH``.
     """
 
@@ -62,11 +63,14 @@ class FakeGitHub:
         tool: str,
         gh: str,
         started: str | None = None,
+        held: tuple[str, ...] = (),
     ) -> None:
         def build(template: Path) -> None:
             git(template, "init", "--quiet", "--bare", "--initial-branch=main", str(template / "origin.git"))
             checkout = repository(template / "checkout", files)
             copy_files(checkout, with_imports((tool,)))
+            for name in held:
+                (checkout / name).unlink()
             git(checkout, "checkout", "--quiet", "-b", "main")
             with pytest.MonkeyPatch.context() as patch:
                 if started is not None:
@@ -75,7 +79,7 @@ class FakeGitHub:
             git(checkout, "remote", "add", "origin", str(template / "origin.git"))
             git(checkout, "push", "--quiet", "origin", "main")
 
-        built_once(tmp_path, build, tool, started, *sorted(files.items()))
+        built_once(tmp_path, build, tool, started, held, *sorted(files.items()))
         self.tool = tool
         self.origin = tmp_path / "origin.git"
         self.checkout = tmp_path / "checkout"

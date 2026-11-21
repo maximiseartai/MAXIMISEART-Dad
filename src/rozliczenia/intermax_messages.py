@@ -107,8 +107,6 @@ def register_unusable(error: WorkbookError, replacement: Replacement) -> Message
 
 
 def register_missing(register: Path, replacement: Replacement) -> Message:
-    """Nie ma INTERMAX pod ścieżką z Ustawień Centrum."""
-
     return Message(
         code=f"{replacement.prefix}BRAK_INTERMAX",
         what=f"Nie znaleziono INTERMAX. {_UNCHANGED}",
@@ -137,8 +135,6 @@ def _register_unreadable(register: Path, replacement: Replacement) -> Message:
 
 
 def no_order_sheet(register: Path) -> Message:
-    """Żaden arkusz INTERMAX nie ma w wierszu 1 nagłówków zleceń od ``AKCJE`` do ``UWAGI``."""
-
     return Message(
         code="BRAK_ARKUSZA_ZLECEN",
         dad_file="order_register",
@@ -170,8 +166,6 @@ def register_with_duplicated_headers(register: Path, sheet: str, headers: Sequen
 
 
 def no_raw_orders(register: Path, sheet: str) -> Message:
-    """Na dole arkusza zleceń nie ma Surowych zleceń; nic nie zapisano."""
-
     return Message(
         code="BRAK_SUROWYCH_ZLECEN",
         dad_file="order_register",
@@ -182,8 +176,6 @@ def no_raw_orders(register: Path, sheet: str) -> Message:
 
 
 def raw_orders_in_several_sheets(register: Path, sheets: Sequence[str]) -> Message:
-    """Wklejone zlecenia są w więcej niż jednym arkuszu zleceń, więc narzędzie nie wybiera, który porządkować."""
-
     return Message(
         code="SUROWE_ZLECENIA_W_KILKU_ARKUSZACH",
         dad_file="order_register",
@@ -197,8 +189,6 @@ def raw_orders_in_several_sheets(register: Path, sheets: Sequence[str]) -> Messa
 
 
 def raw_order_above_ordered(register: Path, sheet: str, row: int, ordered_row: int) -> Message:
-    """Wiersz z wyglądem wklejonego zlecenia stoi nad uporządkowanym wierszem, więc nie jest na dole arkusza."""
-
     return Message(
         code="SUROWE_ZLECENIA_NAD_UPORZADKOWANYMI",
         dad_file="order_register",
@@ -215,8 +205,6 @@ def raw_order_above_ordered(register: Path, sheet: str, row: int, ordered_row: i
 
 
 def raw_order_without_value(register: Path, sheet: str, row: int, column: str, *, worker: bool) -> Message:
-    """Wklejone zlecenie bez daty z godziną albo bez Wykonawcy (``worker``) w komórce ``column`` wiersza ``row``."""
-
     missing = "Wykonawcy" if worker else "daty z godziną"
     entered = "Wykonawcę" if worker else "datę z godziną"
     return Message(
@@ -229,8 +217,6 @@ def raw_order_without_value(register: Path, sheet: str, row: int, column: str, *
 
 
 def several_days(register: Path, sheet: str, days: Sequence[date], first_row: int, last_row: int) -> Message:
-    """Wklejone zlecenia są z więcej niż jednego dnia."""
-
     return Message(
         code="WKLEJENIE_Z_KILKU_DNI",
         dad_file="order_register",
@@ -244,8 +230,6 @@ def several_days(register: Path, sheet: str, days: Sequence[date], first_row: in
 
 
 def day_already_ordered(register: Path, sheet: str, day: date, first_row: int, last_row: int) -> Message:
-    """Wklejone zlecenia są z dnia, który już jest uporządkowany; drugie wklejenie nie dubluje dnia."""
-
     return Message(
         code="DZIEN_JUZ_UPORZADKOWANY",
         dad_file="order_register",
@@ -279,8 +263,6 @@ def conflict_copy(copy: Path) -> Message:
 
 
 def unsupported_shape(register: Path, sheet: str) -> Message:
-    """Wklejone zlecenia mają kształt, którego zapis nie przenosi (formuła, scalenie, zakres)."""
-
     return Message.to_maintainer(
         code="NIEOBSLUGIWANY_UKLAD_INTERMAX",
         what=f"Wklejone zlecenia mają układ, którego narzędzie nie porządkuje. {_UNCHANGED}",
@@ -334,8 +316,6 @@ def _disk_failed(code: str, what: str, where: str, replacement: Replacement) -> 
 
 
 def old_copies_kept(directory: Path, replacement: Replacement) -> Message:
-    """Ostrzeżenie: INTERMAX jest podmieniony, ale starsze Kopie INTERMAX nie zostały usunięte."""
-
     return Message(
         code=replacement.old_copies_code,
         what=f"{replacement.done}, ale nie udało się usunąć starszych Kopii INTERMAX.",
@@ -403,8 +383,6 @@ def _order_base_unreadable(base: Path) -> Message:
 
 
 def order_base_unsupported(base: Path, sheet: str) -> Message:
-    """Ostrzeżenie: arkusz Bazy zleceń ma układ, którego narzędzie nie czyta, więc dzień jest bez Historii adresu."""
-
     return Message(
         code=ORDER_BASE_SKIPPED,
         what=f"{_WITHOUT_HISTORY}, bo arkusz Bazy zleceń ma układ, którego narzędzie nie czyta.",
@@ -417,8 +395,6 @@ def order_base_unsupported(base: Path, sheet: str) -> Message:
 
 
 def copies_unreadable(directory: Path) -> Message:
-    """Folderu Kopii INTERMAX nie da się odczytać: Ustawienia nie pokażą Kopii, a przywrócenie nie zacznie."""
-
     return Message(
         code="KOPIE_INTERMAX_NIEDOSTEPNE",
         what=f"Nie można teraz odczytać folderu Kopii INTERMAX. {_UNCHANGED}",
@@ -428,8 +404,6 @@ def copies_unreadable(directory: Path) -> Message:
 
 
 def copy_missing(directory: Path, name: str) -> Message:
-    """Wybranej Kopii INTERMAX nie ma już w folderze Kopii (np. usunęło ją nowsze Uporządkowanie)."""
-
     return Message(
         code="BRAK_KOPII_INTERMAX",
         what=f"Tej Kopii INTERMAX już nie ma. {_UNCHANGED}",
@@ -439,8 +413,6 @@ def copy_missing(directory: Path, name: str) -> Message:
 
 
 def copy_unusable(error: WorkbookError) -> Message:
-    """Wybranej Kopii INTERMAX nie da się odczytać; ``error`` mówi dlaczego."""
-
     return workbook_messages.unusable(
         error,
         WorkbookMessages(
@@ -471,8 +443,6 @@ def _copy_unreadable(copy: Path) -> Message:
 
 
 def copy_damaged(copy: Path) -> Message:
-    """Wybrana Kopia INTERMAX nie jest skoroszytem Excela, więc przywrócenie zepsułoby INTERMAX."""
-
     return Message(
         code="KOPIA_INTERMAX_USZKODZONA",
         what=f"Ta Kopia INTERMAX jest uszkodzona, więc nie została przywrócona. {_UNCHANGED}",
@@ -482,8 +452,6 @@ def copy_damaged(copy: Path) -> Message:
 
 
 def unexpected_failure() -> Message:
-    """Nieprzewidziany błąd; treść wyjątku nie trafia do taty."""
-
     return Message(
         code="BLAD_NIEOCZEKIWANY",
         what=f"Wystąpił nieoczekiwany błąd. {_UNCHANGED}",
@@ -493,8 +461,6 @@ def unexpected_failure() -> Message:
 
 
 def summary_not_shown() -> Message:
-    """INTERMAX jest uporządkowany, ale podsumowania nie dało się pokazać."""
-
     return Message.to_maintainer(
         code="BLAD_PODSUMOWANIA",
         what="INTERMAX został uporządkowany, ale nie udało się pokazać podsumowania.",

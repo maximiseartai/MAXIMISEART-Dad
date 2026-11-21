@@ -137,8 +137,6 @@ def test_dwa_procesy_excela_start_konczy_sie_nazwana_przyczyna_a_pamiec_jest_pus
 
 
 def _doctor_excel_problems() -> list[str]:
-    """The doctor's lines about the running Excel: those it adds over the same check with Excel not running."""
-
     doctor = importlib.import_module("excel_doctor")
     root, desk = Path("/nonexistent-root"), Path("/nonexistent-desk")
     with_excel: list[str] = doctor.check(root, desk)
@@ -149,8 +147,6 @@ def _doctor_excel_problems() -> list[str]:
         del os.environ["FAKE_EXCEL_RUNNING"]
     return [problem for problem in with_excel if problem not in without_excel]
 
-
-# ---- one Excel per Mac ---------------------------------------------------------------------------------
 
 HOLDER = """
 import sys

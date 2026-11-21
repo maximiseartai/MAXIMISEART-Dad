@@ -82,14 +82,12 @@ LIMIT_MS: Final = 15_000
 """The window's time limit in the checker: no case here places an answer against the limit, so a longer one changes no verdict, and with 4 s a busy machine that reloads the
 page after „Załaduj do zlecenia” later than that stopped the run without Dad on the time limit."""
 
-# --- The scenario -----------------------------------------------------------------------------------------------------
-
 READ: Final = "a5kx1"
 """Identifier of order A, the one the process searches, opens (``_order_id``) and prices."""
 OTHER: Final = "b7qz9"
 """Identifier of order B, someone else's order with Dad's pricing, which the process never reads."""
 FILE: Final[Mapping[str, int]] = {"012": 1, "019": 2, "015": 1}
-"""Quantities of the Plik zbiorczy by position: O→012, T→019, AG→015 (spec #741)."""
+"""Quantities of the Plik zbiorczy by position: O→012, T→019, AG→015."""
 DAY: Final = date(2026, 9, 1)
 ORDER_A: Final = Order(
     "#5287401", day=DAY, cells={"O": 1, "T": 2, "AG": 1}, amount=float(amount_of(FILE)), emmett={"012": 1, "019": 1}
@@ -167,9 +165,6 @@ class Case:
     @property
     def name(self) -> str:
         return f"{self.action.value}@{self.point.name}"
-
-
-# --- One run ------------------------------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -274,9 +269,6 @@ def _result(outcome: Outcome[PricingSummary] | None) -> tuple[OrderKind | None, 
             summary = outcome.ending.facts.summary
     kind = summary.results[0].kind if summary is not None and summary.results else None
     return kind, stop, stop_kind
-
-
-# --- The checks ---------------------------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -411,9 +403,6 @@ def cases(fill: Run, forward: Run) -> tuple[list[Case], list[str]]:
     if any(seen.path == LOAD_EMMETT for seen in fill.requests):
         found.append(Point(RELOAD_POINT, PricingMode.FILL, None))
     return [Case(point, action) for point in found for action in DadAction], gaps + forward_gaps
-
-
-# --- The report ---------------------------------------------------------------------------------------------------
 
 
 @dataclass

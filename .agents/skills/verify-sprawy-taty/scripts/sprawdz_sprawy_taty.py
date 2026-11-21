@@ -1,12 +1,3 @@
-"""Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
-opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu
-z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko ostrzega linią ``UWAGA:`` nad
-werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
-
-    .venv/bin/python .agents/skills/verify-sprawy-taty/scripts/sprawdz_sprawy_taty.py
-    py -3 .agents\\skills\\verify-sprawy-taty\\scripts\\sprawdz_sprawy_taty.py
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence

@@ -18,6 +18,9 @@ jako narzędzie osoby utrzymującej”: CLI znika, a E2E, straż czasu i benchma
 uruchamiają procesy skryptem dla maszyn przez rdzeń Uruchomienia procesu.
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) włącza Rejestr zleceń
 i folder okresów do Ustawień Centrum.
+[ADR 0045](0045-stanowisko-andrzeja-w-tym-samym-centrum.md) czyni Centrum
+wejściem także Andrzeja, pracownika biura taty, na jego laptopie, w Zakresie
+jego Stanowiska.
 
 ## Kontekst
 

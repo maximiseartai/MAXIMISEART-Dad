@@ -81,7 +81,6 @@ PACKAGE_REL: Final = "{http://schemas.openxmlformats.org/package/2006/relationsh
 _WITHOUT_LEADING_R: Final = re.compile(rb'<(?:c|row)(?=[\s>/])(?! r=")')
 _ROW_START_OR_IRREGULAR: Final = re.compile(rb'<(?:row r="(\d+)"|!|(?:c|row)(?=[\s>/])(?! r="))')
 _IRREGULAR_IN_ROW: Final = re.compile(rb"-->|\]\]>|</?sheetData")
-"""Koniec komentarza albo CDATA zaczętego wyżej albo granica innego ``<sheetData>`` w wierszu ``RowsFromBottom``."""
 _WORKSHEET: Final = re.compile(rb"\s*(?:<\?xml[^>]*\?>\s*)?<worksheet[\s>]")
 _SHARED_FORMULA_MASTER: Final = re.compile(rb'<f\b[^>]*\bt="shared"[^>]*(?<!/)>')
 _TYPE: Final = re.compile(rb"""\st=["']([^"']*)["']""")
@@ -90,7 +89,6 @@ _NUMBER_TYPES: Final = (None, b"n")
 WORKSHEET_ROOT: Final = re.compile(rb"<((?:[\w.-]+:)?)worksheet\b[^>]*>")
 """Znacznik otwierający ``<worksheet>`` z deklaracjami przestrzeni nazw; grupa 1 to prefiks z dwukropkiem albo pusty."""
 STYLE_XF: Final = re.compile(rb"<xf\b[^>]*?(?:/>|>.*?</xf>)", re.S)
-"""Wpis ``<xf>`` listy stylów w ``xl/styles.xml``."""
 
 
 class UnsupportedShape(Exception):
@@ -197,7 +195,6 @@ class ActiveSheet:
     """Miejsce wśród ``<sheet>`` w ``workbook.xml``, od 0: tak liczy ``localSheetId`` nazw."""
     visible: bool
     worksheet: bool
-    """Arkusz komórek, a nie arkusz wykresu."""
 
 
 def active_sheet(parts: Mapping[str, bytes], workbook: str) -> ActiveSheet:
@@ -239,8 +236,6 @@ def style_list(xml: bytes, tag: bytes) -> re.Match[bytes]:
 
 
 def appended(xml: bytes, tag: bytes, entries: Sequence[bytes], existing: int) -> bytes:
-    """``xl/styles.xml`` z ``entries`` na końcu listy ``tag``, która ma ``existing`` wpisów."""
-
     if not entries:
         return xml
     block = style_list(xml, tag)
@@ -266,8 +261,6 @@ class IrregularSheetData(Exception):
 
 @dataclass(frozen=True)
 class SheetRow:
-    """Wiersz arkusza: numer i granice jego elementu ``<row>`` w XML arkusza."""
-
     number: int
     start: int
     end: int
@@ -275,17 +268,12 @@ class SheetRow:
 
 @dataclass(frozen=True)
 class SheetData:
-    """Jedyny ``<sheetData>`` arkusza: treść od ``start`` (za ``<sheetData>``) do ``end`` (``</sheetData>``) i jej wiersze."""
-
     start: int
     end: int
     rows: list[SheetRow]
-    """Wiersze ``<row>`` w kolejności z pliku."""
 
     @classmethod
     def of(cls, xml: bytes) -> SheetData:
-        """``<sheetData>`` XML arkusza; kształt spoza tego, który zapisują Excel i openpyxl, to ``IrregularSheetData``."""
-
         start, end = _sheet_data_bounds(xml)
         return cls(start, end, _sheet_rows(xml, start, end))
 
@@ -294,8 +282,6 @@ class SheetData:
         return [row.start for row in self.rows]
 
     def row_index(self, position: int) -> int:
-        """Indeks w ``rows`` ostatniego wiersza, który zaczyna się przed miejscem ``position``; -1 przed pierwszym."""
-
         return bisect_right(self._starts, position) - 1
 
 
@@ -335,8 +321,6 @@ class RowsFromBottom:
             index += 1
 
     def above(self, number: int) -> list[SheetRow]:
-        """Wiersze o numerze większym niż ``number``, w kolejności z pliku."""
-
         rows: list[SheetRow] = []
         for row in self:
             if row.number <= number:
@@ -522,9 +506,7 @@ def row_attributes(tag: bytes) -> dict[bytes, bytes]:
 
 
 _Narrow = Callable[[bytes], bytes]
-"""Zawężenie XML arkusza; arkusz spoza kształtu, który zawężenie sprawdza, to ``IrregularSheetData``."""
 _Choose = Callable[[str, bytes], _Narrow | None]
-"""Zawężenie części zip o tej nazwie i treści; ``None``: część zostaje bez zmian."""
 
 
 def rows_with_input(content: bytes, input_columns: int) -> bytes:

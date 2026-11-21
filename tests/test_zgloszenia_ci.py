@@ -1,10 +1,3 @@
-"""``tools/ci/zgloszenia_ci.py``: issue flaky testu, issue czerwonego `main` z rozpoznaniem zderzenia i jego zamknięcie,
-oraz ``tools/ponow_ci.py``, który z tych issue i logów padniętych zadań decyduje o ponowieniu runu CI.
-
-Historia `main` to prawdziwy Git z PR-ami scalonymi merge'em, a GitHub to zapisane odpowiedzi API w kształcie
-odpowiedzi z runów 26.10; linie logów ponowień pochodzą z runów CI z 5–13.11.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
@@ -16,7 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Any
+from typing import Any, NamedTuple
 import zipfile
 
 import pytest
@@ -38,8 +31,6 @@ RUN_URL = "https://github.com/maximiseartai/MAXIMISEART-Dad/actions/runs/{}"
 
 
 class Nagrany:
-    """GitHub z zapisanych odpowiedzi; brak odpowiedzi to ``KeyError`` z pytaną ścieżką."""
-
     def __init__(self, odpowiedzi: dict[str, Any]) -> None:
         self.odpowiedzi = odpowiedzi
         self.wyslane: list[tuple[str, str, Mapping[str, object]]] = []
@@ -52,8 +43,6 @@ class Nagrany:
         return odpowiedz
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
-        """Zapisuje wysłane; komentarz trafia też na listę komentarzy, gdy test ją nagrał, jak w API."""
-
         self.wyslane.append((metoda, sciezka, tresc))
         if (komentarze := self.odpowiedzi.get(f"{sciezka}?per_page={STRONA}&page=1")) is not None:
             komentarze.append({"body": tresc["body"]})
@@ -87,9 +76,6 @@ def _flaky(test: str) -> dict[str, object]:
 
 
 def _artefakty(run_id: int, artefakty: dict[str, object]) -> dict[str, Any]:
-    """Artefakty runu na dwóch stronach API: pierwszą wypełniają inne artefakty (noc ma ich więcej niż strona), a druga
-    ma podane i ``czasy-ci``."""
-
     lista = [{"id": run_id * 10 + numer, "name": nazwa, "expired": False} for numer, nazwa in enumerate(artefakty)]
     inne = [{"id": -numer, "name": f"mutacje-nocne-{numer}", "expired": False} for numer in range(1, STRONA + 1)]
     strona = f"{REPO}/actions/runs/{run_id}/artifacts?per_page={STRONA}&page="
@@ -101,16 +87,12 @@ def _artefakty(run_id: int, artefakty: dict[str, object]) -> dict[str, Any]:
 
 
 def _issues(etykieta: str, stan: str, issues: list[dict[str, Any]], od: str = "") -> dict[str, Any]:
-    """Strony listy issue po ``STRONA``, jak API, z pustą stroną za pełną ostatnią."""
-
     zapytanie = f"labels={etykieta}&state={stan}" + (f"&since={od}" if od else "")
     strony = [issues[poczatek : poczatek + STRONA] for poczatek in range(0, len(issues) + 1, STRONA)]
     return {f"{REPO}/issues?{zapytanie}&per_page={STRONA}&page={numer}": strona for numer, strona in enumerate(strony, start=1)}
 
 
 def _blok_kodu(tresc: str) -> list[str]:
-    """Linie pierwszego bloku kodu treści issue, z płotami."""
-
     linie = tresc.splitlines()
     start = next(numer for numer, linia in enumerate(linie) if linia.startswith("```"))
     koniec = linie.index(linie[start], start + 1)
@@ -212,8 +194,6 @@ def test_run_z_awaria_zglasza_najwyzej_dziesiec_flaky_testow_w_kolejnosci_artefa
 
 
 def test_kazdy_test_repozytorium_da_sie_ponowic_i_zglosic() -> None:
-    """Id z ``pytest --collect-only`` całego repozytorium: escapy, polskie znaki, nawiasy, cudzysłowy, długie parametry."""
-
     zebrane = subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", "tests"],
         cwd=ROOT,
@@ -249,15 +229,13 @@ def test_narzedzia_pytaja_o_check_zadania_required_z_ci_yml() -> None:
 
 
 def test_gh_nie_czyta_wejscia_wolajacego_i_biegnie_w_katalogu_checkoutu(tmp_path: Path) -> None:
-    """Klient ``gh`` (``tools/lib/github.py``) bez wejścia nie zabiera wejścia wołającego, które w bramie pre-push jest
-    listą wypychanych refów, i biegnie w katalogu checkoutu, gdziekolwiek stoi wołający."""
-
     fake_cli(tmp_path / "bin", "gh", "import json, os, sys\nprint(json.dumps({'katalog': os.getcwd(), 'wejscie': sys.stdin.read()}))\n")
     wolajacy = f"import sys\nsys.path.insert(0, {str(ROOT / 'tools' / 'lib')!r})\nimport github\nprint(github.gh('api', 'user'), end='')\n"
+    wypychane_refy_z_bramy_pre_push = "refs/heads/main 1111111 refs/heads/main 2222222\n"
 
     zrobione = subprocess.run(
         [sys.executable, "-c", wolajacy],
-        input="refs/heads/main 1111111 refs/heads/main 2222222\n",
+        input=wypychane_refy_z_bramy_pre_push,
         cwd=tmp_path,
         env={**os.environ, "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}"},
         capture_output=True,
@@ -284,21 +262,16 @@ def test_flaky_test_z_otwartym_issue_poza_pierwsza_strona_listy_dostaje_komentar
     assert [(type(akcja), getattr(akcja, "issue", None)) for akcja in zgloszenia_ci.akcje(github, Path.cwd(), 9, TERAZ)] == [(Skomentuj, 500)]
 
 
-# Testy repozytorium `main` i moduły, które importują: PR #n zmienia ``modul<n>.py``, więc ``tests/test_a.py`` i
-# ``tests/test_sprzatanie.py`` są testami #10 i #11, ``tests/test_centrum.py`` tylko #11, ``tests/test_wycena.py``
-# tylko #10, a ``tests/test_x.py`` żadnego.
-TESTY_MAIN = {
-    "tests/test_a.py": "import modul10\nimport modul11\n",
-    "tests/test_sprzatanie.py": "import modul10\nimport modul11\n",
-    "tests/test_centrum.py": "import modul11\n",
-    "tests/test_wycena.py": "import modul10\n",
-    "tests/test_x.py": "",
+PR_Y_ZMIENIAJACE_WEJSCIA_TESTOW_MAIN: dict[str, tuple[int, ...]] = {
+    "tests/test_a.py": (10, 11),
+    "tests/test_sprzatanie.py": (10, 11),
+    "tests/test_centrum.py": (11,),
+    "tests/test_wycena.py": (10,),
+    "tests/test_x.py": (),
 }
 
 
 def _scal(repo: Path, monkeypatch: pytest.MonkeyPatch, numer: int, chwila: str, plik: str, *, squash: bool = False) -> tuple[str, str]:
-    """PR ``numer`` zmienia ``plik`` i wchodzi do `main` o ``chwila`` merge'em albo squashem; daje HEAD PR i scalenie."""
-
     monkeypatch.setenv("GIT_COMMITTER_DATE", chwila)
     git(repo, "switch", "--quiet", "--create", f"pr-{numer}", "main")
     (repo / plik).write_text(f"X = {numer}\n", encoding="utf-8")
@@ -314,12 +287,11 @@ def _scal(repo: Path, monkeypatch: pytest.MonkeyPatch, numer: int, chwila: str, 
 
 @pytest.fixture
 def main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, str]]:
-    """`main`: początek, merge PR #9 (9:40), squash PR #10 (10:00) i czerwony merge PR #11 (10:30)."""
-
     repo = tmp_path / "repo"
     (repo / "tests").mkdir(parents=True)
     git(repo, "init", "--quiet", "--initial-branch=main")
-    for sciezka, tresc in {"a.txt": "0\n", **{f"modul{numer}.py": "X = 0\n" for numer in (9, 10, 11)}, **TESTY_MAIN}.items():
+    importy = {test: "".join(f"import modul{numer}\n" for numer in pr_y) for test, pr_y in PR_Y_ZMIENIAJACE_WEJSCIA_TESTOW_MAIN.items()}
+    for sciezka, tresc in {"a.txt": "0\n", **{f"modul{numer}.py": "X = 0\n" for numer in (9, 10, 11)}, **importy}.items():
         (repo / sciezka).write_text(tresc, encoding="utf-8")
     shas = {"poczatek": commit(repo, "początek")}
     for numer, chwila in ((9, "2026-10-26T09:40:00+00:00"), (10, "2026-10-26T10:00:00+00:00"), (11, "2026-10-26T10:30:00+00:00")):
@@ -329,15 +301,11 @@ def main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, 
 
 
 def _required(sha: str, wynik: str | None, run_id: int) -> dict[str, Any]:
-    """Check Required commitu z wynikiem ``wynik``; ``None`` to run anulowany, zanim ruszył, który checku nie ma."""
-
     check = {"status": "completed", "conclusion": wynik, "started_at": "2026-10-26T10:40:00Z", "details_url": f"{RUN_URL.format(run_id)}/job/1"}
     return {f"{REPO}/commits/{sha}/check-runs?check_name=Required%20CI%20status&per_page=100": {"check_runs": [check] if wynik else []}}
 
 
 def _zadania(run_id: int, porazki: Sequence[str]) -> dict[str, Any]:
-    """Zadania runu: Required i, gdy ``porazki``, padnięte zadanie pytest z tymi testami w podsumowaniu pytest."""
-
     zadania = [{"id": run_id * 10 + 1, "name": "Required CI status", "conclusion": "failure"}]
     if not porazki:
         return {f"{REPO}/actions/runs/{run_id}/jobs?per_page=100": {"jobs": zadania}}
@@ -361,11 +329,6 @@ def _czerwony_run(
     porazki_10: Sequence[str] = (),
     porazki_11: Sequence[str] = ("tests/test_a.py::test_scalenie",),
 ) -> Nagrany:
-    """Run 300 pushu na `main` z czerwonym Required na merge'u #11, po merge'u #10 z Required ``main_10`` (run 200,
-    ``None``: anulowany, zanim ruszył) i zielonym merge'u #9, a PR-y bez komentarzy; run bramki #11 z wynikiem ``required_b`` utworzony ``bramka_b``, a bramka #9 z wynikiem
-    ``required_9``. ``porazki_10`` i ``porazki_11`` to testy z porażką w runach 200 i 300; domyślna porażka runu 300
-    jest w teście, którego wejścia zmieniły #10 i #11."""
-
     log = "2026-10-26T10:41:00.1Z REQUIRED FAIL | pytest=failure\n2026-10-26T10:41:00.2Z REQUIRED FAIL | pytest (Python 3.14, 2/3): jednostki z porażką: pytest:tests/test_a.py\n"
     return Nagrany(
         {
@@ -410,20 +373,15 @@ def test_czerwony_main_po_zielonym_zderzeniu_ma_ostatni_zielony_pr_y_bisect_i_li
 
 
 def _checkout_zgloszen(repo: Path, cel: Path) -> Path:
-    """Klon ``repo`` w ``cel`` taki, jaki robi krok ``actions/checkout`` workflowu Zgłoszeń CI: gałąź z ``ref`` i
-    historia z ``fetch-depth`` (0 to cała historia, n to n ostatnich commitów)."""
-
     [krok] = [krok for krok in yaml.safe_load(ZGLOSZENIA.read_text(encoding="utf-8"))["jobs"]["zgloszenia"]["steps"] if krok.get("uses", "").startswith("actions/checkout@")]
     glebokosc = krok["with"]["fetch-depth"]
-    # Wyrażenia GitHuba test nie liczy: w nim 0 jest fałszem, więc `push && 0 || 1` dało głębokość 1 także na pushu.
     assert isinstance(glebokosc, int), f"fetch-depth checkoutu Zgłoszeń CI to liczba, a nie wyrażenie: {glebokosc!r}"
+    # ZEWNĘTRZNE: fetch-depth 0 pobiera w actions/checkout całą historię (README actions/checkout: 0 indicates all history)
     git(repo, "clone", "--quiet", "--branch", krok["with"]["ref"], *([f"--depth={glebokosc}"] if glebokosc else []), repo.as_uri(), str(cel))
     return cel
 
 
 def test_czerwony_main_ma_issue_z_historii_main_w_checkoutcie_workflowu(main: dict[str, str], tmp_path: Path) -> None:
-    """Run 41388657634: płytki checkout nie miał rodzica commitu scalenia, więc czerwony `main` nie dostał issue."""
-
     checkout = _checkout_zgloszen(Path.cwd(), tmp_path / "checkout")
     github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z")
 
@@ -437,8 +395,6 @@ def test_czerwony_main_ma_issue_z_historii_main_w_checkoutcie_workflowu(main: di
 
 @pytest.mark.parametrize("bramka_b", ["2026-10-26T10:05:00Z", "2026-10-26T10:00:00Z"], ids=["po scaleniu", "w sekundzie scalenia"])
 def test_czerwony_main_bez_zderzenia_gdy_bramka_pr_testowala_main_z_poprzednim_scaleniem(main: dict[str, str], bramka_b: str) -> None:
-    """Zderzenie liczy PR-y scalone po utworzeniu runu bramki, a scalenie #10 w tej samej sekundzie po nim nie jest."""
-
     github = _czerwony_run(main, bramka_b=bramka_b)
 
     [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
@@ -460,6 +416,17 @@ def test_bez_zderzenia_gdy_main_nie_byl_zielony_tuz_przed_albo_bramka_pr_nie_byl
     assert f"Ostatni zielony commit: {zielony}" in akcja.tresc
 
 
+def test_czerwony_main_szuka_ostatniego_zielonego_najwyzej_historia_commitow_main_wstecz(main: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(zgloszenia_ci, "HISTORIA", 2)
+    github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", main_10="cancelled")
+
+    [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
+
+    assert isinstance(akcja, Zaloz)
+    assert "Ostatniego zielonego commitu nie ma w 2 commitach `main` wstecz." in akcja.tresc
+    assert "Ostatni zielony commit" not in akcja.tresc
+
+
 @pytest.mark.parametrize("required_9", ["success", "failure"])
 def test_zderzenie_tylko_gdy_kazdy_pr_niewidziany_przez_bramke_byl_zielony(main: dict[str, str], required_9: str) -> None:
     github = _czerwony_run(main, bramka_b="2026-10-26T09:30:00Z", required_9=required_9)
@@ -471,8 +438,6 @@ def test_zderzenie_tylko_gdy_kazdy_pr_niewidziany_przez_bramke_byl_zielony(main:
 
 
 def _zadanie_bez_testu(github: Nagrany, run_id: int, nazwa: str) -> None:
-    """Padnięte zadanie runu ``run_id`` bez podsumowania pytest w logu, jak podstawa skilla w Mutation checks."""
-
     github.odpowiedzi[f"{REPO}/actions/runs/{run_id}/jobs?per_page=100"]["jobs"].append({"id": run_id * 10 + 9, "name": nazwa, "conclusion": "failure"})
     github.odpowiedzi[f"{REPO}/actions/jobs/{run_id * 10 + 9}/logs"] = b"2026-10-26T10:40:00.1Z PODSTAWA CZERWONA\n"
 
@@ -493,9 +458,6 @@ def _zadanie_bez_testu(github: Nagrany, run_id: int, nazwa: str) -> None:
 def test_zderzenie_tylko_gdy_kazda_nowa_porazka_jest_w_tescie_ktorego_wejscia_zmienily_oba_pr_y(
     main: dict[str, str], porazki: list[str], zadanie: str | None, etykiety: tuple[str, ...]
 ) -> None:
-    """Na 6 issues zderzenia z 5–6.11 żadne nie było zderzeniem: flaky test, którego wejść nie zmienił jeden z PR-ów
-    (#898, #932), i padnięte Mutation checks (#963, #1012) to nie skutek połączenia zmian."""
-
     github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", porazki_11=porazki)
     if zadanie is not None:
         _zadanie_bez_testu(github, 300, zadanie)
@@ -519,9 +481,6 @@ def test_zderzenie_tylko_gdy_kazda_nowa_porazka_jest_w_tescie_ktorego_wejscia_zm
 def test_zielony_main_zdejmuje_etykiete_zderzenia_gdy_zazielenil_sie_bez_zmiany_wejsc_padajacych_testow(
     main: dict[str, str], monkeypatch: pytest.MonkeyPatch, plik: str, etykiety: list[str], zadanie: str | None, zdjeta: bool
 ) -> None:
-    """Czerwony merge #11 z porażką w teście #10 i #11, potem PR #12 zmienia ``plik`` i `main` jest zielony: #900 z 5.11
-    zazielenił się tak bez poprawki, a licznik zderzeń z 7 dni liczył go dalej."""
-
     _, zielony = _scal(Path.cwd(), monkeypatch, 12, "2026-10-26T10:50:00+00:00", plik)
     otwarte = [{"number": 77, "labels": [{"name": etykieta} for etykieta in etykiety], "body": f"<!-- czerwony-main {main['pr11']} -->"}]
     github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", otwarte=otwarte)
@@ -593,10 +552,6 @@ def test_zielony_main_zamyka_issue_czerwonego_przodka_z_linkiem_do_runu(main: di
 def test_czerwony_run_komentuje_pr_y_o_ktorych_merge_u_rozstrzyga_takze_ten_z_anulowanym_runem_raz_na_pr_bez_oskarzenia(
     main: dict[str, str], monkeypatch: pytest.MonkeyPatch, najwiecej: int, komentowane: list[int], main_10: str | None
 ) -> None:
-    """Czerwony `main` nie wracał do wątku, który scalał (#911, #971), a run commitu merge'a #10 anulował push merge'a #11
-    (#1449: 42 ze 100 runów pushu na `main` anulowane), więc o #10 rozstrzyga czerwony run merge'a #11. Ponowienie
-    workflow trafia na issue tego commitu i nie komentuje PR-ów drugi raz."""
-
     monkeypatch.setattr(zgloszenia_ci, "NAJWIECEJ_POWIADOMIEN", najwiecej)
     github = _czerwony_run(main, bramka_b="2026-10-26T10:05:00Z", main_10=main_10)
 
@@ -618,9 +573,6 @@ def test_czerwony_run_komentuje_pr_y_o_ktorych_merge_u_rozstrzyga_takze_ten_z_an
 
 
 def test_czerwony_run_na_czerwonym_main_komentuje_tylko_pr_y_scalone_po_poprzednim_rozstrzygnietym_runie(main: dict[str, str]) -> None:
-    """`main` był czerwony już na merge'u #10 (issue #77, #10 ma komentarz swojego runu): czerwony run merge'a #11 dopisuje
-    się do #77 i budzi tylko #11, o którego merge'u rozstrzyga."""
-
     stara = ["tests/test_centrum.py::test_kontrola_ilosci[a - b]"]
     otwarte = [{"number": 77, "body": f"<!-- czerwony-main {main['pr10']} -->"}]
     github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", otwarte=otwarte, main_10="failure", porazki_10=stara, porazki_11=stara)
@@ -631,9 +583,6 @@ def test_czerwony_run_na_czerwonym_main_komentuje_tylko_pr_y_scalone_po_poprzedn
 
 
 def test_ponowienie_zderzenia_na_czerwonym_main_nie_zaklada_drugiego_issue_ani_nie_komentuje_pr_ow_drugi_raz(main: dict[str, str]) -> None:
-    """Zderzenie na czerwonym `main` zakłada własne issue obok otwartego #77; ponowienie workflow tego runu zakładało
-    drugie i drugi raz komentowało PR-y (przegląd #1448)."""
-
     stara, nowa = "tests/test_centrum.py::test_kontrola_ilosci", "tests/test_sprzatanie.py::test_worktree[merge - squash]"
     otwarte: list[dict[str, Any]] = [{"number": 77, "body": f"<!-- czerwony-main {main['pr10']} -->"}]
     github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", otwarte=otwarte, main_10="failure", porazki_10=[stara], porazki_11=[stara, nowa])
@@ -647,9 +596,6 @@ def test_ponowienie_zderzenia_na_czerwonym_main_nie_zaklada_drugiego_issue_ani_n
 
 
 class NieprzyjmujeKomentarza(Nagrany):
-    """GitHub, który na komentarz w PR ``pr`` rzuca ``blad``, jak zablokowana rozmowa, secondary rate limit albo ``gh``
-    ponad limit czasu ``GhApi``."""
-
     def __init__(self, odpowiedzi: dict[str, Any], pr: int, blad: Exception) -> None:
         super().__init__(odpowiedzi)
         self.pr = pr
@@ -726,9 +672,6 @@ def test_issue_zderzenia_wymienia_najwyzej_dwadziescia_nowych_porazek(main: dict
     ids=["ten sam tor w innym kawałku", "inny tor"],
 )
 def test_zadanie_bez_podsumowania_pytest_porownuje_sie_z_rodzicem_po_torze(main: dict[str, str], na_rodzicu: str, etykiety: tuple[str, ...]) -> None:
-    """Padnięte zadanie toru, które padło też na rodzicu, nie jest nową porażką, a nowe nie wskazuje testu, więc nie jest
-    zderzeniem: zostaje nowa porażka w teście obu PR-ów albo dwie, z których jedna to całe zadanie."""
-
     github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", main_10="failure")
     for run_id, nazwa in ((200, na_rodzicu), (300, "pytest (Python 3.11, 1/2)")):
         github.odpowiedzi[f"{REPO}/actions/runs/{run_id}/jobs?per_page=100"]["jobs"].append({"id": run_id * 10 + 5, "name": nazwa, "conclusion": "failure"})
@@ -750,13 +693,11 @@ TLC = (
     f"2026-11-09T06:09:10.8200328Z BŁĄD POBIERANIA NARZĘDZIA TLC (chwilowa awaria źródła): {_JAR} po 3 próbach "
     f"(HTTP 504 Gateway Time-out); to awaria pobierania narzędzia, nie wynik modelu.\n{_FAIL_TLC}"
 )
-# Trwałe błędy pobrania (``narzedzia_tlc.pobierz`` i ``jar``): podbity adres albo suma powtórzą się w każdym ponowieniu.
 TLC_404 = f"2026-11-09T06:09:10.8Z BŁĄD POBIERANIA NARZĘDZIA TLC: {_JAR} odpowiada HTTP 404 Not Found; to nie wynik modelu.\n{_FAIL_TLC}"
 TLC_SUMA = f"2026-11-09T06:09:10.8Z BŁĄD POBIERANIA NARZĘDZIA TLC: {_JAR} ma inną sumę SHA-256 niż przypięta; to nie wynik modelu.\n{_FAIL_TLC}"
 HTTP_504 = "2026-11-05T09:12:43.9735858Z urllib.error.HTTPError: HTTP Error 504: Gateway Time-out\n2026-11-05T09:12:44Z WYKONANIE FAIL | skill:verify-urwane-uruchomienie/ci\n"
 TEST_OPIEKUNA = "tests/test_opiekun_ponownego_startu.py::test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identyfikatorem_startu"
 PADLY_TEST = f"2026-11-07T16:56:41.7827770Z FAILED {TEST_OPIEKUNA} - TimeoutError: timed out\n2026-11-07T16:56:42Z WYKONANIE FAIL | krok:pytest\n"
-# Linia zadania PR-u, które nie ponowiło testu, bo PR zmienił jego plik testów (Z7): run z nią to defekt, choćby test miał issue.
 PLIK_TESTU_PR = f"2026-11-07T16:56:40Z PONOWIENIE | test {TEST_OPIEKUNA} {niestabilne_testy.ZMIENIONY_PLIK_TESTU}\n"
 MUTACJA = "2026-11-08T01:50:00Z FAIL skill:verify-kolejka-skrzynki/check_outbox_mutations.py#2/3 (41 s): kod wyjścia 1\n2026-11-08T01:50:01Z WYKONANIE FAIL | skill:verify-kolejka-skrzynki/ci\n"
 CYTAT_503 = (
@@ -765,14 +706,15 @@ CYTAT_503 = (
     "2026-11-07T16:56:41Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
 )
 
-Krok = tuple[str, str, str]  # nazwa, conclusion w API i log kroku
+class Krok(NamedTuple):
+    nazwa: str
+    conclusion: str
+    log: str
 
 
 def _wykonany(nazwa: str, wynik: str, log: str) -> Krok:
-    """Wykonany krok zadania: runner zaczyna jego log nagłówkiem ``##[group]Run`` (``uses:`` albo pierwsza linia ``run:``)."""
-
     czas = re.findall(r"^\S+Z", log)[0]
-    return nazwa, wynik, f"{czas} ##[group]Run {nazwa.removeprefix('Run ')}\n{log}"
+    return Krok(nazwa, wynik, f"{czas} ##[group]Run {nazwa.removeprefix('Run ')}\n{log}")
 
 
 POBRANIE_ARTEFAKTU = (
@@ -780,7 +722,6 @@ POBRANIE_ARTEFAKTU = (
     "If you are using self-hosted runners, please make sure your runner has access to all GitHub endpoints\n"
 )
 WYSLANIE_ARTEFAKTU = "2026-11-13T14:10:08.0078114Z ##[error]Failed to FinalizeArtifact: Unable to make request: ETIMEDOUT\n"
-# Kroki ci.yml z ``continue-on-error`` po kroku, który padł: drukują ``##[error]``, a zadanie zostaje z jego porażką.
 ZAPIS_CZASOW = _wykonany(
     "Record the time of each unit of work",
     "success",
@@ -788,37 +729,32 @@ ZAPIS_CZASOW = _wykonany(
     "2026-11-13T14:09:38.3137312Z ##[error]Process completed with exit code 1.\n",
 )
 WYSLANIE_CZASOW = _wykonany("Upload the unit times", "success", WYSLANIE_ARTEFAKTU)
-# W tej samej sekundzie, w której skończył się krok, który padł: API kroków podaje czas ucięty do sekundy.
 ZAPIS_NARZEDZI_TLC = _wykonany(
     "Save TLC tools",
     "success",
     "2026-11-13T14:09:37.6Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n2026-11-13T14:09:37.7Z ##[error]Process completed with exit code 1.\n",
 )
-# Run 43439867902 (13.11): plan części nie przyszedł przez download-artifact, więc pytest nie wystartował (``skipped``,
-# bez linii w logu), a zapis czasów i wysłanie czasów padły po nim w krokach z ``continue-on-error``. ``Set up job``
-# i kroki ``Post`` nie mają nagłówka ``##[group]Run``.
-RUN_43439867902 = [
-    ("Set up job", "success", "2026-11-13T14:08:35.3633777Z ##[group]Runner Image Provisioner\n"),
+PLAN_NIE_PRZYSZEDL = [
+    Krok("Set up job", "success", "2026-11-13T14:08:35.3633777Z ##[group]Runner Image Provisioner\n"),
     _wykonany("Install test dependencies", "success", "2026-11-13T14:09:06.8335055Z Resolved 40 packages\n2026-11-13T14:09:12.9Z Installed 40 packages\n"),
     _wykonany("Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", "failure", POBRANIE_ARTEFAKTU),
-    ("Run the planned units", "skipped", "2026-11-13T14:09:34Z\n"),
+    Krok("Run the planned units", "skipped", "2026-11-13T14:09:34Z\n"),
     ZAPIS_CZASOW,
     WYSLANIE_CZASOW,
-    ("Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "success", "2026-11-13T14:10:08.0444024Z Post job cleanup.\n"),
+    Krok("Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "success", "2026-11-13T14:10:08.0444024Z Post job cleanup.\n"),
 ]
 FAIL_SKILLA = (
     "2026-11-13T14:09:37Z FAIL skill:verify-github-skrzynki/ci (12 s): kod wyjścia 1\n"
     "2026-11-13T14:09:37Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
     "2026-11-13T14:09:37Z ##[error]Process completed with exit code 1.\n"
 )
-# Mutacje nocne: krok skryptów mutacji ma ``continue-on-error`` i stoi przed krokiem, który może padnąć po nim.
 SKRYPTY_MUTACJI = _wykonany(
     "Run the planned mutation scripts",
     "success",
     "2026-11-13T14:09:30Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n2026-11-13T14:09:30Z ##[error]Process completed with exit code 1.\n",
 )
 FAIL_E2E = "2026-11-13T14:09:37Z FAIL krok:e2e (40 s): kod wyjścia 1\n2026-11-13T14:09:37Z ##[error]Process completed with exit code 1.\n"
-# Wzór komunikatów @actions/artifact w upload-artifact@cf430e0 i download-artifact@9000827, przypiętych w ci.yml.
+# ZEWNĘTRZNE: tak piszą błędy @actions/artifact w upload-artifact@cf430e0 i download-artifact@9000827 przypiętych w ci.yml (logi runów CI z 13.11.2026)
 ARTEFAKT_HTTP_503 = "2026-11-13T14:10:08Z ##[error]Failed to CreateArtifact: Failed to make request after 5 attempts: Failed request: (503) Service Unavailable\n"
 ARTEFAKT_HTTP_403 = "2026-11-13T14:10:08Z ##[error]Failed to CreateArtifact: Received non-retryable error: Failed request: (403) Forbidden\n"
 BRAK_ARTEFAKTU = "2026-11-13T14:09:34Z ##[error]Unable to download artifact(s): Artifact not found for name: plan\n"
@@ -827,17 +763,13 @@ CYTAT_ARTEFAKTU = (
     "2026-11-13T14:09:41Z FAIL skill:verify-github-skrzynki/ci (12 s): kod wyjścia 1\n"
     "2026-11-13T14:09:41Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
 )
-# Kroki ``if: failure()`` po kroku, który padł (ci.yml: wysłanie dowodów E2E i bazy mutacji), bez ``continue-on-error``:
-# padają na tej samej awarii usługi artefaktów z ``conclusion: failure``, a zadanie zaczerwienił krok przed nimi.
 DOWODY_E2E = _wykonany("Upload E2E and timing guard evidence on failure", "failure", WYSLANIE_ARTEFAKTU)
 DOWODY_BAZY = _wykonany("Upload baseline evidence on failure", "failure", WYSLANIE_ARTEFAKTU)
-# Krok, który padł, startuje w sekundzie, w której skończył się krok z ``continue-on-error`` przed nim (ZAPIS_NARZEDZI_TLC).
 DOWODY_BAZY_403 = _wykonany(
     "Upload baseline evidence on failure",
     "failure",
     "2026-11-13T14:09:37.9Z ##[error]Failed to CreateArtifact: Received non-retryable error: Failed request: (403) Forbidden\n",
 )
-# Akcja złożona ./.github/actions/chromium: jej podkroki mają swoje nagłówki ``##[group]Run`` między znacznikami runnera.
 CHROMIUM = _wykonany(
     "Chromium",
     "success",
@@ -845,17 +777,18 @@ CHROMIUM = _wykonany(
     "2026-11-13T14:09:07.4Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9\n"
     "2026-11-13T14:09:08.8Z ##[end-action id=__self.__actions_cache;outcome=success;conclusion=success;duration_ms=1400]\n",
 )
-# Wyjście kroku samo drukuje ``::group::Run …``: nagłówków jest więcej niż kroków, więc krok, który padł, jest niepewny.
 GRUPA_Z_WYJSCIA = _wykonany(
     "Run the planned mutation scripts",
     "success",
     "2026-11-13T14:09:30.1Z ##[group]Run skryptu mutacji\n2026-11-13T14:09:30.2Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n",
 )
-# Krok, który padł, sam drukuje niezamknięty ``##[start-action``: z nagłówkiem z wyjścia ``GRUPA_Z_WYJSCIA`` liczba
-# nagłówków zgadza się z krokami, ale drugi nagłówek to cytat sprzed startu kroku, który padł, w kroku z HTTP 503.
 FAIL_SKILLA_Z_PODKROKIEM = _wykonany("Run the planned units", "failure", "2026-11-13T14:09:37Z ##[start-action display=cytat;id=x]\n" + FAIL_SKILLA)
-# Krok ``Post`` akcji po krokach zadania zaczyna się linią ``Post job cleanup.`` bez nagłówka ``##[group]Run``.
-PO_KROKACH_503 = (
+GRUPA_Z_WYJSCIA_W_SEKUNDZIE_KROKU_KTORY_PADL = _wykonany(
+    "Run the planned mutation scripts",
+    "success",
+    "2026-11-13T14:09:30Z skrypt mutacji\n2026-11-13T14:09:37.1Z ##[group]Run skryptu mutacji\n2026-11-13T14:09:37.2Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n",
+)
+PO_KROKACH_503 = Krok(
     "Post Restore TLC tools",
     "success",
     "2026-11-13T14:09:38.0Z Post job cleanup.\n2026-11-13T14:09:38.1Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n",
@@ -863,8 +796,6 @@ PO_KROKACH_503 = (
 
 
 class Ponowienia:
-    """``ponow_ci.Akcje``, które zapisują ponowienia zamiast pisać na GitHubie."""
-
     def __init__(self) -> None:
         self.zapisane: list[tuple[str | int, ...]] = []
         self.akcje = ponow_ci.Akcje(lambda run, zielone: self.zapisane.append(("rerun", run, *zielone)), lambda pr: self.zapisane.append(("close/reopen", pr)))
@@ -884,8 +815,6 @@ def _run_ci(run_id: int, *, status: str = "completed", wynik: str | None = "fail
 
 
 def _kroki(kroki: str | list[Krok]) -> list[Krok]:
-    """Sam log to jeden krok, który zaczerwienił zadanie, zakończony jak każdy taki krok w logach runów linią ``##[error]``."""
-
     if isinstance(kroki, str):
         koniec = re.findall(r"(?m)^(\S+Z) ", kroki)[-1]
         return [_wykonany("Run the planned units", "failure", f"{kroki}{koniec} ##[error]Process completed with exit code 1.\n")]
@@ -893,18 +822,12 @@ def _kroki(kroki: str | list[Krok]) -> list[Krok]:
 
 
 def _krok(numer: int, krok: Krok) -> dict[str, Any]:
-    """Krok w API zadań: od najwcześniejszej do najpóźniejszej linii jego logu, z czasem uciętym do sekundy, jak w API."""
-
     nazwa, wynik, log = krok
     czasy = sorted(re.findall(r"(?m)^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)", log))
     return {"number": numer, "name": nazwa, "conclusion": wynik, "started_at": f"{czasy[0]}Z", "completed_at": f"{czasy[-1]}Z"}
 
 
 def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_toku: int = 0, koniec_linii: str = "\n") -> dict[str, Any]:
-    """Zadania próby runu: padnięte z krokami i logami, ``Required CI status`` padły po nich, jedno zielone i ``w_toku``
-    biegnących. Log zadania to logi jego kroków po kolei, jak w API, a krok ``skipped`` nie ma w nim linii; linie kończy
-    ``koniec_linii`` (log zadania Windows z API ma ``\\r\\n``)."""
-
     kroki = {run_id * 100 + numer: (nazwa, _kroki(log)) for numer, (nazwa, log) in enumerate(logi.items())}
     kroki[run_id * 100 + 99] = (REQUIRED, [_wykonany("Require every CI check to succeed", "failure", "2026-11-11T14:00:00Z REQUIRED FAIL\n")])
     padniete = [
@@ -926,8 +849,6 @@ def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_t
 
 
 def _runy_ci(runy: list[dict[str, Any]]) -> dict[str, Any]:
-    """Strony runów workflow ``ci.yml`` utworzonych w dobie przed ``PONOW_TERAZ``, po ``STRONA``, jak API."""
-
     strony = [runy[poczatek : poczatek + STRONA] for poczatek in range(0, len(runy), STRONA)] or [[]]
     adres = f"{REPO}/actions/workflows/ci.yml/runs?created=%3E%3D2026-11-10T15%3A00%3A00Z&per_page={STRONA}"
     return {f"{adres}&page={numer}": {"total_count": len(runy), "workflow_runs": strona} for numer, strona in enumerate(strony, start=1)}
@@ -962,8 +883,6 @@ def _github(
     ids=["run-w-toku", "run-zielony"],
 )
 def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wynik_runu: str | None, linia: str) -> None:
-    """Run w toku czeka na swój koniec zamiast odbicia „already running”, choć ma już padnięte zadanie z awarią."""
-
     run = _run_ci(43035692960, status=status, wynik=wynik_runu)
     github = Nagrany({f"{REPO}/actions/runs/{run['id']}": run, **_proba(run["id"], 1, {"pytest (Python 3.14, Linux, 5/8)": DNS}, w_toku=3)})
     ponowienia = Ponowienia()
@@ -990,7 +909,7 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"Mutation checks (1/1)": CYTAT_503}, (), "defekt: Mutation checks (1/1) |", False),
         ({"pytest (Python 3.14, Linux, 5/8)": DNS + PADLY_TEST}, (), f"padłe testy: {TEST_OPIEKUNA} |", False),
         ({"Ruff, mypy": "2026-11-12T15:50:00Z kod/a.py:3: error: Incompatible types\n"}, (), "ci_lokalnie.py --tylko ruff,mypy", False),
-        ({"pytest (Python 3.13, 1/20)": RUN_43439867902}, (), "awaria: usługa artefaktów GitHuba", True),
+        ({"pytest (Python 3.13, 1/20)": PLAN_NIE_PRZYSZEDL}, (), "awaria: usługa artefaktów GitHuba", True),
         ({"pytest (Python 3.13, 1/20)": WYSLANIE_ARTEFAKTU}, (), "awaria: usługa artefaktów GitHuba", True),
         ({"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_SKILLA), ZAPIS_CZASOW, WYSLANIE_CZASOW]}, (), "defekt: Mutation checks (6/6) |", False),
         ({"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_E2E), ZAPIS_NARZEDZI_TLC]}, (), "defekt: Mutation checks (6/6) |", False),
@@ -1008,7 +927,8 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"pytest (Python 3.13, 1/20)": [CHROMIUM, _wykonany("Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", "failure", POBRANIE_ARTEFAKTU)]}, (), "awaria: usługa artefaktów GitHuba", True),
         ({"Mutation checks (6/6)": [GRUPA_Z_WYJSCIA, _wykonany("Upload the mutation record", "failure", ARTEFAKT_HTTP_403)]}, (), "defekt: Mutation checks (6/6) |", False),
         ({"Mutation checks (1/22)": [GRUPA_Z_WYJSCIA, FAIL_SKILLA_Z_PODKROKIEM, DOWODY_BAZY]}, (), "defekt: Mutation checks (1/22) |", False),
-        ({"pytest (Python 3.14, Linux, 5/8)": [("Install test dependencies (Linux)", "failure", f"##[group]Run apt-get install\n{DNS}")]}, (), "defekt: pytest (Python 3.14, Linux, 5/8) |", False),
+        ({"pytest (Python 3.14, Linux, 5/8)": [Krok("Install test dependencies (Linux)", "failure", f"##[group]Run apt-get install\n{DNS}")]}, (), "defekt: pytest (Python 3.14, Linux, 5/8) |", False),
+        ({"Mutation checks (6/6)": [GRUPA_Z_WYJSCIA_W_SEKUNDZIE_KROKU_KTORY_PADL, _wykonany("Run the planned units", "failure", FAIL_E2E)]}, (), "defekt: Mutation checks (6/6) |", False),
         ({"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_E2E), PO_KROKACH_503]}, (), "defekt: Mutation checks (6/6) |", False),
         ({"pytest (Python 3.13, 1/20)": ARTEFAKT_HTTP_503}, (), "awaria: usługa artefaktów GitHuba", True),
         ({"pytest (Python 3.13, 1/20)": ARTEFAKT_HTTP_403}, (), "defekt: pytest (Python 3.13, 1/20) |", False),
@@ -1024,6 +944,7 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         "awaria-dns-przed-wyslaniem-czasow-continue-on-error", "pobranie-artefaktu-po-akcji-zlozonej", "nadmiarowy-naglowek-z-wyjscia-kroku",
         "naglowek-i-niezamkniety-podkrok-z-wyjscia-krokow-wyrownuja-liczbe",
         "naglowek-kroku-bez-znacznika-czasu",
+        "nadmiarowy-naglowek-z-wyjscia-w-sekundzie-kroku-ktory-padl",
         "linia-kroku-post-po-kroku-ktory-padl",
         "wyslanie-artefaktu-http-503", "wyslanie-artefaktu-http-403", "brak-artefaktu", "cytat-artefaktu-w-sprawdzeniu",
     ],
@@ -1031,11 +952,6 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
 def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
     logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool
 ) -> None:
-    """Sygnatura awarii liczy się tylko w kroku, który zaczerwienił zadanie, czyli w pierwszym kroku z ``failure``: krok
-    z ``continue-on-error`` i krok ``if: failure()`` po nim też drukują ``##[error]``, ale defektu nie zamieniają w awarię,
-    a gdy nagłówki kroków w logu nie pasują do kroków z API (ich liczba albo sekunda nagłówka kroku, który padł, wobec
-    jego czasów w API), porażka jest defektem."""
-
     run = _run_ci(42435998596)
     ponowienia = Ponowienia()
 
@@ -1058,8 +974,6 @@ def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_
 def test_log_zadania_windows_i_z_samym_cr_daje_ten_sam_wynik_ponowienia_co_log_z_linuksa(
     logi: dict[str, str | list[Krok]], koniec_linii: str
 ) -> None:
-    """Log zadania Windows (``\\r\\n``) i log z samym ``\\r`` albo ``\\r\\r\\n`` dają ten sam wynik co log z Linuksa."""
-
     run = _run_ci(42435998596)
     z_linuksa, z_innym_koncem = Ponowienia(), Ponowienia()
 
@@ -1090,13 +1004,13 @@ ZIELONE_ZADANIE = [
         "2026-11-18T03:52:22.0364527Z With the provided path, there will be 1 file uploaded\n"
         "2026-11-18T03:54:36.3963787Z ##[error]Failed to CreateArtifact: Unable to make request: ETIMEDOUT\n",
     ),
-    ("Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "success", "2026-11-18T03:54:36.4121958Z Post job cleanup.\n"),
+    Krok("Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "success", "2026-11-18T03:54:36.4121958Z Post job cleanup.\n"),
 ]
 BRAK_ZAPISU_CZASOW = "REQUIRED FAIL | {}: brak zapisu czasów z tego planu, więc nic nie dowodzi, że jego jednostki biegły"
 
 
 def _zielone_zadanie(**zamiany: str) -> list[Krok]:
-    return [_wykonany(nazwa, wynik, zamiany[nazwa]) if nazwa in zamiany else (nazwa, wynik, log) for nazwa, wynik, log in ZIELONE_ZADANIE]
+    return [_wykonany(krok.nazwa, krok.conclusion, zamiany[krok.nazwa]) if krok.nazwa in zamiany else krok for krok in ZIELONE_ZADANIE]
 
 
 def _werdykt_required(przyczyny: list[str]) -> list[Krok]:
@@ -1170,8 +1084,6 @@ def test_krok_wyslania_czasow_ma_w_ci_yml_nazwe_ktora_czyta_ponow_ci() -> None:
 
 
 def _kanarek(proba: int, status: str, wynik: str | None, koniec: str, log: str = DNS) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Ponowiony run 43033018567 i padnięta próba, którą narzędzie czyta: poprzednia, gdy biegnie, inaczej ostatnia."""
-
     run = _run_ci(43033018567, status=status, wynik=wynik, proba=proba, koniec=koniec)
     czytana = proba - 1 if status != "completed" else proba
     return run, _proba(run["id"], czytana, {"pytest (Python 3.14, Linux, 1/2)": log})
@@ -1203,8 +1115,6 @@ def test_wspolna_awarie_ponawia_tylko_jeden_kanarek_a_po_zielonym_kanarku_kazdy(
 
 
 def test_kanarek_utworzony_przed_setka_nowszych_runow_ci_dalej_wstrzymuje_ponowienia() -> None:
-    """Ponowienie zachowuje czas utworzenia runu, więc kanarek z runu sprzed wielu nowszych stoi na dalszej stronie."""
-
     run = _run_ci(43035363425)
     kanarek, jego_proba = _kanarek(2, "in_progress", None, "2026-11-11T14:55:00Z")
     nowsze = [_run_ci(43100000000 + numer, wynik="success", koniec="2026-11-11T14:58:00Z") for numer in range(STRONA)]
@@ -1229,9 +1139,6 @@ def test_kanarek_utworzony_przed_setka_nowszych_runow_ci_dalej_wstrzymuje_ponowi
 def test_porazka_ktora_wrocila_po_ponowieniu_runu_dostaje_odmowe_z_diagnoza(
     logi: dict[str, str], flaky: tuple[str, ...], linia: tuple[str, ...], koniec: str
 ) -> None:
-    """Zadanie PR samo ponawia padnięte testy raz, więc druga próba runu z tą samą porażką to już nie przypadek. Po awarii
-    odmowa wskazuje nowy run bez zmiany HEAD (close/reopen), bo push unieważniłby werdykt."""
-
     run = _run_ci(43033018567, proba=2, koniec=koniec)
     ponowienia = Ponowienia()
 

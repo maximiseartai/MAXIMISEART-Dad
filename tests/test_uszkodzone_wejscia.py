@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass
-from functools import cache, cached_property
+from functools import cached_property
 from datetime import date, datetime, timedelta
 import json
 import os
 from pathlib import Path, PurePath
 import random
 import shutil
-import sys
 import threading
 import zipfile
 from typing import Any, Final, NamedTuple
@@ -52,6 +50,7 @@ from tests.fixtures.centrum import (
 from tests.fixtures.bez_dostepu import allow_reading, deny_reading
 from tests.fixtures.centrum_processes import Engines
 from tests.fixtures.linie_watkow import new_line, threads_since
+from tests.fixtures.slad_plikow import LISTING, Reach, Trace, record, tracing
 from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.preparation import PERIOD, write_collective_template, write_internal_template, write_register
 from atrapy.settlement import CellValue, worker_list, write_quantity_source, write_template, write_worker_list
@@ -627,53 +626,6 @@ def _cases() -> list[Any]:
     ]
 
 
-class Reach(NamedTuple):
-    event: str
-    path: str
-
-
-Trace = list[Reach]
-_ACTIVE_TRACES: list[Trace] = []
-_LISTING = ("os.listdir", "os.scandir")
-_PATH_EVENTS = frozenset({"open", "os.listdir", "os.scandir", "os.rename", "os.remove", "os.rmdir", "os.mkdir",
-                          "shutil.copyfile", "stat", "lstat"})
-
-
-def _record(event: str, args: tuple[object, ...]) -> None:
-    if event not in _PATH_EVENTS:
-        return
-    for trace in _ACTIVE_TRACES:
-        trace.extend(Reach(event, os.fsdecode(arg)) for arg in args if isinstance(arg, str | bytes | os.PathLike))
-
-
-@cache
-def _audit_hook() -> None:
-    # ZEWNĘTRZNE: hooka audytu nie da się zdjąć, więc zostaje w workerze do końca sesji (PEP 578)
-    sys.addaudithook(_record)
-
-
-def _recorded(stat: Callable[..., os.stat_result]) -> Callable[..., os.stat_result]:
-    def recorded(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-        _record(stat.__name__, (path,))
-        return stat(path, *args, **kwargs)
-
-    return recorded
-
-
-@contextmanager
-def _tracing() -> Iterator[Trace]:
-    _audit_hook()
-    trace: Trace = []
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(os, "stat", _recorded(os.stat))
-        patch.setattr(os, "lstat", _recorded(os.lstat))
-        _ACTIVE_TRACES.append(trace)
-        try:
-            yield trace
-        finally:
-            _ACTIVE_TRACES.remove(trace)
-
-
 def _files_reached(world: World, trace: Trace) -> set[str]:
     roots = {world.root, world.root.resolve()}
     reached = {
@@ -688,7 +640,7 @@ def _files_reached(world: World, trace: Trace) -> set[str]:
         for event, path in reached
         if path == PurePath(place)
         or PurePath(place) in path.parents
-        or (event in _LISTING and path == PurePath(place).parent)
+        or (event in LISTING and path == PurePath(place).parent)
         or (kind == XLSX and path == PurePath(place).with_name(f"~${PurePath(place).name}"))
     }
 
@@ -771,7 +723,7 @@ def test_wejscie_siega_tylko_po_pliki_z_tabeli_odczytow(world_template: Path, tm
     _queue_passes_done(client)
     if entry in DIAGNOSIS_ENTRIES:
         world.engines.fail_summary = True
-    with _tracing() as trace:
+    with tracing() as trace:
         problems = ENTRIES[entry].call(client, [])
         _queue_passes_done(client)
     reached = _files_reached(world, trace)
@@ -785,7 +737,7 @@ def test_plik_czytany_tylko_przy_starcie_centrum_czyta_start(world_template: Pat
     world = World(tmp_path / "swiat")
     shutil.copytree(world_template, world.root)
     _without_dad_cases_file(world)
-    with _tracing() as trace:
+    with tracing() as trace:
         _remembering_choices(world)
 
     assert set(READ_AT_START) - _files_reached(world, trace) == set()
@@ -795,10 +747,10 @@ def test_slad_sciezek_pomija_zdarzenie_audytu_z_bajtami_ktorych_fsdecode_na_wind
     def fsdecode_like_windows(value: str | bytes | os.PathLike[str]) -> str:
         return value.decode("utf-8") if isinstance(value, bytes) else os.fspath(value)
 
-    with _tracing() as trace, pytest.MonkeyPatch.context() as patch:
+    with tracing() as trace, pytest.MonkeyPatch.context() as patch:
         patch.setattr(os, "fsdecode", fsdecode_like_windows)
-        _record("marshal.loads", (b"\xe3\x00\xff",))
-        _record("open", ("plik-taty.xlsx", "r", 524288))
+        record("marshal.loads", (b"\xe3\x00\xff",))
+        record("open", ("plik-taty.xlsx", "r", 524288))
 
     assert Reach("open", "plik-taty.xlsx") in trace
     assert "marshal.loads" not in {reach.event for reach in trace}
