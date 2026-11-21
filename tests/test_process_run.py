@@ -9,7 +9,7 @@ from typing import NoReturn
 import pytest
 
 from rozliczenia.decision import Declined
-from rozliczenia.domain import ProgressPhase
+from rozliczenia.domain import PhaseEnded, PhaseStarted, ProgressEvent, ProgressPhase
 from rozliczenia.message import Message, StopError
 from rozliczenia.phase_runner import PhaseRunner
 from rozliczenia.process_run import Counter, Finished, Outcome, Process, Stop, run_process
@@ -220,6 +220,32 @@ def test_decyzja_taty_w_trakcie_etapu_nie_liczy_sie_do_czasu_etapu_ani_czasu_uru
     assert outcome.view is not None
     assert outcome.view[ProgressPhase.READING] == 750
     assert outcome.total_duration_ms == 750
+
+
+def test_przerwany_etap_ma_czas_do_przerwania() -> None:
+    clock = ManualClock()
+    runner = PhaseRunner(None, clock=clock)
+    runner.check(lambda: clock.advance(0.05))
+
+    def read() -> None:
+        clock.advance(0.025)
+        raise RuntimeError("syntetyczny błąd")
+
+    with pytest.raises(RuntimeError):
+        runner.read(read)
+
+    assert dict(runner.durations_ms()) == {ProgressPhase.CHECKING: 50, ProgressPhase.READING: 25}
+
+
+def test_czas_uruchomienia_liczy_sie_od_utworzenia_sekwencera() -> None:
+    clock = ManualClock()
+    events: list[ProgressEvent] = []
+    runner = PhaseRunner(events.append, clock=clock)
+    clock.advance(0.1)
+
+    runner.check(lambda: clock.advance(0.05))
+
+    assert [(type(event), event.elapsed_ms) for event in events][:2] == [(PhaseStarted, 100), (PhaseEnded, 150)]
 
 
 @dataclass

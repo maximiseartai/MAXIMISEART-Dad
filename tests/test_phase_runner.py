@@ -5,7 +5,6 @@ from collections.abc import Callable
 import pytest
 
 from rozliczenia.domain import (
-    PhaseEnded,
     PhaseFailed,
     PhaseStarted,
     ProgressEvent,
@@ -14,8 +13,6 @@ from rozliczenia.domain import (
     StepReached,
 )
 from rozliczenia.phase_runner import PhaseRunner
-
-from tests.fixtures.clock import ManualClock
 
 
 def fail() -> None:
@@ -176,32 +173,6 @@ def test_obserwator_ktory_pada_jest_odlaczony_do_konca_uruchomienia_a_etapy_ida_
 
     assert [type(event) for event in seen] == [PhaseStarted]
     assert set(runner.durations_ms()) == set(ProgressPhase)
-
-
-def test_przerwany_etap_ma_czas_do_przerwania() -> None:
-    clock = ManualClock()
-    runner = PhaseRunner(None, clock=clock)
-    runner.check(lambda: clock.advance(0.05))
-
-    def read() -> None:
-        clock.advance(0.025)
-        fail()
-
-    with pytest.raises(RuntimeError):
-        runner.read(read)
-
-    assert dict(runner.durations_ms()) == {ProgressPhase.CHECKING: 50, ProgressPhase.READING: 25}
-
-
-def test_czas_uruchomienia_liczy_sie_od_utworzenia_sekwencera() -> None:
-    clock = ManualClock()
-    events: list[ProgressEvent] = []
-    runner = PhaseRunner(events.append, clock=clock)
-    clock.advance(0.1)
-
-    runner.check(lambda: clock.advance(0.05))
-
-    assert [(type(event), event.elapsed_ms) for event in events][:2] == [(PhaseStarted, 100), (PhaseEnded, 150)]
 
 
 @pytest.mark.parametrize(
