@@ -2,9 +2,10 @@ id: wyliczone-rodzaje-instrukcji-bez-odmowy
 language: python
 severity: error
 message: >-
-  pętla po instrukcjach ciała (.body) rozpoznaje je łańcuchem isinstance(..., ast.X) / elif bez else, które odmawia,
-  więc instrukcja rodzaju spoza wyliczenia (krotka w przypisaniu, blok if, try, for, with) jest cicho pominięta;
-  dodaj else, które odmawia (raise), albo bierz nazwy wiązane przez każdą instrukcję z binds w tools/lib/komunikat_mapy.py
+  pętla po instrukcjach ciała (.body, .orelse, .finalbody, .handlers) rozpoznaje je łańcuchem isinstance(..., ast.X)
+  / elif bez else, które odmawia, więc instrukcja rodzaju spoza wyliczenia (krotka w przypisaniu, blok if, try, for,
+  with) jest cicho pominięta; dodaj else, które odmawia (raise), albo bierz nazwy wiązane przez każdą instrukcję
+  z binds w tools/lib/komunikat_mapy.py
 files:
   - "**/*.py"
 metadata:
@@ -30,4 +31,4 @@ rule:
         kind: for_statement
         has:
           field: right
-          regex: '\bbody\b'
+          regex: '\b(body|orelse|finalbody|handlers)\b'

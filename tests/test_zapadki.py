@@ -2404,6 +2404,8 @@ _CHAIN = (
     "        elif isinstance(node, ast.Assign):\n            found.extend(ast.unparse(target) for target in node.targets)\n"
 )
 _EXEMPT = 'import ast\n\nSTALE = ("OPIS",)\n\n\ndef exempt(tree: ast.Module) -> set[int]:\n    return {\n'
+_NAMES = "import ast\n\n\ndef names(tree: ast.Module) -> list[str]:\n    found = []\n"
+_SEL = "        id(node.value)\n        for node in ast.walk(tree)\n"
 _LITERAL = "def literal(word: str) -> bool:\n"
 _SHLEX = "import shlex\n\n\ndef words(command: str) -> list[str]:\n"
 _PROGRAM = "def python(word: str) -> bool:\n"
@@ -2862,6 +2864,118 @@ _PROBKI_REGUL_POWROTOW: Final = [
         id="zwolnienie-po-przedrostku-nazwy-celu",
     ),
     pytest.param(
+        "postac-tlumienia-poza-wlascicielem",
+        f'{_PATTERN}re.compile(r"#\\x20*noqa\\b")\n',
+        [3],
+        id="tlumienie-po-spacji-ucieczka-x20",
+    ),
+    pytest.param(
+        "postac-tlumienia-poza-wlascicielem",
+        f'{_PATTERN}re.compile(r"#\\ *noqa\\b")\n',
+        [3],
+        id="tlumienie-po-spacji-ucieczka-ukosnikiem",
+    ),
+    pytest.param(
+        "postac-tlumienia-poza-wlascicielem",
+        f'{_PATTERN}re.compile(r"#\\s*(?P<k>noqa)")\n',
+        [3],
+        id="tlumienie-w-grupie-nazwanej",
+    ),
+    pytest.param(
+        "postac-tlumienia-poza-wlascicielem",
+        f'{_PATTERN}re.compile(r"#\\s*\\bnoqa")\n',
+        [3],
+        id="tlumienie-za-granica-slowa",
+    ),
+    pytest.param(
+        "postac-tlumienia-poza-wlascicielem",
+        f'{_PATTERN}re.compile(r"#[ \\t]*type[ \\t]*:[ \\t]*ignore")\n',
+        [3],
+        id="type-ignore-z-klasa-odstepu-przed-dwukropkiem",
+    ),
+    pytest.param(
+        "wyliczone-rodzaje-instrukcji-bez-odmowy",
+        f"{_NAMES}    for node, other in zip(tree.body, range(9)):\n{_CHAIN}    return found\n",
+        [7],
+        id="rodzaje-instrukcji-w-zip-ciala",
+    ),
+    pytest.param(
+        "wyliczone-rodzaje-instrukcji-bez-odmowy",
+        f"{_NAMES}    for node in sorted(tree.body, key=id):\n{_CHAIN}    return found\n",
+        [7],
+        id="rodzaje-instrukcji-w-posortowanym-ciele",
+    ),
+    pytest.param(
+        "wyliczone-rodzaje-instrukcji-bez-odmowy",
+        f"{_NAMES}    for node in tree.orelse:\n{_CHAIN}    return found\n",
+        [7],
+        id="rodzaje-instrukcji-w-orelse",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]).endswith("_OPIS")\n    }}\n',
+        [7],
+        id="zwolnienie-po-przyrostku-nazwy-celu",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        "import ast\n\n\ndef exempt(tree: ast.Module) -> set[int]:\n    return set(\n" + _SEL + '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "OPIS"\n    )\n',
+        [5],
+        id="zwolnienie-w-set-z-generatora",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        "import ast\n\nSTALE = (\"OPIS\",)\n\n\ndef exempt(tree: ast.Module) -> frozenset[int]:\n    return frozenset(\n" + _SEL + "        if isinstance(node, ast.AnnAssign) and node.target.id.startswith(STALE)\n    )\n",
+        [7],
+        id="zwolnienie-po-celu-przypisania-z-adnotacja",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]).startswith(("OPIS", "TEKST"))\n    }}\n',
+        [7],
+        id="zwolnienie-po-przedrostkach-w-krotce",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        f"import re\n{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and re.match("OPIS", ast.unparse(node.targets[0]))\n    }}\n',
+        [8],
+        id="zwolnienie-po-wzorcu-re-na-nazwie-celu",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        f"{_EXEMPT}{_SEL}" '        if isinstance(node, ast.Assign) and "OPIS" in ast.unparse(node.targets[0])\n    }}\n',
+        [7],
+        id="zwolnienie-po-podnapisie-nazwy-celu",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        "def files(paths: list[str]) -> set[int]:\n    return {id(path) for path in paths if path.endswith(\".py\")}\n",
+        [],
+        id="zbior-id-sciezek-po-przyrostku-przechodzi",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        "import ast\n\n\ndef exempt(tree: ast.Module, name: str) -> frozenset[int]:\n" '    return frozenset(id(node) for node in tree.body if isinstance(node, ast.Assign) and name.startswith("OPIS"))\n',
+        [],
+        id="przedrostek-parametru-zamiast-celu-przechodzi",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        "import ast\n\n\ndef loops(tree: ast.Module) -> set[int]:\n"
+        '    return {id(node) for node in ast.walk(tree) if isinstance(node, ast.For) and ast.unparse(node.target) == "i"}\n',
+        [],
+        id="cel-petli-for-zamiast-przypisania-przechodzi",
+    ),
+    pytest.param(
+        "zwolnienie-wezlow-po-nazwie-celu",
+        f"{_EXEMPT}        node.lineno\n        for node in ast.walk(tree)\n"
+        '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "OPIS"\n    }}\n',
+        [],
+        id="zbior-numerow-linii-zamiast-id-przechodzi",
+    ),
+    pytest.param("postac-tlumienia-poza-wlascicielem", f'{_PATTERN}re.compile(r"#\\s*ruff:")\n', [3], id="dyrektywa-ruff-bez-noqa"),
+    pytest.param("postac-tlumienia-poza-wlascicielem", f'{_PATTERN}re.compile(r"#\\s*NOQA")\n', [3], id="tlumienie-wielkimi-literami"),
+    pytest.param(
         "zwolnienie-wezlow-po-nazwie-celu",
         "import ast\n\n\ndef exempt(tree: ast.Module) -> frozenset[int]:\n    return frozenset(\n        id(node.value)\n        for node in ast.walk(tree)\n"
         '        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "OPIS"\n    )\n',
@@ -3009,6 +3123,7 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
     "wyliczone-rodzaje-instrukcji-bez-odmowy": {
         "rodzaje w krotce z continue przed resztą pętli": f"{_BODY}        if not isinstance(node, (ast.FunctionDef, ast.ClassDef)):\n            continue\n        found.append(node.name)\n    return found\n",
         "pętla po ast.walk zamiast ciała": "import ast\n\n\ndef names(tree: ast.Module) -> list[str]:\n    found = []\n    for node in ast.walk(tree):\n" + _CHAIN + "    return found\n",
+        "ciało w zmiennej o innej nazwie": f"{_NAMES}    statements = tree.body\n    for node in statements:\n{_CHAIN}    return found\n",
         "rodzaj węzła przez type is": f"{_BODY}        if type(node) is ast.FunctionDef:\n            found.append(node.name)\n        elif type(node) is ast.ClassDef:\n            found.append(node.name)\n    return found\n",
         "match zamiast isinstance": f"{_BODY}        match node:\n            case ast.FunctionDef(name=name):\n                found.append(name)\n            case ast.ClassDef(name=name):\n                found.append(name)\n    return found\n",
     },

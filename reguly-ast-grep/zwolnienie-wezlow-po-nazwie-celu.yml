@@ -2,9 +2,10 @@ id: zwolnienie-wezlow-po-nazwie-celu
 language: python
 severity: error
 message: >-
-  zbiór zwolnionych węzłów (id(węzeł), id(węzeł.value), także frozenset(...)) wybrany po nazwie celu przypisania
-  porównanej z nazwą wpisaną w kod albo jej przedrostkiem (["OPIS"], STALE_PROZY, .startswith("OPIS")): wyjątek dla jednej stałej zwalnia każde przypisanie tej nazwy w każdym module
-  i na każdej głębokości; zwalniaj tekst przez jego właściciela (kod, który go czyta), nie przez nazwę zmiennej
+  zbiór zwolnionych węzłów (id(węzeł), id(węzeł.value), także set() albo frozenset() z generatora) wybrany po nazwie
+  celu przypisania sprawdzonej w warunku z nazwą wpisaną w kod (["OPIS"], STALE_PROZY, .startswith("OPIS"),
+  re.match("OPIS", …)): wyjątek dla jednej stałej zwalnia każde przypisanie tej nazwy w każdym module i na każdej
+  głębokości; zwalniaj tekst przez jego właściciela (kod, który go czyta), nie przez nazwę zmiennej
 files:
   - tests/**/*.py
   - tools/**/*.py
@@ -14,8 +15,9 @@ metadata:
     - 2261/W1/r1
     - 2261/W2/r1
 rule:
-  # Zbiór id(...) z wyrażenia zbioru albo z generatora w set()/frozenset(), wybrany porównaniem albo przedrostkiem nazwy
-  # celu przypisania (.target, .targets, także [0] i .id za nimi) z napisem albo stałą WIELKIMI LITERAMI.
+  # Zbiór id(...) z wyrażenia zbioru albo z generatora w set()/frozenset(), którego warunek (if) czyta nazwę celu
+  # przypisania (.targets, a .target przy isinstance z ast.Assign albo ast.AnnAssign) i nazwę wpisaną w kod (napis albo
+  # stała WIELKIMI LITERAMI), w dowolnym porównaniu, wywołaniu albo wzorcu re.
   any:
     - kind: set_comprehension
     - kind: generator_expression
@@ -29,33 +31,26 @@ rule:
         field: body
         pattern: id($X)
     - has:
-        stopBy: end
-        any:
-          - kind: comparison_operator
-            all:
+        kind: if_clause
+        all:
+          - has:
+              stopBy: end
+              matches: nazwa-wpisana
+          - any:
               - has:
                   stopBy: end
-                  matches: nazwa-celu
-              - has:
-                  stopBy: end
-                  matches: nazwa-wpisana
-          - kind: call
-            all:
-              - has:
-                  field: function
-                  regex: '\.(startswith|endswith)$'
-                  has:
-                    stopBy: end
-                    matches: nazwa-celu
-              - has:
-                  field: arguments
-                  has:
-                    stopBy: end
-                    matches: nazwa-wpisana
+                  kind: attribute
+                  regex: '\.targets(\[[^\]]*\])?(\.id)?$'
+              - all:
+                  - has:
+                      stopBy: end
+                      kind: attribute
+                      regex: '\.target(\.id)?$'
+                  - has:
+                      stopBy: end
+                      kind: attribute
+                      regex: '^ast\.(Ann)?Assign$'
 utils:
-  nazwa-celu:
-    kind: attribute
-    regex: '\.targets?(\[[^\]]*\])?(\.id)?$'
   nazwa-wpisana:
     any:
       - kind: string

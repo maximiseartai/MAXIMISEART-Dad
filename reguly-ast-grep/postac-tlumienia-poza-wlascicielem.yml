@@ -14,11 +14,10 @@ metadata:
   przypadki:
     - 2311/W1/r2
 rule:
-  # Znacznik komentarza #, za nim tylko odstęp (\s, \t, klasa znaków, kwantyfikator), metaznaki wzorca (także . i flaga (?i)) i nazwy ruff albo
-  # flake8, potem postać tłumienia ruff albo type: ignore: gramatyka komentarza tłumienia, nie samo słowo noqa w tekście
-  # ani komunikat „ruff:” w wyjściu narzędzia.
+  # Znacznik komentarza #, za nim cokolwiek, potem postać tłumienia ruff albo type: ignore (z dowolnymi znakami wokół
+  # dwukropka): klasa wzorca, który szuka komentarza tłumienia, a nie lista zapisów odstępu.
   kind: string
-  regex: '#(\\+[st]|\s|\[[^\]]*\]|\{\d*,?\d*\}|\(\?[a-zA-Z]+\)|[(?:)|*+?.]|ruff|flake8)*(?i:noqa|ruff:|flake8:|type(\\+[st]|\s|\[[^\]]*\]|\{\d*,?\d*\}|[*+?])*:(\\+[st]|\s|\[[^\]]*\]|\{\d*,?\d*\}|[*+?])*ignore)'
+  regex: '#.*(?i:noqa|ruff:|flake8:|type[^:\n]*:.*ignore)'
   inside:
     kind: call
     stopBy: end
