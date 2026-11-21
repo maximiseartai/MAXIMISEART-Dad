@@ -1797,6 +1797,11 @@ def test_zlecenie_sprzed_dnia_wdrozenia_nie_jest_dopisane_a_powod_mowi_o_dniu_sp
 
 
 def test_dopisane_zlecenie_przelozone_przez_tate_na_jutro_zostaje_na_jutro_przy_poprawionym_raporcie(tmp_path: Path) -> None:
+    """Przegląd #1374 r4 Ważne 1 przez HTTP API: dziś 9.11. Raport Jana za 9.11 dopisuje 40000077, a tata przekłada
+    dopisany wiersz na 10.11 10:00. Wieczorem Jan przysyła poprawiony Raport za 9.11 z tym numerem. Zlecenia z dnia po
+    dziś Wpis nie zmienia (ADR 0029), także dopisanego, więc kliknięcie nie zmienia INTERMAX, a tata widzi w okienku
+    Jana odmowę z dniem 10.11."""
+
     centrum = entering_centrum(tmp_path, INTERMAX)
     _click_at(centrum, datetime(2026, 11, 8, 18), [])
     added = report(JAN, SUBJECT, "40000077 tak montaż ONT", at=datetime(2026, 11, 9, 17))
@@ -2613,6 +2618,10 @@ def test_wpis_na_zyczenie_przy_t_wpisuje_tak_z_czynnosciami_a_blad_nie_wraca_prz
 
 
 def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_a_reczna_wartosc_taty_zostaje(tmp_path: Path) -> None:
+    """US 49–50: późniejszy Raport Jana wygrywa z Wpisem na życzenie także wtedy, gdy znowu ma ``t``: błąd wraca z
+    przyciskiem, a drugie kliknięcie znowu go wpisuje. Poprawny Raport z 20:00 wygrywa z oboma. Przy zleceniu z ręcznymi czynnościami taty Wpis na życzenie wpisuje ``nie`` do pustego
+    ``SKUTECZNE``, a czynności taty zostają z różnicą „Zostaw moją”."""
+
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)), raw=())
     first = report(JAN, SUBJECT, "40000001 t inst20m\n40000005 n brak dostępu", at=datetime(2026, 11, 9, 17))
     centrum = entering_centrum(tmp_path, intermax, [first])
@@ -3112,6 +3121,11 @@ def _reminder_result(centrum: EnteringCentrum) -> dict[str, Any]:
 def test_praca_przypomnien_wysyla_przypomnienie_do_atrapy_smtp_raz_w_porze_takze_po_restarcie_centrum(
     tmp_path: Path,
 ) -> None:
+    """Kryterium #1349: o 8:30 dnia po dniu zleceń Centrum wysyła przez SMTP przypomnienie Wykonawcy z listy, który ma
+    zlecenia 9.11 i nie przysłał raportu, ze stopką taty, czytając INTERMAX otwarty w Excelu tylko do odczytu; druga
+    minuta tej samej pory i Centrum po restarcie w tej porze nie wysyłają drugiego, bo pamięcią są „Wysłane”, a
+    INTERMAX i skrzynka zostają bez zmian (US 31–36, 42–43, 46)."""
+
     anna_report = _report_in_inbox(1, ANNA, "Raport 09.11.2026", datetime(2026, 11, 9, 19, 0))
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[anna_report]) as imap, AtrapaSmtp(imap) as smtp:
         mailbox = ImapInbox(
@@ -3305,6 +3319,12 @@ Tata
 def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_przed_ustawieniami(
     tmp_path: Path, rollout: bytes, footer: bytes, text: str
 ) -> None:
+    """Kryterium #1476: po Aktualizacji tata nic nie zmienia, a pierwszy start przenosi dzień wdrożenia i stopkę z plików
+    Maksa do Ustawień, więc o 8:30 dnia po dniu zleceń idą te same przypomnienia co przed Wydaniem, z tym samym tematem,
+    pierwszym zdaniem i stopką bajt w bajt (wzór Raportu wykonawcy ma kody czynności, ADR 0039), a druga minuta pory nie
+    wysyła drugiego (ADR 0030, DESIGN §3). Stopka z Notatnika (BOM i CRLF) szła przed Wydaniem z CRLF między liniami i
+    tak samo idzie po nim."""
+
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
     (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
@@ -3331,6 +3351,10 @@ def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_p
 def test_zmiana_pory_i_godziny_pierwszego_przypomnienia_dziala_od_nastepnego_sprawdzenia_bez_ponownego_startu(
     tmp_path: Path,
 ) -> None:
+    """Kryterium #1476 (US 49): o 7:30 przypomnienia przy porach z ADR 0030 śpią; tata przesuwa poranną porę na 7:00 i
+    następne sprawdzenie czyta skrzynkę, ale nic nie wysyła, bo pierwsze przypomnienie idzie od 8:00; tata przesuwa je na
+    7:00 i następne sprawdzenie w tej samej porze wysyła przypomnienia, bez ponownego startu Centrum."""
+
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3402,6 +3426,10 @@ def test_przesuniecie_poczatku_pory_po_wysylce_nie_daje_drugiego_maila_tej_samej
 
 
 def test_pory_bez_zmian_od_kilku_dni_dalej_chronia_poranna_wyslana_przed_ich_przesunieciem(tmp_path: Path) -> None:
+    """Decyzja W1 (#1568): pory z ADR 0030 obowiązują od sprawdzenia 8.11; 10.11 o 8:05 idzie poranne przypomnienie, a
+    tata przesuwa poranną na 9:00–17:00. Pory sprzed doby dalej mówią, że 8:05 była w porannej, więc o 9:01 drugiego
+    porannego nie ma."""
+
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3424,6 +3452,10 @@ def test_pory_bez_zmian_od_kilku_dni_dalej_chronia_poranna_wyslana_przed_ich_prz
 def test_pora_ktora_dzis_jeszcze_nie_poszla_po_zmianie_por_wysyla_przypomnienie_od_nastepnego_sprawdzenia(
     tmp_path: Path,
 ) -> None:
+    """Decyzja W1 (#1568): o 13:00 przy porach z ADR 0030 idzie poranne przypomnienie; tata skraca poranną do 12:00 i
+    zaczyna wieczorną o 12:30, więc 13:00 leży teraz w wieczornej, ale mail poszedł w porannej. Wieczorna dziś jeszcze
+    nie poszła, więc następne sprawdzenie ją wysyła, a jeszcze następne nie wysyła drugiej."""
+
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3522,6 +3554,11 @@ def test_w_dniu_aktualizacji_bez_pliku_por_wyslane_przez_stara_wersje_licza_tylk
 
 
 def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_sprzed_zmiany(tmp_path: Path) -> None:
+    """Zapas zegara (``CLOCK_MARGIN``): o 7:30 praca sprawdza przy porannej 7:00–9:00, tata wydłuża ją do 17:00, a
+    sprawdzenie o 9:30 wysyła przypomnienia. Zegar Gmaila spóźnia się o półtorej minuty, więc „Wysłane” mają 9:28:30,
+    jeszcze przed zapisem nowych pór. Po ponownym starcie o 9:35 te maile dalej zamykają poranną, choć przy porach sprzed
+    zmiany 9:28:30 leży poza porą."""
+
     mailbox = SentFolderMailbox(gmail_clock=-timedelta(seconds=90))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3547,6 +3584,12 @@ def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_s
 
 
 def test_zegar_gmaila_spieszacy_sie_o_poltorej_minuty_nie_gubi_por_sprzed_zmiany(tmp_path: Path) -> None:
+    """Zapas zegara (``CLOCK_MARGIN``) w drugą stronę (przegląd #1568 r3, D1): przy porannej 8:00–9:00 i wieczornej
+    9:00–22:00 przypomnienia idą o 8:30 i o 9:29 (wieczorna). Tata przesuwa granicę pór na 9:40, sprawdzenie o 9:30
+    zapisuje nowe pory, a zegar Gmaila spieszy się o półtorej minuty, więc „Wysłane” mają 9:30:30, już po zapisie
+    nowych pór, w których to poranna. Te maile dalej zamykają wieczorną przy porach sprzed zmiany, więc sprawdzenie
+    o 9:45 w nowej wieczornej nie wysyła drugiego."""
+
     mailbox = SentFolderMailbox(gmail_clock=timedelta(seconds=90))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3590,6 +3633,10 @@ _NAIVE_SCHEDULES = b"""{"schema_version": 1,
 def test_nieczytelny_plik_por_liczy_wyslane_takze_przy_biezacych_porach_az_po_nastepny_start(
     tmp_path: Path, broken: bytes
 ) -> None:
+    """Przy porannej 6:00–17:00 przypomnienia idą o 7:00, poza porami z ADR 0030. Plik pór psuje się, a Centrum
+    startuje znowu o 7:30 i o 7:45: nie wiadomo, przy jakich porach ta wersja wysyłała, więc maile z 7:00 zamykają
+    poranną przy porach z ADR 0030 i przy bieżących, także po starcie, przed którym praca zapisała plik od nowa."""
+
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3628,6 +3675,10 @@ def _pory(draw: st.DrawFn) -> tuple[tuple[time, time], tuple[time, time]]:
 def test_nieudany_zapis_por_wstrzymuje_wysylke_az_do_zapisu_wiec_ponowny_start_nie_daje_drugiego_maila(
     tmp_path: Path,
 ) -> None:
+    """Przy porannej 6:00–17:00 sprawdzenie o 7:00 nie zapisuje pór (plik tymczasowy zajęty), więc nie wysyła: po
+    ponownym starcie bez pliku pór mail z 7:00 liczyłby się przy porach z ADR 0030, poza porą. Po zwolnieniu pliku
+    następna minuta zapisuje pory i wysyła, a Centrum po ponownym starcie nie wysyła drugiego."""
+
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3769,6 +3820,10 @@ def config_files(config: Path) -> dict[str, bytes]:
 
 
 def test_wylaczone_przypomnienia_nic_nie_wysylaja_a_wlaczone_w_nocy_i_przed_8_dnia_nastepnego_tez_nie(tmp_path: Path) -> None:
+    """Wyłączone w Ustawieniach przypomnienia nie czytają skrzynki, nic nie wysyłają i nie zostawiają śladu; po włączeniu
+    przełącznikiem w dniu zleceń Centrum czyta skrzynkę raz w porze, ale za ten dzień nic nie wysyła, a w nocy i przed
+    8:00 dnia następnego nawet nie czyta (US 32–33, 40–41)."""
+
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3862,6 +3917,10 @@ def test_odmowa_wysylki_przez_gmail_nie_ponawia_wysylki_do_konca_pory(tmp_path: 
 def test_seria_przypomnien_ktora_wyszla_poza_pore_czeka_z_reszta_na_nastepna_pore(
     tmp_path: Path, started: datetime, later: datetime
 ) -> None:
+    """Gdy zegar w trakcie serii przypomnień wyjdzie poza porę, w której seria ruszyła (minęła 22:00 albo 17:00, laptop
+    zasnął i obudził się rano albo wieczorem innego dnia), reszta serii nie idzie, a wysłane przypomnienie ma chwilę
+    swojej wysyłki, nie początku sprawdzenia, w mailu i w wyniku dla widoku Raporty (ADR 0030 „nigdy w nocy”)."""
+
     class TickingMailbox(FakeMailbox):
         def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
             outcome = super().send(reminder, at)
@@ -3885,6 +3944,10 @@ def test_seria_przypomnien_ktora_wyszla_poza_pore_czeka_z_reszta_na_nastepna_por
 
 
 def test_seria_porannych_przypomnien_przerwana_o_17_reszta_idzie_dopiero_o_18_bez_duplikatu(tmp_path: Path) -> None:
+    """Seria porannych przypomnień zaczęta o 16:59 staje o 17:00: reszta nie idzie ani wtedy, ani w sprawdzeniu o 17:30,
+    tylko o 18:00 jako wieczorne, po jednym do każdego Wykonawcy, a minuta później żadne (decyzja Maksa 12.11, ADR
+    0030: poranne przypomnienie nie nadrabia się od 17:00)."""
+
     started, first_send = datetime(2026, 11, 10, 16, 59), datetime(2026, 11, 10, 16, 59, 30)
     evening = datetime(2026, 11, 10, 18, 0)
 
@@ -3932,6 +3995,12 @@ def _filed_at(mailbox: FakeMailbox) -> list[datetime]:
 def test_przypomnienie_wyslane_przed_brakiem_sieci_nie_idzie_drugi_raz_zanim_gmail_polozy_je_w_wyslanych(
     tmp_path: Path,
 ) -> None:
+    """Sprawdzenie wysyła przypomnienie Annie, a przy Janie sieć znika, więc pora zostaje otwarta. Następna minuta tej
+    samej pory wysyła tylko Janowi, choć Gmail jeszcze nie położył przypomnienia Anny w „Wysłanych”: maile wysłane w
+    tej pracy Centrum praca pamięta sama (ADR 0030 „Najwyżej jedno w każdej porze”), a widok Raporty pokazuje oba
+    przypomnienia do końca pory. O 18:00 Gmail położył już tylko przypomnienie Anny, a widok pokazuje każde poranne
+    raz: przypomnienia Jana z 8:31 nie zakrywa przypomnienie Anny z „Wysłanych” wysłane minutę wcześniej."""
+
     class NetworkGoneAtJan(FakeMailbox):
         def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
             self.send_outcome = InboxUnreachable("TimeoutError") if len(self.sends) == 1 else MailSent()
@@ -3968,6 +4037,9 @@ def test_przypomnienie_wyslane_przed_brakiem_sieci_nie_idzie_drugi_raz_zanim_gma
 
 
 def _pora_changed_twice(centrum: EnteringCentrum) -> list[tuple[str, str, datetime]]:
+    """Sprawdzenie o 8:30 wysyła poranne przypomnienia, a tata dwa razy zmienia poranną porę, każda zmiana minutę
+    później (#1568). Wynik: widok Raporty po pierwszej zmianie; ten po drugiej zostaje w pliku wyniku."""
+
     _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
@@ -4004,6 +4076,11 @@ def test_zmiana_por_tuz_po_wysylce_widok_raporty_pokazuje_przypomnienia_zanim_gm
 def test_wieczorem_po_polozeniu_przez_gmaila_widok_pokazuje_raz_poranne_wykonawcy_z_dwoma_adresami_z_wolnej_serii(
     tmp_path: Path,
 ) -> None:
+    """Anna ma dwa adresy, a odczyt skrzynki w sprawdzeniu z 8:30 trwa do 8:34, więc poranne przypomnienia idą o 8:34,
+    dalej niż ``CLOCK_MARGIN`` od początku sprawdzenia. Wieczorem Gmail położył je już w „Wysłanych”, a widok Raporty
+    pokazuje każde poranne raz: mail z pamięci tej pracy ma tych samych adresatów i chwilę wysyłki co mail z
+    „Wysłanych”, więc to ten sam mail."""
+
     sent_at = datetime(2026, 11, 10, 8, 34)
     mailbox = FakeMailbox(filed_after=0, during=lambda: centrum.moment.append(sent_at) if not mailbox.sends else None)
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
@@ -4191,6 +4268,10 @@ def test_plik_ustawien_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia
 
 
 def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_z_ostatniego_sprawdzenia_pracy(tmp_path: Path) -> None:
+    """Decyzja 4A Maksa przy porze taty spoza pór ADR 0030: wczoraj praca sprawdzała w porannej porze taty 6:00–7:30,
+    a dziś OneDrive trzyma plik Przypomnień od startu Centrum do końca tej pory. Porę zna plik pór pracy z wczoraj, więc
+    pierwsze sprawdzenie po 7:30 zostawia w dzienniku Centrum wpis z nazwą pliku, a nie czeka na porę z ADR 0030."""
+
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4214,6 +4295,11 @@ def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_z_ostatn
 
 
 def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_zmieniona_poza_pora(tmp_path: Path) -> None:
+    """Decyzja 4A Maksa po zmianie pór poza porą: wczoraj praca sprawdzała w wieczornej porze z ADR 0030, o 22:30 tata
+    przesunął poranną porę na 6:00–7:30 i zamknął Centrum przed nią, a dziś OneDrive trzyma plik Przypomnień od startu
+    Centrum do końca tej pory. Pory z odczytu poza porą zna plik pór pracy, więc pierwsze sprawdzenie po 7:30 zostawia
+    w dzienniku Centrum wpis z nazwą pliku, a nie czeka na porę z ADR 0030."""
+
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4455,6 +4541,11 @@ def test_szczegoly_dnia_maja_przy_zleceniu_tak_kody_z_opisu_albo_brak_kodu_a_prz
 def test_praca_przypomnien_czyta_wpisy_od_cyfr_zlecen_z_tego_samego_odczytu_intermax_co_wpisanie_raportow(
     tmp_path: Path,
 ) -> None:
+    """ADR 0041 (historia 14): okres 03_09_11_2026 ma Plik zbiorczy, a Jan przysyła 10.11 wieczorem Raport z pomylonym
+    tematem 11.11 z dwoma numerami swoich zleceń: z 10.11 i siedmiocyfrowym z 9.11. Przypomnienia czytają INTERMAX od
+    ``Window.start``, jak Wpisanie raportów, więc krótszy numer z dnia zamkniętego jest Wpisem, a nie słowem opisu, dwa
+    niezgodne Wpisy to pomylony temat i raport liczy się za 10.11: o 8:30 11.11 przypomnienie dostaje tylko Anna."""
+
     intermax = Intermax(
         ordered=(_order(9, 9, "jan.testowy", 4000007), _order(10, 9, "jan.testowy", 40000005), _order(10, 11, "anna.kowalska", 40000006)),
         raw=(),
@@ -4476,6 +4567,12 @@ def test_praca_przypomnien_czyta_wpisy_od_cyfr_zlecen_z_tego_samego_odczytu_inte
 
 
 def test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu(tmp_path: Path) -> None:
+    """ADR 0041 (historia 14), W1 r1 #2059: Jan przysyła 10.11 rano raport za 10.11 z datą 9.11 i dwoma numerami,
+    których INTERMAX jeszcze nie ma, a kliknięcie o 7:00 dopisuje oba Janowi na 9.11. Wieczorem przychodzi ten sam
+    raport z dobrą datą. Kafelek Wpisania z pamięcią tego kliknięcia liczy raport za 9.11 i za 10.11, bo numery dopisane
+    przez Centrum nie robią z tematu pomylonego, więc praca przypomnień, która czyta tę samą pamięć, o 8:30 11.11 nie
+    przypomina Janowi o 10.11; przypomnienie dostaje tylko Anna bez raportu."""
+
     intermax = Intermax(
         ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000005), _order(10, 11, "anna.kowalska", 40000006)),
         raw=(),
@@ -4522,6 +4619,12 @@ def test_raport_bez_dnia_w_temacie_nie_konczy_przypomnien_za_dzien_sprzed_wdroze
 
 
 def test_raport_bez_dnia_w_temacie_z_dnia_wdrozenia_wpisania_konczy_przypomnienie_za_ten_dzien(tmp_path: Path) -> None:
+    """ADR 0041 (historia 20): przypomnienia działają od 9.11, a Wpisanie raportów od pierwszego kliknięcia 10.11. Jan
+    przysyła 10.11 wieczorem sam ``Raport`` z numerem swojego zlecenia z 10.11, więc kafelek Wpisania liczy go za 10.11
+    (dzień wskazany od dnia wdrożenia Wpisania). Praca przypomnień 11.11 o 8:30 czyta ten sam dzień wdrożenia z pamięci
+    Wpisania, więc przypomina tylko Annie; z pamięcią bez dnia wdrożenia dzień wskazany zaczynałby się od dziś i Jan
+    dostałby przypomnienie za 10.11."""
+
     intermax = Intermax(ordered=(_order(10, 9, "jan.testowy", 40000004), _order(10, 11, "anna.kowalska", 40000006)), raw=())
     mailbox = FakeMailbox(outcome=(report(JAN, "Raport", "40000004 tak inst20m", at=datetime(2026, 11, 10, 20)),))
     centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
@@ -4674,6 +4777,12 @@ def test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_prz
 def test_praca_przypomnien_czyta_okno_od_wdrozenia_wpisania_raportow_gdy_jest_wczesniejsze_niz_wdrozenie_przypomnien(
     tmp_path: Path,
 ) -> None:
+    """ADR 0041 (historia 14), forma siostrzana W1 r1 #2059: Wpisanie raportów działa od 8.11, przypomnienia od 9.11.
+    Jan przysyła Raport z tematem 9.11 z dwoma numerami swoich zleceń z 8.11, czyli pomylony temat, który kafelek
+    Wpisania liczy za 8.11. Praca przypomnień czyta okno od 8.11 jak Wpisanie, więc zna te zlecenia i o 8:30 10.11
+    przypomina Janowi o 9.11, za który raportu nie ma; za 8.11, dzień sprzed wdrożenia przypomnień, nie przypomina
+    nikomu, także Annie bez raportu."""
+
     intermax = Intermax(
         ordered=(
             _order(8, 9, "jan.testowy", 40000001),
