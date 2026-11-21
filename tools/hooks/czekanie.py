@@ -45,7 +45,7 @@ gotowość serwera z zadania w tle (``curl … && break``), którego koniec nie 
 (``$GH run rerun``), z opcją ``gh`` innej niż ``-R`` z wartością w osobnym słowie między ``run`` a ``rerun`` i przez
 skrypt albo program inny niż ``gh``.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
-(``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową.
+(``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową i ``slowa_powloki``.
 """
 
 from __future__ import annotations
@@ -54,9 +54,14 @@ from bisect import bisect_left
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import json
+from pathlib import Path
 import re
 import sys
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+from slowa_powloki import QUOTED, unquoted
 
 _GH = r"\bgh(?:-axi)?\s+"
 ASKS_CI = re.compile(_GH + r"(?:pr\s+(?:checks|view)|run\s+(?:view|list|watch))")
@@ -75,10 +80,7 @@ ADRES_PONOWIENIA = re.compile(r"actions/(?:runs/[^/\s]+(?:/attempts/[^/\s]+)?/re
 SIMPLE_COMMANDS = re.compile(r"[;&|\n()`]|\$\(")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
 _PLAIN = r"[^ \t\r\n'\"\\]*"
-_QUOTED = r"\\([\s\S])|'([^']*)'|\"([^\"\\]*(?:\\[\s\S][^\"\\]*)*)\""
-WORD = re.compile(rf"[ \t\r\n]*({_PLAIN}(?:(?:{_QUOTED}){_PLAIN})*)")
-WORD_PART = re.compile(_QUOTED)
-ESCAPED_IN_DOUBLE_QUOTES = re.compile(r"\\([\\\"])")
+WORD = re.compile(rf"[ \t\r\n]*({_PLAIN}(?:(?:{QUOTED}){_PLAIN})*)")
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 TASK_OUTPUT = re.compile(r"\btasks/[^/\s]*\.output\b")
 ASSIGNMENT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(\S*)")
@@ -391,17 +393,8 @@ def _words(command: str) -> list[str]:
         if unclosed:
             return command.split()
         if word:
-            words.append(WORD_PART.sub(_unquoted, word))
+            words.append(unquoted(word))
     return words
-
-
-def _unquoted(part: re.Match[str]) -> str:
-    escaped, single, double = part.groups()
-    if escaped is not None:
-        return escaped
-    if single is not None:
-        return single
-    return ESCAPED_IN_DOUBLE_QUOTES.sub(r"\1", double)
 
 
 def _reruns(shell: str) -> bool:

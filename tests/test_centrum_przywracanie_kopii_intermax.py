@@ -1,10 +1,3 @@
-"""Przywracanie Kopii INTERMAX z Ustawień Centrum rozliczeń przez HTTP API, jak widzi je przeglądarka (#472).
-
-Okno Ustawień wymienia Kopie INTERMAX od najnowszej z datą i godziną z nazwy, a przywrócenie wybranej najpierw robi
-Kopię stanu bieżącego ``INTERMAX przed przywróceniem RRRR-MM-DD GG-MM-SS.xlsx``, potem atomowo podmienia INTERMAX
-(ADR 0019). Odmowa zostawia INTERMAX i Kopie takie, jak były.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -62,9 +55,6 @@ def _refused(centrum: OrderingCentrum, name: str) -> dict[str, str]:
 
 
 def _ordered(tmp_path: Path, periods_directory: Path | None = None) -> OrderingCentrum:
-    """Centrum po Uporządkowaniu INTERMAX o 14:05:07 z jego Kopią; zegar procesu stoi dalej na 16:35:07.
-    ``periods_directory``: tata wskazał też folder okresów."""
-
     centrum = ordering_centrum(tmp_path, periods_directory=periods_directory)
     assert centrum.run_to_end()["result"]["ending"] == "finished"
     centrum.clock.moments = [LATER]
@@ -95,9 +85,9 @@ def test_konfiguracja_wymienia_kopie_obu_nazw_od_najnowszej_z_chwila_i_slowami_z
             _name("przywróceniem", earlier + timedelta(days=3)),
         ],
     )
-    # Pliki, których narzędzie nie robi: inna nazwa i nazwa z nieistniejącą datą.
-    for other in ("INTERMAX.xlsx", "INTERMAX przed uporządkowaniem 2026-13-01 10-00-00.xlsx"):
-        (centrum.copies / other).write_bytes(b"inny plik")
+    other_name, nonexistent_date = "INTERMAX.xlsx", "INTERMAX przed uporządkowaniem 2026-13-01 10-00-00.xlsx"
+    for not_made_by_tool in (other_name, nonexistent_date):
+        (centrum.copies / not_made_by_tool).write_bytes(b"inny plik")
 
     listed = _listed(centrum)
 
@@ -119,12 +109,12 @@ def test_konfiguracja_wymienia_kopie_obu_nazw_od_najnowszej_z_chwila_i_slowami_z
 def test_chwila_kopii_idzie_do_przegladarki_w_utc_takze_na_komputerze_w_strefie_taty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Schemat przeglądarki przyjmuje tylko chwilę w UTC („Z”); na komputerze w UTC każda chwila tak wygląda.
     if sys.platform == "win32":
         pytest.skip("time.tzset jest tylko w systemach POSIX")
     monkeypatch.setenv("TZ", "Europe/Warsaw")
     time.tzset()
     try:
+        assert NOW.astimezone().utcoffset() != timedelta(0)
         centrum = ordering_centrum(tmp_path)
         _copies_like_tool(centrum, [ORDERED])
 
@@ -144,7 +134,7 @@ def test_po_uporzadkowaniu_konfiguracja_wymienia_jego_kopie(tmp_path: Path) -> N
 
 def test_folderu_kopii_ktorego_nie_da_sie_odczytac_konfiguracja_nazywa_a_przywrocenie_odmawia(tmp_path: Path) -> None:
     centrum = ordering_centrum(tmp_path)
-    centrum.copies.write_bytes(b"")  # plik zamiast folderu Kopii
+    centrum.copies.write_bytes(b"")
     before = centrum.register.read_bytes()
 
     listed = _listed(centrum)
@@ -196,9 +186,9 @@ def test_przywrocenie_mozna_cofnac_przywracajac_kopie_stanu_sprzed_przywrocenia(
 
 def test_limit_dziesieciu_kopii_obejmuje_obie_nazwy_wedlug_chwili_z_nazwy(tmp_path: Path) -> None:
     centrum = _ordered(tmp_path)
-    # Najstarsza jest Kopia przed uporządkowaniem, choć po nazwie „przed przywróceniem” stoi wcześniej w alfabecie.
     oldest = _name("uporządkowaniem", datetime(2026, 10, 1, 8, 0, 0))
     older = [_name("przywróceniem", datetime(2026, 10, day, 8, 0, 0)) for day in range(2, 11)]
+    assert min([oldest, *older]) != oldest
     _copies_like_tool(centrum, [oldest, *older])
 
     restored = _restore(centrum, ORDERED)
@@ -212,7 +202,7 @@ def test_gdy_starszych_kopii_nie_da_sie_usunac_przywrocenie_konczy_sie_ostrzezen
     centrum = _ordered(tmp_path)
     kopia = (centrum.copies / ORDERED).read_bytes()
     stuck = _name("uporządkowaniem", datetime(2026, 9, 1, 8, 0, 0))
-    (centrum.copies / stuck).mkdir()  # najstarszej „Kopii” system nie usunie jak pliku
+    (centrum.copies / stuck).mkdir()
     _copies_like_tool(centrum, [_name("przywróceniem", datetime(2026, 10, day, 8, 0, 0)) for day in range(1, 10)])
 
     body = _restore(centrum, ORDERED).json()
@@ -245,13 +235,11 @@ def test_przywrocenie_odmawia_przy_otwartym_intermax_i_niczego_nie_zmienia(tmp_p
 
 @dataclass
 class OpeningClock(Clock):
-    """Zegar procesu, przy którego pytaniu tata otwiera INTERMAX ``opened`` w Excelu (``None``: nie otwiera)."""
-
-    opened: Path | None = None
+    opens_in_excel_on_tick: Path | None = None
 
     def __call__(self) -> datetime:
-        if self.opened is not None:
-            open_in_excel(self.opened)
+        if self.opens_in_excel_on_tick is not None:
+            open_in_excel(self.opens_in_excel_on_tick)
         return super().__call__()
 
 
@@ -260,7 +248,7 @@ def test_intermax_otwarty_w_excelu_w_chwili_kopii_stanu_biezacego_to_odmowa_bez_
     centrum = ordering_centrum(tmp_path, clock=clock)
     assert centrum.run_to_end()["result"]["ending"] == "finished"
     before, kopie = centrum.register.read_bytes(), _kopie(centrum)
-    clock.opened = centrum.register
+    clock.opens_in_excel_on_tick = centrum.register
 
     refused = _refused(centrum, ORDERED)
 
@@ -289,7 +277,7 @@ def test_nieudana_kopia_stanu_biezacego_niczego_nie_podmienia(tmp_path: Path) ->
 def test_drugie_przywrocenie_w_tej_samej_sekundzie_mowi_ze_kopie_przywrocono_przed_chwila(tmp_path: Path) -> None:
     centrum = _ordered(tmp_path)
     assert _restore(centrum, ORDERED).json()["state"] == "restored"
-    centrum.clock.moments = [LATER]  # druga karta przywraca w tej samej sekundzie zegara
+    centrum.clock.moments = [LATER]
     before, kopie = centrum.register.read_bytes(), _kopie(centrum)
 
     refused = _refused(centrum, BEFORE_RESTORE)
@@ -335,14 +323,12 @@ _TO_MISSING_WORKBOOK = (
 )
 
 
-def _zip_without_workbook(relationships: str | None = None) -> bytes:
-    """Zip bez dokumentu skoroszytu; ``relationships``: treść relacji paczki (``_rels/.rels``), gdy jakaś jest."""
-
+def _zip_without_workbook(package_rels: str | None = None) -> bytes:
     archive = BytesIO()
     with zipfile.ZipFile(archive, "w") as written:
         written.writestr("[Content_Types].xml", "<Types/>")
-        if relationships is not None:
-            written.writestr("_rels/.rels", relationships)
+        if package_rels is not None:
+            written.writestr("_rels/.rels", package_rels)
         written.writestr("xl/worksheets/sheet1.xml", "<worksheet/>")
     return archive.getvalue()
 
@@ -373,9 +359,6 @@ def test_uszkodzona_kopia_nie_jest_przywracana(tmp_path: Path, damaged: bytes) -
 
 
 def _with_workbook_in(content: bytes, part: str) -> bytes:
-    """Skoroszyt ``content`` z dokumentem skoroszytu w części ``part`` zamiast ``xl/workbook.xml``: relacje paczki go
-    wskazują, więc to dalej skoroszyt, tylko zapisany inaczej niż przez Excel."""
-
     renamed = {"xl/workbook.xml": part, "xl/_rels/workbook.xml.rels": f"xl/_rels/{part.rsplit('/', 1)[1]}.rels"}
     archive = BytesIO()
     with zipfile.ZipFile(BytesIO(content)) as source, zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as written:
@@ -407,7 +390,7 @@ def test_kopia_usunieta_miedzy_lista_a_odczytem_to_komunikat_ze_jej_juz_nie_ma(
 
     def deleted_after_listing(directory: Path) -> list[intermax_copies.Copy]:
         found = listed(directory)
-        (directory / ORDERED).unlink(missing_ok=True)  # np. tata usuwa ją w Eksploratorze
+        (directory / ORDERED).unlink(missing_ok=True)
         return found
 
     monkeypatch.setattr(intermax_copies, "listed", deleted_after_listing)
@@ -499,11 +482,14 @@ def test_nieudany_zapis_obok_intermax_to_odmowa_bez_nowej_kopii(tmp_path: Path) 
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
 
 
+def _without_last_byte(data: bytes) -> bytes:
+    return data[:-1]
+
+
 def test_plik_obok_intermax_z_innymi_bajtami_niz_kopia_to_odmowa_bez_podmiany_i_nowej_kopii(tmp_path: Path) -> None:
     centrum = _ordered(tmp_path)
     before, kopie = centrum.register.read_bytes(), _kopie(centrum)
-    # Zapis obok INTERMAX gubi ostatni bajt (pełny dysk, antywirus, OneDrive), a odczyt pliku się udaje.
-    centrum.disk.write = writing(lambda data: data[:-1])
+    centrum.disk.write = writing(_without_last_byte)
 
     refused = _refused(centrum, ORDERED)
 
@@ -512,15 +498,16 @@ def test_plik_obok_intermax_z_innymi_bajtami_niz_kopia_to_odmowa_bez_podmiany_i_
     assert sorted(path.name for path in centrum.register.parent.iterdir()) == [ORDER_BASE_NAME, REGISTER_NAME]
 
 
-def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa_odrzucone(tmp_path: Path) -> None:
-    """Także Wpisanie raportów, które pisze do tego samego INTERMAX, nie startuje w trakcie przywracania."""
-
+def _ready_for_report_entering(tmp_path: Path) -> OrderingCentrum:
     periods_directory = tmp_path / "Okresy"
     periods_directory.mkdir()
     centrum = _ordered(tmp_path, periods_directory)
-    # Wpisanie raportów bez folderu okresów i adresu na Liście Wykonawców odmawia startu, zanim zapyta o miejsce „jedno
-    # naraz”.
     write_worker_list(ToolDirectory(tmp_path).worker_list, worker_list(addresses={"adrian.testowy": ["adrian@przyklad.invalid"]}))
+    return centrum
+
+
+def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa_odrzucone(tmp_path: Path) -> None:
+    centrum = _ready_for_report_entering(tmp_path)
     during: dict[str, Any] = {}
 
     def replacing(source: Path, target: Path) -> None:

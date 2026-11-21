@@ -14,7 +14,7 @@ extend-exclude = [".claude"]
 
 [per-file-target-version]
 # Systemowy Python (na Macu 3.9) uruchamia je przed .venv: bramę pre-push, hooki Claude Code (czekania, zabijania, zgody,
-# ciężkich poleceń, pracy w tle, strażnika koordynatora i Pythona sesji) i setup_worktree razem z potomne i repo, które importują.
+# ciężkich poleceń, pracy w tle, strażnika koordynatora i Pythona sesji) i setup_worktree razem z potomne, repo i slowa_powloki, które importują.
 # tests/test_systemowy_python.py importuje je tym Pythonem, gdy jest, i łapie też API.
 "tools/hooks/pre-push" = "py39"
 "tools/hooks/ciezkie.py" = "py39"
@@ -28,6 +28,7 @@ extend-exclude = [".claude"]
 "tools/lib/potomne.py" = "py39"
 "tools/lib/repo.py" = "py39"
 "tools/lib/ostatnie_linie.py" = "py39"
+"tools/lib/slowa_powloki.py" = "py39"
 
 [lint]
 extend-select = [
@@ -152,7 +153,7 @@ extend-select = [
 "typing_extensions.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
 # Strumieniowy lekser shlex.shlex w hooku czekania (#2295 W3 r2) obcinał polecenie za # w słowie i za cudzysłowem bez
 # pary, więc dalsze polecenia proste hook przepuszczał; kod usunięto z PR, a zakaz trzyma go przed powrotem.
-"shlex.shlex".msg = "nie czytaj polecenia powłoki strumieniowym lekserem shlex.shlex: jego komentarz (#) i ValueError cudzysłowu bez pary obcinają resztę polecenia inaczej niż bash; słowa polecenia w hooku czyta _words z tools/hooks/czekanie.py, a gdzie indziej shlex.split"
+"shlex.shlex".msg = "nie czytaj polecenia powłoki strumieniowym lekserem shlex.shlex: jego komentarz (#) i ValueError cudzysłowu bez pary obcinają resztę polecenia inaczej niż bash; słowa polecenia w hooku czytaj z cudzysłowami przez QUOTED i unquoted z tools/lib/slowa_powloki.py, a gdzie indziej shlex.split"
 # Prywatny dowód modułu w konstruktorze typu (wzór run_logs_guard._MINTED) i fabryka, która go wkłada (refusal._refused):
 # bez dowodu mypy odrzuca wywołanie, a ruff odrzuca ich import i atrybut modułu poza modułem, który je zna (getattr
 # z napisem nie).

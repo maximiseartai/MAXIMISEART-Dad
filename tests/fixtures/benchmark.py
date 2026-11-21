@@ -27,7 +27,6 @@ ROOT = Path(__file__).resolve().parents[2]
 BENCHMARK = ROOT / "tools" / "benchmark_przebiegu.py"
 SYNTHETIC_TEMPLATES = ROOT / "tools" / "syntetyczne_wzorce.py"
 
-# Nazwy, pod którymi Wzorce leżą w ``config``: te same, których szukają procesy.
 WORKER_TEMPLATE = tool_files.WORKER_TEMPLATE.name
 COLLECTIVE_TEMPLATE = tool_files.COLLECTIVE_TEMPLATE.name
 INTERNAL_TEMPLATE = tool_files.INTERNAL_TEMPLATE.name
@@ -81,8 +80,6 @@ def run_benchmark(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 
 def start_benchmark(*arguments: str) -> subprocess.Popen[str]:
-    """CLI benchmarku uruchomione w tle; test czyta jego wyjście w trakcie pracy."""
-
     return subprocess.Popen(
         [sys.executable, str(BENCHMARK), *arguments],
         stdin=subprocess.DEVNULL,
@@ -129,8 +126,6 @@ def protected_repository_files() -> dict[Path, bytes | None]:
 
 
 def identifying_values(collective_file: Path) -> set[str]:
-    """Adresy, numery umów i numery zleceń z wierszy danych Pliku zbiorczego lustra."""
-
     workbook = load_workbook(collective_file)
     try:
         sheet = active_worksheet(workbook)
