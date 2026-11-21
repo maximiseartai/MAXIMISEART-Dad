@@ -29,8 +29,7 @@ Reguły szczebla i dowodu:
 - Autor może zakwestionować kod korzenia albo szczebel `Mechanizm:` z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy punktem `Korzeń W<n> r<k>: R-KOD - zdanie` albo `Mechanizm W<n> r<k>: <szczebel> - zdanie` w `## Sprawdzone`, gdzie `r<k>` to `k`-ty werdykt PR.
   Bramki biorą kod i szczebel z ostatniego werdyktu, który dotyczy tego Ważnego, a kod w tym punkcie sprawdza się jak w polu `Korzeń:`.
 - Autor opisuje wyrwanie każdego Ważnego w sekcji `## Korzeń` opisu PR według wzoru sekcji „Root section” skilla [`pr`](../pr/SKILL.md), a `tools/scal_pr.py` odmawia merge'a, dopóki sekcji czegoś brakuje.
-  Większy korzeń (ponad `size:M`) idzie osobnym PR-em korzenia, który scala się najpierw (wzór w tej samej sekcji skilla `pr`).
-  Rozmiaru wyrwania `tools/scal_pr.py` nie liczy, więc rozstrzyga go recenzent.
+  Większy korzeń (ponad `size:M`, ocenia recenzent) idzie osobnym PR-em korzenia, który scala się najpierw (wzór w tej sekcji skilla `pr`).
 - Gdy żaden kod z listy nie pasuje, recenzent pisze `Korzeń: NOWY R-KOD - opis` z kodem, którego na liście nie ma, a nie najbliższy kod, bo zły kod zafałszowałby rejestr powtórzeń.
   Autor dopisuje ten kod do [`korzenie.toml`](korzenie.toml) w swoim PR, z jednym zdaniem i przykładem PR, a kolejne werdykty piszą go już bez `NOWY`.
 
@@ -60,5 +59,5 @@ Strażnik ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md))
 - **test**: błąd logiki w jedynym właścicielu, którego jedyność pilnuje już typ, zakaz albo reguła (`worker_reports.EnteringMemory`), też luka w samej regule lint (`Gdzie` w jej pliku, #2506: zakaz w `ruff.toml`), bo strażnikiem jest test jej próbek; właściciel bez tej ochrony (bramka czyta konfigurację reguł) to `architektura`.
 - **weryfikacja**: błąd jednorazowy w treści, bez postaci i właściciela: proza, liczba w jednym teście, napęd frontendu (#2069).
 
-Szczebel nie działa przy fałszywym alarmie w ponad 10% PR-ów `tools/na_scalonych_pr.py --regula` albo przy liście nazw rosnącej z kodem (`regula-w-trasie` w #1904, #1919, #1964); wtedy schodzisz niżej, w następnej rundzie punktem `Mechanizm W<n> r<k>:`.
+Szczebel nie działa przy fałszywym alarmie w ponad 10% PR-ów `tools/na_scalonych_pr.py --regula`, przy liście nazw rosnącej z kodem (`regula-w-trasie`, #1904, #1964) albo przy regule na treści wzorca `re` w napisie, bo każda runda znajduje nowy zapis (#2524, #2537, #2538); wtedy schodzisz niżej punktem `Mechanizm W<n> r<k>:`.
 Usunięty kod to `architektura` tylko z zakazem jego powrotu.

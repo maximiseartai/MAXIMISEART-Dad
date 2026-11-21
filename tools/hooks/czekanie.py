@@ -45,7 +45,7 @@ gotowość serwera z zadania w tle (``curl … && break``), którego koniec nie 
 (``$GH run rerun``), z opcją ``gh`` innej niż ``-R`` z wartością w osobnym słowie między ``run`` a ``rerun`` i przez
 skrypt albo program inny niż ``gh``.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
-(``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową.
+(``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową i ``slowa_powloki``.
 """
 
 from __future__ import annotations
@@ -54,9 +54,14 @@ from bisect import bisect_left
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import json
+from pathlib import Path
 import re
 import sys
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+from slowa_powloki import QUOTED, unquoted
 
 _GH = r"\bgh(?:-axi)?\s+"
 ASKS_CI = re.compile(_GH + r"(?:pr\s+(?:checks|view)|run\s+(?:view|list|watch))")
@@ -75,10 +80,7 @@ ADRES_PONOWIENIA = re.compile(r"actions/(?:runs/[^/\s]+(?:/attempts/[^/\s]+)?/re
 SIMPLE_COMMANDS = re.compile(r"[;&|\n()`]|\$\(")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
 _PLAIN = r"[^ \t\r\n'\"\\]*"
-_QUOTED = r"\\([\s\S])|'([^']*)'|\"([^\"\\]*(?:\\[\s\S][^\"\\]*)*)\""
-WORD = re.compile(rf"[ \t\r\n]*({_PLAIN}(?:(?:{_QUOTED}){_PLAIN})*)")
-WORD_PART = re.compile(_QUOTED)
-ESCAPED_IN_DOUBLE_QUOTES = re.compile(r"\\([\\\"])")
+WORD = re.compile(rf"[ \t\r\n]*({_PLAIN}(?:(?:{QUOTED}){_PLAIN})*)")
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 TASK_OUTPUT = re.compile(r"\btasks/[^/\s]*\.output\b")
 ASSIGNMENT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(\S*)")
@@ -231,8 +233,6 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
 
 
 def _quoted(command: str, start: int) -> tuple[str, int]:
-    """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``."""
-
     if command[start] == "'":
         close = command.find("'", start + 1)
         end, kept = (len(command) if close < 0 else close + 1), "''"
@@ -323,8 +323,6 @@ def _found(pattern: re.Pattern[str], command: str) -> _Matches:
 
 
 def _in_one_command(command: str, head: re.Pattern[str], tail: re.Pattern[str]) -> _Matches:
-    """Każde ``head``, za którym w tym samym poleceniu prostym stoi ``tail``."""
-
     tail_starts = [match.start() for match in tail.finditer(command)]
     command_ends = [match.start() for match in SIMPLE_COMMAND_END.finditer(command)]
     return _Matches(
@@ -335,9 +333,6 @@ def _in_one_command(command: str, head: re.Pattern[str], tail: re.Pattern[str]) 
 
 
 def _loop_bodies(command: str) -> Iterator[tuple[int, int]]:
-    """Początek i koniec każdej pętli na pierwszym planie od słowa ``until``/``while``/``for`` do jej ``done``
-    (albo do końca polecenia)."""
-
     loops: list[list[int]] = []
     unclosed: list[int] = []
     for word in LOOP_WORD.finditer(command):
@@ -380,7 +375,6 @@ def _list_parts(command: str) -> tuple[list[int], list[bool]]:
         elif kind == "close":
             in_background[index] = in_background[index + 1]
         else:
-            # Lista kończy się na `;`, ale grupa, w której stoi, biegnie dalej: `{ pętla; } &` idzie w tło cała.
             group = enclosing[index]
             in_background[index] = group is not None and in_background[closing[group]]
     return [part.start() for part in parts], in_background
@@ -399,17 +393,8 @@ def _words(command: str) -> list[str]:
         if unclosed:
             return command.split()
         if word:
-            words.append(WORD_PART.sub(_unquoted, word))
+            words.append(unquoted(word))
     return words
-
-
-def _unquoted(part: re.Match[str]) -> str:
-    escaped, single, double = part.groups()
-    if escaped is not None:
-        return escaped
-    if single is not None:
-        return single
-    return ESCAPED_IN_DOUBLE_QUOTES.sub(r"\1", double)
 
 
 def _reruns(shell: str) -> bool:
@@ -437,13 +422,6 @@ def _reruns(shell: str) -> bool:
 
 
 def _task_files(text: str, variables: frozenset[str]) -> list[int]:
-    """Początki plików wyjścia zadania w ``text``: wprost i przez odwołanie do zmiennej z ``variables``.
-
-    Zmienne to te, którym polecenie przypisuje plik (``F=…/tasks/b1.output``, ``ASSIGNMENT``). Odwołanie ``"${F}"``
-    jest w kodzie po ``_code`` napisem ``"$_F_"``, bo napis bez spacji ma nawiasy zamienione na podkreślenia, stąd
-    ``rstrip("_")``.
-    """
-
     named = [found.start() for found in TASK_OUTPUT.finditer(text)]
     referred = [found.start() for found in REFERENCE.finditer(text) if found.group(1).rstrip("_") in variables]
     return sorted(named + referred)
@@ -453,7 +431,7 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
     try:
         kept = _without_heredocs(command)
         shell, _ = _code(kept)
-    except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
+    except RecursionError:
         return None
     if _reruns(shell):
         return RERUN

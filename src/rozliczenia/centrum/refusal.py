@@ -56,8 +56,6 @@ NOT_FOUND_OR_CONFLICT: dict[int | str, dict[str, object]] = {404: {"model": Prob
 """Odmowy akcji na zasobie w OpenAPI: brak zasobu (404) albo zły stan (409), obie jako ``Problem``."""
 
 Retry = Literal["start", "update", "restore", "shutdown"]
-"""Co tata zrobi, gdy skończy się to, co trwa: uruchomi proces, zaktualizuje narzędzie, przywróci Kopię INTERMAX
-jeszcze raz albo zamknie Centrum rozliczeń."""
 
 
 def _retry(then: Retry) -> str:
@@ -275,8 +273,6 @@ def worker_settlement_missing(worker: str, period: str) -> Refusal:
 
 
 def no_forwarding(process: str) -> Refusal:
-    """Proces o tytule ``process`` nie ma trybu Wyceny z Przekazaniem do akceptacji."""
-
     return _refused(409, f"{process} nie ma trybu z Przekazaniem do akceptacji.")
 
 
@@ -303,8 +299,6 @@ def restoring(then: Retry) -> Refusal:
 
 
 def running(process: str, period: str, then: Retry) -> Refusal:
-    """Trwa Uruchomienie procesu o tytule ``process`` dla okresu ``period``."""
-
     return _refused(
         409,
         f"Trwa Uruchomienie procesu: {process}, okres {period}. "

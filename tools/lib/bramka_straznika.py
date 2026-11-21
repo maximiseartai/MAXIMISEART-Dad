@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import shlex
 import subprocess
 import sys
@@ -8,10 +9,13 @@ import time
 import github
 import potomne
 import rejestr_korzeni
-from repo import ROOT
+from repo import REMOTE, ROOT
+import repo
 from stan_pr import Pull, Waiting
 import straznik
+import strazniki_przeniesione
 import szablon_werdyktu
+from szablon_werdyktu import Mechanism
 import szczebel_straznika
 import werdykt_pr
 
@@ -20,6 +24,11 @@ ZASADY = """Warunek 5 merge'a ([ADR 0042](../../docs/adr/0042-straznik-przy-pier
 strażnika przechodzi: ``tools/na_scalonych_pr.py --straznik <selektor> --z-commita <HEAD PR> --wazne <PR>/W<n>/r<k>``
 z kodu bazy PR, tym samym Pythonem, jedno wywołanie na selektor ze wszystkimi jego Ważnymi. Przechodzi tylko kod 0
 z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``, a w jakim środowisku, ``srodowisko_ci``.
+
+Wpis ``strazniki_przeniesione.PLIK``, który PR dodaje albo zmienia (strażnik przeniesiony Ważnego scalonego PR,
+``strazniki_przeniesione.ZASADY``), dostaje ten sam dowód ze swoim selektorem i Ważnym, także w PR bez werdyktu
+``FAIL``, i tę samą regułę szczebla (``szczebel_straznika.proof_flags`` w ``_judged``, jedynym biegu dowodu) z polem ``Mechanizm:`` tego Ważnego z werdyktów jego PR, w wątku tego
+PR; wpis, którego narzędzie nie wczyta, wpis Ważnego tego PR, PR niescalonego albo Ważnego, którego PR nie ma, to odmowa.
 
 Selektor wybiera autor tylko spośród tych, które przyjmuje szczebel z pola ``Mechanizm:`` Ważnego
 (``szczebel_straznika``, ADR 0046); selektor, którego szczebel nie przyjmuje, to odmowa bez dowodu, a ``pytest
@@ -55,58 +64,121 @@ def applies(pull: Pull) -> bool:
 
 
 def needed(pull: Pull) -> bool:
-    """Czy warunek 5 ma czego dowodzić: PR ma werdykt ``FAIL``, a warunek obowiązuje w jego wątku (``applies``)."""
+    """Czy warunek 5 ma czego dowodzić: PR ma werdykt ``FAIL``, a warunek obowiązuje w jego wątku (``applies``), albo
+    PR dodaje lub zmienia wpis strażnika przeniesionego (``moved``)."""
 
+    try:
+        entries = moved(pull)
+    except ValueError:
+        return True
+    return _own(pull) or bool(entries)
+
+
+def moved(pull: Pull) -> list[strazniki_przeniesione.Moved]:
+    if not (after := strazniki_przeniesione.at(ROOT, pull.head)):
+        return []
+    try:
+        fork = repo.merge_base(ROOT, f"{REMOTE}/{pull.base}", pull.head)
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"{strazniki_przeniesione.PLIK}: bez merge-base HEAD {pull.head[:7]} z {REMOTE}/{pull.base} nie wiem, które wpisy PR zmienia ({error.stderr or error})") from None
+    before = strazniki_przeniesione.at(ROOT, fork)
+    return [entry for key, entry in after.items() if before.get(key) != entry]
+
+
+def _own(pull: Pull) -> bool:
     return any(str(verdict.get("body") or "").lstrip().startswith("WERDYKT: FAIL") for verdict in pull.verdicts) and applies(pull)
 
 
 def problems(pull: Pull) -> list[str]:
     """Przyczyny odmowy merge'a ``pull`` z warunku 5; HEAD i baza PR są już pobrane z ``origin``."""
 
-    if not needed(pull):
+    try:
+        entries = moved(pull)
+    except ValueError as error:
+        return [f"strażnik: {error}"]
+    own = _own(pull)
+    if not own and not entries:
         return []
     try:
-        majors = rejestr_korzeni.majors(werdykt_pr.rounds(pull, werdykt_pr.rendered(pull)))[0]
+        majors = rejestr_korzeni.majors(werdykt_pr.rounds(pull, werdykt_pr.rendered(pull)))[0] if own else {}
         section = rejestr_korzeni.section(szablon_werdyktu.items(github.html_markdownu(pull.body, pull.repository))) if majors else None
+        cited = [(entry, _cited(pull, entry)) for entry in entries]
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to oczekiwanie z przyczyną
         return [Waiting(f"strażnik: GitHub nie wyrenderował werdyktów albo opisu PR ({error}), uruchom ponownie")]
     blocks = {block.heading: block for block in section.blocks} if section else {}
-    ruled, owned = szczebel_straznika.applies(pull), szczebel_straznika.owner_applies(pull)
     refused: list[str] = []
-    wanted: dict[tuple[straznik.Guard, bool], list[str]] = {}
+    subjects: list[_Subject] = []
     for heading, major in majors.items():
         guard = blocks[heading].selector() if heading in blocks else None
         if guard is None:
             continue
         label, round_ = heading.split(" r")
         case = f"{pull.number}/{label}/r{round_}"
-        if ruled and (reason := szczebel_straznika.refusal(major.mechanism, guard)):
-            refused.append(
-                f"strażnik: Ważne {case}: {reason}; wpisz w jego bloku sekcji ## Korzeń przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}, "
-                f"a gdy ten szczebel nie działa (ADR 0046), recenzent następnej rundy zmienia go punktem „{szablon_werdyktu.MECHANISM_START}{label} r{round_}: <szczebel> - zdanie” w ## {szablon_werdyktu.CHECKED}"
-            )
+        fix = (
+            f"wpisz w jego bloku sekcji ## Korzeń przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}, "
+            f"a gdy ten szczebel nie działa (ADR 0046), recenzent następnej rundy zmienia go punktem „{szablon_werdyktu.MECHANISM_START}{label} r{round_}: <szczebel> - zdanie” w ## {szablon_werdyktu.CHECKED}"
+        )
+        subjects.append(_Subject(pull, major.mechanism, guard, case, f"Ważne {case}", fix))
+    for entry, found in cited:
+        case = f"{entry.pull}/{entry.major.replace(' ', '/')}"
+        named = f"wpis {case} w {strazniki_przeniesione.PLIK}"
+        if isinstance(found, str):
+            refused.append(f"strażnik: {named}: {found}")
+            continue
+        fix = f"wpisz w nim przyjęty selektor i sprawdź go poleceniem tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita {pull.head} --wazne {case}"
+        subjects.append(_Subject(found[0], found[1].mechanism, entry.guard, case, named, fix))
+    return [*refused, *_judged(pull, subjects)]
+
+
+@dataclass(frozen=True)
+class _Subject:
+    thread: Pull
+    mechanism: Mechanism | None
+    guard: straznik.Guard
+    case: str
+    named: str
+    fix: str
+
+
+def _cited(pull: Pull, entry: strazniki_przeniesione.Moved) -> tuple[Pull, rejestr_korzeni.Major] | str:
+    if entry.pull == pull.number:
+        return "wpis przenosi strażnika Ważnego scalonego PR, a Ważne tego PR ma strażnika tylko w swoim bloku sekcji ## Korzeń: usuń wpis"
+    cited = rejestr_korzeni.pull(pull.repository, entry.pull)
+    if cited.state != "MERGED":
+        return f"PR #{entry.pull} nie jest scalony ({cited.state}), a wpis przenosi strażnika Ważnego scalonego PR: usuń wpis"
+    known = rejestr_korzeni.majors(werdykt_pr.rounds(cited, werdykt_pr.from_graphql))[0]
+    if entry.major not in known:
+        return f"PR #{entry.pull} nie ma Ważnego {entry.major} w werdyktach FAIL: popraw klucz wpisu"
+    return cited, known[entry.major]
+
+
+def _judged(pull: Pull, subjects: list[_Subject]) -> list[str]:
+    refused: list[str] = []
+    wanted: dict[tuple[straznik.Guard, tuple[str, ...]], list[str]] = {}
+    for subject in subjects:
+        flags = szczebel_straznika.proof_flags(subject.thread, subject.mechanism, subject.guard)
+        if isinstance(flags, str):
+            refused.append(f"strażnik: {subject.named}: {flags}; {subject.fix}")
         else:
-            wanted.setdefault((guard, owned and szczebel_straznika.needs_owner(major.mechanism, guard)), []).append(case)
+            wanted.setdefault((subject.guard, flags), []).append(subject.case)
     deadline = time.monotonic() + PROOF_TIMEOUT_S
-    return [*refused, *(reason for (guard, owner), cases in wanted.items() for reason in _proved(pull, guard, cases, deadline - time.monotonic(), owner=owner))]
-
-
-def _proved(pull: Pull, guard: straznik.Guard, cases: list[str], left: float, *, owner: bool) -> list[str]:
-    before = guard.kind is straznik.Kind.TESTS and not werdykt_pr.rule_applies(pull, werdykt_pr.deployment(pull.base, TEST_MARKER))
-    flags = [*(["--przed-dowodem-testu"] if before else []), *(["--chroniony-wlasciciel"] if owner else [])]
-    arguments = ["--straznik", str(guard), "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case)), *flags]
-    late = f"strażnik: {guard}: dowody strażników tego PR nie skończyły się w {PROOF_TIMEOUT_S} s, uruchom ponownie"
-    if left <= 0:
-        return [late]
-    try:
-        done = potomne.run([sys.executable, str(PROOF), *arguments], cwd=ROOT, timeout=left, echo=True)
-    except subprocess.TimeoutExpired:
-        return [late]
-    lines = (done.stdout + done.stderr).strip().splitlines()
-    last = lines[-1] if lines else ""
-    if done.returncode == 0 and last.startswith(PROOF_OK):
-        return []
-    return [
-        f"strażnik: Ważne {', '.join(cases)} ma Strażnik: {guard}, a jego dowód nie przeszedł (kod {done.returncode}): {last or 'bez wyniku'}; "
-        f"popraw strażnika albo wybierz inny z listy i sprawdź go poleceniem tools/na_scalonych_pr.py {shlex.join(arguments)}"
-    ]
+    for (guard, flags), cases in wanted.items():
+        before = guard.kind is straznik.Kind.TESTS and not werdykt_pr.rule_applies(pull, werdykt_pr.deployment(pull.base, TEST_MARKER))
+        arguments = ["--straznik", str(guard), "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case)), *(["--przed-dowodem-testu"] if before else []), *flags]
+        late = f"strażnik: {guard}: dowody strażników tego PR nie skończyły się w {PROOF_TIMEOUT_S} s, uruchom ponownie"
+        if (left := deadline - time.monotonic()) <= 0:
+            refused.append(late)
+            continue
+        try:
+            done = potomne.run([sys.executable, str(PROOF), *arguments], cwd=ROOT, timeout=left, echo=True)
+        except subprocess.TimeoutExpired:
+            refused.append(late)
+            continue
+        lines = (done.stdout + done.stderr).strip().splitlines()
+        last = lines[-1] if lines else ""
+        if done.returncode != 0 or not last.startswith(PROOF_OK):
+            refused.append(
+                f"strażnik: Ważne {', '.join(cases)} ma Strażnik: {guard}, a jego dowód nie przeszedł (kod {done.returncode}): {last or 'bez wyniku'}; "
+                f"popraw strażnika albo wybierz inny z listy i sprawdź go poleceniem tools/na_scalonych_pr.py {shlex.join(arguments)}"
+            )
+    return refused

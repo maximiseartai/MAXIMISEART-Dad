@@ -108,8 +108,6 @@ def test_setup_worktree_wlacza_brame_raz_i_ostrzega_o_hookach_ktore_przestaja_dz
 
 
 def _venv_python(checkout: Path, body: str) -> None:
-    """Atrapa ``.venv/bin/python``: ``body`` zamiast ``ci_lokalnie``, a narzędzia linii przed krokami prawdziwym Pythonem."""
-
     real = 'if sys.argv[1:2] in (["tools/praca_w_toku.py"], ["tools/skille_dla_zmiany.py"]):\n    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])'
     fake_cli(checkout / ".venv" / "bin", "python", f"import os, pathlib, subprocess, sys\n{real}\n{body}\n")
 
@@ -260,8 +258,6 @@ def test_nieudany_werdykt_aktualizacji_nie_zmienia_wyniku_pushu(checkout: Path, 
 
 
 def _with_skills_for_change(checkout: Path, *, main: bool) -> None:
-    """Narzędzie skilli i skill ``verify-kod`` pilnujący ``kod/*`` w checkoucie, z ``main``: ``origin/main`` na tym commicie."""
-
     copy_files(checkout, with_imports((SKILLS_FOR_CHANGE,)))
     (checkout / ".agents" / "skills" / "verify-kod").mkdir(parents=True)
     (checkout / ".agents" / "skills" / "verify-kod" / "SKILL.md").write_text(SKILL, encoding="utf-8")

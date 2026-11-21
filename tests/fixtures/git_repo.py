@@ -41,8 +41,6 @@ def commit(repo: Path, subject: str) -> str:
 
 
 def copy_files(path: Path, names: Iterable[str]) -> None:
-    """Kopie plików checkoutu (ścieżki względem korzenia repozytorium) w ``path``, w tych samych katalogach."""
-
     for name in names:
         (path / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / name, path / name)

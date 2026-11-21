@@ -220,7 +220,6 @@ def test_adres_hiperlacza_z_rejestru_nie_trafia_do_wyniku_przygotowania_ani_metr
 
     outputs = [_completed(*_preparation_arguments(fixture, *mode)) for mode in (("--dry-run",), ())]
 
-    # Zapis z ostrzeżeniami ilości wymaga sprawdzenia (kod 2), podgląd z tymi samymi ostrzeżeniami jest OK.
     assert [completed.returncode for completed in outputs] == [0, 2]
     assert hyperlinks(fixture.collective_file_path) == {"F18": links[4], "F19": links[9], "F20": links[13]}
     for completed in outputs:
@@ -367,8 +366,6 @@ def test_uporzadkowanie_intermax_ze_skryptu_dla_maszyn_oddaje_karte_uruchomienia
 
 
 def test_uporzadkowanie_intermax_z_baza_zlecen_z_parametru_kopiuje_historie_adresu_a_bez_niego_nie(tmp_path: Path) -> None:
-    """Domyślne wklejenie atrapy ma zlecenie pod adresem ``Ulica 101``, a Baza zleceń ma jego wiersz."""
-
     for given in (True, False):
         folder = tmp_path / ("z bazą" if given else "bez bazy")
         folder.mkdir()
@@ -453,9 +450,6 @@ def test_bez_procesu_skrypt_konczy_sie_kodem_1_bez_wyniku_json_ze_zdaniem_o_brak
 def test_zla_lista_wykonawcow_konczy_skrypt_kodem_1_ze_zdaniem_wlasciciela_ustawien_bez_uruchomienia(
     tmp_path: Path,
 ) -> None:
-    """Skrypt dla maszyn czyta ``--wykonawcy`` regułą właściciela Ustawień Centrum, bez zapisu: zła treść to błąd
-    argumentu (kod 1, zdanie na stderr, bez JSON), a nie Uruchomienie na pustej liście."""
-
     source, target, config = make_fixture(tmp_path)
     config.write_text("schema_version: 1\nwykonawcy:\n  - {nazwa: 'Jan/Testowy', loginy: [jan]}\n", encoding="utf-8")
 
@@ -611,7 +605,7 @@ def test_bez_podanych_plikow_oba_procesy_czytaja_konfiguracje_wykonawcow_i_wzorc
 ) -> None:
     script = _tool_copy(tmp_path)
     tool = script.parents[1]
-    preparation = make_preparation_fixture(tool)  # w config/ Konfiguracja wykonawców i oba Wzorce Przygotowania
+    preparation = make_preparation_fixture(tool)
     write_template(tool_files.config_dir(tool) / tool_files.WORKER_TEMPLATE.name)
     source, _target, _config = make_fixture(tmp_path / "okresy")
 

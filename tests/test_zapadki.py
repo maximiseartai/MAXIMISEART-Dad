@@ -743,6 +743,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "reszta-tekstu-od-kazdego-trafienia": "czytaj tekst raz od początku do końca",
     "shlex-czyta-polecenie-agenta": "słowa polecenia czytaj czytnikiem hooka w czasie liniowym",
     "znak-powloki-jako-test-literalu": "sprawdzaj pełnym dopasowaniem postaci literału",
+    "klasa-w-szczeblu-straznika": "daj decyzję szczebla tylko funkcją proof_flags",
     "krok-mypy-ruff-poza-krokami": "weź krok z kroki_lokalne.static_steps",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
@@ -2889,6 +2890,40 @@ def test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_p
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_SZCZEBEL = ("tools", "lib", "szczebel_straznika.py")
+_WYNIK = "from dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass Accepted:\n    owner: bool\n"
+PROBKI_KLASY_SZCZEBLA = [
+    pytest.param(_WYNIK, [5], id="klasa-wyniku-z-dekoratorem-z-2532-r3"),
+    pytest.param("class Wynik:\n    owner: bool\n", [1], id="klasa-bez-dekoratora"),
+    pytest.param("from typing import NamedTuple\n\n\nclass Wynik(NamedTuple):\n    owner: bool\n", [4], id="namedtuple-klasa"),
+    pytest.param("def proof_flags(owner: bool) -> tuple[str, ...]:\n    return () if not owner else ('--x',)\n", [], id="funkcja-decyzji"),
+]
+ZNANE_LUKI_KLASY_SZCZEBLA: Final[dict[str, str]] = {
+    "klasa w funkcji": "def wynik() -> type:\n    class Wynik:\n        owner: bool\n\n    return Wynik\n",
+    "klasa z wywołania": "from collections import namedtuple\n\nWynik = namedtuple(\"Wynik\", \"guard owner\")\n",
+}
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), PROBKI_KLASY_SZCZEBLA)
+def test_regula_klasy_w_szczeblu_straznika_zglasza_klase_modulu_a_nie_funkcje(tmp_path: Path, text: str, lines: list[int]) -> None:
+    base = _empty_base(tmp_path)
+    tmp_path.joinpath(*_SZCZEBEL).parent.mkdir(parents=True)
+    tmp_path.joinpath(*_SZCZEBEL).write_text(text, encoding="utf-8")
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "klasa-w-szczeblu-straznika") for line in lines]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize("text", list(ZNANE_LUKI_KLASY_SZCZEBLA.values()), ids=list(ZNANE_LUKI_KLASY_SZCZEBLA))
+def test_znane_luki_reguly_klasy_w_szczeblu_straznika_przechodza(tmp_path: Path, text: str) -> None:
+    base = _empty_base(tmp_path)
+    tmp_path.joinpath(*_SZCZEBEL).parent.mkdir(parents=True)
+    tmp_path.joinpath(*_SZCZEBEL).write_text(text, encoding="utf-8")
+
+    assert syntax_rules(tmp_path, base) == [], "reguła łapie już tę postać: usuń ją z ZNANE_LUKI_KLASY_SZCZEBLA i dopisz do PROBKI_KLASY_SZCZEBLA"
 
 
 _PAGE = "from playwright.sync_api import Page\n\n\n"

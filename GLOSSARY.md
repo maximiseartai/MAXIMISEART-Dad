@@ -426,7 +426,7 @@ _Avoid_: Konfiguracja wykonawców, lista adresów Wykonawców, pracownicy
 ## Nieaktywny Wykonawca
 
 Wykonawca z Listy Wykonawców, który już nie pracuje u taty: nie dostaje Przypomnień o raporcie, a okresy z jego zleceniami nadal się rozliczają i Wysyłka rozliczeń wysyła mu jego Rozliczenie pracownika.
-Wykonawcy, którego identyfikator występuje w jakimkolwiek okresie, się nie usuwa, tylko oznacza jako nieaktywnego.
+Wykonawcy, którego identyfikator występuje w jakimkolwiek okresie, się nie usuwa, tylko oznacza jako nieaktywnego, bo okres rozliczany ponownie zatrzymałby się na Wykonawcy spoza Listy Wykonawców.
 _Avoid_: usunięty Wykonawca, były pracownik
 
 ## Historia Ustawień

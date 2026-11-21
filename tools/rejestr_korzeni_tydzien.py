@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path, PurePosixPath
@@ -34,6 +34,7 @@ import repo
 import srodowisko_ci
 import straznik
 from straznik import Guard, Kind
+import strazniki_przeniesione
 import szablon_werdyktu
 from tydzien_polski import WARSAW, last_full_week, midnight, week_of
 import werdykt_pr
@@ -92,7 +93,9 @@ obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze z jednego
   ``bramka_straznika``), w chwili merge'a, od wdrożenia tego warunku (``werdykt_pr.deployment`` dla
   ``bramka_straznika.MARKER``); merge takiego PR wymaga ``DOWÓD OK`` jego strażników (warunek 5 ``tools/scal_pr.py``
   i status „Werdykt i bramka”, który ruleset wymaga na ``main``), więc pomiar dowodów nie powtarza, a Ważne bez
-  selektora z listy liczy jako „Bez strażnika”; udział wyjątków to Ważne z wyjątkiem (``straznik.EXEMPT``, ``brak -
+  selektora z listy liczy jako „Bez strażnika”; odpalenia i ponowny dowód biorą w miejsce tego selektora strażnika
+  wpisu Ważnego w ``strazniki_przeniesione.PLIK`` na ostatnim commicie ``origin/main`` przed końcem tygodnia
+  (``moved_guards``, zasady niżej), a tabele „Strażniki” i „Wyjątki strażnika” selektor z opisu PR; udział wyjątków to Ważne z wyjątkiem (``straznik.EXEMPT``, ``brak -
   …``) przez wszystkie Ważne, a „Wyjątki strażnika” to każde Ważne tygodnia z wyjątkiem albo bez strażnika, żeby
   recenzent tygodnia sprawdził, czy wyjątek był uczciwy;
 - ponowny dowód (``--ponowny-dowod``, ``reproofs``) to dowód każdego strażnika scalonego do końca tygodnia, poza
@@ -106,7 +109,8 @@ obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze z jednego
   w budżecie ``--budzet-dowodu`` (``REPROOF_BUDGET_S``); „Ponowny dowód strażników” pokazuje każdego strażnika bez
   ostatniej linii ``DOWÓD OK`` z liniami jego Ważnych i ostatnią linią dowodu (wynik inny niż ``WYKRYTA`` to strażnik,
   który na tym commicie przestał łapać swój błąd albo którego dowodu, np. mutacji recenzenta, nie da się już nanieść),
-  a także każdego, którego dowód nie skończył się albo nie zaczął przed końcem budżetu. Dowód wykonuje kod
+  a także każdego, którego dowód nie skończył się albo nie zaczął przed końcem budżetu, i każdy wpis
+  ``strazniki_przeniesione.PLIK`` bez Ważnego PR scalonego do końca tygodnia w wątku strażnika (``REPROOF_STRAY``). Dowód wykonuje kod
   ``main`` (testy, backend budowy), więc w workflow biegnie w jobie bez prawa zapisu, który kończy treść issue w pliku
   (``--tresc-do``), a zapisuje ją job z ``issues: write`` bez pomiaru (``--tresc-z``); pomiar bez
   ``--ponowny-dowod`` ma w sekcji tylko linię ``REPROOF_SKIPPED``;
@@ -193,6 +197,7 @@ REPROOF_CELL = 300
 REPROOF_LATE = "dowód nie skończył się przed końcem budżetu ponownego dowodu"
 REPROOF_UNSTARTED = "dowód nie zaczął się przed końcem budżetu ponownego dowodu"
 REPROOF_SKIPPED = "Ponowny dowód nie biegł w tym pomiarze (bez --ponowny-dowod)."
+REPROOF_STRAY = f"wpis w {strazniki_przeniesione.PLIK} bez Ważnego PR scalonego do końca tygodnia w wątku strażnika: popraw klucz PR/W<n>/r<k> albo usuń wpis"
 
 EXAMPLES = """\
     .venv/bin/python tools/rejestr_korzeni_tydzien.py --bez-zapisu                       # drukuje treść za ostatni pełny tydzień
@@ -248,6 +253,7 @@ class Reproofs:
         return (
             f"Dowód każdego strażnika scalonego do końca tygodnia na {MAIN} z {self.commit[:8]} (tools/na_scalonych_pr.py --straznik) w budżecie"
             f" {self.budget // 60} min: {len(self.proved)} strażników, {failed} bez DOWÓD OK, w tym {late} poza budżetem."
+            f" Ważne, którego strażnik przestał łapać błąd, dostaje nowego wpisem w {strazniki_przeniesione.PLIK}."
         )
 
 
@@ -481,9 +487,17 @@ def _fired(job: Mapping[str, Any], log: str, earlier: Sequence[GuardCase]) -> It
             yield case.guard
 
 
-def reproofs(pulls: Sequence[Reviewed], end: datetime, budget: int) -> Reproofs:
-    commit = repo.git(ROOT, "log", "--first-parent", "-1", f"--before={end.isoformat()}", "--format=%H", f"{REMOTE}/{MAIN}").strip()
-    cases = sorted((case for pull in pulls for case in pull.guards if case.guard is not None and case.guard.kind not in straznik.EXEMPT and case.when < end), key=lambda case: (case.when, case.pull))
+def week_commit(end: datetime) -> str:
+    return repo.git(ROOT, "log", "--first-parent", "-1", f"--before={end.isoformat()}", "--format=%H", f"{REMOTE}/{MAIN}").strip()
+
+
+def moved_guards(pulls: Sequence[Reviewed], moved: Mapping[tuple[int, str], strazniki_przeniesione.Moved]) -> list[Reviewed]:
+    return [replace(pull, guards=tuple(replace(case, guard=moved[case.pull, case.major].guard) if (case.pull, case.major) in moved else case for case in pull.guards)) for pull in pulls]
+
+
+def reproofs(pulls: Sequence[Reviewed], moved: Mapping[tuple[int, str], strazniki_przeniesione.Moved], commit: str, end: datetime, budget: int) -> Reproofs:
+    merged = [case for pull in pulls for case in pull.guards if case.when < end]
+    cases = sorted((case for case in merged if case.guard is not None and case.guard.kind not in straznik.EXEMPT), key=lambda case: (case.when, case.pull))
     wanted: dict[tuple[int, Guard], list[str]] = {}
     for case in cases:
         if case.guard is not None:
@@ -491,7 +505,9 @@ def reproofs(pulls: Sequence[Reviewed], end: datetime, budget: int) -> Reproofs:
     with potomne.commit_copy(ROOT, commit) as copy:
         deadline = time.monotonic() + budget
         proved = tuple(_reproof(copy, commit, pull, guard, tuple(majors), deadline - time.monotonic()) for (pull, guard), majors in wanted.items())
-    return Reproofs(commit, budget, proved)
+    known = {(case.pull, case.major) for case in merged}
+    strays = tuple(Reproof(entry.pull, entry.guard, (entry.major,), REPROOF_STRAY) for key, entry in moved.items() if key not in known)
+    return Reproofs(commit, budget, proved + strays)
 
 
 def _reproof(copy: Path, commit: str, pull: int, guard: Guard, majors: tuple[str, ...], left: float) -> Reproof:
@@ -598,7 +614,7 @@ def _publish(api: github.GhApi, registry: Sequence[dict[str, object]], text: str
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=OPIS, epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=f"{OPIS}\n{strazniki_przeniesione.ZASADY}", epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bez-zapisu", action="store_true", help="Niczego nie zapisuj na GitHubie, tylko wydrukuj treść issue.")
     parser.add_argument("--tydzien", type=date.fromisoformat, help="Dzień tygodnia do pomiaru, RRRR-MM-DD (domyślnie ostatni pełny tydzień).")
     parser.add_argument("--cron", default="", help="Cron, który uruchomił workflow; pomiar biegnie, gdy jego godzina to dziś 6 czasu polskiego.")
@@ -627,14 +643,17 @@ def main(argv: list[str] | None = None) -> int:
             if deployed is None or guarded is None:
                 raise ValueError(f"{szablon_werdyktu.ADR} albo {bramka_straznika.MARKER} nie wszedł jeszcze do {MAIN}, więc rejestru korzeni albo strażników nie ma")
             pulls = rejestr_korzeni.reviewed(repository, deployed, werdykt_pr.deployment(MAIN, limit_rund.MARKER), guarded)
+            commit = week_commit(end)
+            moved = strazniki_przeniesione.at(ROOT, commit)
+            proving = moved_guards(pulls, moved)
             api = github.GhApi()
-            fired = firings(api, pulls, start, end)
+            fired = firings(api, proving, start, end)
             widened = [widening for widening in widenings(end) if widening.when >= deployed]
             weeded = weeds(github.issues(api, rejestr_korzeni.WEED, "open"))
             registry = github.issues(api, rejestr_korzeni.REGISTRY, "open")
             own = _own(registry)
             audited = audits(github.strony(api, f"{github.REPO}/issues/{own[0]['number']}/comments")) if own else {}
-            reproved = reproofs(pulls, end, args.budzet_dowodu) if args.ponowny_dowod else None
+            reproved = reproofs(proving, moved, commit, end, args.budzet_dowodu) if args.ponowny_dowod else None
             text = body(pulls, weeded, week, deployed, guarded, alarms(end), fired, widened, audited, reproved)
             if args.tresc_do is not None:
                 args.tresc_do.parent.mkdir(parents=True, exist_ok=True)

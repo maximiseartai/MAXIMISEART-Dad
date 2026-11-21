@@ -711,7 +711,6 @@ DEFAULT_SETTLEMENT_MAIL: dict[str, object] = {
     "problem": None,
 }
 """Temat i treść Maila z rozliczeniem bez pliku Ustawień (ADR 0040)."""
-"""Skrzynka raportów bez pliku dostępu: bez adresu i bez hasła (#1469)."""
 
 
 def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
@@ -1365,8 +1364,6 @@ DEVICES_URL = "/api/settings/devices"
 
 
 def device_form(app: Centrum | PreparingCentrum, device_id: str) -> dict[str, Any]:
-    """Składnik z sekcji Urządzenia jako formularz zapisu: nazwa, inne zapisy i grupa."""
-
     device = next(device for device in app.client.get(QUANTITY_RULES_URL).json()["devices"] if device["id"] == device_id)
     return {"name": device["name"], "other_spellings": device["other_spellings"], "group": device["group"]}
 
@@ -1381,7 +1378,6 @@ def test_zapis_dopisany_do_skladnika_ma_wiersz_historii_zdaniem_przed_i_po_a_cof
     undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
 
     assert saved.status_code == 200, saved.text
-    # Zmieniony składnik zostaje na swoim miejscu listy.
     assert [device["id"] for device in saved.json()["quantity_rules"]["devices"]] == ids
     shown = {device["id"]: device for device in saved.json()["quantity_rules"]["devices"]}
     assert (shown["gateway"]["other_spellings"], saved.json()["change"]) == (["zyxel", "nowy router"], row["id"])
@@ -1554,8 +1550,6 @@ def _component_sentence(form: dict[str, Any]) -> str:
 
 
 def new_components(app: Centrum) -> dict[str, str]:
-    """Składniki spoza Listy Urządzeń z Wydania jako zdania, po id."""
-
     default = {component.id for component in DEFAULT_QUANTITY_RULES.devices.components}
     return {
         device["id"]: _component_sentence(device)
@@ -1772,8 +1766,6 @@ def test_lista_taty_zapisana_po_wydaniu_z_nowym_skladnikiem_regul_ma_go_i_znow_p
 
 
 def _dad_list(app: Centrum) -> tuple[Component, ...] | None:
-    """Lista Urządzeń z pliku taty; ``None``: tata nie ma pliku."""
-
     data = settings_bytes(app.tool.config / DEVICES_FILE)
     if not isinstance(data, bytes):
         return None
@@ -2920,8 +2912,6 @@ def test_zmiana_reguly_w_edytorze_zostaje_na_jej_miejscu_a_historia_mowi_zdaniem
 
 
 def _editor_rule(column: str, value: int) -> dict[str, Any]:
-    """Reguła z edytora: przy „montaż” w CZYNNOŚCIACH wpisz ``value`` w ``column``."""
-
     return {
         "scope": "every",
         "conditions": [{"kind": "activities", "text": "montaż", "negated": False}],
@@ -2929,7 +2919,6 @@ def _editor_rule(column: str, value: int) -> dict[str, Any]:
     }
 
 
-# Reguły taty z edytora po nazwie w sekwencji: każda ma inne zdanie.
 EDITED = {"A": _editor_rule("AA", 2), "A2": _editor_rule("AA", 4), "B": _editor_rule("AC", 5), "C": _editor_rule("AB", 1)}
 
 
@@ -3198,8 +3187,6 @@ def plain(parts: list[dict[str, Any]]) -> str:
 
 
 def legend_sentences(client: CentrumClient) -> tuple[dict[str, str], dict[str, Any] | None]:
-    """Zdanie każdego kodu sekcji po id („zapisy: co wyznacza.”) i problem pliku."""
-
     response = client.get(LEGEND_URL)
     assert response.status_code == 200, response.text
     read = response.json()
@@ -3213,8 +3200,6 @@ def legend_history(client: CentrumClient) -> list[dict[str, Any]]:
 
 
 def own_code(identifier: str, **changes: Any) -> ActivityCode:
-    """Kod legendy z Wydania o id ``identifier`` ze zmienionymi polami."""
-
     return replace(next(code for code in DEFAULT_ACTIVITY_LEGEND.codes if code.id == identifier), **changes)
 
 
@@ -3412,8 +3397,6 @@ def code_url(code: str) -> str:
 
 
 def shown_form(client: CentrumClient, code: str) -> dict[str, Any]:
-    """Formularz kodu ``code``, który sekcja daje przy ołówku."""
-
     found: dict[str, Any] = next(read["code"] for read in client.get(LEGEND_URL).json()["codes"] if read["id"] == code)
     return found
 
@@ -3477,7 +3460,6 @@ LEGEND_EDITS: dict[str, tuple[LegendEdit, str | None, str | None]] = {
         "mdik: 1 w Y.",
     ),
 }
-"""Zmiana Legendy czynności z sekcji: zapytanie, zdanie kodu przed (``None``: nowy kod) i po (``None``: usunięty)."""
 
 
 @pytest.mark.parametrize("edit", LEGEND_EDITS)
@@ -5415,8 +5397,6 @@ OLD_ADDRESSES = (
 
 
 def listed(logins: list[str], name: str, addresses: list[str]) -> dict[str, object]:
-    """Wykonawca w sekcji Wykonawcy: aktywny, z przypomnieniami, tak jak przenosi go przeniesienie."""
-
     return {"logins": logins, "name": name, "addresses": addresses, "active": True, "reminders": True}
 
 
@@ -5574,8 +5554,6 @@ WAITING = {"field": None, "message": WAITING_SENTENCE}
 
 
 def unusable(sentence: str) -> str:
-    """Odmowa startu procesu bez użytecznej Listy Wykonawców ze zdaniem złego ustawienia ``sentence``."""
-
     return f"Lista Wykonawców ma złe ustawienie: {sentence} Szczegóły są w Ustawieniach, w sekcji Wykonawcy."
 
 
@@ -5841,8 +5819,6 @@ def test_diagnoza_zatrzymania_opisuje_liste_wykonawcow_ze_startu_uruchomienia_a_
 
 
 def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_poprawic(tmp_path: Path) -> None:
-    """Zła Lista Wykonawców bez ostatniej dobrej (po usunięciu pliku nie ma już dobrej treści) odmawia startu procesu."""
-
     centrum_ = settling_centrum(tmp_path)
     centrum_.tool.worker_list.unlink()
     centrum_.client.get("/api/settings")
@@ -5996,9 +5972,6 @@ def worker_form(logins: list[str], name: str, addresses: list[str] | None = None
 def settling_with_register(
     tmp_path: Path, logins: Sequence[str] | None, surroundings: Surroundings | None = None
 ) -> SettlingCentrum:
-    """Centrum ze wskazanym syntetycznym Rejestrem zleceń (``register_of``), w którym zlecenia mają Wykonawców
-    ``logins``; ``None``: tata nie wskazał Rejestru."""
-
     register = None
     if logins is not None:
         register = register_of(tmp_path)
@@ -6204,8 +6177,6 @@ def history_rows_of(client: CentrumClient) -> list[dict[str, Any]]:
 
 
 def kept(sentence: str) -> str:
-    """Odmowa usunięcia: zdanie, dlaczego Wykonawca albo login zostaje, i propozycja Nieaktywnego."""
-
     return (
         f"{sentence} Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy "
         "dalej się rozliczą."
@@ -7261,8 +7232,6 @@ def test_zla_wartosc_pola_pliku_przypomnien_kaze_zapisac_ustawienia_a_zapis_taty
 
 
 def migrated_reminders(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Sekcja Przypomnienia i Historia Ustawień po pierwszym starcie Wydania z Przypomnieniami w Ustawieniach."""
-
     client = started(tool, RELEASE_CHANGES)
     reminders = client.get("/api/settings").json()["reminders"]
     rows = client.get("/api/settings/history").json()["rows"]
@@ -7812,8 +7781,6 @@ def period_files(row: dict[str, object]) -> dict[str, dict[str, Any]]:
 
 
 def worker_settlement_count(row: dict[str, object]) -> int | None:
-    """Liczba Rozliczeń pracownika na przycisku Folderu rozliczeń pracowników okresu ``row``."""
-
     count: int | None = period_files(row)["worker_settlements_folder"]["count"]
     return count
 
@@ -8030,7 +7997,6 @@ def test_karta_startu_pokazuje_status_tygodnia_w_dwoch_miesiacach_z_tego_samego_
     assert choice["status_label"] == row["status_label"]
 
 
-# Folder wskazany w środku układu folderów taty, względem ``Załączniki`` (#1472).
 INSIDE_DAD_LAYOUT = [
     pytest.param(("Rozliczenia 2026", "11_Listopad_2026", "INEA", "27_02_11_2026"), id="tydzien"),
     pytest.param(("Rozliczenia 2026", "10_Październik_2026", "INEA"), id="inea-miesiaca"),
@@ -8040,8 +8006,6 @@ INSIDE_DAD_LAYOUT = [
 
 
 def choose_periods_directory(app: Centrum, folder: Path, way: str) -> dict[str, Any]:
-    """Ustawienia po wskazaniu ``folder`` oknem wyboru (``okno``) albo ścieżką wpisaną w sekcji Foldery (``wpisana``)."""
-
     if way == "okno":
         app.platform.chosen_folders.append(folder)
         response = app.client.post("/api/settings/periods-directory/choose")
@@ -9399,8 +9363,6 @@ def test_nazwa_wykonawcy_nie_wyprowadza_poza_folder_rozliczen_pracownikow(tmp_pa
 
 
 def log_lines(app: Centrum) -> list[str]:
-    """Wpisy dziennika Centrum bez znacznika czasu."""
-
     if not app.log_path.exists():
         return []
     return [line.split(" ", 1)[1] for line in app.log_path.read_text(encoding="utf-8").splitlines()]
@@ -9537,7 +9499,6 @@ WYSYLKA_CHWILA = datetime(2026, 11, 16, 10, 0, tzinfo=STREFA_TATY)
 WYSYLKA_OKRES = "03_09_11_2026"
 WYSYLKA_STARSZY = "27_02_11_2026"
 WYSYLKA_ROZLICZONE = datetime(2026, 11, 10, 8, 41, tzinfo=STREFA_TATY)
-"""Chwila zmiany każdego Rozliczenia pracownika: przed każdym mailem testu."""
 WYSYLKA_SKRZYNKA = "raporty.taty@przyklad.invalid"
 WYSYLKA_HASLO = "abcdefghijklmnop"
 ADRES_ANNY = "anna@przyklad.invalid"
@@ -9713,8 +9674,6 @@ def test_ponowienie_wysylki_zanim_gmail_polozy_mail_w_wyslanych_niczego_nie_wysy
 
 
 def test_wysylka_odmawia_pliku_ktory_nie_idzie_bez_maila(tmp_path: Path) -> None:
-    """Wykonawca bez adresu, pusty Szablon i plik bez Wykonawcy z Listy wracają ze swoim stanem, bez maila."""
-
     app = wysylka_centrum(tmp_path)
 
     sent = [app.send(worker) for worker in ("Bartek Fikcyjny", "Celina Pusta", "Ewa Spoza")]
@@ -9892,8 +9851,6 @@ def test_ostatni_dobry_temat_taty_dalej_idzie_gdy_plik_ma_temat_ktorego_regula_n
 
 
 def test_porazka_wysylki_to_stan_nie_wyszlo_z_powodem_zaznaczony_do_ponowienia(tmp_path: Path) -> None:
-    """Gmail odmówił maila: wiersz mówi dlaczego i zostaje zaznaczony, a dziennik ma przyczynę bez adresu."""
-
     app = wysylka_centrum(tmp_path, FakeMailbox(send_outcome=MailRefused("SMTPRecipientsRefused")))
 
     sent = app.send("Anna Łącka")

@@ -1,0 +1,21 @@
+id: klasa-w-szczeblu-straznika
+language: python
+severity: error
+message: >-
+  klasa na poziomie modułu w tools/lib/szczebel_straznika.py: daj decyzję szczebla tylko funkcją proof_flags, którą
+  woła bramka_straznika._judged, jedyny bieg dowodu warunku 5, bo klasa wyniku decyzji (pola guard, owner) daje
+  wołającemu konstruktor, którym zbuduje przyjęty selektor bez reguły szczebla ADR 0046 (#2532 W1 r3)
+files:
+  - tools/lib/szczebel_straznika.py
+metadata:
+  przypadki:
+    - 2532/W1/r3
+rule:
+  kind: class_definition
+  any:
+    - inside:
+        kind: module
+    - inside:
+        kind: decorated_definition
+        inside:
+          kind: module

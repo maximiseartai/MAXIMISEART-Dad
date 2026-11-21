@@ -95,15 +95,12 @@ class Outcome:
     tool_result: bool
     # Kod wyjścia Claude Code, który skończył się sam, albo ``None``, gdy zakończyła go wyrocznia albo limit czasu.
     returncode: int | None
-    # Czy fałszywe API dostało zapytanie przypadku (z ``MARKER``).
     asked: bool
     subagent_result: bool
     woken: bool
 
 
 class _Api:
-    """Stan fałszywego Messages API przypadku: narzędzia przypadku, po nich koniec tury, po drugiej odmowie ``stop``."""
-
     case = CASES[0]
     lock = threading.Lock()
     refusals = 0
@@ -217,8 +214,6 @@ def ask(case: Case, log: Path, limit_s: float, contact_s: float) -> Outcome:
 
 
 def verdict(case: Case, got: Outcome) -> tuple[str, str]:
-    """``ZGODNE`` albo ``ZMIANA`` przypadku i opis tego, co zrobił Claude Code."""
-
     tool = AGENT if case.subagent else "Bash"
     if not got.asked:
         seen = "Claude Code nie zapytał fałszywego API"
