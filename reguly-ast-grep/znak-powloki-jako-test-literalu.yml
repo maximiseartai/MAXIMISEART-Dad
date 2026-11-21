@@ -1,0 +1,17 @@
+id: znak-powloki-jako-test-literalu
+language: python
+severity: error
+message: >-
+  słowo polecenia uznane za literał, bo nie ma w nim wyliczonego znaku powłoki ("$" in słowo, "[" not in słowo):
+  każda postać spoza wyliczenia (znacznik xargs -I{}, %, glob, tylda) przechodzi jako literał; sprawdzaj pełnym
+  dopasowaniem postaci literału (WZORZEC.fullmatch(słowo)), a nie brakiem znaku powłoki
+files:
+  - tools/hooks/**/*.py
+metadata:
+  przypadki:
+    - 2289/W1/r2
+rule:
+  # Napis złożony tylko ze znaków, które powłoka rozwija albo cytuje, w dowolnym cudzysłowie, jako lewa strona in.
+  kind: comparison_operator
+  regex: |-
+    ^(?:"(?:[$`*?{}%\[~!()<>']|\\\\|\\")+"|'(?:[$`*?{}%\[~!()<>"]|\\\\|\\')+')\s+(?:not\s+)?in\b

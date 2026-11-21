@@ -1,0 +1,15 @@
+id: break-skryptu-pythona-to-czekanie
+language: python
+severity: error
+message: >-
+  hook liczy break albo return pętli skryptu Pythona (węzły ast.Break, ast.Return) jako znak czekania: w skryptach
+  agentów for po liście z break to zwykle partia zapytań przerywana przy błędzie API (403, rate limit), nie czekanie
+  na CI; pętle oceniaj tylko w tekście polecenia powłoki (_loop_bodies i STOPS w tools/hooks/czekanie.py)
+files:
+  - tools/hooks/**/*.py
+metadata:
+  przypadki:
+    - 2295/W2/r3
+rule:
+  kind: attribute
+  regex: '^ast\.(Break|Return)$'
