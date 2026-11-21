@@ -133,10 +133,6 @@ def moved(
 
 
 def _observed(move: OwnMove, orders: Iterable[RegisterOrder]) -> OwnMove:
-    """Pamięć zlecenia po obserwacji kliknięcia: gdy Przeniesienie Centrum stoi w pamięci, a żadne zlecenie jej numeru
-    nie stoi tam, gdzie je zostawiło Centrum (``OwnMove.left``), tata zmienił Wykonawcę albo dzień tego zlecenia, i
-    pamięć to zapamiętuje (``overridden``), także gdy numer ma kilka zleceń albo żadnego."""
-
     places = [(order.key.worker, order.key.day) for order in orders if order.key.number == move.number]
     return replace(move, overridden=True) if move.left(places) else move
 

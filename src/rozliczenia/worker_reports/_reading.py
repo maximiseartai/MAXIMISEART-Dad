@@ -235,8 +235,6 @@ def _overtaken(found: ReadUnreadable, taken: Mapping[MailEntryKey, Login]) -> tu
 
 
 def _leaned(entry: ReportEntry) -> ReportEntry:
-    """Wpis ze znakiem z zamiarem (``t``, ``nieskuteczne``) jako Wpis z tym ``tak``/``nie``, jak po decyzji taty."""
-
     if entry.verdict is None and entry.leaning is not None:
         return ReportEntry(entry.number, entry.leaning, None, entry.activities)
     return entry
@@ -247,9 +245,6 @@ def _settled(
     decided: Mapping[MailEntryKey, object],
     taken: Mapping[MailEntryKey, Login],
 ) -> bool:
-    """Czy raport z błędem tematu ``found`` nie ma już czego wpisać: tata wpisał Wpisem na życzenie każdy jego Wpis,
-    którego zlecenia nie wziął późniejszy mail (``Matched.taken``)."""
-
     places = [(found.mail, found.worker, number) for number in found.numbers]
     return all(place in decided or place in taken for place in places)
 
