@@ -1,5 +1,3 @@
-"""Strażnik drzewa repozytorium (``tests/fixtures/drzewo_repo.py``, haki sesji w ``tests/conftest.py``, #1864)."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,9 +30,6 @@ class _Session:
 def test_sesja_ktora_zostawila_w_drzewie_plik_albo_zmiane_konczy_sie_porazka_z_jego_sciezka(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Plik nieśledzony i zmieniony plik śledzony, których nie było na starcie, wywracają sesję i stoją w komunikacie;
-    plik wykluczony ``.gitignore`` repozytorium i zmiana sprzed startu sesji nie."""
-
     root = _checkout(tmp_path)
     monkeypatch.setattr(drzewo_repo, "REPO", root)
     (root / "przed_sesja.txt").write_text("autor\n", encoding="utf-8")

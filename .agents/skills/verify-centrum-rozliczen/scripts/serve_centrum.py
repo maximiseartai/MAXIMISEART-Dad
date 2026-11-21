@@ -51,6 +51,8 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
     close_reason,
 )
+from rozliczenia.centrum import start_problems
+from rozliczenia.centrum.scope import UnknownWorkstation, workstation_scope
 from rozliczenia.centrum.server import serve
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness, parse_published
@@ -99,6 +101,8 @@ boundary answers as the sentence says.
 - the native file and folder pickers answer with the path in ``File.PICKER_ANSWER``
   (consumed by the next picker; no file = Dad cancelled) and log each dialog title in ``Log.DIALOGS``;
 - opening a file in Excel or a folder in Explorer is logged in ``Log.OPENED`` instead of launching an application;
+- the Stanowisko is read once at the start from the run's ``config/``, as the shortcut's launcher reads it: no file
+  gives Dad's Stanowisko, and an unknown one ends the start with its Komunikat startu;
 - the Windows Autostart is the file ``File.AUTOSTART_SHORTCUT``: the switch „Uruchamiaj Centrum razem z Windows”
   writes or removes it, the drive may remove it by hand, and while ``Switch.NO_AUTOSTART`` is on the computer has no
   Windows Autostart, like a Mac.
@@ -229,7 +233,7 @@ READ_RETRY_S = 10.0
 
 def _read_put_in_place(path: Path, retry_s: float = READ_RETRY_S) -> str:
     """``path`` once the drive has put it in place whole (``put_text`` of ``drive/common.py``): Windows refuses a read
-    for that moment (#1087), so a refused read is tried again for at most ``retry_s``, then the refusal is raised."""
+    for that moment, so a refused read is tried again for at most ``retry_s``, then the refusal is raised."""
 
     deadline = time.monotonic() + retry_s
     while True:
@@ -512,7 +516,7 @@ def _comment_address(issue: BoxIssue, comment_id: int) -> str:
 
 def _save(path: Path, content: object) -> None:
     """``content`` as JSON in place of ``path`` at once: a reader in another process sees the old file or the new one,
-    never an empty or cut one (module doc, #963)."""
+    never an empty or cut one (module doc)."""
 
     replace_atomically(path, json.dumps(content, ensure_ascii=False, indent=2) + "\n")
 
@@ -589,7 +593,7 @@ class ScriptedClock:
     def _fire_due(self) -> None:
         """A failure ends every later wake-up, so it leaves its traceback where the drive finds it
         (``check_clock_alarm``), put in place whole: a plain write leaves it empty for a moment, and a reader that waits
-        only for it to exist reads no traceback (#1210)."""
+        only for it to exist reads no traceback."""
 
         try:
             while True:
@@ -608,7 +612,7 @@ class ScriptedClock:
 class _RequestLog:
     """Each HTTP request on the console once answered: the moment it came (UTC), the method, the path without its query
     and the answer's status, or how the answer broke off. The evidence then shows whether a request the page lost
-    (``zadania-strony.txt`` of the drive) reached Centrum (#1539). Only these: a query or a body may carry a value of
+    (``zadania-strony.txt`` of the drive) reached Centrum. Only these: a query or a body may carry a value of
     a file."""
 
     def __init__(self, app: ASGIApp) -> None:
@@ -753,10 +757,16 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
             raise ConnectionRefusedError("skrzynka raportów poza siecią (atrapa)")
         return imaplib.IMAP4("127.0.0.1", inbox.port)
 
+    config = Path(fixture["settings"]).parent
+    scope = workstation_scope(config)
+    if isinstance(scope, UnknownWorkstation):
+        print(start_problems.unknown_workstation(scope.file).text, flush=True)
+        return 1
     # Pip never reaches PyPI from a verification run.
     os.environ["PIP_NO_INDEX"] = "1"
     app = create_app(
-        config=Path(fixture["settings"]).parent,
+        config=config,
+        scope=scope,
         platform=ScriptedPlatform(root),
         autostart=ScriptedAutostart(root),
         log=log,

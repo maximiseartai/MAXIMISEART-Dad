@@ -11641,10 +11641,24 @@
             ]
           },
           "workers": {
-            "$ref": "#/components/schemas/WorkerListSetting"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkerListSetting"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "inbox": {
-            "$ref": "#/components/schemas/InboxSetting"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InboxSetting"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "inbox_problem": {
             "anyOf": [
@@ -11657,13 +11671,34 @@
             ]
           },
           "autostart": {
-            "$ref": "#/components/schemas/AutostartSetting"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutostartSetting"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reminders": {
-            "$ref": "#/components/schemas/RemindersSetting"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemindersSetting"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "settlement_mail": {
-            "$ref": "#/components/schemas/SettlementMailSetting"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettlementMailSetting"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -11682,7 +11717,7 @@
           "settlement_mail"
         ],
         "title": "Settings",
-        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy pliku Folderów bez odczytu ``theme`` to ``None``:\nstrona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``)."
+        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy pliku Folderów bez odczytu ``theme`` to ``None``:\nstrona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``). Pole Funkcji spoza Zakresu tego Centrum (``workers``,\n``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``) to ``None``."
       },
       "SettingsHistory": {
         "properties": {

@@ -1,10 +1,3 @@
-"""Kolejka Skrzynki Zgłoszeń (``outbox``): wysyłki, które Centrum wysyła samo, w częściach i po porażce skrzynki.
-
-Seam z dwoma wejściami (Kontrola ilości teraz, Logi Uruchomienia od #320), więc podział na części i kolejka są
-sprawdzone tu raz, przez ``Post`` i ``Outbox``, na fałszywej skrzynce. Treść ponad 65 536 znaków jest przez HTTP
-Centrum nieosiągalna rozsądnym kosztem.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -69,7 +62,6 @@ THREAD = PeriodThread(
     title=tool("Kontrola ilości 08_14_09_2026: 3 różnice"),
 )
 RUN_ID = "3f2a9c1b8e7d4f0a9b1c2d3e4f5a6b7c"
-# Następne Uruchomienia: każda Kontrola ilości to inna wysyłka, z identyfikatorem swojego Uruchomienia.
 NEXT_RUN_IDS = ("9b1c2d3e4f5a6b7c3f2a9c1b8e7d4f0a", "c2d3e4f5a6b7c3f2a9c1b8e7d4f0a9b1")
 
 
@@ -88,13 +80,12 @@ def post(blocks: list[str], *, frame: Frame = numbered, run_id: str = RUN_ID) ->
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def pass_ended(outbox: Outbox) -> None:
+    outbox.wait_delivered("", THREAD.label, timeout_s=30)
+    assert not outbox.state().draining, "przejście kolejki nie skończyło się w 30 s"
+
+
 class Queue:
-    """Kolejka na folderze w ``tmp_path`` ze skrzynką ``box`` i kluczem ``key`` (``None``: bez klucza).
-
-    ``delivered`` to Uruchomienie i numer issue każdej wysyłki, którą przyjęła skrzynka (``listener``), a ``now`` to
-    zegar ścienny komputera (``None``: domyślny zegar kolejki).
-    """
-
     def __init__(
         self,
         tmp_path: Path,
@@ -115,8 +106,6 @@ class Queue:
         self.outbox = self.restarted()
 
     def restarted(self) -> Outbox:
-        """Kolejka nowego startu Centrum na tym samym folderze."""
-
         log = CentrumLog(self.log_path)
         notes = NotesFile(self.opening, replace_atomically, log.box_notes_unavailable)
         keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock, opening=notes)
@@ -125,13 +114,9 @@ class Queue:
         return Outbox(self.directory, keyed, log, clock=self.clock, listener=self.listener, now=self.now)
 
     def passed(self) -> None:
-        """Czeka, aż przejście kolejki, które właśnie ruszyło (``resume``, ``send_in_background``), się skończy."""
-
-        assert not self.outbox.wait_delivered("", THREAD.label, timeout_s=30)
+        pass_ended(self.outbox)
 
     def queued(self, *texts: str) -> list[str]:
-        """Pliki kolejki z poprzedniej pracy Centrum, po jednym na tekst i Uruchomienie, w tej kolejności."""
-
         self.directory.mkdir(parents=True, exist_ok=True)
         names = [f"20261023T1015{second:02d}000000Z-0001-kontrola-ilosci-3f2a9c1b.json" for second in range(len(texts))]
         run_ids = (RUN_ID, *NEXT_RUN_IDS)[: len(texts)]
@@ -140,8 +125,6 @@ class Queue:
         return names
 
     def files(self) -> list[str]:
-        """Pliki kolejki i ich pliki tymczasowe (``*.json.tmp``), bez pliku blokady folderu."""
-
         return sorted(path.name for path in self.directory.glob("*.json*"))
 
     def log(self) -> str:
@@ -181,7 +164,6 @@ def test_czesc_ponad_limit_komentarza_to_blad_programu() -> None:
     ids=["pusty", "dluzszy-niz-64-znaki", "ze-spacja", "w-dwoch-liniach"],
 )
 def test_identyfikator_wysylki_pusty_dlugi_ze_spacja_albo_w_dwoch_liniach_to_blad_programu(run_id: str) -> None:
-    # Znacznik wysyłki to jedna linia z identyfikatorem jako jednym słowem, w zapasie _MARK_RESERVE każdego komentarza.
     assert Post(THREAD, period="08_14_09_2026", run_id=tool("x" * 64), header=None, parts=(tool("treść"),)).run_id == "x" * 64
 
     with pytest.raises(ValueError, match="Identyfikator wysyłki"):
@@ -237,7 +219,7 @@ def test_bez_sieci_wysylka_czeka_w_pliku_i_idzie_przy_nastepnej_wysylce_po_kolei
     [waiting] = queue.files()
     assert waiting.endswith(f"-kontrola-ilosci-{RUN_ID[:8]}.json")
     assert "pierwsza" not in queue.log()
-    queue.clock.pause(LIST_LAG_S)  # po zakładaniu bez odpowiedzi KeyedBox tyle nie zakłada issue (#879)
+    queue.clock.pause(LIST_LAG_S)
 
     queue.outbox.post(post(["druga\n"], run_id=NEXT_RUN_IDS[0]))
 
@@ -316,9 +298,6 @@ def test_po_braku_sieci_kolejka_ponawia_po_minucie_bez_kolejnej_wysylki(tmp_path
 def test_stan_kolejki_ma_przyczyne_czekania_budzenie_i_plik_ktorego_nie_dalo_sie_usunac(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``Outbox.state``: pamięć, od której zależą następne przejścia, i którą wyrocznia kolejki porównuje między
-    harmonogramami zamiast prywatnych pól ``Outbox`` (docs/agents/skille.md, „Co wyrocznia bierze z src”)."""
-
     hold = threading.Event()
     queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable(), search_hold=hold))
     assert queue.outbox.state() == QueueState(frozenset(), None, False, False, False, False)
@@ -347,9 +326,6 @@ def test_stan_kolejki_ma_przyczyne_czekania_budzenie_i_plik_ktorego_nie_dalo_sie
 
 
 def test_stan_skrzynki_z_kluczem_ma_issue_z_odpowiedzia_i_zakladanie_bez_odpowiedzi_do_uplywu_opoznienia_listy() -> None:
-    """``KeyedBox.state``: zapisy, od których zależą następne odpowiedzi skrzynki z kluczem, które wyrocznia kolejki
-    porównuje między harmonogramami zamiast prywatnych pól ``KeyedBox``."""
-
     clock = ManualClock()
     box = FakeReportBox()
     keyed = KeyedBox(box, lambda: KEY, clock=clock)
@@ -368,7 +344,7 @@ def test_stan_skrzynki_z_kluczem_ma_issue_z_odpowiedzia_i_zakladanie_bez_odpowie
 
 def test_stan_skrzynki_z_kluczem_ma_liste_przy_ktorej_pliku_zapisow_nie_dalo_sie_odczytac(tmp_path: Path) -> None:
     unreadable = tmp_path / OPENING_FILE
-    unreadable.mkdir()  # odczyt folderu rzuca OSError jak plik, który trzyma antywirus
+    unreadable.mkdir()
     keyed = KeyedBox(FakeReportBox(), lambda: KEY, clock=ManualClock(), opening=NotesFile(unreadable, replace_atomically))
 
     keyed.labelled_issues(THREAD.label, include_closed=False)
@@ -377,8 +353,6 @@ def test_stan_skrzynki_z_kluczem_ma_liste_przy_ktorej_pliku_zapisow_nie_dalo_sie
 
 
 def test_dziennik_centrum_z_wlasnym_zapisem_daje_mu_kazda_linie_i_nie_pisze_pliku(tmp_path: Path) -> None:
-    """``CentrumLog(append=…)``: wyrocznia kolejki dostaje linie dziennika bez pliku, zamiast nadpisywać jego zapis."""
-
     lines: list[str] = []
     log = CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log", append=lines.append)
 
@@ -496,7 +470,6 @@ def test_tresc_ktorej_skrzynka_odmawia_zostaje_w_kolejce_a_nastepna_wychodzi_w_t
 def test_druga_kolejka_na_tym_folderze_nie_wysyla_pliku_w_trakcie_wysylki_pierwszej_ani_nie_nastawia_budzenia(
     tmp_path: Path,
 ) -> None:
-    # Restart Centrum w tym samym procesie: kolejka poprzedniego startu dalej zakłada issue okresu.
     hold = threading.Event()
     queue = Queue(tmp_path, FakeReportBox(open_hold=hold))
     queue.queued("treść\n")
@@ -505,14 +478,14 @@ def test_druga_kolejka_na_tym_folderze_nie_wysyla_pliku_w_trakcie_wysylki_pierws
     restarted = queue.restarted()
 
     restarted.resume()
-    assert not restarted.wait_delivered("", THREAD.label, timeout_s=30)
+    pass_ended(restarted)
     searched = len(queue.box.listed)
     hold.set()
     queue.passed()
 
     assert (searched, len(queue.box.issues)) == (1, 1)
     assert queue.files() == []
-    assert queue.clock.wakes == 0  # nowa kolejka nie przeszła folderu, więc nie ma czego ponawiać
+    assert queue.clock.wakes == 0
 
 
 def test_przejscie_pominiete_przez_druga_kolejke_robi_pierwsza_po_swoim(tmp_path: Path) -> None:
@@ -522,7 +495,7 @@ def test_przejscie_pominiete_przez_druga_kolejke_robi_pierwsza_po_swoim(tmp_path
     assert queue.box.searching.wait(30)
     restarted = queue.restarted()
     restarted.post(post(["druga\n"], run_id=NEXT_RUN_IDS[0]))
-    assert not restarted.wait_delivered("", THREAD.label, timeout_s=30)
+    pass_ended(restarted)
 
     hold.set()
 
@@ -535,8 +508,6 @@ def test_przejscie_pominiete_przez_druga_kolejke_robi_pierwsza_po_swoim(tmp_path
 def test_kolejki_starego_i_nowego_centrum_na_jednym_folderze_zakladaja_jedno_issue_okresu_bez_dalszych_budzen(
     tmp_path: Path,
 ) -> None:
-    # Stare Centrum po zwolnieniu portu jeszcze wysyła Kontrolę ilości i kończy się w trakcie, a nowe już startuje na tym
-    # samym folderze.
     queue = Queue(tmp_path, FakeReportBox())
     queue.queued("różnice\n")
     box = SharedBox(tmp_path / "skrzynka")
@@ -545,21 +516,20 @@ def test_kolejki_starego_i_nowego_centrum_na_jednym_folderze_zakladaja_jedno_iss
 
     try:
         new.resume()
-        assert not new.wait_delivered("", THREAD.label, timeout_s=30)
+        pass_ended(new)
     finally:
         old.finish()
     queue.clock.advance(seconds=RETRY_S)
-    assert not new.wait_delivered("", THREAD.label, timeout_s=30)
+    pass_ended(new)
 
     assert [issue["label"] for issue in box.issues()] == ["kontrola-ilosci"]
     assert queue.files() == []
-    assert queue.clock.wakes == 0  # przejście z blokadą kończy budzenie po cudzej blokadzie
+    assert queue.clock.wakes == 0
 
 
 def test_centrum_zabite_miedzy_przyjeciem_czesci_przez_skrzynke_a_znacznikiem_nie_wysyla_jej_po_starcie_drugi_raz(
     tmp_path: Path,
 ) -> None:
-    # Proces Centrum kończy się, gdy Skrzynka przyjęła część 2 Kontroli ilości, a znacznika dostarczenia jeszcze nie ma.
     queue = Queue(tmp_path, FakeReportBox())
     queue.directory.mkdir(parents=True)
     control = post(["x" * 40_000, "y" * 40_000])
@@ -582,8 +552,6 @@ def test_centrum_zabite_miedzy_przyjeciem_czesci_przez_skrzynke_a_znacznikiem_ni
 
 
 def seen(issue: dict[str, object]) -> list[str]:
-    """Treść i komentarze issue skrzynki w plikach tak, jak widzi je Maks."""
-
     comments = issue["comments"]
     assert isinstance(comments, list)
     return [shown(str(text)) for text in (issue["body"], *comments)]
@@ -627,9 +595,6 @@ _ZAMKNIECIE_W_TRAKCIE_PRZEJSCIA: Final = (
 
 
 def test_proces_konczy_sie_mimo_przejscia_kolejki_ktore_czeka_na_skrzynke(tmp_path: Path) -> None:
-    """Skrzynka bez sieci odpowiada dopiero po limicie czasu, a przejście kolejki nie trzyma zamknięcia Centrum: proces
-    kończy się, gdy skończy się jego praca, a wysyłka czeka w pliku na następny start."""
-
     environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
     child = subprocess.Popen(
         [sys.executable, "-c", _ZAMKNIECIE_W_TRAKCIE_PRZEJSCIA, str(tmp_path)],
@@ -724,9 +689,7 @@ FINGERPRINT_LINE = "- Odcisk problemu: 0123456789abcdef"
 REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n## Narzędzie\n\n{FINGERPRINT_LINE}\n"
 
 
-def report_file(line: str) -> str:
-    """Plik kolejki Zgłoszenia, jak go zapisuje Centrum od #426: cel niesie wiersz odcisku problemu ``line``."""
-
+def report_file_of_older_release(line: str) -> str:
     target = {"kind": "report_issue", "label": "zgloszenie", "line": line, "title": "BRAK_WZORCA: Nie znaleziono wzorca."}
     return json.dumps(
         {
@@ -751,7 +714,7 @@ def report_file(line: str) -> str:
         post(["x"]).to_json().replace('"schema_version": 3', '"schema_version": 4'),
         post(["x"]).to_json().replace('"kontrola-ilosci"', '"inna-etykieta"'),
         post(["x"]).to_json().replace('"archived": false', '"archived": 0'),
-        report_file("0123456789abcdef"),
+        report_file_of_older_release("0123456789abcdef"),
     ],
     ids=[
         "urwany",
@@ -781,13 +744,10 @@ def test_plik_kolejki_ktorego_nie_da_sie_odczytac_zostaje_z_jednym_wpisem_i_nie_
     assert queue.log().count(f"skrzynka-nieczytelny plik={broken}") == 1
     assert "nieoczekiwany-wyjatek" not in queue.log()
     queue.passed()
-    assert queue.clock.wakes == 0  # treść nie zmieni się sama, więc ponowienie jej nie pomoże
+    assert queue.clock.wakes == 0, "treść pliku nie zmieni się sama, więc kolejka nie ponawia jego odczytu"
 
 
 def locked_reads(monkeypatch: pytest.MonkeyPatch, queue: Queue, times: int | None) -> None:
-    """``read_text`` pliku kolejki rzuca ``PermissionError`` ``times`` razy (``None``: zawsze), jak plik, który trzyma
-    OneDrive albo antywirus."""
-
     read_text = Path.read_text
     failures = itertools.count(1)
 
@@ -840,9 +800,6 @@ def test_plik_kolejki_ktorego_nigdy_nie_da_sie_odczytac_ponawia_co_minute_z_jedn
 def run_logs(
     version: str, count: int, *, header: str | None = "Logi Uruchomień okresu.", run_id: str = RUN_ID
 ) -> Post:
-    """Logi Uruchomienia ``run_id`` w ``count`` częściach; ``version`` mówi, po której Diagnozie, a każda Diagnoza
-    kolejkuje nowszą wersję tej samej wysyłki (``RunComments.diagnosed``)."""
-
     parts = tuple(tool(f"Logi {version}, część {number}/{count}\n") for number in range(1, count + 1))
     return Post(LOGS, "08_14_09_2026", tool(run_id), None if header is None else tool(header), parts)
 
@@ -855,9 +812,6 @@ def run_logs(
 def test_logi_sprzed_diagnozy_ktore_dojda_po_logach_z_diagnoza_nie_zostawiaja_w_issue_okresu_zadnej_swojej_czesci(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, header: str | None, older: int, newer: int
 ) -> None:
-    # Bez sieci czekają dwie wersje Logów jednego Uruchomienia, po drugiej Diagnozie o część krótsze niż po pierwszej.
-    # Po powrocie sieci plik starszej raz nie daje się odczytać (trzyma go OneDrive), więc nowsza idzie pierwsza. Bez
-    # nagłówka nowsza wersja w jednej części jest cała w treści issue, które sama zakłada.
     queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()))
     queue.outbox.post(run_logs("po pierwszej Diagnozie", older, header=header))
     queue.passed()
@@ -882,9 +836,6 @@ def test_logi_sprzed_diagnozy_ktore_dojda_po_logach_z_diagnoza_nie_zostawiaja_w_
 def test_logi_sprzed_diagnozy_ktore_dojda_po_logach_z_diagnoza_do_issue_okresu_innego_uruchomienia_go_nie_zmieniaja(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Zwykły przypadek u taty: issue okresu założyło wcześniejsze Uruchomienie, więc znacznik nowszej wersji Logów tego
-    # Uruchomienia stoi tylko w jego komentarzach. Starsza wersja dochodzi po nowszej (plik raz trzyma OneDrive) i nie
-    # zmienia ani komentarzy, ani adresu Logów Uruchomienia, który pokazuje podgląd Zgłoszenia (``RunComments.link``).
     queue = Queue(tmp_path, FakeReportBox())
     queue.outbox.post(run_logs("wcześniejszego Uruchomienia", 1, run_id=NEXT_RUN_IDS[0]))
     queue.passed()
@@ -916,8 +867,6 @@ def test_logi_sprzed_diagnozy_ktore_dojda_po_logach_z_diagnoza_do_issue_okresu_i
 def test_logi_z_diagnoza_ponowione_po_urwanej_odpowiedzi_nie_zmieniaja_komentarzy_uruchomienia_drugi_raz(
     tmp_path: Path,
 ) -> None:
-    # Diagnoza skraca Logi o część: kolejka zmienia komentarz części 1 i opróżnia komentarz części 2, a odpowiedź na
-    # opróżnienie się urywa, więc ponowienie po RETRY_S zastaje oba komentarze już w nowszej wersji.
     queue = Queue(tmp_path, FakeReportBox(lost_edit_answers=frozenset({2})))
     queue.outbox.post(run_logs("bez Diagnozy", 2))
     queue.passed()
@@ -937,7 +886,6 @@ def test_logi_z_diagnoza_ponowione_po_urwanej_odpowiedzi_nie_zmieniaja_komentarz
 
 
 def test_logi_z_diagnoza_po_cofnieciu_zegara_komputera_zmieniaja_komentarz_uruchomienia(tmp_path: Path) -> None:
-    # Windows poprawia zegar między wysłaniem Logów a Diagnozą: Diagnoza przychodzi z chwilą sprzed wysłania Logów.
     moments = iter(
         (datetime(2026, 9, 14, 12, 0, 5, tzinfo=timezone.utc), datetime(2026, 9, 14, 12, 0, 0, tzinfo=timezone.utc))
     )
@@ -957,7 +905,6 @@ def test_logi_z_diagnoza_po_cofnieciu_zegara_komputera_zmieniaja_komentarz_uruch
 def test_chwila_w_nazwie_pliku_kolejki_jest_w_utc_takze_na_komputerze_w_strefie_taty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Nazwa pliku kolejki kończy chwilę literą „Z”, a kolejność wersji po nazwach przetrwa zmianę czasu letniego.
     if sys.platform == "win32":
         pytest.skip("time.tzset jest tylko w systemach POSIX")
     monkeypatch.setenv("TZ", "Europe/Warsaw")
@@ -974,12 +921,10 @@ def test_chwila_w_nazwie_pliku_kolejki_jest_w_utc_takze_na_komputerze_w_strefie_
 
     [name] = queue.files()
     moment = datetime.strptime(name.split("-", 1)[0], "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc)
-    assert before <= moment <= after
+    assert before <= moment <= after, "chwila w UTC, bo kolejność wersji po nazwach plików kolejki ma przetrwać zmianę czasu letniego"
 
 
 def test_wersja_zastepcza_z_nastepnego_startu_nie_zmienia_logow_z_wynikiem_ktore_skrzynka_juz_ma(tmp_path: Path) -> None:
-    # Logi z wynikiem doszły do Skrzynki, Centrum zgasło, zanim ich dziennik zniknął, a następny start wysyła z dziennika
-    # wersję zastępczą tego samego Uruchomienia: późniejszą chwilą, ale niższym stopniem (#871, #910).
     queue = Queue(tmp_path, FakeReportBox())
     queue.outbox.post(run_logs("z wynikiem", 1))
     queue.passed()
@@ -994,8 +939,6 @@ def test_wersja_zastepcza_z_nastepnego_startu_nie_zmienia_logow_z_wynikiem_ktore
 
 
 def test_bez_sieci_wersja_zastepcza_z_nastepnego_startu_znika_przy_logach_z_wynikiem_bez_wyslania(tmp_path: Path) -> None:
-    # Bez sieci Logi z wynikiem czekają w kolejce, a następny start dokłada wersję zastępczą tego samego Uruchomienia z
-    # dziennika: po powrocie sieci Skrzynka dostaje tylko Logi z wynikiem, bo mają wyższy stopień (#871, #910).
     queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()))
     queue.outbox.post(run_logs("z wynikiem", 1))
     queue.passed()
@@ -1005,7 +948,7 @@ def test_bez_sieci_wersja_zastepcza_z_nastepnego_startu_znika_przy_logach_z_wyni
     waiting = len(queue.files())
     queue.box.search_failure = None
 
-    queue.clock.advance(RETRY_S)  # przejście poprzedniej pracy Centrum albo tej, które przejmie folder kolejki
+    queue.clock.advance(RETRY_S)
 
     assert (waiting, wait_for(lambda: queue.files() == [])) == (2, True)
     [issue] = queue.box.issues_with(LOGS.label)
@@ -1043,8 +986,6 @@ def test_starsza_wersja_wysylki_ktora_dojdzie_po_nowszej_nie_dopisuje_do_jej_iss
 
 
 class _Stopnie(QueueListener):
-    """Słuchacz kolejki, który zapisuje stopień każdej wysyłki tuż przed jej wysłaniem (``ranks``)."""
-
     def __init__(self) -> None:
         super().__init__()
         self.ranks: list[Rank] = []
@@ -1057,10 +998,6 @@ class _Stopnie(QueueListener):
 def test_starsza_wersja_ktorej_pliku_nie_da_sie_usunac_nie_wychodzi_po_nowszej(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Przejście oznacza wersję zastępczą, którą zastąpiły Logi z wynikiem, jak wysłaną, zanim usunie jej plik: plik,
-    którego nie da się usunąć, zostaje ze znacznikiem, a przejście następnego startu Centrum tylko go usuwa i nie daje
-    go słuchaczowi do wysłania."""
-
     listener = _Stopnie()
     queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()), listener=listener)
     queue.outbox.post(run_logs("z wynikiem", 1))
@@ -1095,9 +1032,6 @@ def test_starsza_wersja_ktorej_pliku_nie_da_sie_usunac_nie_wychodzi_po_nowszej(
 def test_najdluzszy_tekst_z_najdluzszym_identyfikatorem_i_nizszym_stopniem_miesci_sie_ze_znacznikiem(
     tmp_path: Path,
 ) -> None:
-    """Znacznik wysyłki z ``run_id`` o najwięcej dozwolonych znakach i wersją niższego stopnia mieści się w zapasie nad
-    ``TEXT_LIMIT``, więc tekst o ``TEXT_LIMIT`` znakach idzie do Skrzynki w jednym komentarzu GitHuba."""
-
     run_id = "f" * 64
     probe = Post(LOGS, "08_14_09_2026", tool(run_id), None, (tool("x"),), rank=Rank.DRAFT)
     longest = Post(
@@ -1136,7 +1070,7 @@ def test_wyslanej_wysylki_ktorej_nie_da_sie_usunac_skrzynka_nie_dostaje_drugi_ra
     assert wait_for(lambda: failed_removals() == 1)
     queue.outbox.post(post(["druga\n"], run_id=NEXT_RUN_IDS[0]))
     assert wait_for(lambda: failed_removals() == 2)
-    queue.passed()  # inaczej nowa kolejka zastaje przejście tej i oddaje mu swoje (outbox._claimed)
+    queue.passed()
     queue.restarted().resume()
     assert wait_for(lambda: failed_removals() == 4)
     monkeypatch.setattr(Path, "unlink", unlink)
@@ -1164,7 +1098,7 @@ def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_pa
     queue.outbox.post(run_logs)
     assert wait_for(lambda: "przyczyna=brak-sieci" in queue.log())
     waiting = queue.outbox.delivered(RUN_ID, "logi-uruchomienia")
-    queue.clock.pause(LIST_LAG_S)  # po zakładaniu bez odpowiedzi KeyedBox tyle nie zakłada issue (#879)
+    queue.clock.pause(LIST_LAG_S)
     queue.outbox.resume()
     assert queue.box.wait_until(lambda box: bool(box.issues) and bool(box.issues[0].comments))
     assert wait_for(lambda: queue.outbox.delivered(RUN_ID, "logi-uruchomienia") is not None)
@@ -1199,7 +1133,6 @@ def test_zgloszenie_to_issue_z_trescia_podgladu_bez_dopisanego_wiersza(tmp_path:
     assert wait_for(lambda: queue.files() == [])
 
 
-# Pierwsze Zgłoszenie tego odcisku, już w Skrzynce: inne Uruchomienie, inna Diagnoza.
 FIRST_REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n- Logi: pierwsze Uruchomienie\n\n## Narzędzie\n\n{FINGERPRINT_LINE}\n"
 
 
@@ -1260,7 +1193,6 @@ def test_zgloszenie_w_wiecej_niz_jednej_czesci_to_blad_programu() -> None:
     longest = REPORT_BODY + "x" * (PART_LIMIT - len(REPORT_BODY))
     assert report(longest).parts == (longest,)
 
-    # Ponowiona wysyłka przejmuje Zgłoszenie, które sama założyła, bez komentarzy, więc część 2 by przepadła (#724).
     with pytest.raises(ValueError, match="jednej części"):
         report(longest + "x")
 
@@ -1298,7 +1230,7 @@ def test_plik_zgloszenia_z_wierszem_odcisku_trafia_do_otwartego_zgloszenia_tego_
     queue = Queue(tmp_path, FakeReportBox(issues=[open_report]))
     queue.directory.mkdir(parents=True)
     (queue.directory / "20261023T101500000000Z-0001-zgloszenie-3f2a9c1b.json").write_text(
-        report_file(FINGERPRINT_LINE), encoding="utf-8"
+        report_file_of_older_release(FINGERPRINT_LINE), encoding="utf-8"
     )
 
     queue.outbox.resume()
@@ -1309,8 +1241,6 @@ def test_plik_zgloszenia_z_wierszem_odcisku_trafia_do_otwartego_zgloszenia_tego_
 
 
 class FollowingUp(QueueListener):
-    """Słuchacz, który po każdej przyjętej Uwadze oddaje kolejce komentarz do jej issue."""
-
     def delivered(self, post: Post, number: int) -> Sequence[Post]:
         super().delivered(post, number)
         if not isinstance(post.target, NewIssue):
@@ -1347,8 +1277,6 @@ def test_wysylka_ktora_sluchacz_zostawil_na_nastepne_przejscie_czeka_w_kolejce_b
 
 
 def _unreadable_at_comment_list(queue: Queue, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Antywirus trzyma plik zapisów Skrzynki przy liście komentarza: pierwszy odczyt, który ma już issue Uwagi."""
-
     read_text = Path.read_text
     refused: list[Path] = []
 
@@ -1363,8 +1291,6 @@ def _unreadable_at_comment_list(queue: Queue, monkeypatch: pytest.MonkeyPatch) -
 
 
 def _unwritable_after_opening(queue: Queue, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Antywirus trzyma plik zapisów Skrzynki przy zapisie odpowiedzi na założenie Uwagi: zapis bez odpowiedzi zostaje."""
-
     write_text = Path.write_text
     refused: list[Path] = []
 
@@ -1385,11 +1311,6 @@ def _unwritable_after_opening(queue: Queue, monkeypatch: pytest.MonkeyPatch) -> 
 def test_komentarz_do_swiezego_issue_ktorego_lista_nie_pokazuje_czeka_zamiast_porzucenia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: Callable[[Queue, pytest.MonkeyPatch], None]
 ) -> None:
-    """Lista issue jeszcze nie pokazuje Uwagi, którą kolejka właśnie założyła, a plik zapisów Skrzynki nie mówi o niej
-    (#915): nie da się go odczytać przy liście komentarza do niej albo nie przyjął odpowiedzi na jej założenie. Kolejka
-    nie wie, że issue zniknęło, więc komentarz czeka na budzenie ``RETRY_S``, zamiast przepaść jak do usuniętego issue
-    (#402), i trafia do Uwagi raz."""
-
     queue = Queue(tmp_path, FakeReportBox(list_lag=True), listener=FollowingUp())
     fault(queue, monkeypatch)
 
@@ -1409,10 +1330,6 @@ def test_komentarz_do_swiezego_issue_ktorego_lista_nie_pokazuje_czeka_zamiast_po
 def test_komentarz_do_issue_ktore_lista_juz_pokazuje_dochodzi_takze_bez_odczytu_pliku_zapisow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Wstrzymanie (#915) dotyczy tylko numeru, którego lista nie pokazuje: gdy lista issue ma już Uwagę, komentarz do
-    niej dochodzi w tym samym przejściu także przy liście, przy której pliku zapisów Skrzynki nie da się odczytać, bo o
-    issue na liście nic nie trzeba rozstrzygać."""
-
     queue = Queue(tmp_path, FakeReportBox(), listener=FollowingUp())
     _unreadable_at_comment_list(queue, monkeypatch)
 
@@ -1425,8 +1342,6 @@ def test_komentarz_do_issue_ktore_lista_juz_pokazuje_dochodzi_takze_bez_odczytu_
 
 
 def logs_with_file(run_id: str) -> Post:
-    """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum Logów okresu, jak ``comment_versions.post_of``."""
-
     archive = ArchiveFile(
         tool("logi-08_14_09_2026"), tool("Logi Uruchomień 08_14_09_2026"), tool("Opis."), tool(f"{run_id}.json"), logs_text("{}\n")
     )
@@ -1434,10 +1349,6 @@ def logs_with_file(run_id: str) -> Post:
 
 
 def test_przejscie_w_ktorym_archiwum_odmowilo_nie_pyta_go_o_pliki_nastepnych_logow(tmp_path: Path) -> None:
-    """Bez uprawnienia Tokenu do zapisu treści repozytorium każde Uruchomienie okresu czeka w kolejce ze swoim plikiem do
-    Archiwum Logów okresu. Przejście, w którym Archiwum odmówiło, nie pyta go już o pliki następnych Logów, a komentarz
-    każdych idzie z dopiskiem; następne przejście (budzik ``RETRY_S``) pyta Archiwum znowu raz (#844)."""
-
     queue = Queue(tmp_path, FakeReportBox(archive_failure=Refused()))
     queue.directory.mkdir(parents=True)
     run_ids = (RUN_ID, *NEXT_RUN_IDS)
@@ -1459,16 +1370,11 @@ def test_przejscie_w_ktorym_archiwum_odmowilo_nie_pyta_go_o_pliki_nastepnych_log
     queue.clock.advance(RETRY_S)
     queue.passed()
 
-    # Części są już w Skrzynce, więc budzenie pyta tylko Archiwum, a dziennik tej pracy Centrum mówi raz o każdym pliku.
     assert (queue.box.archive_requests, len(queue.box.listed)) == (2, asked)
     assert queue.log().count("przyczyna=odmowa-archiwum") == len(run_ids)
 
 
 def test_najdluzszy_komentarz_logow_z_plikiem_zostawia_miejsce_na_dopisek_gdy_archiwum_odmowi(tmp_path: Path) -> None:
-    """Komentarz Logów z plikiem do Archiwum Logów okresu dostaje dopisek „czeka w Kolejce wysyłki”, gdy Archiwum pliku
-    nie przyjmie, więc wysyłka przyjmuje tylko część, która mieści się w komentarzu Skrzynki razem z dopiskiem: z
-    najdłuższą przyjętą częścią i odmową Archiwum komentarz z dopiskiem nie przekracza limitu."""
-
     def logs(length: int) -> Post | None:
         try:
             return replace(logs_with_file(RUN_ID), parts=(tool("ą" * length),))
@@ -1525,9 +1431,6 @@ def test_plik_do_archiwum_z_wysylka_w_dwoch_czesciach_to_blad_programu() -> None
 
 
 def test_logi_z_plikiem_bez_naglowka_maja_w_tresci_nowego_issue_dopisek_ze_plik_czeka(tmp_path: Path) -> None:
-    """Bez nagłówka część Logów jest treścią nowego issue okresu, więc tam stoi dopisek o pliku, którego Archiwum
-    okresu nie przyjęło."""
-
     queue = Queue(tmp_path, FakeReportBox(archive_failure=Refused()))
 
     queue.outbox.post(replace(logs_with_file(RUN_ID), header=None))
@@ -1538,14 +1441,11 @@ def test_logi_z_plikiem_bez_naglowka_maja_w_tresci_nowego_issue_dopisek_ze_plik_
     assert issue.comments == []
 
 
-# Wersja wysyłki pliku kolejki Logów z poprzedniej pracy Centrum (``queued_logs``): chwila i numer z jego nazwy.
 LOGS_VERSION = "20261023T101500000000Z-0001"
 LOGS_TAG = "logi-08_14_09_2026"
 
 
 def queued_logs(queue: Queue) -> None:
-    """Logi Uruchomienia ``RUN_ID`` z plikiem do Archiwum w pliku kolejki z poprzedniej pracy Centrum."""
-
     queue.directory.mkdir(parents=True, exist_ok=True)
     name = f"{LOGS_VERSION}-logi-uruchomienia-{RUN_ID[:8]}.json"
     (queue.directory / name).write_text(logs_with_file(RUN_ID).to_json(), encoding="utf-8")
@@ -1565,8 +1465,6 @@ def test_plik_logow_w_archiwum_ma_etykiete_z_nazwa_i_wersja_wysylki(tmp_path: Pa
 
 
 def test_plik_archiwum_z_etykieta_w_innej_postaci_ustepuje_plikowi_wysylki(tmp_path: Path) -> None:
-    """Etykieta, z której kolejka nie odczyta wersji (np. dopisana ręcznie), nie jest nowszą wersją wysyłki."""
-
     stale = ArchivedFile(1, f"{RUN_ID}.json.gz", f"{RUN_ID}.json.gz (wersja dodany ręcznie)", gzip.compress(b"stary\n"))
     archive = BoxArchive(1, LOGS_TAG, "Logi Uruchomień 08_14_09_2026", "Opis.", [stale])
     queue = Queue(tmp_path, FakeReportBox(archives=[archive]))
@@ -1580,9 +1478,6 @@ def test_plik_archiwum_z_etykieta_w_innej_postaci_ustepuje_plikowi_wysylki(tmp_p
 
 
 def test_plik_czekajacy_na_archiwum_bez_sieci_zostaje_w_kolejce_i_dochodzi_po_powrocie_sieci(tmp_path: Path) -> None:
-    """Plik Logów, którego części już są w Skrzynce, a Archiwum jest nieosiągalne, czeka jak bez sieci (linia dziennika i
-    budzenie ``RETRY_S``), a nie znika; gdy sieć wraca, dochodzi do Archiwum z linią dziennika jego okresu."""
-
     queue = Queue(tmp_path, FakeReportBox(archive_failure=Refused()))
     queued_logs(queue)
     queue.outbox.resume()
@@ -1604,8 +1499,6 @@ def test_plik_czekajacy_na_archiwum_bez_sieci_zostaje_w_kolejce_i_dochodzi_po_po
 def test_plik_starszego_centrum_ze_znacznikiem_dostarczenia_znika_po_starcie_bez_skrzynki_i_bez_linii_o_archiwum(
     tmp_path: Path,
 ) -> None:
-    """Plik schematu 2 (bez pliku do Archiwum), który stare Centrum oznaczyło jako dostarczony, ale go nie usunęło."""
-
     queue = Queue(tmp_path, FakeReportBox())
     queue.directory.mkdir(parents=True)
     document = json.loads(post(["treść\n"]).to_json())
@@ -1623,11 +1516,6 @@ def test_plik_starszego_centrum_ze_znacznikiem_dostarczenia_znika_po_starcie_bez
 
 @pytest.mark.parametrize("schemat", [3, 2])
 def test_plik_kolejki_starszego_wydania_z_identyfikatorem_innej_postaci_wychodzi_w_pierwszym_przejsciu(schemat: int, tmp_path: Path) -> None:
-    """Plik kolejki, który zapisało starsze Wydanie (schemat 3 sprzed typu ``Outgoing`` identyfikatora albo 2 bez pliku do
-    Archiwum), z identyfikatorem spoza ``uuid4().hex``: parser daje mu typ do wysyłki (``tool``), więc przejście go
-    wysyła, a kolejka u taty nie staje. ``passed`` wraca z końcem przejścia także wtedy, gdy przejście padło na kontroli
-    typu, więc test pada od razu, bez limitu czekania na skrzynkę (przegląd #1843, D2)."""
-
     queue = Queue(tmp_path, FakeReportBox())
     queue.directory.mkdir(parents=True)
     document = json.loads(post(["treść\n"], run_id="20261023-101500-kontrola").to_json())
@@ -1644,9 +1532,6 @@ def test_plik_kolejki_starszego_wydania_z_identyfikatorem_innej_postaci_wychodzi
 
 
 def test_kontrole_ilosci_okresu_w_jednym_przejsciu_ida_do_jednego_issue_zanim_lista_je_pokaze(tmp_path: Path) -> None:
-    """Lista issue GitHuba pokazuje nowe issue po kilku sekundach (#879). Druga Kontrola ilości okresu, która w tym samym
-    przejściu idzie zaraz po tym, jak pierwsza założyła issue okresu, trafia do niego komentarzem."""
-
     queue = Queue(tmp_path, FakeReportBox(list_lag=True))
     queue.queued("pierwsza\n", "druga\n")
 
@@ -1662,9 +1547,6 @@ def test_kontrole_ilosci_okresu_w_jednym_przejsciu_ida_do_jednego_issue_zanim_li
 def test_kontrola_ilosci_przy_liscie_bez_odczytu_pliku_zapisow_czeka_na_budzenie_zamiast_drugiego_issue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Antywirus trzyma plik zapisów Skrzynki akurat przy liście drugiej Kontroli ilości okresu, a lista issue jeszcze nie
-    pokazuje issue, które założyła pierwsza (#909). Druga czeka na budzenie ``RETRY_S`` i trafia do tego issue."""
-
     queue = Queue(tmp_path, FakeReportBox(list_lag=True))
     queue.queued("pierwsza\n", "druga\n")
     read_text = Path.read_text
@@ -1694,10 +1576,6 @@ def test_kontrola_ilosci_przy_liscie_bez_odczytu_pliku_zapisow_czeka_na_budzenie
 def test_plik_zapisow_ktorego_nigdy_nie_da_sie_odczytac_wstrzymuje_wysylke_z_jedna_linia_dziennika_do_naprawy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Plik zapisów Skrzynki nieczytelny na stałe (#909): kolejka nie zakłada issue, którego zapisu nie może wykluczyć,
-    czeka jak bez sieci i ponawia co budzenie, a dziennik mówi raz typ błędu (plik wynika z nazwy zdarzenia); po
-    naprawie pliku wysyłka wychodzi."""
-
     queue = Queue(tmp_path, FakeReportBox())
     queue.queued("treść\n")
     read_text = Path.read_text
@@ -1730,9 +1608,6 @@ def test_plik_zapisow_ktorego_nigdy_nie_da_sie_odczytac_wstrzymuje_wysylke_z_jed
 def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_nowa_wysylka_zanim_lista_ja_pokaze_nie_daja_drugiego_issue(
     tmp_path: Path,
 ) -> None:
-    """GitHub założył issue Uwagi taty, a odpowiedź zginęła (#879). Nowa wysyłka budzi przejście od razu, zanim lista
-    issue pokaże to issue; Uwaga czeka wtedy na budzenie ``RETRY_S`` zamiast założyć drugie issue."""
-
     queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
     queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga"),)))
     queue.passed()
@@ -1753,9 +1628,6 @@ def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_nowa_wysylka_zanim_lista_ja_pok
 def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_start_centrum_zanim_lista_ja_pokaze_nie_daja_drugiego_issue(
     tmp_path: Path,
 ) -> None:
-    """Centrum gaśnie po zgubionej odpowiedzi na założenie issue Uwagi taty i startuje znów, zanim lista issue je pokaże
-    (#879): nowe Centrum zna chwilę tamtego zakładania z pliku obok klucza i czeka na budzenie ``RETRY_S``."""
-
     queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
     queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga"),)))
     queue.passed()
@@ -1766,15 +1638,13 @@ def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_start_centrum_zanim_lista_ja_po
 
     assert len(queue.box.issues_with("uwaga-taty")) == 1
     queue.box.list_caught_up()
-    queue.clock.advance(RETRY_S)  # budzi też kolejkę poprzedniego Centrum, która w teście jeszcze żyje
+    queue.clock.advance(RETRY_S)
     assert wait_for(lambda: queue.files() == [])
     [note] = queue.box.issues_with("uwaga-taty")
     assert (note.body, note.comments) == ("Uwaga", [])
 
 
 def test_dwie_uwagi_taty_jedna_po_drugiej_zakladaja_dwa_issue_bez_czekania_na_liste(tmp_path: Path) -> None:
-    """Zakładanie, na które przyszła odpowiedź, nie wstrzymuje następnego zakładania z tą etykietą w tym Centrum (#879)."""
-
     queue = Queue(tmp_path, FakeReportBox(list_lag=True))
 
     queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Pierwsza")), None, tool(RUN_ID), None, (tool("Pierwsza"),)))
@@ -1789,10 +1659,6 @@ def test_dwie_uwagi_taty_jedna_po_drugiej_zakladaja_dwa_issue_bez_czekania_na_li
 def test_logi_dwoch_uruchomien_nowego_okresu_w_jednym_przejsciu_ida_do_archiwum_zanim_lista_je_pokaze(
     tmp_path: Path,
 ) -> None:
-    """Lista Archiwów (GitHub Releases) pokazuje nowe Archiwum po kilku sekundach (#887, #879). Drugie Logi nowego okresu
-    w tym samym przejściu dokładają plik do Archiwum, które założyły pierwsze, zamiast dostać odmowę drugiego Archiwum
-    tego tagu i komentarz z dopiskiem, że plik czeka."""
-
     queue = Queue(tmp_path, FakeReportBox(list_lag=True))
     queue.directory.mkdir(parents=True)
     run_ids = (RUN_ID, NEXT_RUN_IDS[0])
@@ -1812,8 +1678,6 @@ def test_logi_dwoch_uruchomien_nowego_okresu_w_jednym_przejsciu_ida_do_archiwum_
 
 _GOTOWA: Final = "from rozliczenia.centrum.outbox import Outbox, Post\n\n"
 
-# Drogi do pliku kolejki obok wysyłki zbudowanej przez konstruktor ``Post`` (przegląd #1660, W1) → zgłoszenie mypy albo
-# ruff, które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
 DROGI_OBOK_POST: Final = {
     "własna klasa z to_json": (
         """from rozliczenia.centrum.outbox import Outbox
@@ -1874,11 +1738,7 @@ def wyslij(kolejka: Outbox, post: Post) -> bool:
     ),
 }
 
-# Znane luki kolejki (tests/fixtures/znane_luki.py): postaci, które zmieniają pole gotowej wysyłki albo dają kolejce
-# inny obiekt, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie łapią.
 ZNANE_LUKI: Final = {
-    # Pola wysyłki period i state mają typ str, nie typ-dowód, więc plik kolejki bierze każdy napis; do Skrzynki nie idą
-    # wprost (okres trafia do dziennika Centrum, stan zostaje w pliku), a identyfikator wysyłki (run_id) ma typ Outgoing.
     "konstrukcja bez __new__: str.__new__ z klasą Outgoing w identyfikatorze wysyłki": _GOTOWA
     + """from rozliczenia.client_data import Outgoing
 
@@ -1887,15 +1747,18 @@ def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
     object.__setattr__(post, "run_id", str.__new__(Outgoing, komorka))
     return kolejka.post(post)
 """,
-    "object.__setattr__ na gotowej wysyłce: pole str bez typu-dowodu (period)": _GOTOWA
+    "object.__setattr__ na gotowej wysyłce: pole str bez typu-dowodu (period, które idzie tylko do dziennika Centrum)": _GOTOWA
     + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
     object.__setattr__(post, "period", komorka)
     return kolejka.post(post)
 """,
+    "object.__setattr__ na gotowej wysyłce: pole str bez typu-dowodu (state, które zostaje w pliku kolejki)": _GOTOWA
+    + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    object.__setattr__(post, "state", komorka)
+    return kolejka.post(post)
+""",
 }
 
-# Postaci, które bez kontroli dokładnego typu w chwili zapisu (outbox._queue_text) dawałyby plikowi kolejki wartość
-# komórki, a z nią dostają odmowę → fragment zgłoszenia biegu przez plik kolejki.
 ODMOWY_KOLEJKI: Final = {
     "object.__setattr__ na gotowej wysyłce: identyfikator wysyłki z komórki": (
         _GOTOWA
@@ -1936,8 +1799,6 @@ def wyslij(kolejka: Outbox, wysylki: dict[str, Any]) -> bool:
 """,
         "bieg TypeError: Plik kolejki bierze tylko Post i LogsPost, nie Atrapa.",
     ),
-    # Podklasie z type() odmawia już metaklasa przy tworzeniu (client_data.WithoutSubclasses), a podklasie z type.__new__,
-    # który ją pomija, i bazą przed typem bez super() dopiero plik kolejki.
     "podklasa LogsPost w biegu z własnym to_json": (
         """from typing import Any
 
@@ -1993,8 +1854,6 @@ def wyslij(kolejka: Outbox, wysylka: object) -> bool:
 
 
 class Atrapa:
-    """Wysyłka innej klasy niż ``Post`` i ``LogsPost``: pola wysyłki z wartością komórki i własne ``to_json``."""
-
     target = NewIssue("uwaga-taty", tool("Tytuł"))
     period = None
     run_id = "r"
@@ -2011,8 +1870,6 @@ class Atrapa:
 
 
 def _w_pliku_kolejki_przez_outbox(plik: Path, katalog: Path) -> list[str]:
-    """Bieg próbki, która podaje wysyłkę ``Outbox.post``: kolejka bez wątku wysyłki, więc plik zostaje w ``katalog``."""
-
     log = CentrumLog(katalog / "centrum-rozliczen.log")
     keyed = KeyedBox(FakeReportBox(), lambda: None, clock=ManualClock(), opening=NotesFile(katalog / OPENING_FILE, replace_atomically, log.box_notes_unavailable))
     kolejka = Outbox(katalog / "kolejka", keyed, log, clock=ManualClock(), listener=QueueListener(), start=lambda drain: None)
@@ -2036,10 +1893,6 @@ def test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodz
 
 @pytest.mark.parametrize("opis", ODMOWY_KOLEJKI.keys())
 def test_plik_kolejki_odmawia_wysylki_innego_typu_niz_post_i_logs_post_w_chwili_zapisu(opis: str, tmp_path: Path) -> None:
-    """``Outbox.post`` pisze plik kolejki funkcją modułu (``_queue_text``), która bierze tylko wysyłkę dokładnie ``Post``
-    albo ``LogsPost`` z tekstem dokładnie ``Outgoing``, więc atrapa, podklasa, ``to_json`` podmienione na klasie i pole
-    zmienione po konstruktorze nie dają plikowi wartości komórki (#1551)."""
-
     kod, odmowa = ODMOWY_KOLEJKI[opis]
     plik = tmp_path / "probka.py"
     plik.write_text(kod, encoding="utf-8")
@@ -2049,8 +1902,6 @@ def test_plik_kolejki_odmawia_wysylki_innego_typu_niz_post_i_logs_post_w_chwili_
     assert len(zgloszenia) == 1 and odmowa in zgloszenia[0], zgloszenia
 
 
-# Tekst do wysyłki z komórki taty bez strażnika pracy Centrum (ADR 0025, reguła danych): drogi, znane luki i odmowy
-# pliku kolejki. Wartość komórki jest syntetyczna.
 _KOMORKA: Final = "Syntetyczna Lipowa 5"
 
 _POST = """\
@@ -2071,16 +1922,9 @@ class Mixin:
 def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     tekst: Any = type.__new__(type(Outgoing), "Tekst", (Mixin, Outgoing), {"__new__": lambda cls, t: str.__new__(cls, t)})
 """
-"""Początek próbki z podklasą ``Outgoing`` z ``type.__new__`` i bazą przed nim, której ``__init_subclass__`` nie woła
-``super()``: taka podklasa omija odmowę ``__init_subclass__`` typu przy jej powstaniu."""
 
-# Znane luki jednej drogi wyjścia (tests/fixtures/znane_luki.py): opis postaci → nowy producent w src/rozliczenia/centrum,
-# który daje kolejce wartość z komórki taty bez strażnika pracy Centrum, a przechodzi przez mypy i ruff z konfiguracją src/
-# i przez plik kolejki (tests/fixtures/plik_kolejki.py).
 ZNANE_LUKI_TEKSTU: Final = {
-    # Identyfikator Uwagi taty bierze note_post jako str i owija w tool (prawo TID251 case_delivery), więc napis
-    # wywołującego idzie do znacznika w Skrzynce bez gramatyki; identyfikator z faktów startu post_of ma ją (tool_text).
-    "pole str wywołującego w tekście narzędzia z prawem tool: identyfikator Uwagi taty (note_post)": """\
+    "pole str wywołującego w tekście narzędzia z prawem tool: identyfikator Uwagi taty (note_post) w znaczniku Skrzynki bez gramatyki": """\
 from rozliczenia.centrum.case_delivery import note_post
 from rozliczenia.centrum.outbox import Post
 
@@ -2110,8 +1954,6 @@ def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
 def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     return Post(cel, None, post.run_id, None, (tool(komorka),))
 """,
-    # Kontrola w chwili zapisu pliku kolejki sprawdza typ obiektu tak, jak go zastaje, więc zmiana obiektu, klasy albo
-    # modułu sprawdzenia w chwili działania ją omija: jedna próbka na klasę (#1551).
     "zmiana obiektu w chwili działania: przypisanie __class__ Outgoing napisowi obcej podklasy str": _POST
     + """from typing import cast
 
@@ -2142,8 +1984,6 @@ def wysylka(komorka: str, post: Post) -> str:
 """,
 }
 
-# Postaci, które bez kontroli dokładnego typu w chwili użycia (outbox._queue_text, outbox._pack, client_data.Outgoing.__add__)
-# dawałyby plikowi kolejki wartość komórki, a z nią dostają odmowę → fragment zgłoszenia biegu.
 ODMOWY_TEKSTU: Final = {
     "goły napis z type: ignore": (
         _POST
@@ -2298,8 +2138,6 @@ def wysylka(komorka: str, pamiec: ForbiddenValues, post: Post) -> Post:
 """
 _GOTOWY_CEL: Final = "from rozliczenia.centrum.outbox import NewIssue, Post\n\n\n"
 
-# Drogi do pola tekstowego celu wysyłki z wartością z komórki taty bez strażnika (każde pole każdego celu i ich formy
-# siostrzane) → zgłoszenie mypy albo ruff, które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
 DROGI_DO_CELU: Final = {
     **{
         f"{cel.split('(')[0]} {pole} z komórki": (_CEL.format(cel=cel), 'has incompatible type "str"; expected "Outgoing"')
@@ -2400,8 +2238,6 @@ def wysylka(komorka: str, post: Post) -> str:
     ),
 }
 
-# Znane luki celu wysyłki (tests/fixtures/znane_luki.py): postaci, które dają polu tekstowemu celu wartość z komórki taty
-# bez strażnika, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie łapią.
 ZNANE_LUKI_CELU: Final = {
     "str.__new__ z klasą Outgoing w tytule celu": _GOTOWY_CEL
     + """from rozliczenia.client_data import Outgoing
@@ -2434,8 +2270,6 @@ def wysylka(komorka: str, post: Post) -> str:
 """,
 }
 
-# Postaci, które bez kontroli dokładnego typu celu w chwili zapisu (outbox._target_json) dawałyby polu celu w pliku
-# kolejki wartość komórki, a z nią dostają odmowę → fragment zgłoszenia biegu.
 ODMOWY_CELU: Final = {
     "object.__setattr__ na gotowym celu": (
         _GOTOWY_CEL
@@ -2488,8 +2322,6 @@ def wysylka(komorka: str, post: Post) -> Post:
 
 
 def _argumenty_wysylki() -> dict[str, object]:
-    """Argumenty funkcji próbki drogi wyjścia, świeże dla każdej próbki, bo próbka zmienia gotową wysyłkę i cel."""
-
     return {
         "komorka": _KOMORKA,
         "wiersz": {"ADRES": _KOMORKA},
@@ -2503,9 +2335,6 @@ def _w_pliku_kolejki(plik: Path) -> list[str]:
 
 
 def test_bieg_znanej_luki_przez_plik_kolejki_zglasza_probke_ktorej_komorka_nie_dochodzi_do_pliku(tmp_path: Path) -> None:
-    """Próbka znanej luki przechodzi bieg tylko wtedy, gdy wartość komórki stoi w pliku kolejki; próbka, która wysyła sam
-    tekst narzędzia, jest zgłoszeniem, więc nie zostałaby znaną luką (przegląd #1731, runda 1, D1)."""
-
     plik = tmp_path / "bez_komorki.py"
     plik.write_text(_POST + 'def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:\n    return Post(cel, None, post.run_id, None, (cel.title,))\n', encoding="utf-8")
 
@@ -2537,10 +2366,6 @@ def test_pole_tekstowe_celu_wysylki_z_komorki_bez_straznika_nie_przechodzi_mypy_
 
 @pytest.mark.parametrize("opis", [*ODMOWY_TEKSTU, *ODMOWY_CELU])
 def test_plik_kolejki_odmawia_tekstu_i_celu_innego_typu_niz_dokladnie_outgoing_w_chwili_uzycia(opis: str, tmp_path: Path) -> None:
-    """Plik kolejki (``_queue_text``), bloki ``Post.of`` (``_pack``) i sklejenie (``Outgoing.__add__``) biorą tekst i cel
-    dokładnego typu w chwili użycia, a wejście czytają raz, więc podklasa, jakkolwiek powstała, napis spoza strażnika i
-    sekwencja z innym drugim przebiegiem nie dają plikowi kolejki wartości komórki (#1551)."""
-
     kod, odmowa = (ODMOWY_TEKSTU | ODMOWY_CELU)[opis]
     plik = tmp_path / "probka.py"
     plik.write_text(kod, encoding="utf-8")
@@ -2553,23 +2378,17 @@ def test_plik_kolejki_odmawia_tekstu_i_celu_innego_typu_niz_dokladnie_outgoing_w
 _Udawane: Final[Callable[[tuple[Outgoing, ...]], tuple[Outgoing, ...]]] = type(
     "_Udawane", (tuple,), {"__getitem__": lambda self, key: _KOMORKA}
 )
-"""Części, których przebieg daje tekst narzędzia, a indeks (``parts[0]``, którego używa dostarczenie) wartość komórki."""
 
 
-# Słuchacz kolejki (Listener.prepare) oddaje inną wysyłkę niż ta z pliku → czy kontrola przed Skrzynką odmawia (TypeError,
-# Skrzynka nie dostaje nic), czy wysyła odczyt sprawdzonego tekstu (bez wartości komórki).
 ODMOWY_SLUCHACZA: Final[dict[str, tuple[Callable[[Post], Post], bool]]] = {
     "część spoza typu-dowodu": (lambda post: replace(post, parts=(cast(Outgoing, _KOMORKA),)), True),
     "cel z podklasy NewIssue": (lambda post: replace(post, target=type("Cel", (NewIssue,), {})("uwaga-taty", tool("Tytuł"))), True),
     "części z indeksem innym niż przebieg": (lambda post: replace(post, parts=_Udawane(post.parts)), False),
-    # Plik kolejki zapisuje stan każdego typu, a jego odczyt bierze tylko napis (przegląd #1809, D1).
     "stan wysyłki, którego odczyt pliku kolejki nie bierze": (lambda post: replace(post, state=cast(str, 1)), True),
 }
 
 
 class _Sluchacz(QueueListener):
-    """Słuchacz kolejki, który tuż przed wysłaniem oddaje wysyłkę zmienioną przez ``zmiana``."""
-
     def __init__(self, zmiana: Callable[[Post], Post]) -> None:
         super().__init__()
         self.zmiana = zmiana
@@ -2580,9 +2399,6 @@ class _Sluchacz(QueueListener):
 
 @pytest.mark.parametrize("opis", ODMOWY_SLUCHACZA.keys())
 def test_wysylka_od_sluchacza_przechodzi_kontrole_typu_przed_skrzynka(opis: str, tmp_path: Path) -> None:
-    """Słuchacz zmienia wysyłkę po pliku kolejki, więc kontrola dokładnego typu z zapisu pliku (``_queue_text``) biegnie też
-    na jego wyniku przed Skrzynką, a do Skrzynki idzie odczyt sprawdzonego tekstu (#1551)."""
-
     zmiana, odmowa = ODMOWY_SLUCHACZA[opis]
     queue = Queue(tmp_path, FakeReportBox(), listener=_Sluchacz(zmiana))
 

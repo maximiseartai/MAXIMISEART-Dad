@@ -11,7 +11,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.centrum.settings.reads import SettingsSnapshot
 from rozliczenia.centrum.reports import NoPreview, ProblemFingerprint, ReportHandle, ReportShown, Reports, StopReport
 from rozliczenia.process_run import Stop
 

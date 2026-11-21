@@ -1,5 +1,3 @@
-"""Drive features/metryki.md."""
-
 from __future__ import annotations
 
 from itertools import pairwise

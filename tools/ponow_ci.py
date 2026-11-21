@@ -210,7 +210,7 @@ def log_kroku(log: str, kroki: Sequence[Mapping[str, Any]], nazwa: str | None = 
 
 
 def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie:
-    """Sygnatury z kroku, który zaczerwienił zadanie (``log_kroku``), i padnięte testy z całego logu zadania (``_log``)."""
+    """Sygnatury z kroku, który zaczerwienił zadanie (``log_kroku``), i padnięte testy z całego logu zadania (``log_zadania``)."""
 
     return Zadanie(
         nazwa,
@@ -224,7 +224,7 @@ def _sygnatury(tekst: str) -> tuple[str, ...]:
     return tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(tekst))
 
 
-def _log(api: GitHub, job: Mapping[str, Any]) -> str:
+def log_zadania(api: GitHub, job: Mapping[str, Any]) -> str:
     """Log zadania z API, którego każdy koniec linii jest ``\\n``.
 
     Log zadania Windows z API kończy linie ``\\r\\n`` (``pytest (Python 3.13, 5/5)`` runu 43523010762: 593 z 600 linii), a wzorce
@@ -237,10 +237,10 @@ def _log(api: GitHub, job: Mapping[str, Any]) -> str:
 
 
 def _required(api: GitHub, job: Mapping[str, Any], zadania_proby: Sequence[Mapping[str, Any]]) -> Zadanie:
-    log, kroki = _log(api, job), job.get("steps") or ()
+    log, kroki = log_zadania(api, job), job.get("steps") or ()
     zadania = {inne["name"]: inne for inne in zadania_proby}
     bez_zapisu = [zadania.get(found[1].removesuffix(_BEZ_ZAPISU)) for found in _PRZYCZYNA_REQUIRED.finditer(log_kroku(log, kroki))]
-    sygnatury = [_sygnatury(log_kroku(_log(api, inne), inne.get("steps") or (), WYSLANIE_CZASOW)) if inne else () for inne in bez_zapisu]
+    sygnatury = [_sygnatury(log_kroku(log_zadania(api, inne), inne.get("steps") or (), WYSLANIE_CZASOW)) if inne else () for inne in bez_zapisu]
     if sygnatury and all(sygnatury):
         return Zadanie(job["name"], tuple(dict.fromkeys(nazwa for jego in sygnatury for nazwa in jego)), (), zielone=tuple(inne["id"] for inne in bez_zapisu if inne))
     return zadanie(job["name"], log, kroki)
@@ -305,7 +305,7 @@ def _werdykt(api: GitHub, run: int, proba: int, flaky: frozenset[str]) -> Werdyk
     zadania_proby = _zadania_proby(api, run, proba)
     padniete = [job for job in zadania_proby if job["conclusion"] in FAILED_JOB]
     bez_required = [job for job in padniete if job["name"] != github.REQUIRED]
-    zadania = [zadanie(job["name"], _log(api, job), job.get("steps") or ()) for job in bez_required]
+    zadania = [zadanie(job["name"], log_zadania(api, job), job.get("steps") or ()) for job in bez_required]
     return klasyfikuj(zadania or [_required(api, job, zadania_proby) for job in padniete], flaky)
 
 

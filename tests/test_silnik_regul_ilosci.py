@@ -1,17 +1,9 @@
-"""Silnik Reguł ilości (ADR 0033) na swoim interfejsie: ``evaluate``, niezmienniki typów i pliki reguł.
-
-Zachowania, których Reguły ilości z Wydania nie dotykają, więc nie sprawdzają ich testy instrukcji taty
-(``test_ilosci_uslug.py``, ``test_ilosci_tylko_dla_inea.py``): pierwszeństwo „``URZĄDZENIA`` są dokładnie tekstem”, trzy zakresy reguły,
-zaprzeczenie każdego warunku, zlecenie bez ``DATA``, suma reguł i jej źródła, mnożniki i każda odmowa z polem. Na
-końcu jeden przebieg procesów pokazuje, że każdy z nich liczy Regułami ilości ze swojego wejścia.
-Oczekiwania pochodzą z ADR 0033 i z docstringów ``quantity_engine``, nie z przebiegu kodu.
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, time
 from pathlib import Path
+from typing import get_args
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -25,7 +17,7 @@ from rozliczenia.collective_layout import QUANTITY_COLUMNS, QUANTITY_LETTERS
 from rozliczenia.collective_preparation import PreparationInputs, prepare_collective_file
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.engine import SettlementInputs, run_settlements
-from rozliczenia.order_facts import MissingHeaders
+from rozliczenia.order_facts import MissingHeaders, OrderFacts
 from rozliczenia.quantities_to_fill import RowState, fill_hint, quantities_to_fill
 from rozliczenia.tool_entry import FillKind
 from rozliczenia.quantity_engine import (
@@ -37,6 +29,7 @@ from rozliczenia.quantity_engine import (
     Contribution,
     DeviceGroup,
     DeviceList,
+    DevicesRead,
     DevicesText,
     Fill,
     FromDescription,
@@ -56,6 +49,7 @@ from rozliczenia.quantity_engine import (
     WithoutRule,
     Write,
     WriteNothing,
+    devices_read,
     evaluate,
     without_components,
 )
@@ -65,6 +59,7 @@ from rozliczenia.quantity_rules_file import (
     dump_quantity_rules,
     parse_device_list,
     parse_quantity_rules,
+    parse_rule_list,
 )
 from rozliczenia.run_context import RunContext
 from atrapy.preparation import PERIOD, cell_values, make_preparation_fixture, register_order
@@ -169,6 +164,28 @@ def test_zaprzeczone_dokladnie_tekstem_nie_ma_pierwszenstwa() -> None:
     assert _quantities(evaluate(rules, _order("kabel"))) == {"Z": 1, "AE": 1}
 
 
+ORDER_RULES = (
+    _rule("suma", ContainsComponent("router"), action=_fill("Z", 1)),
+    _rule("dokladnie", DevicesText(TextMode.EXACTLY, "ruter dekoder"), action=_fill("AE", 4)),
+    _rule("kable", action=_fill("O", 2, Multiplier.COMPONENT, "kabel")),
+    _rule("nieznane", scope=Scope.UNKNOWN, action=_fill("V", 1)),
+    _rule("z-opisu", DevicesText(TextMode.EMPTY), action=WriteNothing()),
+    _rule("inea", DevicesText(TextMode.CONTAINS, "dekoder"), action=LeaveEmpty(("AK",))),
+)
+
+
+@settings(derandomize=True, database=None, deadline=None, max_examples=200)
+@given(
+    st.permutations(ORDER_RULES),
+    st.sampled_from(("ruter dekoder", "Ruter, DEKODER", "ruter dekoder kabel", "2*kabel ruter", "dekoder obcy", "", "wzmacniacz")),
+)
+def test_kolejnosc_regul_nie_zmienia_rodzaju_ilosci_ani_pustych_kolumn_zlecenia(rules: list[QuantityRule], devices: str) -> None:
+    reordered = evaluate(QuantityRules(tuple(rules), DEVICES), _order(devices))
+    listed = evaluate(QuantityRules(ORDER_RULES, DEVICES), _order(devices))
+
+    assert (type(reordered), reordered.quantities, reordered.leave_empty) == (type(listed), listed.quantities, listed.leave_empty)
+
+
 @pytest.mark.parametrize(
     ("devices", "fired", "kind"),
     [
@@ -196,7 +213,6 @@ def test_przy_skladniku_spoza_listy_warunek_skladnika_widzi_znane_skladniki() ->
     assert evaluate(rules, _order("obcy")).fired == ()
 
 
-# Każdy z sześciu warunków ADR 0033: zlecenie, przy którym jest prawdziwy, i takie, przy którym nie jest.
 CONDITIONS = [
     pytest.param(ContainsComponent("kabel"), _order("2*kabel"), _order("ruter"), id="skladnik"),
     pytest.param(DevicesText(TextMode.EMPTY), _order(" , xg"), _order("kabel"), id="puste"),
@@ -230,6 +246,13 @@ def test_warunek_dziala_tylko_gdy_jest_prawdziwy_a_zaprzeczony_odwrotnie(
 
     assert (evaluate(rules, holds).fired, evaluate(rules, fails).fired) == (("warunek",), ())
     assert (evaluate(negated, holds).fired, evaluate(negated, fails).fired) == ((), ("warunek",))
+
+
+def test_tabela_warunkow_ma_kazdy_rodzaj_warunku_i_kazdy_tryb_tekstu_urzadzen() -> None:
+    conditions = [case.values[0] for case in CONDITIONS]
+
+    assert {type(condition) for condition in conditions} == set(get_args(Condition))
+    assert {condition.mode for condition in conditions if isinstance(condition, DevicesText)} == set(TextMode)
 
 
 def test_zlecenie_bez_daty_nie_spelnia_warunku_daty_ani_zaprzeczonego_a_reszta_regul_dziala() -> None:
@@ -278,6 +301,35 @@ def test_skladnik_to_najdluzszy_zapis_od_lewej_a_krotnosc_tylko_przed_pierwszym_
     assert isinstance(evaluate(rules, _order("0*kabel")), WithoutRule)
 
 
+def _mixed_case_word(letters: str, upper: bool) -> str:
+    word = "q" + letters
+    return word.upper() if upper else word
+
+
+_UNKNOWN_WORD = st.builds(_mixed_case_word, st.text("abcdefhijklmnoprstuwyząćęłńóśźż", max_size=3), st.booleans())
+_STAR_WORD = st.tuples(st.sampled_from(("0*", "")), _UNKNOWN_WORD, st.sampled_from(("*2", ""))).map("".join).filter(lambda word: "*" in word)
+
+
+@settings(derandomize=True, database=None, deadline=None, max_examples=200)
+@given(st.lists(st.one_of(_UNKNOWN_WORD, _STAR_WORD), min_size=1, max_size=6), st.sampled_from((" ", ", ", ",", "  ")))
+def test_slowo_z_gwiazdka_bez_krotnosci_dzieli_podpowiedzi_listy_urzadzen_i_samo_nie_jest_podpowiedzia(
+    words: list[str], separator: str
+) -> None:
+    runs: list[list[str]] = [[]]
+    for word in words:
+        if "*" in word:
+            runs.append([])
+        else:
+            runs[-1].append(word.casefold())
+
+    assert DEVICES.unknown_spellings(separator.join(words)) == tuple(" ".join(run) for run in runs if run)
+
+
+def test_urzadzenia_zlecenia_to_skladniki_listy_w_kolejnosci_z_tekstu_bez_powtorzen_i_czy_lista_zna_kazde_slowo() -> None:
+    assert devices_read(DEVICES, _order("kabel 2*ruter Kabel obcy")) == DevicesRead(("kabel", "router"), False)
+    assert devices_read(DEVICES, _order("dekoder, dekoder")) == DevicesRead(("tv",), True)
+
+
 def test_kolumny_regul_i_kolumny_wiersza_bez_reguly_wynikaja_z_regul() -> None:
     rules = _rules(
         _rule("t", scope=Scope.UNKNOWN, action=_fill("T", 1)),
@@ -306,6 +358,7 @@ def _device_list(*components: Component) -> DeviceList:
         pytest.param(lambda: _device_list(Component("a", ("kabel  2",))), "urzadzenia[a].zapisy", id="dwie-spacje"),
         pytest.param(lambda: _device_list(Component("a", ("kabelxg",))), "urzadzenia[a].zapisy", id="xg"),
         pytest.param(lambda: _device_list(Component("a", ("2*kabel",))), "urzadzenia[a].zapisy", id="gwiazdka"),
+        pytest.param(lambda: _device_list(Component("a", ("kabel,2",))), "urzadzenia[a].zapisy", id="przecinek"),
         pytest.param(lambda: _device_list(Component("a", ("kabel",)), Component("b", ("kabel",))), "urzadzenia[b].zapisy", id="zapis-u-dwoch"),
         pytest.param(lambda: _rules(_rule("x"), _rule("x")), "reguly[x].id", id="regula-dwa-razy"),
         pytest.param(lambda: _rules(_rule(" x")), "reguly[ x].id", id="regula-ze-spacja"),
@@ -355,6 +408,12 @@ def test_granice_wartosci_i_kolumn_reguly_sa_dozwolone() -> None:
     )
 
     assert _quantities(evaluate(rules, _order("kabel", started=datetime(2026, 11, 15, 23, 59)))) == {"N": 2, "AP": 999}
+
+
+def test_regula_zostaw_pusta_moze_zostawic_puste_takze_wbudowane_p_q_i_s() -> None:
+    result = evaluate(_rules(_rule("inea", action=LeaveEmpty(("P", "Q", "S")))), _order("ruter dekoder"))
+
+    assert (_quantities(result), result.leave_empty) == ({"P": 1, "S": 2}, frozenset({"P", "Q", "S"}))
 
 
 def test_reguly_z_wydania_wczytuja_sie_a_zapis_i_odczyt_daja_te_same_reguly() -> None:
@@ -492,9 +551,26 @@ def test_plik_listy_urzadzen_z_bledem_daje_pierwszy_problem_z_polem(document: ob
     assert problem.field == field
 
 
-# Każdy proces liczy Regułami ilości ze swojego wejścia (ADR 0033, US 14): Przygotowanie Ilości usług, Przebieg Ilości
-# tylko dla INEA, Kontrola ilości regułami swojego Przebiegu, a Uzupełnienie regułami podanymi przy odczycie. Reguły
-# różnią się od Reguł ilości z Wydania w każdej kolumnie, więc proces, który liczy innymi, daje inne komórki.
+@pytest.mark.parametrize(
+    ("rule", "field"),
+    [
+        pytest.param(GOOD_RULE, "reguly[r].id", id="regula-dwa-razy"),
+        pytest.param(
+            {**GOOD_RULE, "id": "s", "to": {"rodzaj": "wpisz", "wpisy": [{"kolumna": "Z", "wartosc": 1, "razy": "liczba"}]}},
+            "reguly[s].to.wpisy[0].skladnik",
+            id="liczba-bez-skladnika",
+        ),
+    ],
+)
+def test_reguly_bez_listy_urzadzen_odmawiaja_przy_kazdym_niezmienniku_poza_skladnikiem_spoza_listy(rule: object, field: str) -> None:
+    problem = parse_rule_list({"schema_version": 1, "reguly": [GOOD_RULE, rule]})
+    unlisted = parse_rule_list(_document({**GOOD_RULE, "jesli": [{"rodzaj": "skladnik", "skladnik": "brak"}]}))
+
+    assert isinstance(problem, RulesProblem), problem
+    assert problem.field == field
+    assert unlisted == (QuantityRule("r", (ContainsComponent("brak"),), Scope.EVERY, WriteNothing()),)
+
+
 OWN_RULES = QuantityRules(
     (
         QuantityRule("fut", (ContainsComponent("fut"),), Scope.KNOWN, _fill("AA", 7)),
@@ -580,7 +656,6 @@ def test_podpowiedz_wiersza_bez_reguly_wymienia_kolumny_regul_dla_skladnika_spoz
     assert fill_hint(FillKind.FROM_DESCRIPTION, only_known) == "Wpisz ilości według opisu technika."
 
 
-# Słowa URZĄDZENIA zleceń w teście reguł bez składnika: każdy zapis Listy Urządzeń z Wydania, krotność i słowo spoza listy.
 _RELEASE_WORDS = (*sorted({spelling for component in DEFAULT_QUANTITY_RULES.devices.components for spelling in component.spellings}), "2*fut", "ont x")
 _NEVER_SPELLED = "zapis spoza zlecen"
 
@@ -596,9 +671,6 @@ _NEVER_SPELLED = "zapis spoza zlecen"
 def test_reguly_z_wydania_bez_skladnika_licza_jak_z_tym_skladnikiem_ktorego_zapisu_nie_ma_w_zadnym_zleceniu(
     absent: str, words: list[str], activities: str, contract: str, started: datetime | None
 ) -> None:
-    """Reguły bez składnika (``without_components``) z listą bez niego dają każdemu zleceniu ten sam wynik co reguły z tym
-    składnikiem na liście, gdy żadne zlecenie nie ma jego zapisu: rodzaj, ilości, puste kolumny i reguły, które zadziałały."""
-
     components = DEFAULT_QUANTITY_RULES.devices.components
     never_found = QuantityRules(
         DEFAULT_QUANTITY_RULES.rules,
@@ -615,9 +687,6 @@ def test_reguly_z_wydania_bez_skladnika_licza_jak_z_tym_skladnikiem_ktorego_zapi
 
 @pytest.mark.parametrize("devices", ["ruter", "ruter kabel", "dekoder", "2*ruter wzmacniacz", ""])
 def test_regula_bez_skladnika_traci_tylko_jego_wpis_i_warunek_a_liczy_jak_z_nieznalezionym(devices: str) -> None:
-    """Reguła z wpisem razy liczba składnika, którego warunki nie wymagają, i reguła z warunkiem „nie zawierają” go liczą
-    bez tego składnika tak samo jak z nim, gdy żadne zlecenie nie ma jego zapisu."""
-
     rules = (
         _rule("ruter-i-kable", ContainsComponent("router"), action=Fill((Write("N", 1), Write("O", 1, Multiplier.COMPONENT, "kabel")))),
         _rule("bez-kabla", ContainsComponent("kabel", negated=True), action=_fill("T", 1)),
@@ -631,10 +700,6 @@ def test_regula_bez_skladnika_traci_tylko_jego_wpis_i_warunek_a_liczy_jak_z_niez
 
 @pytest.mark.parametrize("devices", ["ruter", "2*ruter", "ruter dekoder", ""])
 def test_regula_wpisz_tylko_razy_skladnik_bez_niego_odpada_a_reszta_liczy_te_same_ilosci_co_z_nieznalezionym(devices: str) -> None:
-    """Reguła „wpisz”, której jedyny wpis to razy liczba składnika, a warunki go nie wymagają, bez tego składnika nie ma
-    czego wpisać, więc odpada, a reguły bez niego dalej powstają. Ilości i puste kolumny są te same co ze składnikiem
-    nigdy nieznalezionym; różni się tylko lista reguł, które zadziałały (z nim reguła wpisałaby zero)."""
-
     rules = (
         _rule("kable-przy-ruterze", ContainsComponent("router"), action=_fill("O", 1, Multiplier.COMPONENT, "kabel")),
         _rule("ruter", ContainsComponent("router"), action=_fill("N", 1)),
@@ -646,3 +711,71 @@ def test_regula_wpisz_tylko_razy_skladnik_bez_niego_odpada_a_reszta_liczy_te_sam
 
     assert [rule.id for rule in without.rules] == ["ruter"]
     assert (type(result), result.quantities, result.leave_empty) == (type(expected), expected.quantities, expected.leave_empty)
+
+
+WEDNESDAY_NOON = datetime(2026, 9, 9, 12)
+
+
+def _row(devices: str, quantities: dict[str, int] | None = None, completed: str = "") -> OrderFacts:
+    return OrderFacts(OrderContent.of("pr", devices, "", WEDNESDAY_NOON), quantities or {}, completed)
+
+
+def _checked(*rows: OrderFacts) -> quantity_check.QuantityCheck:
+    result = quantity_check.check(rows, DEFAULT_QUANTITY_RULES, DEFAULT_ACTIVITY_LEGEND)
+    assert isinstance(result, quantity_check.QuantityCheck)
+    return result
+
+
+def _text(result: quantity_check.QuantityCheck) -> str:
+    return "".join(quantity_check.blocks(result, commit=None, run_id="r"))
+
+
+def _first_cells(text: str, heading: str) -> list[str]:
+    table = text.split(f"\n{heading}\n\n", 1)[1].split("\n\n", 1)[0].splitlines()
+    return [row.removeprefix("| ").split(" | ")[0] for row in table[2:]]
+
+
+def test_kolumne_regul_ilosci_bez_wpisu_legendy_w_wierszu_z_kodem_porownuja_tylko_reguly_ilosci() -> None:
+    row = _row("technicolor", {"V": 1, "O": 1, "Z": 1, "S": 1, "Y": 1}, "inst20m")
+
+    checked = quantity_check.legend_row_check(row, DEFAULT_ACTIVITY_LEGEND, DEFAULT_QUANTITY_RULES)
+
+    assert (checked.rule_differences, checked.differences) == (("AK",), ())
+
+
+def test_bledy_opisu_licza_sie_wedlug_kazdego_powodu_wiersza() -> None:
+    result = _checked(_row("nokia", completed="instutp40m inst20m instmdik"), _row("nokia", completed="inst20m instmdik"))
+
+    assert (result.description_error_rows, sorted(result.description_errors.values())) == (2, [1, 2])
+
+
+def test_bledy_opisu_w_tresci_kontroli_ida_po_tekscie_powodu_a_wiersze_z_wpisem_taty_po_opisie() -> None:
+    text = _text(
+        _checked(
+            _row("nokia", {"AB": 2}, "inst20m instmdik a"),
+            _row("nokia", {"AB": 1}, "instutp40m b"),
+            _row("nokia", {"AB": 3}, "instutp40m a"),
+        )
+    )
+
+    reasons = _first_cells(text, "## Błędy opisu")
+    assert (len(reasons), reasons) == (2, sorted(reasons, key=str.casefold))
+    assert _first_cells(text, "### Błędy opisu z wpisem taty") == ["`inst20m instmdik a`", "`instutp40m a`", "`instutp40m b`"]
+
+
+def test_tekst_komorki_w_tresci_kontroli_to_kod_z_koncem_linii_jako_znakiem_i_kreska_tabeli_po_ukosniku() -> None:
+    text = _text(_checked(*(_row(devices) for devices in ("obcy|x", "obcy`x", "obcy\nx", "inny\r\nx"))))
+
+    for shown in ("`obcy\\|x`", "`` obcy`x ``", "`obcy⏎x`", "`inny⏎x`"):
+        assert f"\n### URZĄDZENIA {shown} (wiersze: 1)\n" in text, shown
+
+
+def test_kazdy_wiersz_tabeli_roznic_kontroli_ilosci_to_osobny_blok_ktory_kolejka_moze_przeniesc_do_nastepnej_czesci() -> None:
+    rows = (OrderFacts(OrderContent.of("pr", "obcy", "", WEDNESDAY_NOON.replace(hour=hour)), {}) for hour in (12, 15))
+
+    blocks = quantity_check.blocks(_checked(*rows), commit=None, run_id="r")
+
+    assert [block for block in blocks if block.startswith("| V |")] == [
+        "| V | 1 | 0 | (puste) | `pr` | śr 12 | 1 |\n",
+        "| V | 1 | 0 | (puste) | `pr` | śr 15 | 1 |\n",
+    ]

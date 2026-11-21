@@ -105,8 +105,6 @@ PREPARATION_COUNTERS = {"period_orders": 4, "successful_orders": 3, "skipped_emp
 
 
 def written(**copy_and_openpyxl: tuple[int, int]) -> dict[str, dict[str, int]]:
-    """Drogi zapisu w rekordzie metryk: pliki kopią i drogą openpyxl dla podanych rodzajów pliku, dla reszty zera."""
-
     return {
         kind: dict(zip(("kopia", "openpyxl"), copy_and_openpyxl.get(kind, (0, 0)), strict=True))
         for kind in ("worker_settlement", "collective_file", "internal_settlement")

@@ -41,7 +41,14 @@ Decyzje autora tego PR:
 
 - **Numer 0046**, bo 0045 rezerwuje specyfikacja #2439.
 - **Pole `Mechanizm:` stoi po `Szczebel:`**, który zostaje: `Szczebel:` mówi, jak autor wyrwał korzeń, a `Mechanizm:`, jakiego strażnika żąda Ważne.
-- **Przejście.** Wątek, którego pierwszy werdykt powstał przed wejściem tego pliku do bazy PR, kończy po staremu, bez pola `Mechanizm:` i z opcjonalnym `Idiom:` (`werdykt_pr.rule_applies`, jak decyzja Q20 ADR 0031); stare werdykty z `Idiom:` czyta `szablon_werdyktu.findings` jak dotąd, więc raport tygodniowy liczy je do czasu ticketu #2463.
+- **Przejście.** Wątek, którego pierwszy werdykt powstał przed wejściem tego pliku do bazy PR, kończy po staremu, bez pola `Mechanizm:` i z opcjonalnym `Idiom:` (`werdykt_pr.rule_applies`, jak decyzja Q20 ADR 0031); stare werdykty z `Idiom:` szablon przyjmuje jak dotąd, ale od ticketu #2463 żadne narzędzie pola nie czyta, a raport tygodniowy liczy odpalenia strażników w Required CI i poszerzenia reguł z historii gita.
+
+Decyzje autora PR ticketu #2461:
+
+- **Chroniony właściciel to wpis wprost.** Plik jest właścicielem, gdy konfiguracja reguł drzewa HEAD PR scalonego z bazą nazywa go wprost (`chroniony_wlasciciel.ZASADY`): wpis ze wzorcem (`src/**`) albo katalog to zasięg reguły, a nie jedyność. Zakaz `TID251` liczy się ze zwolnienia w `per-file-ignores`, bo to, że każde zwolnienie ma wiersz `OWNERS` z nazwami właściciela, pilnuje już `tests/test_zakazy_ruff.py` w Required CI tego samego drzewa.
+- **Każdy plik z `Gdzie`.** Test przechodzi tylko, gdy każdy plik z `Gdzie` jest chronionym właścicielem, bo Ważne z drugim plikiem poza właścicielem ma drugie miejsce, w którym błąd wróci.
+- **Szczebel w następnej rundzie.** Recenzent następnej rundy zmienia szczebel, który nie działa, punktem `Mechanizm W<n> r<k>: <szczebel> - zdanie` w `## Sprawdzone`, jak kod korzenia punktem `Korzeń W<n> r<k>:` (decyzja Q25 ADR 0031), a bramka bierze szczebel z ostatniego werdyktu, który dotyczy tego Ważnego; inaczej Ważne ze szczeblem, który nie działa, nie miałoby jak się scalić.
+- **Przejście.** Warunek chronionego właściciela ma własną chwilę wdrożenia (`szczebel_straznika.OWNER_MARKER`), więc wątek z pierwszym werdyktem sprzed niej kończy jak po #2460.
 
 ## Wdrożenie
 
@@ -65,7 +72,7 @@ Decyzje autora tego PR:
 
 ## Zmienia te zdania ADR 0031
 
-- „Szczebel i dowód”, zdanie „Zapadka (d) stoi między (c) a (e) […]: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają”: pierwszeństwo szczebli daje piramida pola `Mechanizm:`, w której reguła ast-grep (szczebel `lint`) stoi przed testem, więc działająca reguła (d) idzie przed testem (c); (e) zostaje dozwolone tylko wtedy, gdy (a)–(d) nie działają. Litery (a)–(e) pola `Szczebel:` i linie „Wyżej nie, bo:” zostają, jak dziś.
+- „Szczebel i dowód”, zdanie „Zapadka (d) stoi między (c) a (e) […]: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają”: pierwszeństwo szczebli daje piramida pola `Mechanizm:`, w której reguła ast-grep (szczebel `lint`) stoi przed testem, więc działająca reguła (d) idzie przed testem (c); (e) zostaje dozwolone tylko wtedy, gdy (a)–(d) nie działają. Litery (a)–(e) pola `Szczebel:` zostają, a „Wyżej nie, bo:” ma linię na każdy szczebel przed wpisanym w tym pierwszeństwie, w kolejności liter, więc blok (c) mówi też, czemu nie (d), a blok (d) nie mówi o (c) (bramka korzenia od #2460).
 
 ## Zmienia te zdania ADR 0036
 

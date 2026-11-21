@@ -41,6 +41,9 @@ CONFIG: Mapping[str, str] = {
     # w następnym kroku testu (#312).
     "maintenance.auto": "false",
     "gc.auto": "0",
+    "protocol.https.allow": "never",
+    "protocol.ssh.allow": "never",
+    "protocol.git.allow": "never",
 }
 # Puste, a nie usunięte: Git bez ``user.*`` zgaduje tożsamość z nazwy komputera, a na Macu nazwa z „.local” mu wystarcza.
 _WITHOUT_IDENTITY: Mapping[str, str] = {"user.name": "", "user.email": ""}

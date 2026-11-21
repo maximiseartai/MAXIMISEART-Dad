@@ -1,5 +1,3 @@
-"""Test expect (``tests/fixtures/expect.py``): pada z diffem i poleceniem zapisu, które działa, zapisuje tylko poza CI."""
-
 from __future__ import annotations
 
 from itertools import pairwise

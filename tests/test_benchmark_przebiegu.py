@@ -202,7 +202,8 @@ def spread(median: int, low: int, high: int) -> dict[str, int]:
 
 @pytest.mark.parametrize(
     ("budget_ms", "exit_code", "verdict"),
-    [(250_000, 0, "w budżecie"), (240_000, 1, "ponad budżetem o 1000 ms")],
+    [(250_000, 0, "w budżecie"), (241_000, 0, "w budżecie"), (240_000, 1, "ponad budżetem o 1000 ms")],
+    ids=["mediana pod budzetem", "mediana rowna budzetowi", "mediana ponad budzetem"],
 )
 def test_straz_czasu_opisuje_ostatni_pomiar_i_pada_tylko_powyzej_budzetu(
     tmp_path: Path, budget_ms: int, exit_code: int, verdict: str

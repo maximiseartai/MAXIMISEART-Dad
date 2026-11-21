@@ -63,6 +63,7 @@ Szczebel: (c) - <mechanizm, który łapie całą klasę>
 Wyżej nie, bo:
 (a) - <czemu nie działa>
 (b) - <czemu nie działa>
+(d) - <czemu nie działa>
 Strażnik: pytest tests/test_x.py::test_y
 
 ### W2 r2: R-DRUGA-DROGA
@@ -80,12 +81,12 @@ Dowód: <polecenie i wynik>
   To dispute a code, answer the verdict with the reason; the next reviewer decides with that point.
 - One block per red-`main` issue, with a code chosen by the author.
 - Every code of the section, in a Ważne block and in a red-`main` block, stands in `korzenie.toml` on HEAD.
-- `Szczebel:` names the highest rung that works, and `Wyżej nie, bo:` gives one line `(x) - zdanie` for each higher rung, in ladder order; rung (a) has no such line.
+- `Szczebel:` names the highest rung that works, and `Wyżej nie, bo:` gives one line `(x) - zdanie` for each rung before it in the priority of `korzen.md` (rule (d) before test (c)), in letter order; rung (a) has no such line.
   Rung (e) needs this PR to add a new point linking to this PR (`#N`) to „Co jest porażką” in [`SKILL.md`](../przeglad/SKILL.md) or [`porazka-adr.md`](../przeglad/porazka-adr.md) of the skill `przeglad` and to leave the other points as on the base: an edited point of the base is not a new point.
-- A Ważne block ends with one line `Strażnik: <selector>` from the list in `ZASADY` of `tools/lib/straznik.py`, also after `Wyrwany w #M`; `tools/scal_pr.py` computes its proof from the tree of the `FAIL` verdict, and you check it with `tools/na_scalonych_pr.py --straznik '<selector>' --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`; `ast-grep <id>` also needs `<PR>/W<n>/r<k>` in the rule's `metadata.przypadki`.
+- A Ważne block ends with one line `Strażnik: <selector>` from the list in `ZASADY` of `tools/lib/straznik.py`, also after `Wyrwany w #M`, that the rung in the Ważne's `Mechanizm:` accepts: `architektura`, `refaktor` and `lint` take only `mypy`, `ruff` or `ast-grep <id>`, and `test` takes `pytest` only when every file of `Gdzie` is a protected owner, which this PR may make it by adding the ban or rule that sends the rest of the code to it (`tools/lib/szczebel_straznika.py`); the rung is the one from the last verdict about that Ważne, its `Mechanizm:` field or a later reviewer's point `Mechanizm W<n> r<k>: <szczebel> - zdanie`; `tools/scal_pr.py` computes its proof from the tree of the `FAIL` verdict, and you check it with `tools/na_scalonych_pr.py --straznik '<selector>' --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`, adding `--chroniony-wlasciciel` for `pytest` at `test`; `ast-grep <id>` also needs `<PR>/W<n>/r<k>` in the rule's `metadata.przypadki`.
   A test as the guard is `Strażnik: pytest tests/<file>.py::<test>` (one test or one of its parameters): the proof applies to HEAD merged with the base the reviewer's mutation from the newest `### Mutacja W<n> r<k>` block in the PR's verdicts and passes when the test passes without it and fails with it (ADR 0042, „Test jako strażnik z mutacją recenzenta”); until a reviewer writes that block, check the test with your own mutation of the bug in `tools/mutacje.py`.
   `Strażnik: brak - test`, with the test named in `Szczebel:`, passes only in a thread whose first verdict came before that proof, and the next reviewer runs that test on the tree of the `FAIL` verdict.
-  Code from `Gdzie` that the PR removed (rung (a)) is `Strażnik: brak - usunięte`, and the next reviewer checks it is gone.
+  Code from `Gdzie` that the PR removed (rung (a)) is `Strażnik: brak - usunięte` at `test` and `weryfikacja`, and the next reviewer checks it is gone; at a higher `Mechanizm:` a ban of the removed name (`ruff`) or a rule on the lines of the `FAIL` tree (`ast-grep <id>`) guards it.
 - A red-`main` block ends with `Dowód:`, a command with its result, at most 5 lines of at most 300 characters, as in the verdict.
 - A root larger than `size:M` (the label the CI workflow „Rozmiar PR” puts on a PR) goes in its own root PR, merged first into the default branch: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.
   Write both numbers as bare `#N`, so GitHub links the two PRs on their timelines.

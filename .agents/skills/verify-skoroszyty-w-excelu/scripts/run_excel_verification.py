@@ -204,9 +204,6 @@ def _real_templates(explicit: Path | None) -> Path | None:
     return None
 
 
-# ---- steps -------------------------------------------------------------------------------------------
-
-
 def create_fixture(run: Run, real_templates: Path | None) -> None:
     if real_templates is None:
         templates = run.root / "wzorce"
@@ -610,9 +607,6 @@ def repair_control(run: Run) -> None:
             run.step(feature, "okno-zamkniete")
             return
     raise VerificationFailure("the repair dialog was not answered within 10 minutes")
-
-
-# ---- orchestration -----------------------------------------------------------------------------------
 
 
 def _sweep(run: Run) -> None:

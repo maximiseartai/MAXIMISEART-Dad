@@ -81,7 +81,6 @@ def test_syntetyczny_wzorzec_ma_wspolne_formuly_calcchain_i_odwolanie_zewnetrzne
     assert sorted(re.findall(r'<c r="(\w+)"', zip_part(path, "xl/calcChain.xml"))) == sorted(formulas)
     # Każda formuła ma zapisaną wartość, jak po zapisie w Excelu.
     assert len(re.findall(r"<f[^>]*(?:/>|>[^<]*</f>)<v>", sheet_xml)) == len(formulas)
-    # Wspólne formuły AU: wzór co 64 wiersze, pozostałe komórki tylko odwołują się do niego.
     assert re.findall(r'<c r="(AU\d+)"[^>]*><f t="shared" ref="', sheet_xml) == ["AU19", "AU83", "AU147"]
     assert sheet_xml.count('<f t="shared" si="') > 3 * SMALL_DATA_ROWS
     assert '<f t="shared" ref="N13:AP13"' in sheet_xml
@@ -152,7 +151,6 @@ def test_syntetyczne_wzorce_otwieraja_sie_w_lewym_gornym_rogu_w_75_procentach(tm
 
     assert {name: view_of(view) for name, view in views.items()} == dict.fromkeys(views, TEMPLATE_VIEW)
     assert {view.zoomScaleNormal for view in views.values()} == {TEMPLATE_VIEW.zoom}
-    # Blokada nagłówka Rozliczenia wewnętrznego zostaje, a przewijana część zaczyna się tuż pod nim.
     pane = views[INTERNAL_TEMPLATE].pane
     assert pane is not None and (pane.state, pane.topLeftCell) == ("frozen", "A2")
 
@@ -177,9 +175,6 @@ def test_generator_tworzy_te_same_bajty_za_kazdym_razem(tmp_path: Path) -> None:
 def test_narzedzie_odmawia_mniej_niz_dwoch_grup_wspolnych_formul_i_mowi_ile_wierszy_trzeba(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``--data-rows`` to co najmniej dwie grupy wspólnych formuł po 64 wiersze (128): mniej to kod 2 z najmniejszą liczbą
-    w komunikacie i bez żadnego pliku, a dokładnie 128 to Wzorce."""
-
     minimum = 2 * 64
 
     assert syntetyczne_wzorce.main([str(tmp_path / "za-malo"), "--data-rows", str(minimum - 1)]) == 2
