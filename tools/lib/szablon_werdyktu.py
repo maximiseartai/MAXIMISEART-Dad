@@ -78,7 +78,6 @@ CLASSES = ("brak-testu", "stan-kroku", "typ", "test-klasy")
 RULE_ID = r"[\w.-]+"
 _EARLIER = r" jak #\d+ W\d+ r\d+"
 IDIOM = re.compile(rf"Idiom: (?:{RULE_ID}(?:{_EARLIER})?|bez reguły (?:{'|'.join(CLASSES)}){_EARLIER})")
-# Punkt „## Sprawdzone”, którym recenzent rozstrzyga kod Ważnego z wcześniejszej rundy (decyzja Q25).
 RESOLUTION = re.compile(rf"Korzeń (W\d+) r(\d+): (NOWY )?({CODE.pattern}) - (\S.*)")
 RESOLUTION_START = "Korzeń "
 MECHANISM_START = "Mechanizm "
@@ -175,7 +174,7 @@ class _Items(HTMLParser):
         self._open: list[str] = []
         self._text: list[str] = []
         self._links: list[github.LinkGithuba] = []
-        self._nested: str | None = None  # blok wewnątrz punktu listy
+        self._nested: str | None = None
         self._wrappers: list[int] = []  # głębokość otwarcia każdej otwartej osłony ``SNIPPET``
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -249,8 +248,6 @@ def items(html: str) -> list[Item]:
 
 
 def listed_codes(text: str) -> frozenset[str]:
-    """Kody z treści listy korzeni; ``ValueError``, gdy wpis nie ma postaci kodu z ``opis`` i numerem PR ``przyklad``."""
-
     return frozenset(descriptions(text))
 
 
@@ -282,8 +279,6 @@ def pull_codes(pull: Pull) -> frozenset[str]:
 
 
 def template() -> str:
-    """Wzór szablonu z bloku ``markdown`` sekcji „Postać werdyktu” skilla, w jednej linii."""
-
     return pattern(SKILL, "Postać werdyktu")
 
 
@@ -425,8 +420,6 @@ def problems(html: str, declared: tuple[int, int] | None, codes: Callable[[], fr
 
 
 def findings(units: Sequence[Item]) -> Findings:
-    """Kody korzeni treści werdyktu z jej jednostek (``items``), czytane tak samo jak przy ``problems``."""
-
     return _read(units, None, mechanism=False)[1]
 
 

@@ -93,8 +93,6 @@ def _write(root: Path, name: str, text: str) -> None:
 
 
 def _skill(root: Path) -> Path:
-    """Skill z modelem kodu ``NAMES`` i kod, który model opisuje: skróty przeliczone na tym kodzie."""
-
     files = {CODE: SOURCE, WHOLE: "X = 1\n", WHOLE_TEXT: "x = 1\n", "inny.txt": "inny\n", f"{SKILL}/SKILL.md": "Model.\n"}
     for name, text in files.items():
         _write(root, name, text)

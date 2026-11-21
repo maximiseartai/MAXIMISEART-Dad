@@ -113,7 +113,6 @@ ORDERS = (
     AtrapaOrder("ID-TAJNE-73", "ZL/TAJNE/0003", "inny-tajny", "os.Zakryte 4", status="Do akceptacji", execution_date=date(2026, 9, 3)),
 )
 PRIVATE = [text for order in ORDERS for text in (order.order_id, order.number, order.realizator, order.address, order.executor)]
-# Koszty pozycji w wierszu 14 Wzorca pliku zbiorczego równe cenom Atrapy: kolumna → koszt pozycji z przypisania kolumn.
 COSTS: dict[str, CellValue] = {column: float(PRICES[position]) for column, position in POSITION_OF_COLUMN.items()}
 
 
@@ -130,8 +129,6 @@ Rewrite = Callable[[Answer], Answer]
 
 
 def _replaced(*changes: tuple[str, str]) -> Rewrite:
-    """Odpowiedź z każdym tekstem ``old`` w treści zamienionym na ``new`` (``changes``: pary ``old``, ``new``)."""
-
     def rewrite(answer: Answer) -> Answer:
         body = answer.body
         for old, new in changes:
@@ -148,18 +145,11 @@ def _answered(status: int) -> Rewrite:
 
 
 def _if_warned(rewrite: Rewrite) -> Rewrite:
-    """Odpowiedź z ostrzeżeniem o wygasłej sesji zmieniona przez ``rewrite``, a inna bez zmian."""
-
     return lambda answer: rewrite(answer) if "Twoja sesja wygasła" in answer.body else answer
 
 
 @dataclass(frozen=True)
 class Variant:
-    """Atrapa efenix pod narzędziem, koszty we Wzorcu i plik expect wyniku.
-
-    ``rewrites``: strona Atrapy (ścieżka jak ``ORDER_PAGE``) → zmiana jej odpowiedzi, którą robi serwer przed Atrapą.
-    """
-
     expected: Path
     changed: Changed | Unread | None = None
     cookie_session: bool = True
@@ -379,8 +369,6 @@ RUNS_ANSWER_SCRIPTS = _replaced(
 
 
 def _proposal(body: str) -> Rewrite:
-    """Odpowiedź ``action_fill_emmett.php`` z treścią ``body`` i kodem Atrapy."""
-
     return lambda answer: replace(answer, body=body)
 
 
@@ -426,8 +414,6 @@ def _open_list(browser: Browser, address: str) -> None:
 
 
 def _click_in_frame(browser: Browser, address: str) -> None:
-    """Maks klika Emmetta na stronie zlecenia w ramce strony listy zleceń."""
-
     tab = browser.contexts[0].new_page()
     tab.goto(urljoin(address, LIST_PAGE))
     tab.set_content(f'<iframe src="{address}" width="900" height="700"></iframe>')
@@ -438,10 +424,6 @@ def _click_in_frame(browser: Browser, address: str) -> None:
 
 @dataclass(frozen=True)
 class Emmett:
-    """Pomiar propozycji Emmetta: co Maks robi w Chrome (``maks``: przeglądarka i adres zlecenia pod ``--efenix-url``),
-    co wpisuje na stdin, Atrapa efenix pod narzędziem, kod wyjścia i plik expect.
-    ``read``: narzędzie przeczytało otwarte okno Emmetta, więc prosi o jego zamknięcie."""
-
     expected: Path
     maks: Callable[[Browser, str], None] = _click
     code: int = 2
@@ -713,12 +695,9 @@ def _active_port(profile: Path) -> str:
 
 @pytest.fixture
 def chrome(chromium: Chromium) -> str:
-    """Adres zdalnego debugowania Chromium, pod który narzędzie się łączy."""
-
     return chromium.endpoint
 
 
-# Limit czekania na odpowiedź efenix w porównaniu narzędzia (``--limit-ms``).
 LIMIT_MS = 10_000
 
 
@@ -760,8 +739,6 @@ def _compared(request: APIRequest, browser: Browser, url: str, template: Path, *
 
 
 def _printed(report: zgodnosc_efenix.Report) -> str:
-    """Wynik porównania tak, jak narzędzie drukuje go na stdout."""
-
     return "".join(f"{line}\n" for line in report.lines())
 
 
@@ -789,8 +766,6 @@ def _every_result(printed: str, shown: str, atrapa: AtrapaEfenix) -> None:
 
 
 def _checked(chromium: Chromium, tmp_path: Path, variant: Variant) -> tuple[zgodnosc_efenix.Report, str, AtrapaEfenix]:
-    """Porównanie narzędzia w procesie na Atrapie ``variant`` i jego wynik."""
-
     def compare(url: str, template: Path) -> zgodnosc_efenix.Report:
         return chromium.do(lambda browser: _compared(chromium.request, browser, url, template, number=variant.number))
 
@@ -810,9 +785,6 @@ def _checked_by_tool(endpoint: str, tmp_path: Path, variant: Variant) -> tuple[C
 
 @contextmanager
 def _in_front(atrapa: AtrapaEfenix, rewrites: Mapping[str, Rewrite]) -> Iterator[str]:
-    """Serwer przed Atrapą na czas bloku: każde żądanie (metoda, adres, treść, ciasteczko) przekazuje Atrapie, a jej
-    odpowiedź na stronę z ``rewrites`` zmienia zmianą tej strony; daje adres listy zleceń przez ten serwer."""
-
     target = urlparse(atrapa.url)
 
     class Handler(BaseHTTPRequestHandler):

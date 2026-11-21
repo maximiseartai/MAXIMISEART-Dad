@@ -219,8 +219,6 @@ def test_poza_usterka_i_przy_kodzie_ktory_liczy_sie_w_usterce_wynik_jest_jak_bez
 
 
 def _coloured(column: str) -> ActivityLegend:
-    """Trzy kody, które wypełniają kolumnę ``column``: zielony, czerwony i drugi zielony."""
-
     return ActivityLegend(
         (
             ActivityCode("zielony", ("zielony",), fills=(CellFill(column, FillColour.GREEN),)),

@@ -67,6 +67,12 @@ widzi, że pracownik ma plik otwarty, a kopii konfliktu OneDrive nic dziś nie w
   Excela, ani IMAP i przejdą do #1161 bez zmian razem z testami. Tymczasowe są tylko odczyt skrzynki i zapis do
   INTERMAX.
 
+**Dopisek (#2236, 2026-11-21).** Odczyt skrzynki wybiera maile po nagłówkach `Subject` i `From` każdego maila z dni
+okna, a nie wyszukiwaniem Gmaila po słowie `Raport`, bo to nie znajduje tematu z literówką (`Rapotr`, ADR 0041). Treść
+pobiera tylko z wybranych maili i tylko z części, którą czyta jako treść Raportu (`text/plain`, a bez niej
+`text/html`), bez treści załączników, bo pełny mail ze zdjęciami to megabajty (pomiar 12.11.2026: 214 MB i 17–34 s dla
+121 maili).
+
 ## Odrzucone warianty
 
 - **Czekać na chmurę.** Tata dalej przepisywałby raporty ręcznie przez całą migrację.

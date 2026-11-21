@@ -162,12 +162,6 @@ def detach(command: Sequence[str], *, cwd: Path, stderr: Path) -> int:
 
 @contextmanager
 def commit_copy(repo: Path, commit: str) -> Iterator[Path]:
-    """Odłączony worktree commitu ``commit`` repozytorium ``repo`` w nowym katalogu tymczasowym.
-
-    Znika z końcem bloku, także po wyjątku, a gdy narzędzie zginie, usuwa go strażnik. Rzuca
-    ``subprocess.CalledProcessError``, gdy ``git worktree add`` się nie uda.
-    """
-
     repo = repo.resolve()
     guard = _guard()
     copy = Path(tempfile.mkdtemp(prefix=_COPY_PREFIX))
@@ -186,8 +180,6 @@ def commit_copy(repo: Path, commit: str) -> Iterator[Path]:
 
 
 def is_commit_copy(path: Path) -> bool:
-    """Czy worktree ``path`` to kopia z ``commit_copy``: jego katalog ma nazwę z prefiksem, z którym go zakłada."""
-
     return path.name.startswith(_COPY_PREFIX)
 
 

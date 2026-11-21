@@ -90,15 +90,11 @@ class Nested(RuntimeError):
 
 @dataclass(frozen=True)
 class Ran:
-    # Kod wyjścia ``claude``, które skończyło się samo, albo ``None``, gdy zginęło po ``stop``, limicie albo bez kontaktu.
     returncode: int | None
-    # Czy fałszywe API dostało choć jedno zapytanie.
     contacted: bool
 
 
 def nested() -> str | None:
-    """Powód odmowy, gdy wyrocznia biegnie w Claude Code, które uruchomiła wyrocznia; inaczej ``None``."""
-
     return f"uruchomiona w Claude Code wyroczni ({NESTED})" if os.environ.get(NESTED) else None
 
 
@@ -127,8 +123,6 @@ def contact_option(parser: argparse.ArgumentParser) -> None:
 
 
 def tool_result(message: object) -> str | None:
-    """Tekst pierwszego wyniku narzędzia w wiadomości zapytania API albo ``None``, gdy wiadomość go nie ma."""
-
     return next(iter(tool_results(message)), None)
 
 
@@ -236,8 +230,6 @@ def _environment(port: int, extra: Mapping[str, str]) -> dict[str, str]:
 
 
 def stream(block: dict[str, object]) -> bytes:
-    """Strumień odpowiedzi API z jednym blokiem: ``tool_use`` kończy się ``stop_reason`` ``tool_use``, tekst ``end_turn``."""
-
     tool = block["type"] == "tool_use"
     message: dict[str, object] = {
         "id": "msg_wyrocznia",

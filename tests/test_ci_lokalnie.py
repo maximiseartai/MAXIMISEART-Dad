@@ -1,10 +1,3 @@
-"""``tools/ci_lokalnie.py`` odtwarza lokalnie te same polecenia co CI, więc nie może się z nim rozjechać.
-
-Każde polecenie z zadań CI, które narzędzie odtwarza, ma w nim swój krok, a każdy krok narzędzia ma
-swoje polecenie w CI. Zadanie i polecenie CI, których narzędzie nie odtwarza, mają wskazane miejsce, które je zastępuje. ``--kazdy-commit``
-wskazuje każdy commit gałęzi, na którym krok pada, także gdy HEAD przechodzi.
-"""
-
 from __future__ import annotations
 
 import json
@@ -29,7 +22,6 @@ from kroki_lokalne import Step
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "ci_lokalnie.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
-# Linie `run:`, które przygotowują runner, a nie sprawdzają kodu.
 RUNNER_SETUP = ("pip install", "playwright install", "py -3 -c", "Add-Content", "GITHUB_OUTPUT")
 
 

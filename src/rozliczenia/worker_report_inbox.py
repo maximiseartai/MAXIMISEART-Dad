@@ -1,50 +1,3 @@
-"""Skrzynka raportów: maile Wykonawców ze skrzynki raportów taty w Gmailu, przez IMAP i tylko do odczytu (ADR 0028), oraz
-wysyłka Przypomnień o raporcie (ADR 0030) i Maili z rozliczeniem (ADR 0040) przez SMTP Gmaila.
-
-Port niczego w skrzynce nie zmienia: otwiera folder przez ``EXAMINE`` i pobiera maile przez ``BODY.PEEK``, więc nie
-oznacza ich jako przeczytanych, i nie wysyła ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE`` ani ``APPEND``.
-Oddaje maile, których temat rdzeń raportów czyta jako temat Raportu wykonawcy (``reads_as_report``, także z literówką
-w słowie ``Raport`` i poprawkę raportu w odpowiedzi ``Re: Raport dd.mm.rrrr …``, ADR 0041), od każdego nadawcy oprócz
-samej skrzynki: Raport wykonawcy od adresu spoza pliku adresów rozpoznaje i pokazuje tacie rdzeń raportów, więc port
-nie filtruje po nadawcy. Wybiera je po nagłówkach ``Subject`` i ``From`` wszystkich maili z dni okna, a resztę maila
-pobiera tylko dla wybranych, więc treści innej korespondencji taty nie czyta; wyszukiwania Gmaila po słowie nie używa,
-bo nie znajduje tematu z literówką (``Rapotr``). Mail, którego nie umie przeczytać, pomija i tylko liczy, więc jeden
-zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki. Treści załączników nie pobiera: z serwera bierze szkielet
-maila (``mail_skeleton``), z którego ``mail_of`` czyta to samo co z całego maila, a cały mail tylko wtedy, gdy
-szkieletu nie da się złożyć. Mail z poprzedniego odczytu tego samego folderu (ten sam UID przy tym samym
-``UIDVALIDITY``) port bierze z pamięci odczytu (``_ReadMails``), więc kolejny ``mails_since`` pyta serwer tylko o maile
-spoza poprzedniego wyszukiwania, a oddaje to samo co odczyt od zera.
-
-Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło). Plik
-czyta i zmienia tylko właściciel Ustawień Centrum (``rozliczenia.centrum.settings.inbox``), a port dostaje od niego
-dostęp (``InboxState``) przy każdej sesji, więc nowe hasło taty działa od następnego połączenia. Hasło nie wychodzi z
-modułu: nie ma go w żadnym wyniku, ``repr`` ani wyjątku.
-
-``ImapInbox.try_login`` to jedna próba logowania po zmianie hasła w oknie Ustawień: samo ``LOGIN`` i ``LOGOUT``, z
-wynikiem przyjęte, odrzucone albo brak sieci.
-
-Przypomnienia o raporcie (``ReminderMailbox``): ``sent_reminders`` czyta tak samo tylko do odczytu folder z atrybutem
-``\\Sent`` (RFC 6154, w Gmailu „Wysłane”) i oddaje maile, których temat napisał ``reminder_subject``, z adresatami z
-``To`` i chwilą przyjęcia przez Gmaila; bez takiego folderu to ``InboxUnreachable``, bo bez niego nie wiadomo, co już
-poszło. ``send`` wysyła jedno przypomnienie przez ``smtp.gmail.com`` z adresu i hasła aplikacji z tego samego pliku
-dostępu, a porażkę oddaje jako wynik: odrzucone hasło (``SMTPAuthenticationError``) to ``PasswordRejected``, sieć
-(``OSError``, zerwane albo nienawiązane połączenie SMTP) to ``InboxUnreachable``, a każda inna odmowa serwera SMTP to
-``MailRefused``; każdy wynik niesie tylko nazwę typu wyjątku.
-
-Wysyłka rozliczeń (``SettlementMailbox``, ADR 0040): ``sent_attachments`` czyta tak samo tylko do odczytu „Wysłane” i
-oddaje nazwę pliku każdego załącznika maili z dni od dnia przed wskazanym, z adresatami z ``To``, chwilą przyjęcia przez
-Gmaila i tym, czy mail ma znak Centrum (``CENTRUM_MARK``). Bierze z serwera tylko ``BODYSTRUCTURE`` każdego maila, a
-nagłówek maila i nagłówki części tylko maili, które mają część inną niż tekst, nigdy treści załączników; nazwę pliku
-czyta pakiet ``email`` z nagłówka części (RFC 2231 i RFC 2047). Odpowiedź serwera, której port nie zna, to
-``InboxUnreachable``, a nie pusta lista, bo pusta lista wysłałaby drugi raz to, co już poszło. ``send_attachment``
-wysyła jeden mail z tekstem i jednym załącznikiem xlsx tą samą drogą SMTP i z tymi samymi wynikami co ``send``, ze znakiem
-Centrum w nagłówku; Gmail sam kładzie go w „Wysłanych”.
-
-``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``): flagi maili i liczby maili
-z tematem Raportu wykonawcy w folderze ``mails_since`` i w ``INBOX``, tą samą drogą (plik dostępu, połączenie, wybór folderu,
-wyniki porażek) i tak samo tylko do odczytu, żeby próba sprawdzała port, a nie swoją kopię.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -107,8 +60,6 @@ SMTP_HOST: Final = "smtp.gmail.com"
 SMTP_PORT: Final = 465
 TIMEOUT_S: Final = 30
 FETCH_BATCH: Final = 100
-"""Najwięcej zakresów kolejnych UID (``5:9``) w jednym ``UID FETCH``, żeby polecenie miało ograniczoną długość przy
-każdej liczbie maili."""
 _MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _LIST_LINE: Final = re.compile(rb'\((?P<flags>[^)]*)\) (?:"(?:[^"\\]|\\.)*"|NIL) "(?P<name>(?:[^"\\]|\\.)*)"')
 _UID: Final = re.compile(rb"\bUID (\d+)\b")
@@ -119,48 +70,33 @@ _LIGHT_ITEMS: Final = "(UID INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER])"
 _WHOLE_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[])"
 _SENT_STRUCTURE_ITEMS: Final = "(UID INTERNALDATE BODYSTRUCTURE)"
 CENTRUM_MARK: Final = ("X-Centrum-Rozliczen", "wysylka-rozliczen")
-"""Nagłówek i wartość, którymi Centrum znaczy Mail z rozliczeniem: po nich „Wysłane” odróżniają mail Centrum od
-rozliczenia, które tata wysłał z tej skrzynki sam."""
 _XLSX: Final = ("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 _BODY_PREFERENCE: Final = ("plain", "html")
 _SMTP_NETWORK: Final = (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)
-"""Porażki SMTP, które są siecią, a nie odmową serwera, jak każdy inny ``OSError``: przypomnienie poczeka na następną
-próbę w tej porze. ``SMTPException`` dziedziczy po ``OSError``, więc idą przed odmową serwera."""
 _T = TypeVar("_T")
 
 InboxAccess = Literal["ready", "missing", "unreadable"]
-"""Plik dostępu do skrzynki: gotowy, brak pliku albo pustej linii (``missing``), zła treść (``unreadable``)."""
 
 LoginResult = Literal["accepted", "rejected", "no_network"]
 
 ImapConnect = Callable[[], imaplib.IMAP4]
-"""Połączenie z serwerem IMAP skrzynki raportów; testy i skille podają atrapę."""
 
 SmtpConnect = Callable[[], smtplib.SMTP]
-"""Połączenie z serwerem SMTP skrzynki raportów; testy i skille podają atrapę."""
 
 
 @dataclass(frozen=True)
 class Mails:
-    """Maile z tematem Raportu wykonawcy (``reads_as_report``) z dni od dnia przed wskazanym, w kolejności skrzynki.
-    ``skipped`` to liczba maili z takim tematem, których port nie przeczytał (bez adresu nadawcy albo takich, których pakiet
-    ``email`` nie umie rozebrać), bez ich treści, adresów i tematów."""
-
     mails: tuple[ReportMail, ...]
     skipped: int
 
 
 @dataclass(frozen=True)
 class PasswordRejected:
-    """Gmail odrzucił hasło aplikacji (``AUTHENTICATIONFAILED``): naprawić może je tylko Maks."""
+    ...
 
 
 @dataclass(frozen=True)
 class InboxUnreachable:
-    """Skrzynki nie dało się przeczytać. ``cause`` to sama nazwa typu wyjątku (``OSError``, ``IMAP4.abort``…),
-    ``UnexpectedReply`` dla odpowiedzi serwera, której port nie zna, albo stan pliku dostępu (``missing``,
-    ``unreadable``), gdy plik zmienił się po ``access()``; nigdy tekst wyjątku."""
-
     cause: str
 
 
@@ -174,9 +110,6 @@ class SentReminders:
 
 @dataclass(frozen=True)
 class SentAttachment:
-    """Plik załączony do maila z folderu „Wysłane”: nazwa pliku, adresaci z ``To``, ``Cc`` i ``Bcc``, chwila przyjęcia przez Gmaila ze
-    strefą i to, czy mail ma znak Centrum (``CENTRUM_MARK``); ``False``: tata wysłał go sam z tej skrzynki."""
-
     name: str
     recipients: frozenset[SenderAddress]
     sent_at: datetime
@@ -190,8 +123,6 @@ class SentAttachments:
 
 @dataclass(frozen=True)
 class AttachmentMail:
-    """Mail z jednym plikiem xlsx do wysłania ze skrzynki raportów: adresaci, temat, treść i plik (nazwa i bajty)."""
-
     recipients: tuple[SenderAddress, ...]
     subject: str
     text: str
@@ -201,7 +132,7 @@ class AttachmentMail:
 
 @dataclass(frozen=True)
 class MailSent:
-    """Gmail przyjął mail do wysłania."""
+    ...
 
 
 @dataclass(frozen=True)
@@ -211,11 +142,6 @@ class MailRefused:
 
 @dataclass(frozen=True)
 class InboxSurvey:
-    """Stan skrzynki z dni od dnia przed wskazanym, bez treści maili. ``searched`` to liczba maili, które w folderze
-    czytanym przez ``mails_since`` dało wyszukiwanie tych dni, a ``flags`` to flagi IMAP każdego z nich po UID;
-    ``in_folder`` i ``in_inbox`` to liczby maili, które port wybiera do odczytu (``mails_since``), w tym folderze i w
-    ``INBOX`` (te same, gdy port czyta ``INBOX``)."""
-
     searched: int
     flags: Mapping[str, frozenset[str]]
     in_folder: int
@@ -224,42 +150,30 @@ class InboxSurvey:
 
 class WorkerReportInbox(Protocol):
     def access(self) -> InboxAccess:
-        """Stan pliku dostępu do skrzynki, bez sieci."""
         ...
 
     def mails_since(self, day: date) -> InboxOutcome:
-        """Maile z tematem Raportu wykonawcy (``reads_as_report``) z dni od dnia przed ``day``; skrzynka zostaje bez
-        zmian.
-
-        Dzień wcześniej, bo Gmail liczy ``SINCE`` po dniu przyjęcia w swojej strefie, a nie w strefie taty, a o dniu
-        Raportu i tak rozstrzyga rdzeń raportów z tematu.
-        """
         ...
 
 
 class ReminderMailbox(WorkerReportInbox, Protocol):
     def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
-        """Przypomnienia o raporcie z folderu „Wysłane” z dni od dnia przed ``day``; skrzynka zostaje bez zmian."""
         ...
 
     def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
-        """Wysyła przypomnienie ze skrzynki raportów do jego adresatów z datą ``at``."""
         ...
 
 
 class SettlementMailbox(Protocol):
     def access(self) -> InboxAccess:
-        """Stan pliku dostępu do skrzynki, bez sieci."""
         ...
 
     def sent_attachments(self, day: date) -> SentAttachments | PasswordRejected | InboxUnreachable:
-        """Załączniki maili z folderu „Wysłane” z dni od dnia przed ``day``; skrzynka zostaje bez zmian."""
         ...
 
     def send_attachment(
         self, mail: AttachmentMail, at: datetime
     ) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
-        """Wysyła mail z załącznikiem ze skrzynki raportów do jego adresatów z datą ``at`` i znakiem Centrum."""
         ...
 
 
@@ -270,11 +184,10 @@ class InboxCredentials:
 
 
 InboxState = InboxCredentials | Literal["missing", "unreadable"]
-"""Dostęp do skrzynki od właściciela Ustawień: adres i hasło albo stan pliku dostępu bez nich (``InboxAccess``)."""
 
 
 class UnexpectedReply(Exception):
-    """Odpowiedź serwera IMAP, której port nie zna; nie niesie jej treści."""
+    ...
 
 
 def _gmail() -> imaplib.IMAP4:
@@ -286,10 +199,6 @@ def _gmail_smtp() -> smtplib.SMTP:
 
 
 class ImapInbox:
-    """Skrzynka raportów taty w Gmailu; ``access`` daje dostęp z pliku ``INBOX_ACCESS_FILE`` przy każdej sesji.
-
-    ``connect`` łączy z serwerem IMAP (``None``: Gmail), a ``smtp`` z serwerem SMTP; testy podają atrapy."""
-
     def __init__(
         self,
         access: Callable[[], InboxState],
@@ -307,9 +216,6 @@ class ImapInbox:
         return "ready" if isinstance(found, InboxCredentials) else found
 
     def try_login(self) -> LoginResult:
-        """Jedno logowanie bez otwierania folderu: czy skrzynka przyjmuje hasło z pliku dostępu. Plik bez adresu albo
-        hasła (zmieniony między zapisem a próbą) i każda porażka inna niż odrzucone hasło to brak sieci."""
-
         match self._session(lambda imap, access: imap.login(_quoted(access.address.shown()), access.password)):
             case PasswordRejected():
                 return "rejected"
@@ -396,11 +302,9 @@ def _ok(reply: tuple[str, Sequence[object]]) -> Sequence[object]:
     return data
 
 
+# ZEWNĘTRZNE: UID przy tym samym UIDVALIDITY wskazuje w folderze zawsze ten sam mail, a treści maila IMAP nie zmienia (RFC 3501 §2.3.1.1)
 @dataclass(frozen=True)
 class _Folder:
-    """Folder skrzynki, w którym UID wskazuje zawsze ten sam, niezmienny mail: adres skrzynki, nazwa folderu i jego
-    ``UIDVALIDITY`` (RFC 3501, 2.3.1.1)."""
-
     address: SenderAddress
     name: str
     validity: bytes
@@ -409,17 +313,9 @@ class _Folder:
 _NOT_REPORT: Final = "not_report"
 _SKIPPED: Final = "skipped"
 _MailRead = ReportMail | Literal["not_report", "skipped"]
-"""Co odczyt wie o jednym mailu: ``ReportMail``, mail bez tematu Raportu wykonawcy albo od samej skrzynki
-(``not_report``) albo mail z takim tematem, którego ``mail_of`` nie umie przeczytać (``skipped``)."""
 
 
 class _ReadMails:
-    """Odczyt każdego maila z ostatniego ``mails_since`` jednego folderu, po UID. UID z ``UIDVALIDITY`` wskazuje zawsze
-    te same bajty maila, a ``mail_of`` i wybór maila zależą tylko od nich i adresu skrzynki, więc następny odczyt tego
-    folderu pobiera z serwera tylko maile, których tu nie ma, i oddaje ten sam wynik co odczyt od zera. Trzyma tylko
-    maile ostatniego wyszukiwania, w pamięci procesu, nigdy na dysku; sesje z różnych wątków (Wpisanie raportów,
-    Przypomnienia o raporcie) czytają i podmieniają go pod zamkiem."""
-
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._folder: _Folder | None = None
@@ -459,9 +355,6 @@ def _read(imap: imaplib.IMAP4, access: InboxCredentials, day: date, memo: _ReadM
 
 
 def _opened(imap: imaplib.IMAP4, address: SenderAddress, name: str) -> _Folder | None:
-    """Folder otwarty przez ``EXAMINE`` z jego ``UIDVALIDITY``; ``None``, gdy serwer go nie podał: wtedy port nie wie,
-    czy UID wskazuje ten sam mail co w poprzedniej sesji, i czyta każdy mail od zera."""
-
     _, data = imap.response("UIDVALIDITY")
     validity = data[0] if data and isinstance(data[0], bytes) else None
     return None if validity is None else _Folder(address, name, validity)
@@ -475,12 +368,6 @@ def _arrived(prefix: bytes) -> datetime:
 
 
 def _choices(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dict[str, bool]:
-    """UID z ``uids``, o którego nagłówki ``Subject`` i ``From`` serwer odpowiedział → czy port czyta ten mail: z tematem
-    Raportu wykonawcy (``reads_as_report``) i nie od samej skrzynki ``own`` (jej Przypomnień o raporcie i odpowiedzi
-    taty). UID bez odpowiedzi nie ma, więc port nie wie o nim nic i pyta o niego przy następnym odczycie. Mail z
-    nagłówkami, których pakiet ``email`` nie umie rozebrać (wyjątek albo defekt, np. sam ``\r`` w ``From``, po którym
-    ``Subject`` staje się treścią), port wybiera, a ``mail_of`` czyta go albo liczy jako pominięty."""
-
     return {uid: _reads(header, own) for uid, (_, header) in _fetched(imap, uids, _CHOICE_ITEMS).items()}
 
 
@@ -494,14 +381,6 @@ def _reads(header: bytes, own: SenderAddress) -> bool:
 
 
 def _mail_bytes(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, tuple[bytes, bytes]]:
-    """UID → (``INTERNALDATE`` jak początek odpowiedzi FETCH, bajty maila) dla ``uids``, w ich kolejności: szkielet bez
-    treści załączników (``mail_skeleton``), a cały mail (``BODY.PEEK[]``) tylko wtedy, gdy szkieletu nie da się złożyć
-    albo mail nie ma ``Message-ID``, bo ``mail_of`` liczy wtedy jego ``MailId`` z bajtów całego maila.
-
-    Najpierw ``BODYSTRUCTURE`` i nagłówek w paczkach po ``FETCH_BATCH``, potem sekcje ``mail_skeleton.sections``:
-    jedno ``UID FETCH`` na paczkę maili z tą samą listą sekcji, bo Gmail odmawia całego polecenia, gdy któryś mail nie
-    ma żądanej sekcji. Odmowa albo odpowiedź spoza RFC 3501 przy tych poleceniach odsyła maile do pobrania w całości."""
-
     light: dict[str, tuple[bytes, Structure, bytes]] = {}
     for sequence, _ in _batches(uids):
         for response in _responses(imap.uid("FETCH", sequence, _LIGHT_ITEMS)):
@@ -532,11 +411,6 @@ def _mail_bytes(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, tuple[bytes, 
 
 
 def _skeleton_of(structure: Structure, header: bytes, parts: Mapping[str, bytes]) -> tuple[bytes, str | None] | None:
-    """Szkielet maila i sekcja części, którą wybiera ``mail_of`` (``None``: żadna); ``None``, gdy szkieletu nie da się
-    złożyć albo pakiet ``email`` nie umie rozebrać nagłówka którejś części: taki mail port pobiera w całości, a tam
-    ``mail_of`` liczy go jako pominięty, więc jeden zepsuty mail nie zatrzymuje odczytu skrzynki. Nagłówek nie do
-    rozebrania to każdy wyjątek pakietu ``email`` (jak w ``mail_of``)."""
-
     try:
         raw = skeleton(structure, header, parts)
         return None if raw is None else (raw, chosen(structure, raw, _BODY_PREFERENCE))
@@ -545,9 +419,6 @@ def _skeleton_of(structure: Structure, header: bytes, parts: Mapping[str, bytes]
 
 
 def _fetch_sections(imap: imaplib.IMAP4, groups: Mapping[tuple[str, ...], list[str]], parts: dict[str, dict[str, bytes]]) -> None:
-    """Dopisuje do ``parts`` sekcje ``BODY.PEEK[…]`` każdej grupy maili: jedno ``UID FETCH`` na paczkę maili z tą samą
-    listą sekcji, bo Gmail odmawia całego polecenia, gdy któryś mail nie ma żądanej sekcji."""
-
     for names, members in groups.items():
         items = "(UID " + " ".join(f"BODY.PEEK[{name}]" for name in names) + ")"
         for sequence, _ in _batches(members) if names else ():
@@ -561,10 +432,6 @@ def _fetch_sections(imap: imaplib.IMAP4, groups: Mapping[tuple[str, ...], list[s
 
 
 def _described(response: Mapping[bytes, FetchValue]) -> tuple[str, bytes, Structure, bytes, bool] | None:
-    """UID, ``INTERNALDATE`` jak początek odpowiedzi FETCH, ``BODYSTRUCTURE``, nagłówek maila i to, czy nagłówek ma
-    ``Message-ID``, z odpowiedzi; ``None``, gdy czegoś brak, kształt jest nieznany albo nagłówka nie da się
-    rozebrać."""
-
     uid, internal, header = (response.get(name) for name in (b"UID", b"INTERNALDATE", b"BODY[HEADER]"))
     structure = Structure.of(response.get(b"BODYSTRUCTURE"))
     if not (isinstance(uid, bytes) and isinstance(internal, bytes) and isinstance(header, bytes)) or structure is None:
@@ -576,10 +443,6 @@ def _described(response: Mapping[bytes, FetchValue]) -> tuple[str, bytes, Struct
 
 
 def _batches(uids: list[str]) -> Iterator[tuple[str, list[str]]]:
-    """Paczki ``uids`` po najwyżej ``FETCH_BATCH`` zakresów kolejnych UID: zbiór sekwencji IMAP (``1:5,9``) i UID
-    paczki. Zakres ma tylko UID z ``uids``, więc serwer oddaje te same maile co przy wypisaniu każdego UID, a 800 maili
-    z 10 dni skrzynki taty to 23 zakresy, czyli jedno polecenie zamiast ośmiu (12.11.2026)."""
-
     runs: list[list[int]] = []
     for uid in uids:
         number = int(uid)
@@ -594,8 +457,6 @@ def _batches(uids: list[str]) -> Iterator[tuple[str, list[str]]]:
 
 
 def _responses(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchValue]]:
-    """Odpowiedzi ``FETCH`` polecenia, które serwer przyjął; po odmowie albo w formie spoza RFC 3501 żadnej."""
-
     status, data = reply
     if status != "OK":
         return []
@@ -606,10 +467,6 @@ def _responses(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchVal
 
 
 def _identified(header: bytes) -> bool | None:
-    """Czy nagłówek daje ``mail_of`` niepusty ``Message-ID``, z którego liczy ``MailId`` bez bajtów treści; ``None``, gdy
-    nagłówka nie da się rozebrać (port pobiera cały mail): pakiet ``email`` zgłasza wtedy któryś z wyjątków (jak w
-    ``mail_of``)."""
-
     try:
         message = email.message_from_bytes(header, policy=email.policy.default)
         return bool(str(message["Message-ID"] or ""))
@@ -631,6 +488,7 @@ def _survey(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> InboxSu
 
 
 def _since(imap: imaplib.IMAP4, day: date) -> list[str]:
+    # ZEWNĘTRZNE: SEARCH SINCE porównuje sam dzień daty przyjęcia maila bez godziny i strefy, więc w strefie serwera, a nie taty (RFC 3501 §6.4.4)
     first = day - timedelta(days=1)
     since = f"{first.day:02d}-{_MONTHS[first.month - 1]}-{first.year}"
     found = _ok(imap.uid("SEARCH", "SINCE", since))
@@ -638,10 +496,6 @@ def _since(imap: imaplib.IMAP4, day: date) -> list[str]:
 
 
 def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
-    """UID → flagi każdego z ``uids`` w paczkach po ``FETCH_BATCH``. Odpowiedź paczki, która nie ma flag dla któregoś
-    jej UID (także ``OK`` bez żadnej linii ``FETCH``), ma linię bez UID albo flag albo flagi UID spoza paczki, to
-    ``UnexpectedReply``."""
-
     flags = {}
     for sequence, batch in _batches(uids):
         lines = [line for line in _ok(imap.uid("FETCH", sequence, "(UID FLAGS)")) if line is not None]
@@ -687,9 +541,6 @@ def _sent(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> SentRemin
 
 
 def _sent_reminder(header: bytes, sent_at: datetime) -> SentReminder | None:
-    """Przypomnienie z nagłówków ``Subject`` i ``To`` maila z „Wysłanych”; ``None`` dla innego tematu, maila bez adresata
-    i nagłówka, którego pakiet ``email`` nie umie rozebrać, jakikolwiek wyjątek zgłasza (jak w ``mail_of``)."""
-
     try:
         message = email.message_from_bytes(header, policy=email.policy.default)
         day = reminder_day(str(message["Subject"] or ""))
@@ -701,11 +552,6 @@ def _sent_reminder(header: bytes, sent_at: datetime) -> SentReminder | None:
 
 
 def _sent_attachments(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> SentAttachments:
-    """Załączniki maili „Wysłanych” z dni od dnia przed ``day``: najpierw ``BODYSTRUCTURE`` każdego maila, potem nagłówek
-    maila i nagłówki części innych niż tekst (``attachment_sections``) tylko maili, które je mają, jedno ``UID FETCH`` na
-    paczkę maili z tą samą listą sekcji. Mail, którego ``BODYSTRUCTURE`` ma kształt spoza RFC 3501, nie ma czytelnych
-    załączników; odmowa albo odpowiedź spoza RFC 3501 to ``UnexpectedReply``."""
-
     imap.login(_quoted(access.address.shown()), access.password)
     folder = _special(imap, rb"\sent")
     if folder is None:
@@ -738,8 +584,6 @@ def _sent_attachments(imap: imaplib.IMAP4, access: InboxCredentials, day: date) 
 
 
 def _strict(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchValue]]:
-    """Odpowiedzi ``FETCH`` polecenia; odmowa albo forma spoza RFC 3501 to ``UnexpectedReply``."""
-
     try:
         return fetch_responses(_ok(reply))
     except UnknownReply:
@@ -754,16 +598,9 @@ def _internal_moment(prefix: bytes) -> datetime:
 
 
 _SENT_TO: Final = ("To", "Cc", "Bcc")
-"""Nagłówki adresatów maila z „Wysłanych”, którym poszedł jego plik: tata wysyła rozliczenie ręcznie także w kopii albo
-w ukrytej kopii, a Gmail zostawia ``Bcc`` w kopii maila w „Wysłanych”."""
 
 
 def _attachments(response: Mapping[bytes, FetchValue], names: tuple[str, ...], sent_at: datetime) -> list[SentAttachment]:
-    """Załączniki jednego maila z jego nagłówka (``HEADER``) i nagłówków części (``filename`` z
-    ``Content-Disposition``, a bez niego ``name`` z ``Content-Type``, po RFC 2231 i RFC 2047); część bez nazwy pliku
-    nie daje załącznika, a mail z nagłówkiem, którego pakiet ``email`` nie umie rozebrać (zgłasza wtedy różne wyjątki,
-    jak w ``mail_of``), nie daje żadnego."""
-
     header = response.get(b"BODY[HEADER]")
     parts = [response.get(f"BODY[{name}]".encode("ascii")) for name in names[1:]]
     try:
@@ -781,9 +618,6 @@ def _attachments(response: Mapping[bytes, FetchValue], names: tuple[str, ...], s
 
 
 def _attachment_message(mail: AttachmentMail, sender: SenderAddress, at: datetime) -> MIMEMultipart:
-    """Mail z treścią w UTF-8 i jednym plikiem xlsx o nazwie ``mail.name`` w ``Content-Disposition`` (RFC 2231 dla
-    polskich liter), ze znakiem Centrum w nagłówku."""
-
     message = MIMEMultipart(policy=email.policy.SMTP)
     message["From"] = sender.shown()
     message["To"] = ", ".join(recipient.shown() for recipient in mail.recipients)
@@ -799,8 +633,6 @@ def _attachment_message(mail: AttachmentMail, sender: SenderAddress, at: datetim
 
 
 def _reminder_message(reminder: Reminder, sender: SenderAddress, at: datetime) -> MIMEText:
-    """Mail przypomnienia w UTF-8, z tematem po RFC 2047 (polityka SMTP pakietu ``email``)."""
-
     message = MIMEText(reminder.text, "plain", "utf-8", policy=email.policy.SMTP)
     message["From"] = sender.shown()
     message["To"] = ", ".join(recipient.shown() for recipient in reminder.recipients)
@@ -811,8 +643,6 @@ def _reminder_message(reminder: Reminder, sender: SenderAddress, at: datetime) -
 
 
 def _quit(smtp: smtplib.SMTP) -> None:
-    """Koniec sesji SMTP bez wyjątku: po zerwanym połączeniu zamyka samo gniazdo."""
-
     try:
         smtp.quit()
     except (OSError, smtplib.SMTPException):
@@ -842,10 +672,6 @@ def _close(imap: imaplib.IMAP4) -> None:
 
 
 def mail_of(raw: bytes, arrived: datetime) -> ReportMail | None:
-    """Mail MIME jako ``ReportMail``: temat po RFC 2047, treść z ``text/plain``, a bez niego tekst z ``text/html``;
-    ``None``, gdy nagłówek ``From`` nie ma adresu albo pakiet ``email`` nie umie maila rozebrać: na zepsutym mailu zgłasza
-    ``AttributeError``, ``IndexError``, ``ValueError`` i inne wyjątki, zależnie od wersji Pythona."""
-
     try:
         return _report_mail(raw, arrived)
     except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: pominięty mail liczy Mails.skipped
@@ -867,9 +693,6 @@ def _report_mail(raw: bytes, arrived: datetime) -> ReportMail | None:
 
 
 def _decoded(part: MIMEPart) -> str:
-    """Treść części po quoted-printable albo base64 w jej zestawie znaków; nieznany albo zepsuty zestaw (z bajtem
-    zerowym) czyta jako UTF-8."""
-
     payload = part.get_payload(decode=True)
     content = payload if isinstance(payload, bytes) else b""
     charset = part.get_content_charset() or "utf-8"

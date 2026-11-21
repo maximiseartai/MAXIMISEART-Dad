@@ -161,8 +161,6 @@ def test_skrypt_bez_parsera_laduje_sie_bez_zainstalowanego_pakietu(tmp_path: Pat
 
 
 def _text(node: ast.AST) -> str | None:
-    """Tekst stałej ``str`` albo ``bytes`` (``os.environb``, ``env={b"…": …}``); inaczej ``None``."""
-
     if isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
         return node.value if isinstance(node.value, str) else node.value.decode("latin-1")
     return None

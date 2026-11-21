@@ -142,7 +142,6 @@ def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) 
     assert final[conflicts]["description"].endswith(": kod/nazwa.py")
     assert final[conflicts_in_many_files]["state"] == "failure"
     assert final[conflicts_in_many_files]["description"].endswith("…")
-    # Git, który nie policzy scalenia, to błąd narzędzia, a nie konflikt PR.
     assert final[unrelated]["state"] == "error"
     assert "git merge-tree z main" in final[unrelated]["description"], final[unrelated]
     assert git(github.checkout, "rev-parse", "HEAD") == head_before

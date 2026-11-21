@@ -82,14 +82,12 @@ linią ``POMIAR CI ODMOWA`` z godziną resetu i kodem 1. Wynik: ``<katalog>/pomi
 
 GITHUB = ZRezerwa(GhApi(limit_s=60), REZERWA_POMIARU)
 
-# Krok zadań pytest i Mutation checks w ci.yml, który wykonuje jednostki planu.
 KROK_PRACY = "Run the planned units"
 # Krok zadań pytest i Mutation checks w ci.yml, który instaluje Chromium (apt na Linuksie) przed krokiem pracy.
 KROK_PRZEGLADARKI = "Chromium"
 # Awaria runnerów 11.11 (apt DNS przy instalacji Chromium na Linuksie): runy z tego okna nie mówią o bramce.
 AWARIE = ((datetime(2026, 11, 11, 13, 30, tzinfo=timezone.utc), datetime(2026, 11, 11, 16, 0, tzinfo=timezone.utc)),)
 STRONA_PONOWIONEGO = 30
-# Początek nazwy zadania w runie → zadanie w ci.yml; pytest i Mutation checks biorą nazwę z toru planu.
 SZABLONY = (
     *((tor.zadanie.partition("(")[0] + "(", tor.szablon) for tor in (*TORY, MUTACJE)),
     ("Frontend", "frontend"),
@@ -103,8 +101,6 @@ POZA_BRAMKA = "poza bramką"
 
 
 class Klasa(enum.Enum):
-    """Klasa zmiany PR, od najszerszej: zmiana należy do pierwszej, w którą trafia któraś jej ścieżka."""
-
     PELNA = "pełna bramka"
     SRC = "src"
     FRONTEND = "frontend"
@@ -224,11 +220,11 @@ class Pomiar:
     kolejki: dict[str, list[float]]
     konce_s: dict[str, float]  # szablon → od utworzenia runu do końca jego ostatniego zadania
     starty_s: list[float]
-    werdykt: str | None  # najwcześniejszy koniec Required próby, która nie jest anulowaną ostatnią próbą
+    werdykt: str | None
     do_werdyktu_main_s: float | None = None
     run_werdyktu_main: int | None = None
     praca_mediana_s: float | None = None
-    przegladarka_s: float | None = None  # krok Chromium krytycznego
+    przegladarka_s: float | None = None
     do_ostatniego_required_s: float | None = None
 
     @property
@@ -448,8 +444,6 @@ CELE = (
 
 
 def kwantyl(wartosci: Sequence[float], q: float) -> float | None:
-    """Kwantyl najbliższej rangi: wartość, której nie przekracza ``q`` obserwacji."""
-
     if not wartosci:
         return None
     uporzadkowane = sorted(wartosci)
