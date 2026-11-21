@@ -846,10 +846,19 @@ def test_tekst_sformatowany_pliku_zbiorczego_przychodzi_jako_zwykly_tekst(tmp_pa
     write_source(path, include_unmapped=False)
     workbook = load_workbook(path)
     try:
-        active_worksheet(workbook)["A18"] = RICH_TEXT_ROWS[0][0]
+        active_worksheet(workbook)["A18"] = "SYNTETYCZNY-TEKST-A18"
         workbook.save(path)
     finally:
         workbook.close()
+    like_excel(path)
+    rich = '<si><r><t xml:space="preserve">zwykły </t></r><r><rPr><b/></rPr><t>pogrubiony</t></r></si>'.encode()
+    rewrite_parts(
+        path,
+        lambda name, data: _once(b"<si><t>SYNTETYCZNY-TEKST-A18</t></si>", rich)(data)
+        if name == "xl/sharedStrings.xml"
+        else data,
+    )
+    assert re.search(r'<c r="A18"[^>]*t="s"', zip_part(path, "xl/worksheets/sheet1.xml"))
 
     value = read_data_rows(path, DadFiles()).rows[0].value("A")
 

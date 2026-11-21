@@ -412,6 +412,7 @@ Uruchamiany osobno od Przebiegu rozliczeń.
 Skoroszyt `Rozliczenie {okres} - zbiorcze.xlsx`: zlecenia skuteczne wszystkich wykonawców dla jednego okresu rozliczeniowego.
 Jest wynikiem Przygotowania pliku zbiorczego i jedynym wejściem Przebiegu rozliczeń.
 Ma ok. 10 tys. sformatowanych wierszy, a Wiersze danych tylko w kilkuset.
+Wykonawców Plików zbiorczych wszystkich okresów (`collective_workers`) narzędzie czyta z XML samej kolumny `WYKONAWCA`, bez openpyxl: openpyxl otwiera jeden Plik zbiorczy w 1–2 s, a XML jednej kolumny w ok. 0,3 s.
 
 ## Wykonawca
 
