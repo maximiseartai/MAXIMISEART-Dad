@@ -242,7 +242,6 @@ def test_plik_testow_z_koncowka_test_jest_wybierany_jak_plik_z_przedrostkiem_a_m
             "tests/a_test.py": "from pakiet import a\n",
             "tests/pomoc_a.py": "from pakiet import a\n",
             "tests/test_a.txt": "pakiet/a.py\n",
-            # Skrypt skilla z końcówką ``_test`` leży poza ``tests/``, więc nie jest plikiem testów.
             ".agents/skills/verify-a/scripts/self_test.py": "from pakiet import a\n",
         },
     )
@@ -261,7 +260,6 @@ def test_skan_katalogu_poza_repozytorium_gita_pada_zamiast_dac_puste_repozytoriu
 
 
 def test_odleglosc_od_zmiany_to_najkrotsza_droga_w_grafie_zaleznosci(tmp_path: Path) -> None:
-    # ``tests/test_dane.py`` czyta ``docs/dane.md``, a ``src/czyta.py`` czyta go dla ``tests/test_czyta.py``.
     repo = _repo(
         tmp_path,
         {
@@ -443,7 +441,6 @@ def test_modul_skryptu_skilla_tylko_w_podkatalogu_scripts_jest_dotkniety_przez_t
 
 
 def test_test_siega_pliku_przez_katalog_nazwany_w_tescie_a_nie_przez_sciezke_nazwana_tylko_w_narzedziu(tmp_path: Path) -> None:
-    # Test uruchamia skrypty z katalogu, który nazywa; narzędzie, które test uruchamia, nazywa inne narzędzie.
     repo = _repo(
         tmp_path,
         {

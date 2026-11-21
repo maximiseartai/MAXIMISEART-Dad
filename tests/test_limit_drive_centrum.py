@@ -290,8 +290,6 @@ def test_plik_ustawien_z_cr_konczy_naped_przy_run_api_i_po_funkcji(
 
 
 class _Dlugosc:
-    """Obiekt z własnym ``__len__``, bez ``__bool__``: prawdziwy, gdy jego długość nie jest zerem."""
-
     def __init__(self, length: int) -> None:
         self.length = length
 
