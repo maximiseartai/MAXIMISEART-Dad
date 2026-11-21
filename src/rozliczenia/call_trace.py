@@ -55,7 +55,6 @@ class CallTrace:
 
 
 _MAX_CAUSES: Final = 10
-"""Łańcuch przyczyn dłuższy niż ten jest ucięty, także łańcuch, który wraca do siebie."""
 
 
 def exception_type(error: BaseException) -> str:
