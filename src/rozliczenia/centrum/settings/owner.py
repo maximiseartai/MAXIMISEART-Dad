@@ -320,7 +320,9 @@ class CentrumSettings:
         self._periods = periods
         self._column_names = column_names
         self._scope = scope
-        self._release_changes = tuple(change for change in release_changes if scope.covers(_PARTS[change.file.name]))
+        self._release_changes = tuple(
+            change for change in release_changes if scope.covers(_PARTS[change.file.name]) and scope.covers(change.part)
+        )
         self._release_origin = release_origin
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
@@ -412,7 +414,8 @@ class CentrumSettings:
     def change_folders(self, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
         current = self.folders_or_unreadable()
         before = None if isinstance(current, Unreadable) else current.periods_directory
-        return self._by_dad(FOLDERS, dad_folders(edit, before), undoes=None)
+        periods = self._scope.covers(CentrumFunction.PERIODS)
+        return self._by_dad(FOLDERS, dad_folders(edit, before, periods=periods), undoes=None)
 
     def change_autostart(self, enabled: bool) -> Saved | Refused | NotSaved | KeptInPeriods:
         return self._by_dad(AUTOSTART, lambda _: enabled, undoes=None)

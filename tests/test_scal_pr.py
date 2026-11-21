@@ -24,6 +24,9 @@ from typing import cast
 import pytest
 import yaml
 
+from rozliczenia.centrum.box_prefix import stamped
+from rozliczenia.centrum.report_box import REPOSITORY as REPORT_BOX
+from rozliczenia.centrum.scope import BoxPrefix
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
@@ -119,6 +122,11 @@ elif arguments == ["api", "markdown", "--input", "-"]:
     elif html.startswith("gh: "):
         sys.exit(html)
     print(html, end="")
+elif arguments[0] == "api" and arguments[1].startswith("repos/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/"):
+    number = arguments[1].rpartition("/")[2]
+    if f"skrzynka/{number}" not in issues:
+        sys.exit("gh: Not Found (HTTP 404)")
+    print(issues[f"skrzynka/{number}"])
 elif arguments[0] == "api" and arguments[1].startswith(f"repos/{REPO}/issues/"):
     number = arguments[1].rpartition("/")[2]
     if issues.get(number) == "zawiesza":
@@ -362,6 +370,10 @@ class MergeGitHub(FakeGitHub):
         więc narzędzie bez limitu ``gh`` by je zamknęło."""
 
         self.issues.update(dict.fromkeys(map(str, numbers), answer))
+        self._save()
+
+    def box_issue(self, number: int, title: str, body: str | None) -> None:
+        self.issues[f"skrzynka/{number}"] = json.dumps({"number": number, "state": "open", "title": title, "body": body})
         self._save()
 
     def merges(self) -> list[list[str]]:
@@ -1404,6 +1416,61 @@ def test_po_merge_zamyka_otwarte_issues_z_naprawia_z_komentarzem_a_bez_merge_tyl
     assert _last_line(merged).endswith(f"jako {merge_commit[:7]} (baza {github.start[:7]}) | zamknięte: #3, #4 | sprzątanie: SPRZĄTANIE OK | 0 usuniętych")
     comment = f"Naprawione przez #1, scalone jako {merge_commit}."
     assert github.closed() == [["issue", "close", str(n), "--repo", opisy_pr.REPO, "--comment", comment] for n in (3, 4)]
+
+
+_ZNAK_WYSYLKI = "<!-- wysyłka uwaga-taty d12c34b5 część 1 wersja 20261120T234532657484Z-0001 -->"
+_UWAGA_TATY = f"Excel myśli minutę.\n\nUwaga ogólna · wersja narzędzia 3c1d0a9\n{_ZNAK_WYSYLKI}"
+
+
+@pytest.mark.parametrize(
+    ("tytul", "tresc", "linia"),
+    [
+        pytest.param("BRAK_WZORCA: Nie znaleziono wzorca.", _UWAGA_TATY, "#12 (Stanowisko taty)", id="sprawa-taty"),
+        pytest.param(
+            "ANDRZEJ nie może otworzyć INTERMAX", _UWAGA_TATY, "#12 (Stanowisko taty)", id="uwaga-taty-z-tytulem-od-prefiksu-andrzeja"
+        ),
+        pytest.param(
+            "ANDRZEJ Logi Uruchomienia 08_14_09_2026",
+            stamped(BoxPrefix.ANDRZEJ, _UWAGA_TATY),
+            "#12 (Stanowisko Andrzeja)",
+            id="sprawa-andrzeja-ze-znakiem-stanowiska",
+        ),
+        pytest.param(
+            "Nie działa przycisk",
+            stamped(BoxPrefix.ANDRZEJ, _UWAGA_TATY).replace("\n", "\r\n") + "\r\n",
+            "#12 (Stanowisko Andrzeja)",
+            id="sprawa-andrzeja-poprawiona-na-githubie-z-crlf",
+        ),
+        pytest.param(
+            "Nie działa przycisk",
+            f"{stamped(BoxPrefix.ANDRZEJ, 'Excel myśli minutę.')}\n\nUwaga ogólna · wersja narzędzia 3c1d0a9\n{_ZNAK_WYSYLKI}",
+            "#12 (Stanowisko taty)",
+            id="znak-stanowiska-w-tekscie-taty-przed-znakiem-wysylki",
+        ),
+        pytest.param("Nie działa przycisk", None, None, id="sprawa-bez-tresci"),
+        pytest.param(None, None, None, id="sprawa-ktorej-gh-nie-podaje"),
+    ],
+)
+def test_sprawa_skrzynki_z_naprawia_zostaje_otwarta_a_linia_mowi_ze_znaku_stanowiska_w_tresci_skad_przyszla(
+    tmp_path: Path, tytul: str | None, tresc: str | None, linia: str | None
+) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.open_issues(3)
+    if tytul is not None:
+        github.box_issue(12, tytul, tresc)
+    github.update(1, body=opisy_pr.SCALENIE["skrzynka"])
+    github.comment(1, PASS.format(head=head))
+
+    checked = github.run("1", "--bez-merge")
+    merged = github.run("1")
+
+    box = "UWAGA: nie odczytano #12 ze Skrzynki Zgłoszeń" if linia is None else f"Skrzynka Zgłoszeń zostaje otwarta: {linia}"
+    assert _last_line(checked).endswith(f"bez merge'a (--bez-merge) | po merge'u zamknie: #3 | {box}"), checked.stdout
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert f" | zamknięte: #3 | {box} | sprzątanie: " in _last_line(merged)
+    assert [call[2] for call in github.closed()] == ["3"]
+    assert naprawia.REPORT_BOX == REPORT_BOX
 
 
 def test_merge_do_galezi_innej_niz_domyslna_niczego_nie_zamyka_ani_nie_renderuje_opisu(tmp_path: Path) -> None:
@@ -2740,6 +2807,7 @@ FAIL_NEW_CODE = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" +
 PASS_RESOLVES = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-w1-r1"]
 FAIL_WITHOUT_ROOT = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + korzenie_pr.WERDYKTY["wazne-bez-korzenia"]
 PASS_RESOLVES_NEW = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-nowym-kodem"]
+PASS_RUNG = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["szczebel-w1-r1-test"]
 # FAIL opublikowany poza --werdykt: kod spoza listy bez NOWY, bez linii Znaleziska, z Ważne 0 i z dwoma Ważnymi prozą.
 FAIL_UNLISTED = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["korzen-3"]
 FAIL_PROSE = "WERDYKT: FAIL {commit}\nTest nie łapie regresji w kod/inne.py:1.\n"
@@ -2857,6 +2925,7 @@ def _root_gate(
         ([], "czerwony-main-kod-spoza-listy", {"labels": RED}, [f"korzeń: kod R-WYMYSLONY-KOD (blok „### Czerwony main #{korzenie_pr.RED_MAIN}”) {UNLISTED}"]),
         ([], "czerwony-main-bez-sekcji", {}, [f"korzeń: GitHub nie podał etykiet #{korzenie_pr.RED_MAIN}, więc nie wiadomo, czy to czerwony main"]),
         ([PASS_RESOLVES], "bez-sekcji", {}, ["korzeń: punkt „Korzeń W1 r1: R-DRUGA-DROGA” werdyktu r1 nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"]),
+        ([PASS_RUNG], "bez-sekcji", {}, ["korzeń: punkt „Mechanizm W1 r1: test” werdyktu r1 nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"]),
         ([FAIL_WITHOUT_ROOT], "szczebel-c", {}, ["korzeń: W1 r1: werdykt nie podaje kodu korzenia w szablonie, więc kod podaje recenzent następnej rundy punktem „Korzeń W1 r1: R-KOD - zdanie”"]),
         ([FAIL_WITHOUT_ROOT, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
         ([FAIL_PROSE], "bez-sekcji", {}, [SECTION_FOR_FAIL]),
@@ -2922,6 +2991,7 @@ def _root_gate(
         "czerwony-main-z-kodem-spoza-listy",
         "bez-etykiet-issue-z-githuba",
         "rozstrzygniecie-bez-waznego",
+        "rozstrzygniecie-szczebla-bez-waznego",
         "wazne-bez-kodu-w-szablonie",
         "wazne-bez-kodu-rozstrzygniete",
         "fail-bez-linii-znaleziska-bez-sekcji",
@@ -3185,12 +3255,14 @@ def _guard_pull(
     base: dict[str, str] | None = None,
     changed: dict[str, str] | None = None,
     rung: str | None = None,
+    owner: str | None = None,
 ) -> tuple[MergeGitHub, str]:
     """PR 1 z werdyktami ``verdicts`` (domyślnie ``FAIL_W1``) na starszym commicie, opisem ``body`` z ``korzenie_pr.OPISY``
     i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, warunek 5 w chwili ``deployed``, szczebel
-    strażnika (``szczebel_straznika.MARKER``) w chwili ``rung`` (domyślnie z bramką korzenia), a dowód kończy się
-    ``proof``; z ``root`` PR korzenia #1436 jest scalony z linią ``Korzeń z #1``; ``base`` dokłada pliki do bazy,
-    a ``changed`` to pliki PR (domyślnie ``kod/inne.py``)."""
+    strażnika (``szczebel_straznika.MARKER``) w chwili ``rung`` (domyślnie z bramką korzenia), warunek chronionego
+    właściciela w chwili ``owner`` (``None``: niewdrożony), a dowód kończy się ``proof``; z ``root`` PR korzenia #1436
+    jest scalony z linią ``Korzeń z #1``; ``base`` dokłada pliki do bazy, a ``changed`` to pliki PR (domyślnie
+    ``kod/inne.py``)."""
 
     files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"], **(base or {})}
     github = MergeGitHub(tmp_path, files, started=gate, held=() if rung is None else (szczebel_straznika.MARKER,))
@@ -3200,6 +3272,10 @@ def _guard_pull(
         with pytest.MonkeyPatch.context() as patch:
             patch.setenv("GIT_COMMITTER_DATE", rung)
             github.push_main({szczebel_straznika.MARKER: (TOOLS.parent / szczebel_straznika.MARKER).read_text(encoding="utf-8")})
+    if owner is not None:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("GIT_COMMITTER_DATE", owner)
+            github.push_main({szczebel_straznika.OWNER_MARKER: "WLASCICIEL = 1\n"})
     head = github.open_pull(1, changed or {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=korzenie_pr.OPISY[body])
     if root:
@@ -3362,6 +3438,45 @@ def test_straznik_poza_szczeblem_architektura_refaktor_i_lint_dostaje_dowod_jak_
     github, head = _guard_pull(tmp_path, f"straznik-{guard}", verdict, gate=gate)
 
     _accepted(github.run("1", "--bez-merge"), github, head, guard)
+
+
+@pytest.mark.parametrize(
+    ("verdict", "guard", "owner", "extra"),
+    [
+        pytest.param(_fail_with("test"), "pytest", GATE_BEFORE_VERDICTS, ("--chroniony-wlasciciel",), id="szczebel-test-z-testem-zada-chronionego-wlasciciela"),
+        pytest.param(_fail_with("test"), "pytest", GATE_AFTER_VERDICTS, (), id="watek-sprzed-wdrozenia-chronionego-wlasciciela"),
+        pytest.param(_fail_with("test"), "mypy", GATE_BEFORE_VERDICTS, (), id="szczebel-test-z-mypy"),
+        pytest.param(_fail_with("test"), "usuniete", GATE_BEFORE_VERDICTS, (), id="szczebel-test-z-usunietym-kodem"),
+        pytest.param(_fail_with("weryfikacja"), "pytest", GATE_BEFORE_VERDICTS, (), id="szczebel-weryfikacja-z-testem"),
+        pytest.param(FAIL_W1, "pytest", GATE_BEFORE_VERDICTS, (), id="wazne-bez-pola-mechanizm"),
+    ],
+)
+def test_test_jako_straznik_szczebla_test_ma_dowod_tylko_na_chronionym_wlascicielu(tmp_path: Path, verdict: str, guard: str, owner: str, extra: tuple[str, ...]) -> None:
+    github, head = _guard_pull(tmp_path, f"straznik-{guard}", verdict, owner=owner)
+
+    _accepted(github.run("1", "--bez-merge"), github, head, guard, *extra)
+
+
+@pytest.mark.parametrize(
+    ("verdict", "point", "accepted"),
+    [
+        pytest.param(_fail_with("lint"), "szczebel-w1-r1-test", True, id="szczebel-lint-zmieniony-na-test-przyjmuje-test"),
+        pytest.param(_fail_with("test"), "szczebel-w1-r1-lint", False, id="szczebel-test-zmieniony-na-lint-odmawia-testu"),
+    ],
+)
+def test_szczebel_waznego_bierze_bramka_z_ostatniego_werdyktu_ktory_go_dotyczy(tmp_path: Path, verdict: str, point: str, accepted: bool) -> None:
+    resolving = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY[point]
+    github, head = _guard_pull(tmp_path, "straznik-pytest", verdict, resolving)
+
+    answered = github.run("1", "--bez-merge")
+
+    if accepted:
+        _accepted(answered, github, head, "pytest")
+        return
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {RUNG_REFUSAL.format(mechanism='lint')}"), answered.stdout + answered.stderr
+    assert "recenzent następnej rundy zmienia go punktem „Mechanizm W1 r1: <szczebel> - zdanie” w ## Sprawdzone" in last, last
+    assert _proofs(github) == []
 
 
 def test_job_dowodu_liczy_odmowe_szczebla_bez_dowodu_jak_merge(tmp_path: Path) -> None:

@@ -1,5 +1,3 @@
-"""Kontrakt i build scalają się bez konfliktu: ``merge=wygenerowane`` z ``.gitattributes`` i sterownik z ``tools/setup_worktree.py``."""
-
 from __future__ import annotations
 
 from pathlib import Path

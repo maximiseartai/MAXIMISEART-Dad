@@ -26,6 +26,7 @@ from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.restart_guardian import Restart
+from rozliczenia.centrum.scope import Scope
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
 from rozliczenia.centrum.threads import Threading
 from rozliczenia.centrum.tool_update import ToolClone, find_git
@@ -189,6 +190,7 @@ class Surroundings:
     efenix_url: str = NO_EFENIX
     efenix_arguments: tuple[str, ...] = ()
     efenix_pace: Pace | None = None
+    scope: Scope | None = None
     _start: _StartClock | None = field(default=None, init=False, repr=False)
 
     def started_clock(self) -> _StartClock:
@@ -304,6 +306,7 @@ def _app(
         window=efenix_window(
             tool, surroundings.efenix_url, arguments=surroundings.efenix_arguments, pace=surroundings.efenix_pace
         ),
+        scope=surroundings.scope,
     )
 
 

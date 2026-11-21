@@ -48,14 +48,11 @@ def _text(*lines: str) -> str:
 
 
 def _replaced(old: str, *new: str) -> str:
-    """Treść szablonu, w której linia ``old`` ustępuje liniom ``new`` (bez nich: znika)."""
-
     index = LINES.index(old)
     return _text(*LINES[:index], *new, *LINES[index + 1 :])
 
 
 TEMPLATE = _text(*LINES)
-# Blok mutacji recenzenta (``mutacja_recenzenta``): nagłówek ``### Mutacja W<n> r<k>`` i blok kodu ``` z JSON pliku mutacji.
 MUTATION = '[{"nazwa": "odmowa bez przyczyny", "zmiany": [["tools/scal_pr.py", "    return reasons\\n", "    return []\\n"]]}]'
 
 
@@ -64,8 +61,6 @@ def _mutation(text: str = MUTATION, fence: str = "```", label: str = "W1 r1") ->
 
 
 def _with_mutation(*block: str) -> str:
-    """Szablon z blokami ``block`` przed „## Sprawdzone”."""
-
     return _replaced(CHECKED, *block, CHECKED)
 
 
@@ -91,6 +86,7 @@ PRZECHODZA = {
     "linia-dowodu-300-znakow-w-bloku-kodu": _replaced(EVIDENCE, "Dowód:", "```", "x" * 300, "```"),
     **{f"mechanizm-{name}": _replaced(MECHANISM, f"Mechanizm: {name}") for name in MECHANIZMY},
     "mutacja-recenzenta": _with_mutation(*_mutation()),
+    "rozstrzygniecie-szczebla": _text(*LINES, "- Mechanizm W1 r1: test - reguła ast-grep alarmuje w ponad 10% PR-ów."),
     "mutacja-recenzenta-dwoch-waznych-z-roznych-rund": _with_mutation(*_mutation(), *_mutation(label="W2 r1"), *_mutation(label="W1 r2")),
 }
 ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
@@ -169,6 +165,9 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     ),
     "mutacja-dwa-bloki-tego-samego-waznego": (_with_mutation(*_mutation(), *_mutation()), (1, 1), "Mutacja W1 r1: drugi blok tego Ważnego w werdykcie"),
     "mutacja-bez-rundy": (_with_mutation("### Mutacja W1", "```", MUTATION, "```"), (1, 1), "„### Mutacja W<n> r<k>”"),
+    "rozstrzygniecie-szczebla-spoza-piramidy": (_text(*LINES, "- Mechanizm W1 r1: typ - typ zamyka klasę."), (1, 1), "punkt „Mechanizm W1 r1: typ - typ zamyka klasę.” to nie rozstrzygnięcie szczebla „Mechanizm W<n> r<runda>: <architektura|refaktor|lint|test|weryfikacja> - zdanie”"),
+    "rozstrzygniecie-szczebla-bez-zdania": (_text(*LINES, "- Mechanizm W1 r1: test"), (1, 1), "punkt „Mechanizm W1 r1: test” to nie rozstrzygnięcie szczebla"),
+    "rozstrzygniecie-szczebla-bez-rundy": (_text(*LINES, "- Mechanizm W1: test - reguła ast-grep alarmuje."), (1, 1), "punkt „Mechanizm W1: test - reguła ast-grep alarmuje.” to nie rozstrzygnięcie szczebla"),
 }
 PRZED_MECHANIZMEM = {
     "szablon-bez-mechanizmu": _replaced(MECHANISM),
@@ -251,20 +250,14 @@ def _saved() -> dict[str, str]:
 
 
 def rendered() -> dict[str, str]:
-    """HTML z renderera GitHuba dla każdej treści z ``werdykty_szablonu.json``."""
-
     return dict(_saved())
 
 
 def html(text: str) -> str:
-    """HTML treści ``text`` z renderera GitHuba."""
-
     return _saved()[text]
 
 
 def bodies() -> list[str]:
-    """Treści, których HTML muszą mieć testy."""
-
     return [
         *PRZECHODZA.values(),
         *(text for text, _, _ in ODMOWY.values()),

@@ -53,9 +53,6 @@ def _rekordy(*pr: RunPr, main: tuple[RunMain, ...] = (), pr_runow: int = 60, od:
 
 
 def _linie_porazek(rekordy: Rekordy) -> dict[str, list[str]]:
-    """Klucz każdej porażki kroku skilla czerwonych runów rekordów → pierwsze pole linii wyniku, której drugie pole to
-    ten klucz (przy ``NIE LICZY SIĘ`` z powodem)."""
-
     porazki: dict[str, list[str]] = {f"{run.run} {krok}": [] for run in rekordy.pr for krok in run.padle}
     for pola in (linia.split(" | ") for linia in cien_podstaw.wypisz(rekordy, rozstrzygnij(rekordy))):
         if len(pola) > 1 and pola[1] in porazki:
@@ -216,7 +213,6 @@ def test_oszczednosc_n0_to_srednia_roznica_scian_nf_i_n0_z_probki_razy_runy_pr_o
     # Czerwony run spoza próbki ma cień do przypisania defektu, ale średniej nie przesuwa.
     wynik = rozstrzygnij(_rekordy(*probka, _pr(cien={**CIEN, "N0": Wariant((), 0.0)}), pr_runow=60))
 
-    # Różnice 100 i 0 s, średnio 50 s na run, razy 60 runów okna: 50 min.
     assert (wynik.probka, wynik.oszczednosc_min) == (2, 50.0)
 
 
@@ -259,9 +255,6 @@ def test_n0_wygrywa_tylko_gdy_audyt_potwierdzil_mniej_niz_x_przyczyn_w_14_dniach
     rekordy = _rekordy(*runy, _pr("probka", run=99, padle=(), cien=cien, probka=True), main=main, pr_runow=600, od=od)
 
     assert rozstrzygnij(rekordy, audyt).wynik is wynik
-
-
-# --- zbieranie z GitHuba i gita ---
 
 
 class _GitHub:
@@ -472,7 +465,6 @@ def test_czerwony_run_anulowany_albo_z_przekroczonym_czasem_nie_ukrywa_porazki_k
     runy += [_run(n + 2, "pull_request", "g", glowa, wynik, n + 2) for n, (glowa, wynik) in enumerate(zip(glowy, wyniki, strict=True)) if wynik]
     odpowiedzi, pliki = _czerwony_run_2(runy)
     odpowiedzi |= {f"{REPO}/actions/runs/2/jobs?filter=latest&per_page=100": _zadania(zadania_2)}
-    # Runy anulowane bez padłego zadania: zadania pytest i Mutation checks anulowane.
     odpowiedzi |= {f"{REPO}/actions/runs/{n}/jobs?filter=latest&per_page=100": _zadania("cancelled", "cancelled") for n in (3, 4)}
     dzien = date(2026, 11, 12)
 

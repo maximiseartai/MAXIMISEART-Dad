@@ -1,5 +1,3 @@
-"""Drive features/wysylka-rozliczen.md."""
-
 from __future__ import annotations
 
 from datetime import date, datetime, time

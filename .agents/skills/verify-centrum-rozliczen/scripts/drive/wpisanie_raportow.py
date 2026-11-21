@@ -1,5 +1,3 @@
-"""Drive features/wpisanie-raportow.md."""
-
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -378,8 +376,8 @@ def _window_day(
 ) -> Json:
     """A synthetic day of a Wykonawca: ``orders`` orders from ``number``, the last ``without`` without a report, with
     ``problem`` the first one a problem without `Zostaw moją`, with ``taken`` the last one taken over from
-    `wykonawca.a` (`TAKEN_NOTE`, a Przeniesienie zlecenia, #1347), with ``added`` the last one a Zlecenie dopisane z
-    raportu without `ADRES` (`ADDED_NOTE`, #1354), and the moments of its Przypomnienia o raporcie."""
+    `wykonawca.a` (`TAKEN_NOTE`, a Przeniesienie zlecenia), with ``added`` the last one a Zlecenie dopisane z
+    raportu without `ADRES` (`ADDED_NOTE`), and the moments of its Przypomnienia o raporcie."""
 
     numbers = [str(number + offset) for offset in range(orders)]
     states = ["entered"] * (orders - without) + ["without_report"] * without
@@ -414,11 +412,11 @@ def _window_day(
 
 
 TAKEN_NOTE = "przejęte od wykonawca.a"
-"""The calm note of a Przeniesienie zlecenia in the popover of `wykonawca.b` 03.11 (#1347)."""
+"""The calm note of a Przeniesienie zlecenia in the popover of `wykonawca.b` 03.11."""
 HANDED_NOTE = "przekazane wykonawca.b"
 """The other side of it in the popover of `wykonawca.a` 03.11: a row of its own, because the order is no longer there."""
 ADDED_NOTE = "dopisane z raportu, uzupełnij resztę"
-"""The calm note of a Zlecenie dopisane z raportu without `ADRES` in the popover of `wykonawca.c` 09.11 (#1354)."""
+"""The calm note of a Zlecenie dopisane z raportu without `ADRES` in the popover of `wykonawca.c` 09.11."""
 
 
 def _window_view(clicked_at: str) -> Json:
@@ -465,8 +463,8 @@ SUBJECT_FAULT: Json = {
     "arrived": "2026-11-16T17:05:00Z",
     "offers": [],
 }
-"""The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041, #2038), with its subject after the guard of
-the data rule (#2070: the value of `ADRES` and the phone masked, the surname kept)."""
+"""The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041), with its subject after the guard of
+the data rule (the value of `ADRES` and the phone masked, the surname kept)."""
 NO_DAY_FAULT: Json = {"subject": "Raport", "fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z", "offers": []}
 """The Raport z błędem tematu of `wykonawca.b`, who has no orders: a problem without a day at the day it came."""
 MISTAKEN_DAY = "2026-11-28"
@@ -884,7 +882,7 @@ def _report_mail(
 
 
 def _on_request_faulty_subject(run: Run, page: Page, register: Path) -> None:
-    """Wpis na życzenie of a Raport z błędem tematu (ADR 0041, #2040): the order with the state Błąd tematu, its
+    """Wpis na życzenie of a Raport z błędem tematu (ADR 0041): the order with the state Błąd tematu, its
     button with the preview, the order entered after the click, and the fault that does not come back."""
 
     run.step(FEATURE, "wpis-na-zyczenie-blad-tematu")
@@ -960,7 +958,7 @@ def _on_request_move(run: Run, page: Page, register: Path) -> None:
     """Wpis na życzenie of a Raport z błędem tematu that takes over the order of another Wykonawca (ADR 0041, 0029): the
     tile of wykonawca.a with the order is Problem, not Komplet, and its button says the order goes from wykonawca.a to
     wykonawca.b; the red tile of wykonawca.b has the same button at the fault of the subject, under the number of the
-    order (stories 42 and 44 of #2032), and Dad clicks it there; the click moves the order and enters it like a correct
+    order, and Dad clicks it there; the click moves the order and enters it like a correct
     Raport of wykonawca.b."""
 
     run.step(FEATURE, "wpis-na-zyczenie-przeniesienie")
@@ -1042,7 +1040,7 @@ def _on_request_move(run: Run, page: Page, register: Path) -> None:
 
 def _overtaken_subject(run: Run, page: Page) -> None:
     """A Raport z błędem tematu whose every order a later Raport of another Wykonawca takes (ADR 0041), from a
-    Wykonawca without an order that day (#2096): Dad still learns of the Raport sent wrong, because the day has a tile
+    Wykonawca without an order that day: Dad still learns of the Raport sent wrong, because the day has a tile
     that is not Problem, and its popover has one calm sentence with the subject instead of the fault, without a button."""
 
     run.step(FEATURE, "blad-tematu-wziety")

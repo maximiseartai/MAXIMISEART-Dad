@@ -32,16 +32,11 @@ __all__ = ["AddressPart", "address_differences", "readable", "same_address"]
 
 
 class AddressPart(enum.Enum):
-    """Część adresu, którą różnią się ``ADRES`` i ``Dane adresowe``; wartość to jej nazwa w Logach Uruchomienia."""
-
     STREET = "ulica"
-    """Rodzaj (``ul``, ``os``, ``al``, ``pl``) albo zbiór słów nazwy ulicy."""
     NUMBER = "numer domu"
     FLAT = "lokal"
     FILE_UNREAD = "ADRES bez rozbioru"
-    """``ADRES`` z Pliku zbiorczego, którego reguła nie rozbiera, więc nie jest równy żadnemu adresowi."""
     EFENIX_UNREAD = "Dane adresowe bez rozbioru"
-    """``Dane adresowe`` z efenix, których reguła nie rozbiera."""
 
 _KINDS: Final = frozenset({"ul", "os", "al", "pl", "rynek"})
 _GLUED_KIND: Final = re.compile(r"(?<![^\W\d_])(rynek)(?=[A-ZĄĆĘŁŃÓŚŹŻ])")
@@ -55,7 +50,6 @@ _SEPARATORS: Final = re.compile(r"[^\w/\s]|_")
 @dataclass(frozen=True)
 class _Address:
     kind: str | None
-    """``None`` dla ``ADRES`` bez rodzaju, który pasuje do każdego rodzaju."""
     street: frozenset[str]
     number: str
     flat: str | None
@@ -68,18 +62,10 @@ def same_address(collective: str, efenix: str) -> bool:
 
 
 def readable(address: str) -> bool:
-    """Reguła rozbiera ``address`` na rodzaj, nazwę ulicy, numer domu i lokal; narzędzie zgodności efenix sprawdza tak
-    ``Dane adresowe`` z prawdziwego efenix."""
-
     return bool(_readings(address, town_first=True))
 
 
 def address_differences(collective: str, efenix: str) -> tuple[AddressPart, ...]:
-    """Części, którymi ``ADRES`` z Pliku zbiorczego i ``Dane adresowe`` z efenix się różnią, w kolejności ``AddressPart``;
-    pusta krotka to ten sam adres. Strona, której reguła nie rozbiera, to jej ``…_UNREAD`` zamiast części. Gdy strona ma
-    dwa odczyty (``X/Y/Z`` bez ``Lokal``), różnica to ta z pary odczytów, która różni się najmniej, przy remisie
-    pierwsza."""
-
     lefts, rights = _readings(collective, town_first=False), _readings(efenix, town_first=True)
     if not lefts or not rights:
         return tuple(part for part, read in ((AddressPart.FILE_UNREAD, lefts), (AddressPart.EFENIX_UNREAD, rights)) if not read)
@@ -97,9 +83,6 @@ def _differences(left: _Address, right: _Address) -> tuple[AddressPart, ...]:
 
 
 def _readings(text: str, *, town_first: bool) -> tuple[_Address, ...]:
-    """Każdy odczyt adresu ``text``, po kolei; pusty, gdy reguła go nie rozbiera. ``town_first``: przed rodzajem może
-    stać miejscowość (``Dane adresowe`` z efenix), więc adres bez rodzaju nie ma rozbioru."""
-
     words = _SEPARATORS.sub(" ", _SLASH.sub("/", _GLUED_KIND.sub(r"\1 ", text)).casefold()).split()
     flat: str | None = None
     if len(words) >= 3 and words[-2] == _FLAT_WORD and words[-3][:1].isdigit():

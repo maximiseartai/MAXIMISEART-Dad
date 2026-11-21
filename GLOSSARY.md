@@ -307,7 +307,7 @@ _Avoid_: mail, raport (bez dopowiedzenia), sprawozdanie
 
 Część Raportu wykonawcy o jednym zleceniu: numer z `NUMER ZL.`, `tak` albo `nie` jak w `SKUTECZNE` i wykonane czynności albo powód nieskuteczności, słowa rozdzielone spacją, bez względu na wielkość liter.
 Dotyczy zlecenia o tym numerze, a jego dzień i Wykonawca to dzień z tematu i nadawca raportu, także gdy Rejestr zleceń mówi inaczej.
-Wyjątek: gdy w jednym raporcie co najmniej dwa Wpisy mają numery zleceń tego Wykonawcy z innego dnia niż dzień z tematu, temat jest pomyłką i te Wpisy dotyczą zleceń z ich dnia w Rejestrze.
+Wyjątek: gdy w jednym raporcie co najmniej dwa Wpisy mają numery zleceń z innego dnia niż dzień z tematu, także zleceń innego Wykonawcy ([#1344](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1344) US 9), temat jest pomyłką i te Wpisy dotyczą zleceń z ich dnia w Rejestrze.
 Późniejszy Wpis raportu tego samego zlecenia, od tego samego albo innego Wykonawcy, wygrywa z wcześniejszym.
 _Avoid_: linia raportu, Wpis urządzenia i czynności INTERMAX (to wpis Uporządkowania)
 
@@ -793,6 +793,7 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), feedback, komentarz
 
 Miejsce, do którego trafiają Zgłoszenia, Kontrole ilości, Logi Uruchomienia i Uwagi taty i w którym Maks je zamyka: prywatne repozytorium Zgłoszeń.
 Jedno dla obu Stanowisk: to, co przyszło ze Stanowiska Andrzeja, ma w tytule prefiks `ANDRZEJ`, a jego Archiwum Logów okresu tag `andrzej-logi-<okres>`, więc ma własne issue i nie miesza się z tym, co przysłał tata.
+Z którego Stanowiska jest sprawa, narzędzia Maksa wiedzą ze znaku Stanowiska, który Centrum Andrzeja dopisuje na końcu treści issue (`box_prefix.stamped`), a nie z tytułu, bo tytuł Uwagi pisze tata i może go zacząć od `ANDRZEJ`.
 _Avoid_: issue tracker, publiczne issue
 
 ## Reguła danych

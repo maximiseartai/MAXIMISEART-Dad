@@ -41,9 +41,6 @@ def _lines(*lines: str) -> str:
 
 
 def body(*blocks: str, why: str = "Cel.") -> str:
-    """Opis PR z nagłówkami wzoru skilla ``pr`` i sekcją ``## Korzeń`` z ``blocks`` przed ``## Merge Danger``; bez
-    ``blocks`` bez sekcji."""
-
     sections = opisy_pr.wzor(why).split("## Merge Danger")
     root = _lines("## Korzeń", "", "\n\n".join(blocks), "", "") if blocks else ""
     return f"{sections[0]}{root}## Merge Danger{sections[1]}"
@@ -146,13 +143,14 @@ SKILL = {
         "# Przegląd", "", "## Co jest porażką", "", "- Nowy punkt z przykładem #1457.", "- Punkt bez przykładu.", f"- Nowy punkt z przykładem #{FEATURE}.", "", "## Dowody", "", "Tekst.", ""
     ),
 }
-# Treści werdyktów pod dwiema pierwszymi liniami: punkt rozstrzygnięcia kodu w „## Sprawdzone” (decyzja Q25).
 WERDYKTY = {
     "rozstrzyga-w1-r1": _lines("## Sprawdzone", "- Korzeń W1 r1: R-DRUGA-DROGA - druga droga, nie brak testu.", "- diff"),
     "rozstrzyga-nowym-kodem": _lines("## Sprawdzone", "- Korzeń W1 r1: NOWY R-NOWY-KOD - opis kodu spoza listy.", "- diff"),
     "rozstrzyga-kodem-spoza-listy": _lines("## Sprawdzone", "- Korzeń W1 r1: R-NIE-MA - kod spoza listy.", "- diff"),
     "rozstrzygniecie-bez-rundy": _lines("## Sprawdzone", "- Korzeń W1: R-DRUGA-DROGA - bez rundy.", "- diff"),
     "wazne-bez-korzenia": "- Ważne: brak testu, opisane prozą.",
+    "szczebel-w1-r1-test": _lines("## Sprawdzone", "- Mechanizm W1 r1: test - reguła ast-grep alarmuje w ponad 10% PR-ów.", "- diff"),
+    "szczebel-w1-r1-lint": _lines("## Sprawdzone", "- Mechanizm W1 r1: lint - zakaz nazwy łapie każdą kopię.", "- diff"),
 }
 
 
@@ -163,8 +161,6 @@ def _saved() -> dict[str, str]:
 
 
 def rendered() -> dict[str, str]:
-    """HTML z renderera GitHuba dla każdej treści z ``korzenie_pr.json``."""
-
     return dict(_saved())
 
 
@@ -173,8 +169,6 @@ def html(text: str) -> str:
 
 
 def bodies() -> list[str]:
-    """Treści, których HTML muszą mieć testy."""
-
     return [*OPISY.values(), *PR_KORZENIA.values(), *SKILL.values(), *WERDYKTY.values()]
 
 

@@ -1,0 +1,23 @@
+id: komunikat-boxa-podlancuchem
+language: python
+severity: error
+message: >-
+  porażki boxa boat nie rozpoznaje podłańcuch komunikatu w wyjściu kroku (komunikat może stać w wyjściu prawdziwej
+  porażki): bierz własność box_boat.WLASNOSC z junit (wyniki_testow) albo kod wyjścia sesji pluginu
+files:
+  - tools/**/*.py
+  - .agents/skills/*/scripts/**/*.py
+ignores:
+  - tools/lib/box_boat.py
+metadata:
+  przypadki:
+    - 2290/W1/r1
+rule:
+  kind: comparison_operator
+  all:
+    - has:
+        field: operators
+        regex: '^(not )?in$'
+    - has:
+        nthChild: 1
+        regex: '(^|\.)KOMUNIKAT$'

@@ -1,5 +1,3 @@
-"""Drive features/legenda-czynnosci.md."""
-
 from __future__ import annotations
 
 import json

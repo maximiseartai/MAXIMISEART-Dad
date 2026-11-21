@@ -16,13 +16,16 @@ zwolnieniem dokładnie nazwy, których jest właścicielem; to drugie sprawdza t
 from __future__ import annotations
 
 from collections.abc import Mapping
+import importlib.metadata
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import pkgutil
 import subprocess
 import sys
 import tomllib
+import warnings
 from typing import Any, Final
 
 import pytest
@@ -98,6 +101,11 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Ładowacz z importlib.abc (przegląd #1705 r1, W1), postacie jego importu i importlib.metadata.
     "from importlib.abc import SourceLoader\nclass Ladowacz(SourceLoader): ...": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     "from importlib import abc": (DRIVE_CONFIG, (), "importlib.abc"),
+    "import shlex\nwords = list(shlex.shlex(command, posix=True))": (ROOT_CONFIG, ("tools", "hooks"), "shlex.shlex"),
+    "from shlex import shlex as lexer\nwords = list(lexer(command))": (ROOT_CONFIG, ("tools", "hooks"), "shlex.shlex"),
+    "import shlex as s\nwords = list(s.shlex(command))": (SRC_CONFIG, (), "shlex.shlex"),
+    "import shlex\nwords = list(shlex.shlex(command))": (TESTS_CONFIG, (), "shlex.shlex"),
+    "from shlex import shlex": (DRIVE_CONFIG, (), "shlex.shlex"),
     "import importlib.abc as ladowacze": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     'from importlib.metadata import EntryPoint\nEntryPoint("x", "tests.fixtures.znane_luki:zapisz", "g").load()': (
         ROOT_CONFIG,
@@ -205,6 +213,20 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Mypy wyłączony na funkcji bez komentarza tłumienia, którego licznik tłumień nie widzi (przegląd #1689, W1).
     "import typing\n@typing.no_type_check\ndef f() -> int:\n    return '1'": (SRC_CONFIG, ("rozliczenia",), "typing.no_type_check"),
     "from typing_extensions import no_type_check as unchecked": (TESTS_CONFIG, (), "typing_extensions.no_type_check"),
+    "import yaml\ntekst = yaml.safe_dump_all(dokumenty, sort_keys=False)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.safe_dump_all"),
+    "import yaml\ntekst = yaml.safe_dump(regula)": (ROOT_CONFIG, (), "yaml.safe_dump"),
+    "from yaml import dump as zapisz": (SRC_CONFIG, ("rozliczenia",), "yaml.dump"),
+    "import yaml as y\ny.dump_all(dokumenty, plik)": (DRIVE_CONFIG, (), "yaml.dump_all"),
+    "import yaml\nyaml.emit(zdarzenia, plik)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.emit"),
+    "import yaml\ntekst = yaml.serialize(wezel)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.serialize"),
+    "from yaml import serialize_all": (SRC_CONFIG, ("rozliczenia",), "yaml.serialize_all"),
+    "import yaml\nclass Zapis(yaml.SafeDumper): ...": (SRC_CONFIG, ("rozliczenia", "centrum"), "yaml.SafeDumper"),
+    "from yaml import CSafeDumper as Zapis": (ROOT_CONFIG, TOOLS_PROBE, "yaml.CSafeDumper"),
+    "from yaml.representer import SafeRepresenter": (ROOT_CONFIG, TOOLS_PROBE, "yaml.representer"),
+    "from yaml.emitter import Emitter": (DRIVE_CONFIG, (), "yaml.emitter"),
+    "import yaml\nZapis = yaml.YAMLObject.yaml_dumper": (ROOT_CONFIG, TOOLS_PROBE, "yaml.YAMLObject"),
+    "from yaml import add_representer": (SRC_CONFIG, ("rozliczenia",), "yaml.add_representer"),
+    "import _yaml\nzapis = _yaml.CEmitter(plik)": (ROOT_CONFIG, TOOLS_PROBE, "_yaml"),
     # Treść z Wydania w miejscu pliku Ustawień bez odczytu: postacie z tabeli przypadków przy ZNANE_LUKI_TRESCI_Z_WYDANIA,
     # pierwsza to mail z treścią z Wydania z przeglądu #2029 (r1, W1).
     "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL": (
@@ -323,7 +345,7 @@ def test_katalog_z_wlasnymi_zakazami_ruff_powtarza_kazdy_zakaz_korzenia() -> Non
         problems += [
             f"{where}: brak zakazu {name} z ruff.toml korzenia"
             for name, entry in root.items()
-            if local.get(name) != entry and not (path == TESTS_CONFIG and name in DYNAMIC_IMPORT)
+            if local.get(name) != entry and not (path == TESTS_CONFIG and name in (*DYNAMIC_IMPORT, *ZAPIS_YAML))
         ]
 
     assert problems == [], "\n".join(
@@ -381,6 +403,104 @@ ZNANE_LUKI_SNU = {
     "nazwa w napisie: getattr": 'import time\n\ngetattr(time, "sleep")(0.3)\n',
     "inne API z limitem czasu: threading.Event.wait": "import threading\n\nthreading.Event().wait(0.3)\n",
 }
+
+
+def _drogi_zapisu_pyyaml() -> set[str]:
+    import yaml
+
+    piszace: tuple[type, ...] = (yaml.emitter.Emitter, yaml.serializer.Serializer, yaml.representer.BaseRepresenter)
+    if importlib.util.find_spec("yaml._yaml") is not None:
+        piszace += (importlib.import_module("yaml._yaml").CEmitter,)
+
+    def klasa_pisze(wartosc: object) -> bool:
+        return isinstance(wartosc, type) and issubclass(wartosc, piszace)
+
+    def funkcja_pisze(wartosc: object) -> bool:
+        return inspect.isfunction(wartosc) and "Dumper" in inspect.signature(wartosc).parameters
+
+    def drogi_modulu(nazwa_modulu: str) -> set[str]:
+        publiczne = {nazwa: wartosc for nazwa, wartosc in vars(importlib.import_module(nazwa_modulu)).items() if not nazwa.startswith("_")}
+        drogi = {nazwa for nazwa, wartosc in publiczne.items() if klasa_pisze(wartosc) or funkcja_pisze(wartosc)}
+        drogi |= {
+            nazwa
+            for nazwa, wartosc in publiczne.items()
+            if inspect.isfunction(wartosc) and set(wartosc.__code__.co_names) & drogi
+        }
+        drogi |= {
+            f"{nazwa}.{atrybut}"
+            for nazwa, wartosc in publiczne.items()
+            if isinstance(wartosc, type) and not klasa_pisze(wartosc)
+            for atrybut in dir(wartosc)
+            if not atrybut.startswith("__") and klasa_pisze(getattr(wartosc, atrybut, None))
+        }
+        return {f"{nazwa_modulu}.{droga}" for droga in drogi}
+
+    najwyzsze = importlib.metadata.distribution("PyYAML").read_text("top_level.txt") or ""
+    moduly = [nazwa for nazwa in najwyzsze.split() if importlib.util.find_spec(nazwa) is not None]
+    assert yaml.__name__ in moduly, f"dystrybucja PyYAML bez modułu {yaml.__name__} w top_level.txt: strażnik nie ma czego przejść"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        moduly += [
+            modul.name
+            for nazwa in moduly
+            if hasattr(importlib.import_module(nazwa), "__path__")
+            for modul in pkgutil.walk_packages(importlib.import_module(nazwa).__path__, f"{nazwa}.")
+        ]
+    drogi: set[str] = set()
+    for nazwa_modulu in moduly:
+        drogi |= drogi_modulu(nazwa_modulu)
+        definiuje = any(
+            getattr(wartosc, "__module__", None) == nazwa_modulu and (klasa_pisze(wartosc) or funkcja_pisze(wartosc))
+            for wartosc in vars(importlib.import_module(nazwa_modulu)).values()
+        )
+        if definiuje and nazwa_modulu != yaml.__name__:
+            drogi.add(nazwa_modulu)
+    return drogi
+
+
+def test_kazda_droga_zapisu_pyyaml_ma_zakaz_poza_tests() -> None:
+    """Drogi zapisu wynikają z wartości w zainstalowanej dystrybucji PyYAML, nie z nazw: klasa pisząca to podklasa
+    ``Emitter``, ``Serializer``, ``BaseRepresenter`` albo ``CEmitter``, a drogą jest moduł dystrybucji (każdy moduł
+    z ``top_level.txt``, także ``_yaml``, i jego podmoduły), który taką klasę albo funkcję definiuje, jego publiczna
+    nazwa i atrybut publicznej klasy, które ją wskazują, oraz funkcja z parametrem ``Dumper`` albo wołająca inną drogę.
+    Pakiet ``yaml`` sam nie jest drogą, bo odczyt (``yaml.safe_load``) zostaje dozwolony: jego drogi stoją nazwa po nazwie."""
+
+    zakazane = set(ZAPIS_YAML)
+    bez_zakazu = [droga for droga in sorted(_drogi_zapisu_pyyaml()) if not any(droga == z or droga.startswith(f"{z}.") for z in zakazane)]
+
+    assert bez_zakazu == [], (
+        "zakaz zapisu YAML przez PyYAML w ruff.toml korzenia, src/ruff.toml i drive/ruff.toml ma wymieniać każdą drogę zapisu PyYAML"
+    )
+
+
+ZNANE_LUKI_ZAPISU_YAML = {
+    "zakaz zna tylko nazwę z importu: getattr(yaml, \"safe_dump\")": 'import yaml\n\ntekst = getattr(yaml, "safe_dump")({"severity": "off"})\n',
+    "zakaz zna tylko PyYAML: inna biblioteka YAML": "from ruamel.yaml import YAML\n\nYAML().dump({}, None)\n",
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_zapisu_yaml_poza_tests_przechodza_przez_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_ZAPISU_YAML, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath(*TOOLS_PROBE, "sonda_luki.py"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_ZAPISU_YAML)")
+
+
+ZNANE_LUKI_LEKSERA_SHLEX = {
+    "nazwa w napisie: getattr": 'import shlex\n\nwords = list(getattr(shlex, "shlex")("a b"))\n',
+    "słownik modułu": 'import shlex\n\nwords = list(vars(shlex)["shlex"]("a b"))\n',
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_leksera_shlex_w_hookach_przechodza_przez_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_LEKSERA_SHLEX, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath("tools", "hooks", "sonda_luki.py"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_LEKSERA_SHLEX)")
 
 
 @wymaga_ruff
@@ -937,6 +1057,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/centrum/catalog.py": frozenset({"rozliczenia.centrum.process_kind._CATALOG"}),
     "src/rozliczenia/dad_files.py": frozenset({"rozliczenia.workbook_files.file_bytes"}),
     "src/rozliczenia/centrum/app.py": frozenset({"rozliczenia.client_data.empty_memory"}),
+    "src/rozliczenia/centrum/box_prefix.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/case_delivery.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/comment_versions.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/dad_notes.py": frozenset({"rozliczenia.client_data.tool"}),
@@ -982,6 +1103,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_mails.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
+    "src/rozliczenia/centrum/settings/files.py": frozenset({"yaml.dump", "yaml.SafeDumper"}),
     "tools/lib/stawka_przegladu.py": frozenset({"wplyw_zmiany.light_review"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
@@ -1052,15 +1174,25 @@ def test_konfiguracja_ruff_zwalnia_z_tid251_tylko_wlascicieli(tmp_path: Path) ->
 
 def _outside_owner_right(owners: Mapping[str, frozenset[str]], cwd: Path = ROOT) -> list[str]:
     """Pliki ``owners`` w ``cwd`` w jednym biegu ruff bez ``per-file-ignores`` i z ``--ignore-noqa``: każda zakazana nazwa
-    spoza prawa pliku i każde ``import *`` z komunikatem zakazu, a potem każda nazwa prawa, której plik już nie używa."""
+    spoza prawa pliku i każde ``import *`` z komunikatem zakazu, a potem każda nazwa prawa, której plik już nie używa.
+
+    Nadpisanie z wiersza poleceń zdejmuje ``per-file-ignores`` każdej konfiguracji, ale ``extend-per-file-ignores`` ruff do
+    niego dokłada, a ``ignore`` zostaje, więc plik bez zgłoszenia dostaje sondę ``SHARED_PROBE`` pod swoją ścieżką: bez
+    zgłoszenia sondy zwalnia go inna droga niż prawo właściciela, a nie brak użycia nazw."""
 
     found: dict[str, dict[str, str]] = {owner: {} for owner in owners}
-    unexempted = ("--config", "lint.per-file-ignores = {}", "--config", "lint.extend-per-file-ignores = {}")
+    unexempted = ("--config", "lint.per-file-ignores = {}")
     for path, banned, message in _banned_names(*unexempted, *owners, cwd=cwd):
         found[path].setdefault(banned, message)
+    hidden = {
+        owner
+        for owner in owners
+        if not found[owner] and not _banned_names(*unexempted, "--stdin-filename", owner, "-", code=SHARED_PROBE, cwd=cwd)
+    }
     return [
+        *(f"{owner}: zwolnienie z TID251 spoza per-file-ignores ruff.toml korzenia (extend-per-file-ignores, ignore)" for owner in owners if owner in hidden),
         *(f"{owner}: {found[owner][banned]}" for owner in owners for banned in sorted(found[owner].keys() - owners[owner])),
-        *(f"{owner}: {banned} bez użycia" for owner in owners for banned in sorted(owners[owner] - found[owner].keys())),
+        *(f"{owner}: {banned} bez użycia" for owner in owners if owner not in hidden for banned in sorted(owners[owner] - found[owner].keys())),
     ]
 
 
@@ -1081,14 +1213,15 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw() -> None:
     )
 
 
-_OWNER_CONFIG = """[lint]
-select = ["TID251", "F403"]
-[lint.per-file-ignores]
-"wlasciciel.py" = ["TID251"]
-[lint.flake8-tidy-imports.banned-api]
+_OWNER_BANS = """[lint.flake8-tidy-imports.banned-api]
 "os.name".msg = "system"
 "time.sleep".msg = "czekanie"
 """
+_OWNER_CONFIG = f"""[lint]
+select = ["TID251", "F403"]
+[lint.per-file-ignores]
+"wlasciciel.py" = ["TID251"]
+{_OWNER_BANS}"""
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
@@ -1117,6 +1250,7 @@ select = ["TID251", "F403"]
             id="import-gwiazdki-pada",
         ),
         pytest.param("import time\ntime.sleep(1)\n", ["wlasciciel.py: `time.sleep` is banned: czekanie", "wlasciciel.py: os.name bez użycia"], id="prawo-bez-użycia-pada"),
+        pytest.param("SYSTEM = 1\n", ["wlasciciel.py: os.name bez użycia"], id="plik-bez-zakazanych-nazw-pada-bez-użycia"),
     ],
 )
 def test_zakazana_nazwa_spoza_prawa_wlasciciela_pada_w_pliku_wlasciciela(tmp_path: Path, code: str, expected: list[str]) -> None:
@@ -1127,6 +1261,28 @@ def test_zakazana_nazwa_spoza_prawa_wlasciciela_pada_w_pliku_wlasciciela(tmp_pat
     (tmp_path / "wlasciciel.py").write_text(code, encoding="utf-8")
 
     assert _outside_owner_right({"wlasciciel.py": frozenset({"os.name"})}, cwd=tmp_path) == expected
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+@pytest.mark.parametrize(
+    "exemption",
+    [
+        pytest.param('[lint.extend-per-file-ignores]\n"wlasciciel.py" = ["TID251"]\n', id="extend-per-file-ignores"),
+        pytest.param('[lint]\nignore = ["TID251"]\n', id="ignore"),
+    ],
+)
+def test_zwolnienie_spoza_per_file_ignores_korzenia_pada_jako_zwolnienie(tmp_path: Path, exemption: str) -> None:
+    """Zwolnienie właściciela w konfiguracji katalogu drogą, której nadpisanie ``per-file-ignores`` nie zdejmuje, pada
+    z nazwą tej drogi, a nie jako jego nazwa bez użycia."""
+
+    (tmp_path / "ruff.toml").write_text(f'[lint]\nselect = ["TID251", "F403"]\n{_OWNER_BANS}', encoding="utf-8")
+    (tmp_path / "pakiet").mkdir()
+    (tmp_path / "pakiet" / "ruff.toml").write_text(f'extend = "../ruff.toml"\n{exemption}{_OWNER_BANS}', encoding="utf-8")
+    (tmp_path / "pakiet" / "wlasciciel.py").write_text("import os\nimport time\nSYSTEM = os.name\ntime.sleep(1)\n", encoding="utf-8")
+
+    assert _outside_owner_right({"pakiet/wlasciciel.py": frozenset({"os.name"})}, cwd=tmp_path) == [
+        "pakiet/wlasciciel.py: zwolnienie z TID251 spoza per-file-ignores ruff.toml korzenia (extend-per-file-ignores, ignore)"
+    ]
 
 
 # Zakazy treści z Wydania pliku Ustawień w src/ruff.toml, które testy niżej uruchamiają z --ignore-noqa: każda zakazana
@@ -1147,6 +1303,9 @@ def _release_content_findings(*arguments: str, code: str | None = None) -> list[
 # Nazwy pakietu importlib wynikają z biblioteki działającego Pythona (test nazw niżej); reszta to moduły, których zadaniem
 # jest import albo wykonanie modułu. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po
 # nazwie, są znaną luką z próbkami w ZNANE_LUKI_IMPORTU, nie pełną listą.
+ZAPIS_YAML = tuple(
+    name for name, entry in _banned(tomllib.loads(ROOT_CONFIG.read_text(encoding="utf-8"))["lint"]).items() if "PyYAML" in entry["msg"]
+)
 DYNAMIC_IMPORT = (
     "importlib.import_module",
     "importlib.__import__",

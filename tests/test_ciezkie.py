@@ -39,6 +39,9 @@ ODMOWY = [
     pytest.param("python3 tools/szybko.py", NA_BOXIE_SZYBKO, id="szybko-systemowym-pythonem"),
     pytest.param("python tools/szybko.py", NA_BOXIE_SZYBKO, id="szybko-pythonem-z-path"),
     pytest.param(".venv/bin/python -u tools/szybko.py", NA_BOXIE_SZYBKO, id="szybko-z-opcja-pythona"),
+    pytest.param(f"echo issue#2295; {SZYBKO}", NA_BOXIE_SZYBKO, id="szybko-za-haszem-w-slowie"),
+    pytest.param(f"echo '#'; {SZYBKO}", NA_BOXIE_SZYBKO, id="szybko-za-haszem-w-apostrofach"),
+    pytest.param(f"{SZYBKO}\r", NA_BOXIE_SZYBKO, id="szybko-z-koncem-linii-crlf"),
     pytest.param(
         f"{ROOT}/.venv/bin/python {ROOT}/tools/szybko.py", NA_BOXIE_SZYBKO, id="szybko-sciezka-bezwzgledna"
     ),
@@ -167,6 +170,8 @@ ODMOWY = [
 
 PRZECHODZI = [
     pytest.param(NA_BOXIE_SZYBKO, id="boatbox-run"),
+    pytest.param(f"echo a #; {SZYBKO}", id="szybko-w-komentarzu"),
+    pytest.param(f"{SZYBKO} 'bez pary", id="cudzyslow-bez-pary-nie-uruchamia-polecenia"),
     pytest.param(f"boatbox run {SZYBKO}", id="boatbox-run-bez-cudzyslowu"),
     pytest.param(f"boatbox run --here '{SZYBKO}'", id="boatbox-run-here"),
     pytest.param(f"boatbox run --here {SZYBKO}", id="boatbox-run-here-bez-cudzyslowu"),
@@ -373,6 +378,7 @@ BOATBOX = (
             id="zmienne",
         ),
         pytest.param("", ".venv/bin/python -m pytest -n auto -k 'a\\b'", id="ukosnik"),
+        pytest.param("", '.venv/bin/python -m pytest -n auto -k "a\\"b"', id="ucieczka-cudzyslowu"),
     ],
 )
 def test_gotowe_polecenie_daje_na_boxie_te_same_argumenty_co_polecenie_na_macu(

@@ -1,19 +1,3 @@
-"""Uruchomienia procesu z Centrum rozliczeń: jedno naraz, w wątku roboczym, z podglądem przez SSE.
-
-Centrum jest rozmówcą rdzenia Uruchomienia procesu (``process_run``) i
-podglądem projekcji postępu (ADR 0002, ADR 0004). Ten moduł nie zna żadnego
-procesu: proces podaje gotowe ``PreparedRun``, a moduł
-prowadzi z nim rdzeń i publikuje widoki dla przeglądarki. Widok podsumowania robi rdzeń
-w swojej osłonie, więc jego awaria to błąd po silniku z Komunikatem z katalogu
-procesu, ten sam wynik co w metrykach. Zatrzymania, ostrzeżenia i decyzja taty
-przechodzą jako Komunikaty w trzech częściach.
-
-Każda zmiana stanu to nowy niemutowalny widok (``runs_contract.RunView``) z kolejnym
-numerem. Strumień SSE wysyła najpierw bieżący widok, potem każdy kolejny, więc
-ponowne podłączenie (odświeżenie, nowa karta) zaczyna od bieżącego stanu.
-Decyzja taty czeka w stanie ``awaiting_decision``, aż przyjdzie przez API.
-"""
-
 from __future__ import annotations
 
 import threading
@@ -58,7 +42,6 @@ _RESULT_NOT_SHOWN: Final = Message.to_maintainer(
     where="Centrum rozliczeń",
     check="Folder okresu",
 )
-"""Ostatnia siatka adaptera: wyniku nie dało się pokazać, choć rdzeń zapisał już metryki."""
 
 _STOP_HEADLINES: Final[Mapping[runs_contract.StopKind, str]] = {
     "for_tata": "Do poprawy",
@@ -66,14 +49,11 @@ _STOP_HEADLINES: Final[Mapping[runs_contract.StopKind, str]] = {
     "for_maks": "Błąd",
     "declined": "Przerwano",
 }
-"""Tytuł wyniku przy Zatrzymaniu: tata poprawia sam, błąd do Maksa albo jego własna odmowa w Decyzji taty."""
 
 _NOT_YOUR_FILES: Final = "To nie wynika z Twoich plików."
 
 
 def stop_note(kind: runs_contract.StopKind | None) -> str | None:
-    """Zdanie pod tytułem Zatrzymania na karcie."""
-
     return _NOT_YOUR_FILES if kind == "for_maks" else None
 
 Ending = runs_contract.Ending
@@ -87,12 +67,6 @@ def verdict(
     dry_run: bool,
     view: ProcessView[Any],
 ) -> tuple[str, runs_contract.NextAction]:
-    """Tytuł wyniku i jedyna akcja po nim: jedna reguła dla karty na żywo i karty z Logów Uruchomienia.
-
-    Po błędzie podsumowania przy zapisie (``after_engine``) pliki już są, więc karta nie proponuje ponownego
-    Uruchomienia, tylko akcję po wyniku z zapisem.
-    """
-
     if stop_kind is not None:
         return _STOP_HEADLINES[stop_kind], view.result_action if ending == "after_engine" and not dry_run else "rerun"
     if result == "WYMAGA_SPRAWDZENIA":
@@ -104,25 +78,14 @@ def verdict(
 
 @dataclass(frozen=True)
 class EndedRun:
-    """Zakończone Uruchomienie procesu z Centrum, każdą drogą: fakty wyliczone raz, z których czyta karta i działania po wyniku."""
-
     info: runs_contract.RunInfo
     core: Outcome[Shown[Any]] | None
-    """Wynik rdzenia tak, jak go pokazuje Centrum; ``None``, gdy rdzeń nie oddał wyniku.
-
-    Po błędzie samego adaptera (ostatnia siatka) ma jej Zatrzymanie, bez widoku i bez uwag technicznych,
-    a czas i snapshot projekcji postępu zostają z rdzenia.
-    """
     stopped: StoppedRun | None
-    """Zatrzymanie, także ostatniej siatki adaptera; ``None``, gdy proces się zakończył."""
     progress: runs_contract.Progress
-    """Postęp z karty: ostatni widok projekcji, który dostała przeglądarka."""
     started_at: datetime
     ended_at: datetime
     input_copy: InputCopy | None
-    """Kopia wejścia Uruchomienia (``PreparedRun.input_copy``) z tym, co czytniki przeczytały do jego końca."""
     settings: SettingsAtStart
-    """Ustawienia ze startu Uruchomienia (``PreparedRun.settings``)."""
 
     @classmethod
     def of(
@@ -145,8 +108,6 @@ class EndedRun:
 
     @property
     def shown(self) -> Shown[Any] | None:
-        """Wynik zakończonego procesu; ``None`` przy każdym Zatrzymaniu."""
-
         return None if self.core is None else self.core.view
 
     @property
@@ -163,8 +124,6 @@ class EndedRun:
 
     @property
     def files_unchanged(self) -> bool:
-        """Pliki taty bez zmian; gdy rdzeń nie oddał wyniku, wiadomo to tylko o podglądzie bez zapisu."""
-
         return self.info.mode.dry_run if self.core is None else self.core.files_unchanged
 
     @property
@@ -177,14 +136,10 @@ class EndedRun:
 
     @property
     def result_warnings(self) -> tuple[Message, ...]:
-        """Ostrzeżenia wyniku; przy Zatrzymaniu żadnych."""
-
         return () if self.shown is None else tuple(self.shown.warnings)
 
     @property
     def warnings(self) -> tuple[Message, ...]:
-        """Ostrzeżenia ze startu, potem ostrzeżenia wyniku."""
-
         return self.settings.warnings + self.result_warnings
 
     def card(self, view: ProcessView[Any]) -> runs_contract.RunOutcome:
@@ -219,45 +174,15 @@ class EndedRun:
 
 class AfterRun(Protocol):
     def run_ended(self, run: EndedRun) -> None:
-        """Na wątku Uruchomienia, przed końcem Uruchomienia: tylko lokalny odczyt i zapis, bez sieci, w milisekundach poza
-        sprawdzeniem Wzorca, którego wersję praca Centrum widzi pierwszy raz albo po nowej wartości pamięci reguły danych
-        (``template_archive.TemplateChecks``).
-
-        Wyjątek nie zmienia wyniku: ``RunHost.after`` zapisuje jego typ w dzienniku i woła następne działanie.
-        """
         ...
 
 
 class RunLogsKeeper(AfterRun, Protocol):
-    """Logi Uruchomienia (``run_comments.RunComments``): start każdego Uruchomienia i pierwsze działanie po wyniku."""
-
     def run_started(self, info: runs_contract.RunInfo, started_at: datetime) -> None:
-        """Start Uruchomienia, zanim ruszy jego wątek; wyjątek ``RunHost.start`` zapisuje tylko w dzienniku."""
         ...
 
 
 class RunHost:
-    """Jedno Uruchomienie procesu naraz w obrębie serwera i jego widoki dla przeglądarki.
-
-    To samo miejsce „jedno naraz” zajmuje Aktualizacja narzędzia (``begin_update``
-    do ``end_update``): w jej trakcie start Uruchomienia jest odrzucony, a w trakcie
-    Uruchomienia ona. Tak samo przywrócenie Kopii INTERMAX (``begin_restore`` do
-    ``end_restore``): podmienia INTERMAX, więc nie biegnie obok Uporządkowania INTERMAX.
-    ``shutdown_refusal()`` odmawia zamknięcia serwera także wtedy, gdy Uruchomienie czeka na decyzję taty.
-    Zatrzymanie zakończonego Uruchomienia przejmuje jego właściciel (``stops``); Diagnoza i „Wyślij do Maksa” idą tylko
-    do Zatrzymania bieżącego Uruchomienia, a nowy stan Zgłoszenia trafia na jego kartę.
-    Działania po wyniku biegną przed końcem Uruchomienia, więc przyjęte zamknięcie
-    Centrum albo Aktualizacja narzędzia ich nie przerwie: najpierw Logi Uruchomienia
-    (``logs``), potem ``after_run``. Pierwszy widok niesie
-    ``previous``, ostatnie Uruchomienie sprzed startu Centrum. Start następnego Uruchomienia zostawia wynik
-    poprzedniego w widokach, więc karta, która czyta strumień co chwilę, dostaje wynik każdego Uruchomienia.
-
-    ``threads`` daje blokadę, Event decyzji taty i wątek Uruchomienia (``threads.Threading``), a ``created`` dostaje
-    każdy nowy ``Run`` pod blokadą, zanim zajmie miejsce „jedno naraz”, z ostatnim widokiem sprzed jego startu (tym, co
-    karta mogła już przeczytać). Inne niż domyślne (moduł ``threading`` i nic) daje tylko wyrocznia
-    ``verify-jedno-uruchomienie-naraz``, która decyduje o każdym kroku.
-    """
-
     def __init__(
         self,
         log: CentrumLog,
@@ -287,11 +212,6 @@ class RunHost:
         self._closing = False
 
     def shutdown_refusal(self) -> Refusal | None:
-        """Dlaczego teraz nie można zamknąć Centrum (``Shutdown.refuse_while``); ``None``, gdy nic nie trwa.
-
-        ``None`` przyjmuje zamknięcie w tej samej blokadzie: kolejne Uruchomienie ani aktualizacja już nie wystartują.
-        """
-
         with self._lock:
             busy = self._busy_locked("shutdown")
             if busy is None:
@@ -299,8 +219,6 @@ class RunHost:
             return busy
 
     def begin_update(self) -> None:
-        """Zajmuje miejsce „jedno naraz” na Aktualizację narzędzia; ``Refusal``, gdy jest zajęte."""
-
         with self._lock:
             if self._closing:
                 raise refusal.closing("update")
@@ -316,8 +234,6 @@ class RunHost:
             self._updating = False
 
     def begin_restore(self) -> None:
-        """Zajmuje miejsce „jedno naraz” na przywrócenie Kopii INTERMAX; ``Refusal``, gdy jest zajęte."""
-
         with self._lock:
             if self._closing:
                 raise refusal.closing("restore")
@@ -331,8 +247,6 @@ class RunHost:
             self._restoring = False
 
     def _busy_locked(self, then: Retry) -> Refusal | None:
-        """Odmowa z tym, co teraz trwa, i prośbą, żeby poczekać i ``then``; ``None``, gdy nic."""
-
         if self._updating:
             return refusal.updating(then)
         if self._restoring:
@@ -406,8 +320,6 @@ class RunHost:
         self._centrum_runs.remember(prepared.kind.key, run_id, prepared.metrics, since, utc_now())
 
     def failed(self, failure: Exception) -> None:
-        """Wyniku Uruchomienia nie dało się pokazać."""
-
         self._log.unexpected_failure(failure, where="wynik Uruchomienia procesu")
 
     def show_report(self, run_id: str, state: diagnosis_contract.ReportState) -> None:
@@ -435,11 +347,6 @@ class RunHost:
         )
 
     def end(self, run: Run, result: runs_contract.RunFinished) -> None:
-        """Wynik Uruchomienia ``run`` na kartę i koniec Uruchomienia pod jedną blokadą.
-
-        Start z drugiej karty, który czeka na koniec Uruchomienia, nie wejdzie między wynik a koniec.
-        """
-
         with self._lock:
             self._publish_locked(result)
             run.ended = True
@@ -455,8 +362,6 @@ class RunHost:
 
 
 class Run:
-    """Jedno Uruchomienie procesu i jednocześnie jego rozmówca w rdzeniu (``Interlocutor``)."""
-
     def __init__(self, host: RunHost, prepared: PreparedRun[Any, Any], stops: Stops, threads: Threading) -> None:
         self._host = host
         self._prepared = startable(prepared)
@@ -518,8 +423,6 @@ class Run:
         self._host.show_report(self.info.id, state)
 
     def answer(self, consent: bool) -> None:
-        """Wywoływane przez ``RunHost.decide`` pod blokadą hosta."""
-
         self._consent = consent
         self.awaiting_decision = False
         self._decided.set()

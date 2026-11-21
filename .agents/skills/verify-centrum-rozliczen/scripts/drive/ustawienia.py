@@ -1,5 +1,3 @@
-"""Drive features/ustawienia.md."""
-
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -379,7 +377,7 @@ def _failure_after_window(run: Run, page: Page) -> None:
 
 def _failure_keeps_next_choice(run: Run, page: Page) -> None:
     """A failed save of Motyw takes the page back to the theme of the settings file only when it was Dad's last choice:
-    while his next choice still waits for its answer, the page keeps that one (review #1535 r1, D1)."""
+    while his next choice still waits for its answer, the page keeps that one."""
 
     run.step(FEATURE, "ustawienia-blad-zostawia-nastepny-wybor")
     theme = "**/api/settings/theme"

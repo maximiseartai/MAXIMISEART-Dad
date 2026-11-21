@@ -31,7 +31,6 @@ TIME, MOMENT, FOLDER = rownowaznosc.TIME, rownowaznosc.MOMENT, rownowaznosc.FOLD
 PERIOD_FOLDER = PeriodFolder(Path(), parse_period_token("08_14_09_2026"))
 SETTLEMENTS = PERIOD_FOLDER.worker_settlements.name
 
-# Kod wyjścia, wynik i kod Komunikatu Zatrzymania każdego scenariusza na kodzie tego checkoutu.
 EXPECTED = {
     "przebieg": "kod 0, OK",
     "przebieg-podglad": "kod 0, OK",
@@ -60,13 +59,10 @@ EXPECTED = {
     "intermax-bez-surowych-zlecen": "kod 1, BLAD_KRYTYCZNY, BRAK_SUROWYCH_ZLECEN",
     "intermax-rejestr-nie-skoroszyt": "kod 1, BLAD_KRYTYCZNY, NIECZYTELNY_INTERMAX",
 }
-# Scenariusz bazowy każdego procesu.
 BASES = {"settlement": "przebieg", "preparation": "przygotowanie", "intermax": "intermax"}
-# Scenariusze, które różnią się od bazowego argumentami procesu, a nie samymi wejściami.
 OWN_ARGUMENTS = {"przebieg-podglad", "przebieg-podglad-nieznany-wykonawca", "przygotowanie-podglad", "przygotowanie-uklad-folderow-taty"}
 COLLECTIVE = PERIOD_FOLDER.collective_file.as_posix()
 CONFIG = tool_files.config_dir(Path())
-# Wejścia, które każdy pozostały scenariusz zmienia wobec bazowego swojego procesu, przy tych samych argumentach.
 VARIANTS = {
     "przebieg-ilosci": {COLLECTIVE},
     "przebieg-wzorzec-syntetyczny": {tool_files.WORKER_TEMPLATE.name},
@@ -105,9 +101,6 @@ def _equivalence(tmp_path: Path, base: Path, head: Path, *scenarios: rownowaznos
     work = tmp_path / "praca"
     work.mkdir()
     return rownowaznosc.equivalence(base, head, scenarios or (_stub_scenario(),), work)
-
-
-# --- maskowanie --------------------------------------------------------------------------------------------------
 
 
 def test_maskowanie_ukrywa_czasy_chwile_zegara_i_folder_strony_a_reszte_wyniku_zostawia(tmp_path: Path) -> None:
@@ -166,9 +159,6 @@ def test_maskowanie_ukrywa_folder_strony_podany_przez_dowiazanie_symboliczne_w_p
     assert rownowaznosc.masked(note, (tmp_path / "dowiazanie" / "scenariusz",)) == f"Plik {FOLDER}{os.sep}m.jsonl."
 
 
-# --- JSON wyniku -------------------------------------------------------------------------------------------------
-
-
 def test_rozne_pola_json_to_ich_sciezki_bez_wartosci() -> None:
     base = {"result": "OK", "stop": None, "warnings": [{"code": "A", "what": "x"}], "summary": {"files": [1, 2]}}
     head = {"result": "BLAD_KRYTYCZNY", "stop": None, "warnings": [{"code": "A", "what": "y"}], "summary": {"files": [1]}, "nowe": 1}
@@ -177,9 +167,6 @@ def test_rozne_pola_json_to_ich_sciezki_bez_wartosci() -> None:
     assert rownowaznosc.json_differences(base, dict(base)) == []
     assert rownowaznosc.json_differences({"a": 1}, {"b": 1}) == ["a", "b"]
     assert rownowaznosc.json_differences([1], 1) == ["JSON"]
-
-
-# --- pliki wynikowe ----------------------------------------------------------------------------------------------
 
 
 def _folders(tmp_path: Path) -> tuple[Path, Path]:
@@ -257,9 +244,6 @@ def test_czesc_zipu_tylko_po_jednej_stronie_to_roznica_z_nazwa_czesci(tmp_path: 
     assert rownowaznosc.file_differences(base, head) == ["Brakujaca.xlsx: części customXml/item1.xml", "Nowa.xlsx: części customXml/item1.xml"]
 
 
-# --- linia scenariusza -------------------------------------------------------------------------------------------
-
-
 def _outcome(tmp_path: Path, name: str, code: int, result: object) -> rownowaznosc.Outcome:
     folder = tmp_path / name
     folder.mkdir()
@@ -295,9 +279,6 @@ def test_linia_roznicy_nazywa_piec_pierwszych_pol_json_a_reszte_liczy(tmp_path: 
 
     assert rownowaznosc.compare("s", _outcome(tmp_path, "a", 0, base), _outcome(tmp_path, "b", 0, head))[0] == "s | RÓŻNICA | JSON a, b, c, d, e, … (+2)"
     assert rownowaznosc.compare("s", _outcome(tmp_path, "c", 0, five), _outcome(tmp_path, "d", 0, dict.fromkeys(five, 1)))[0] == "s | RÓŻNICA | JSON a, b, c, d, e"
-
-
-# --- przebieg narzędzia ------------------------------------------------------------------------------------------
 
 
 def test_strony_z_tym_samym_wynikiem_innym_czasem_i_swoim_plikiem_metryk_daja_rownowaznosc_ok(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

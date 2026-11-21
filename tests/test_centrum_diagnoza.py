@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
+import threading
 import time
 from typing import Any, Final, NoReturn
 from zoneinfo import ZoneInfo
@@ -13,6 +14,9 @@ import pytest
 
 from rozliczenia import preparation_messages
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
+from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
+from rozliczenia.centrum.reports import REPORT_THREAD
+from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
 from rozliczenia.centrum.settings.autostart import AUTOSTART_SETTING
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
@@ -49,6 +53,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
+from tests.fixtures.potomne import wait_for
 from tests.fixtures.wyciek import zawiera_wartosc
 from atrapy.preparation import (
     INTERNAL_SETTLEMENT_NAME,
@@ -1250,3 +1255,44 @@ def test_diagnoza_bez_folderu_okresow_nie_sprawdza_folderu_okresu_ani_jego_pliko
         ("not_checked", "Folderu okresów nie ma na miejscu."),
         ("not_checked", "Nie odszukano Folderu okresu."),
     )
+
+
+def test_stan_zgloszenia_ktory_przychodzi_po_nastepnym_uruchomieniu_nie_trafia_na_jego_karte(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    write_report_key(centrum.tool)
+    run_id = stopped_for_maks(centrum)
+    box = centrum.surroundings.report_box
+    hold = box.search_hold = threading.Event()
+    assert centrum.client.post(f"/api/runs/{run_id}/diagnosis").status_code == 200
+    assert box.searching.wait(10), "Diagnoza pyta skrzynkę o Zgłoszenie tego problemu"
+
+    following = run_to_end(centrum, dry_run=True)
+    hold.set()
+
+    assert wait_for(lambda: all(thread.name != REPORT_THREAD for thread in centrum.client.threads()))
+    current = centrum.client.get("/api/runs/current").json()
+    assert (following["result"]["report"], current["result"]["report"]) == (None, None)
+
+
+def test_diagnoza_uruchomienia_przed_koncem_jego_dzialan_po_wyniku_jest_odrzucona(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    reached, released = threading.Event(), threading.Event()
+    checked = QuantityCheckAfterRun.run_ended
+
+    def held(self: QuantityCheckAfterRun, run: EndedRun) -> None:
+        reached.set()
+        released.wait()
+        checked(self, run)
+
+    monkeypatch.setattr(QuantityCheckAfterRun, "run_ended", held)
+    centrum.engines.fail_summary = True
+    run_id = centrum.start(dry_run=True).json()["run"]["id"]
+    assert reached.wait(30), "Uruchomienie doszło do działań po wyniku"
+
+    refused = centrum.client.post(f"/api/runs/{run_id}/diagnosis")
+    released.set()
+
+    assert finished_view(centrum.client)["result"]["stop_kind"] == "for_maks"
+    assert refused.status_code == 409

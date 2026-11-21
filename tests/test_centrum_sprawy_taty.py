@@ -35,6 +35,8 @@ from rozliczenia.centrum.report_box import (
     Issue,
     IssuesOutcome,
     Label,
+    ListedIssue,
+    ListOutcome,
     OpenArchiveOutcome,
     Refused,
     Rejected,
@@ -369,9 +371,10 @@ class AnsweringBox:
     def remove(self, asset_id: int, *, key: str) -> RemoveOutcome:
         raise AssertionError("Sprawy taty nie usuwają plików z Archiwum okresu")
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         self.asked.append((label, include_closed, key))
-        return self.answers[label]
+        answer = self.answers[label]
+        return tuple(ListedIssue(issue, "") for issue in answer) if isinstance(answer, tuple) else answer
 
 
 def keyed(box: AnsweringBox) -> KeyedBox:
@@ -384,7 +387,7 @@ class SlowBox(AnsweringBox):
         self.answering = threading.Event()
         self.answer = threading.Event()
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         self.answering.set()
         self.answer.wait(5)
         return super().labelled_issues(label, include_closed=include_closed, key=key)
