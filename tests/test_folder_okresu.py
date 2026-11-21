@@ -25,6 +25,17 @@ GLOSSARY = Path(__file__).resolve().parents[1] / "GLOSSARY.md"
 PERIOD = parse_period_token("08_14_09_2026")
 NAME_UNITS_WITHOUT_WORKER = len("Rozliczenie 08_14_09_2026 - .xlsx")
 ASTRAL = chr(0x1D409)
+WINDOWS_FORBIDDEN = {
+    "<": "mniejszy",
+    ">": "wiekszy",
+    ":": "dwukropek",
+    '"': "cudzyslow",
+    "/": "ukosnik",
+    "\\": "ukosnik-wsteczny",
+    "|": "kreska",
+    "?": "pytajnik",
+    "*": "gwiazdka",
+}
 
 
 @pytest.mark.parametrize(
@@ -37,6 +48,8 @@ ASTRAL = chr(0x1D409)
         pytest.param("Jan\ud800Testowy", "too_long", id="bez-zapisu-w-utf-16"),
         pytest.param("Jan\tTestowy", "invalid", id="znak-sterujacy"),
         pytest.param("Jan Testowy ", "invalid", id="spacja-na-koncu"),
+        pytest.param("Jan Testowy.", "invalid", id="kropka-na-koncu"),
+        *(pytest.param(f"Jan{character}Testowy", "invalid", id=f"znak-{name}") for character, name in WINDOWS_FORBIDDEN.items()),
     ],
 )
 def test_nazwa_wykonawcy_jest_nazwa_pliku_rozliczenia_pracownika_do_255_jednostek_utf_16_bez_znakow_niedozwolonych_w_windows(

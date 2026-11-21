@@ -198,7 +198,6 @@ def _cells(values: Values, forbidden: frozenset[int]) -> dict[str, CellValue]:
     }
 
 
-# ZEWNĘTRZNE: openpyxl oddaje komórkę z samą datą jako datetime o północy, nigdy jako date (openpyxl/utils/datetime.py, from_excel)
 def _value(value: object) -> CellValue:
     match value:
         case bool() | int() | float() | str():
