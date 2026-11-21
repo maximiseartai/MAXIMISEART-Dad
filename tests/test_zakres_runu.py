@@ -41,7 +41,6 @@ MUTATIONS = (
     Mutation("m", (Edit(Path("{CHECKED}"), "X", "Y"), Edit(Path("{ANCHORS}"), "X", "Y")), (".agents/skills/verify-a/scripts/sprawdz_a.py",)),
 )
 """
-# Skill a z ``pilnuje`` i tabelą, b z tabelą bez ``pilnuje``, c z ``pilnuje`` bez tabeli.
 SKILLS = {
     "src/pakiet/__init__.py": "",
     CHECKED: "def run() -> int:\n    from pakiet import pomocnik\n\n    return pomocnik.X\n",
@@ -78,9 +77,6 @@ def _shadow(praca: ZakresRunu, key: str) -> dict[Podstawy, bool]:
     """Wariant ``Podstawy`` → czy wybrałby krok ``key`` na pull request."""
 
     return {wariant: key in {w.krok.key for w in kroki} for wariant, kroki in praca.cien.items()}
-
-
-# --- pytest i kroki CI ---
 
 
 GATE = {
@@ -219,9 +215,6 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
     assert potrzebuja_chromium(["tests/test_d.py::test_d", "tests/test_a.py::test_a"], Repository.scan(repo)) == {"tests/test_d.py"}
 
 
-# --- kroki skilli ---
-
-
 @pytest.mark.parametrize(
     ("changed", "runs"),
     [
@@ -355,9 +348,6 @@ def test_krok_skilla_potrzebuje_chromium_gdy_skrypt_skilla_importuje_playwright_
     praca = zakres(Zdarzenie.NOC, frozenset({changed}), repo)
 
     assert [w.krok.browser for w in praca.wybrane if w.krok.key == SCRIPT_A] == [browser]
-
-
-# --- katalog kroków skilli z korzenia checkoutu ---
 
 
 BASELINE_K = ".agents/skills/verify-a/scripts/sprawdz_a.py"
@@ -736,9 +726,6 @@ def test_zgubiony_skrypt_mutacji_i_zly_klucz_ci_trafiaja_do_bledow_zakresu_kazde
     }
 
 
-# --- polecenia skilla, które CI liczy ---
-
-
 @pytest.mark.parametrize(
     ("changed", "commands"),
     [
@@ -790,8 +777,6 @@ def _napisy(wezel: object) -> Iterator[str]:
 
 
 def _odwolania_do_skilli(workflow: str) -> list[str]:
-    """Napisy workflow, które wskazują katalog skilli (``KATALOG_SKILLI``)."""
-
     return [napis for napis in _napisy(yaml.safe_load(workflow)) if KATALOG_SKILLI.search(napis)]
 
 
