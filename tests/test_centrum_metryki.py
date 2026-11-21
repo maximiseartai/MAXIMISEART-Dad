@@ -13,7 +13,7 @@ from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute, iter_route_contexts
 
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
-from rozliczenia.telemetry import MetricsStore
+from rozliczenia.telemetry import METRICS_SCHEMA_VERSION, MetricsStore
 from tests.fixtures.centrum import Centrum, ToolDirectory, centrum, centrum_app
 
 from mutacje_zmiany import Hunk, Revert, mutants
@@ -347,7 +347,7 @@ def test_niepoprawne_rekordy_metryk_sa_pomijane(tmp_path: Path) -> None:
         "{nie json",
         preparation("2026-09-02T08:00:00"),
         preparation("2026-09-03T08:00:00+00:00", total=True),
-        {**preparation("2026-09-04T08:00:00+00:00"), "schema_version": 4},
+        {**preparation("2026-09-04T08:00:00+00:00"), "schema_version": METRICS_SCHEMA_VERSION + 1},
         settlement("2026-09-05T08:00:00+00:00"),
         '{"schema_version":1,"started_at":"2026-09-06T08:00:00+00:00","mode":"RUN"',
     )
