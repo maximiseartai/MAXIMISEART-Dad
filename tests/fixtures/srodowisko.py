@@ -24,9 +24,6 @@ wymaga_uv = pytest.mark.skipif(
 
 
 def project(*dependencies: str, dev: tuple[str, ...] = (), tools: str = "") -> dict[str, str]:
-    """``pyproject.toml`` z zależnościami ``dependencies``, dodatkiem dev z ``PINS`` i ``dev`` oraz ustawieniami narzędzi
-    ``tools`` i ``ci.yml`` repozytorium."""
-
     listed = ", ".join(f'"{one}"' for one in dependencies)
     extras = ", ".join(f'"{one}"' for one in (*PINS, *dev))
     text = (

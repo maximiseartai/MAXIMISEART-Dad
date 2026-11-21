@@ -91,8 +91,6 @@ def _ends_at_log_or_raise(handler: ast.ExceptHandler) -> bool:
 
 
 def _broad_handlers(tree: ast.Module) -> Iterator[tuple[str, ast.ExceptHandler]]:
-    """Szerokie bloki ``except`` modułu z nazwą funkcji, w której stoją (``Klasa.metoda``)."""
-
     def visit(node: ast.AST, scope: tuple[str, ...]) -> Iterator[tuple[str, ast.ExceptHandler]]:
         for child in ast.iter_child_nodes(node):
             inner = (*scope, child.name) if isinstance(child, NESTED) and not isinstance(child, ast.Lambda) else scope
@@ -219,8 +217,6 @@ def _katalog(sciezka: str) -> str:
 
 
 def _pliki(root: Path) -> list[str]:
-    """Pliki, które sprawdza ruff z konfiguracją ``root``, względem ``root``."""
-
     pokazane = subprocess.run(
         [sys.executable, "-m", "ruff", "check", "--show-files"],
         capture_output=True,

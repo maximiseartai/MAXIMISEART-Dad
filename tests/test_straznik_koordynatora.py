@@ -308,8 +308,6 @@ def _ago(minutes: float) -> str:
 
 @pytest.fixture
 def t3(tmp_path: Path) -> Iterator[tuple[Path, dict[str, str]]]:
-    """Atrapa ``t3`` z koordynatorem po turze i dzieckiem bez ruchu od 50 min oraz środowisko sesji T3 hooka."""
-
     program = fake_cli(tmp_path / "bin", "t3", FAKE_T3)
     (tmp_path / "bin" / "watki.json").write_text(
         json.dumps(
