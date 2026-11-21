@@ -102,9 +102,7 @@ _TIME_FORMAT: Final = 20
 """Wbudowany format liczby 20 (h:mm): format godziny z Historii adresu, z dokładnością daty uporządkowanych dni."""
 _BLACK: Final = "FF000000"
 _HISTORY_FILL: Final = "D9D9D9"
-"""Jasnoszare wypełnienie bloku 1., 3., 5.… Historii adresu (RGB)."""
 _HISTORY_MARK: Final = "FF0000"
-"""Czerwone wypełnienie kolumny A zlecenia z Historią adresu (RGB)."""
 _FILL_ID: Final = re.compile(rb'\sfillId="(\d+)"')
 _SERIAL: Final = cast(Callable[[datetime | time, datetime], float], to_excel)
 """Liczba daty albo godziny Excela w systemie dat skoroszytu: ``to_excel`` openpyxl, który nie ma typów."""
@@ -139,13 +137,10 @@ _UTF8_NAME: Final = 0x800
 _FINAL_BLOCK: Final = b"\x03\x00"
 """Pusty blok końcowy deflate (stałe kody Huffmana), ten sam, który zlib daje na ``Z_FINISH`` po ``Z_SYNC_FLUSH``."""
 _STYLE_LISTS: Final = (b"fonts", b"fills", b"borders", b"cellXfs")
-"""Listy ``xl/styles.xml``, na których końcu zapis dopisuje wpisy."""
 
 
 @dataclass(frozen=True)
 class _WriteStyles:
-    """Style komórek z ``xl/styles.xml``, do których zapis dopisuje wygląd dnia."""
-
     number_formats: tuple[int, ...]
     fonts: tuple[Font, ...]
     fills: tuple[Fill, ...]
@@ -201,11 +196,8 @@ def check(register: RegisterFile, written: bytes, area: PasteArea, block: RawBlo
 
 
 Cells = Mapping[PasteArea, Mapping[tuple[int, int], str]]
-"""Komórki Wpisania raportów: obszar wklejania arkusza zleceń → (wiersz, kolumna od 1) → tekst."""
 
 Moves = Mapping[PasteArea, MovePlan]
-"""Przeniesienia i dopisania zleceń Wpisania raportów: obszar wklejania arkusza zleceń → plan jego wierszy
-(``raw_orders.plan_moves``)."""
 
 
 def with_cells(register: RegisterFile, cells: Cells, moves: Moves | None = None) -> bytes:
@@ -374,8 +366,6 @@ def _row_look(row_xml: bytes) -> bytes:
 
 
 def _new_numbers(plan: MovePlan) -> dict[int, int]:
-    """Wiersz sprzed zapisu → jego numer po zapisie, dla wierszy planu."""
-
     return {slot: plan.first + index for index, slot in enumerate(plan.rows) if isinstance(slot, int)}
 
 
@@ -485,8 +475,6 @@ def _shifted(row_xml: bytes, column: int, days: int) -> bytes:
 
 
 def _serial(value: bytes, days: int) -> bytes:
-    """Liczba daty Excela ``value`` większa o ``days`` dni, z tą samą częścią godziny co do cyfry."""
-
     return format(Decimal(value.decode("ascii")) + days, "f").encode("ascii")
 
 
@@ -850,8 +838,6 @@ def _order_row(
 
 @dataclass(frozen=True)
 class _HistoryCell:
-    """Komórka bloku Historii adresu: wartość bez stylu, format liczby (data: format daty dnia) i wypełnienie."""
-
     cell: SheetCell
     number_format: int
     fill: str | None
@@ -885,8 +871,6 @@ def _value_cell(column: int, value: object, epoch: datetime) -> SheetCell:
 
 
 def _history_end(placement: Placement, columns: OrderColumns) -> int:
-    """Ostatnia kolumna wiersza zlecenia: ``UWAGI`` albo ostatnia kolumna jego Historii adresu."""
-
     return columns.last + sum(len(block.values) for block in placement.history)
 
 
@@ -910,8 +894,6 @@ def _with_dimension(head: bytes, last_row: int, last_column: int) -> bytes:
 
 
 def _require_writable(tail: bytes, anchor: int) -> None:
-    """Zakresy za ``sheetData`` (poza Hiperłączami) nie sięgają wierszy pod ``anchor``."""
-
     for found in _RANGES.finditer(_HYPERLINKS.sub(b"", tail)):
         for reference in found.group(1).decode("ascii").split():
             _, _, _, max_row = range_boundaries(reference)
@@ -920,8 +902,6 @@ def _require_writable(tail: bytes, anchor: int) -> None:
 
 
 def _moves(plan: DayPlan) -> dict[int, tuple[int, int]]:
-    """Wiersz Surowego zlecenia → (przesunięcie kolumn, docelowy wiersz)."""
-
     return {placement.order.row: (placement.order.offset, placement.row) for placement in plan.placements}
 
 

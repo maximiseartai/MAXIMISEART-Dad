@@ -71,6 +71,9 @@ UNUSED = {
     "tests/expected/test_raport.txt": "raport\n",
     "tests/__init__.py": "",
     "tests/expected/komunikaty.txt": "komunikat\n",
+    "docs/katalog/wpis.md": "zgodny\n",
+    "docs/katalog/pod/glebszy.md": "zgodny\n",
+    "tests/test_katalog.py": "KATALOG = 'docs/katalog'\n",
 }
 CONFIGURATION_READER = "from pathlib import Path\n\nKONFIGURACJA = Path('pyproject.toml')\n"
 
@@ -135,6 +138,7 @@ def test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy(tmp_path: Path, chan
         ("src/pakiet/b.py", "tests/test_skrypt_node.py"),
         ("tests/expected/test_raport.txt", "tests/expected/test_raport.txt"),
         ("tests/expected/komunikaty.txt", "tests/test_posredni.py"),
+        ("docs/katalog/pod/glebszy.md", "tests/test_katalog.py"),
     ],
     ids=[
         "plik nazwany w danych JSON, które test czyta",
@@ -147,6 +151,7 @@ def test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy(tmp_path: Path, chan
         "skrypt bez rozszerzenia z shebangiem innego języka",
         "plik test_ w tests, który nie jest Pythonem",
         "plik spod tests/expected, którego test nie nazywa, choć tests jest pakietem",
+        "plik podkatalogu katalogu nazwanego w teście",
     ],
 )
 def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, changed: str, untouched: str) -> None:

@@ -233,7 +233,7 @@ READ_RETRY_S = 10.0
 
 def _read_put_in_place(path: Path, retry_s: float = READ_RETRY_S) -> str:
     """``path`` once the drive has put it in place whole (``put_text`` of ``drive/common.py``): Windows refuses a read
-    for that moment (#1087), so a refused read is tried again for at most ``retry_s``, then the refusal is raised."""
+    for that moment, so a refused read is tried again for at most ``retry_s``, then the refusal is raised."""
 
     deadline = time.monotonic() + retry_s
     while True:
@@ -516,7 +516,7 @@ def _comment_address(issue: BoxIssue, comment_id: int) -> str:
 
 def _save(path: Path, content: object) -> None:
     """``content`` as JSON in place of ``path`` at once: a reader in another process sees the old file or the new one,
-    never an empty or cut one (module doc, #963)."""
+    never an empty or cut one (module doc)."""
 
     replace_atomically(path, json.dumps(content, ensure_ascii=False, indent=2) + "\n")
 
@@ -593,7 +593,7 @@ class ScriptedClock:
     def _fire_due(self) -> None:
         """A failure ends every later wake-up, so it leaves its traceback where the drive finds it
         (``check_clock_alarm``), put in place whole: a plain write leaves it empty for a moment, and a reader that waits
-        only for it to exist reads no traceback (#1210)."""
+        only for it to exist reads no traceback."""
 
         try:
             while True:
@@ -612,7 +612,7 @@ class ScriptedClock:
 class _RequestLog:
     """Each HTTP request on the console once answered: the moment it came (UTC), the method, the path without its query
     and the answer's status, or how the answer broke off. The evidence then shows whether a request the page lost
-    (``zadania-strony.txt`` of the drive) reached Centrum (#1539). Only these: a query or a body may carry a value of
+    (``zadania-strony.txt`` of the drive) reached Centrum. Only these: a query or a body may carry a value of
     a file."""
 
     def __init__(self, app: ASGIApp) -> None:

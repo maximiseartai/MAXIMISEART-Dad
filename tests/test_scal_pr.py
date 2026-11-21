@@ -3252,12 +3252,14 @@ def _guard_pull(
     base: dict[str, str] | None = None,
     changed: dict[str, str] | None = None,
     rung: str | None = None,
+    owner: str | None = None,
 ) -> tuple[MergeGitHub, str]:
     """PR 1 z werdyktami ``verdicts`` (domyślnie ``FAIL_W1``) na starszym commicie, opisem ``body`` z ``korzenie_pr.OPISY``
     i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, warunek 5 w chwili ``deployed``, szczebel
-    strażnika (``szczebel_straznika.MARKER``) w chwili ``rung`` (domyślnie z bramką korzenia), a dowód kończy się
-    ``proof``; z ``root`` PR korzenia #1436 jest scalony z linią ``Korzeń z #1``; ``base`` dokłada pliki do bazy,
-    a ``changed`` to pliki PR (domyślnie ``kod/inne.py``)."""
+    strażnika (``szczebel_straznika.MARKER``) w chwili ``rung`` (domyślnie z bramką korzenia), warunek chronionego
+    właściciela w chwili ``owner`` (``None``: niewdrożony), a dowód kończy się ``proof``; z ``root`` PR korzenia #1436
+    jest scalony z linią ``Korzeń z #1``; ``base`` dokłada pliki do bazy, a ``changed`` to pliki PR (domyślnie
+    ``kod/inne.py``)."""
 
     files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"], **(base or {})}
     github = MergeGitHub(tmp_path, files, started=gate, held=() if rung is None else (szczebel_straznika.MARKER,))
@@ -3267,6 +3269,10 @@ def _guard_pull(
         with pytest.MonkeyPatch.context() as patch:
             patch.setenv("GIT_COMMITTER_DATE", rung)
             github.push_main({szczebel_straznika.MARKER: (TOOLS.parent / szczebel_straznika.MARKER).read_text(encoding="utf-8")})
+    if owner is not None:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("GIT_COMMITTER_DATE", owner)
+            github.push_main({szczebel_straznika.OWNER_MARKER: "WLASCICIEL = 1\n"})
     head = github.open_pull(1, changed or {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=korzenie_pr.OPISY[body])
     if root:
@@ -3429,6 +3435,45 @@ def test_straznik_poza_szczeblem_architektura_refaktor_i_lint_dostaje_dowod_jak_
     github, head = _guard_pull(tmp_path, f"straznik-{guard}", verdict, gate=gate)
 
     _accepted(github.run("1", "--bez-merge"), github, head, guard)
+
+
+@pytest.mark.parametrize(
+    ("verdict", "guard", "owner", "extra"),
+    [
+        pytest.param(_fail_with("test"), "pytest", GATE_BEFORE_VERDICTS, ("--chroniony-wlasciciel",), id="szczebel-test-z-testem-zada-chronionego-wlasciciela"),
+        pytest.param(_fail_with("test"), "pytest", GATE_AFTER_VERDICTS, (), id="watek-sprzed-wdrozenia-chronionego-wlasciciela"),
+        pytest.param(_fail_with("test"), "mypy", GATE_BEFORE_VERDICTS, (), id="szczebel-test-z-mypy"),
+        pytest.param(_fail_with("test"), "usuniete", GATE_BEFORE_VERDICTS, (), id="szczebel-test-z-usunietym-kodem"),
+        pytest.param(_fail_with("weryfikacja"), "pytest", GATE_BEFORE_VERDICTS, (), id="szczebel-weryfikacja-z-testem"),
+        pytest.param(FAIL_W1, "pytest", GATE_BEFORE_VERDICTS, (), id="wazne-bez-pola-mechanizm"),
+    ],
+)
+def test_test_jako_straznik_szczebla_test_ma_dowod_tylko_na_chronionym_wlascicielu(tmp_path: Path, verdict: str, guard: str, owner: str, extra: tuple[str, ...]) -> None:
+    github, head = _guard_pull(tmp_path, f"straznik-{guard}", verdict, owner=owner)
+
+    _accepted(github.run("1", "--bez-merge"), github, head, guard, *extra)
+
+
+@pytest.mark.parametrize(
+    ("verdict", "point", "accepted"),
+    [
+        pytest.param(_fail_with("lint"), "szczebel-w1-r1-test", True, id="szczebel-lint-zmieniony-na-test-przyjmuje-test"),
+        pytest.param(_fail_with("test"), "szczebel-w1-r1-lint", False, id="szczebel-test-zmieniony-na-lint-odmawia-testu"),
+    ],
+)
+def test_szczebel_waznego_bierze_bramka_z_ostatniego_werdyktu_ktory_go_dotyczy(tmp_path: Path, verdict: str, point: str, accepted: bool) -> None:
+    resolving = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY[point]
+    github, head = _guard_pull(tmp_path, "straznik-pytest", verdict, resolving)
+
+    answered = github.run("1", "--bez-merge")
+
+    if accepted:
+        _accepted(answered, github, head, "pytest")
+        return
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {RUNG_REFUSAL.format(mechanism='lint')}"), answered.stdout + answered.stderr
+    assert "recenzent następnej rundy zmienia go punktem „Mechanizm W1 r1: <szczebel> - zdanie” w ## Sprawdzone" in last, last
+    assert _proofs(github) == []
 
 
 def test_job_dowodu_liczy_odmowe_szczebla_bez_dowodu_jak_merge(tmp_path: Path) -> None:

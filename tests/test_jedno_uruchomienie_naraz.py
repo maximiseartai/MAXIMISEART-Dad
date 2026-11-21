@@ -50,7 +50,6 @@ print("wątki systemu:", ", ".join(started))
 raise SystemExit(code)
 """
 
-# Skrypt, w którym wątek modelu czeka na zawsze na prawdziwy Event w miejscu z parametru testu.
 WAITS_FOR_GOOD = """
 import sys
 from threading import Event

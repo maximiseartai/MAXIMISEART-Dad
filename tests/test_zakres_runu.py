@@ -663,12 +663,15 @@ def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_reques
 ) -> None:
     # Argument odróżnia podstawę od polecenia mutacji skryptu, więc podstawa biegnie także obok skryptu.
     command = ".agents/skills/verify-a/scripts/sprawdz_a.py --czesciami"
-    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command).replace("ci: ", f"ci-czesci: {n}\nci: ")})
+    two_mutations = WITH_TABLE.replace('    Mutation("m"', f'    Mutation("n", (Edit(Path("{CHECKED}"), "X", "Z"),), (".agents/skills/verify-a/scripts/sprawdz_a.py",)),\n    Mutation("m"')
+    skill = _with_ci("verify-a", command).replace("ci: ", f"ci-czesci: {n}\nci: ")
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": skill, ".agents/skills/verify-a/scripts/check_a_mutations.py": two_mutations})
 
     praca = zakres(event, frozenset({".agents/skills/verify-a/scripts/sprawdz_a.py"}), repo)
 
     assert {w.krok.key: tuple(str(czesc) for czesc in w.czesci) for w in praca.wybrane if w.krok.verdict is None} == {"verify-a/ci": tuple(f"{k}/{n}" for k, n in parts)}
-    assert all(w.czesci == () for w in praca.wybrane if w.krok.verdict is not None)
+    scripts = {w.krok.key: w.czesci for w in praca.wybrane if w.krok.verdict is not None}
+    assert (SCRIPT_A in scripts, set(scripts.values()) <= {()}) == (event is Zdarzenie.NOC, True)
 
 
 ROUTING, ENGINE, LIBRARIES = "src/pakiet/routing.py", "tools/lib/silnik_mutacji.py", EVERY_SKILL_STEP

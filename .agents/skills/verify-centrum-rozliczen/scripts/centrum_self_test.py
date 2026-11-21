@@ -295,7 +295,7 @@ def _direct_reads(source: str, helpers: frozenset[str] = frozenset()) -> list[st
     """Each attribute ``read_text`` or ``read_bytes`` in ``source``, called or not, and each ``getattr`` with one of
     those names as a constant, outside the top-level functions ``helpers``, as ``<line>: .<name>``: the drive reads
     files only through ``read_text``, ``read_bytes`` and ``read_json`` of ``drive/common.py``, which wait while the
-    server puts a file in place (#1087).
+    server puts a file in place.
 
     It takes every file for one the server may put in place, so no list of the server's files can fall behind it. Its
     boundary, which review checks: a handle (``path.open()``, ``open(path)``, ``with … as handle: handle.read()``), a
@@ -580,7 +580,7 @@ def _check_text_settings_refused(errors: list[str]) -> None:
 
 def _read_while_put_in_place(path: Path, read: Callable[[], object]) -> object:
     """What ``read`` gives, or the refusal it raises, while another thread puts ``path`` in place: the system refuses
-    to read it for 0.3 s (``unreadable``), as Windows does while a file is put in place (#1087)."""
+    to read it for 0.3 s (``unreadable``), as Windows does while a file is put in place."""
 
     import contextlib
     import io
@@ -610,8 +610,8 @@ def _read_while_put_in_place(path: Path, read: Callable[[], object]) -> object:
 
 def _check_read_while_put_in_place(errors: list[str]) -> None:
     """``read_text``, ``read_bytes``, ``run_logs`` (through ``read_json``) and ``Run.remembered`` wait while the server
-    puts a file of Logi or the settings file in place, which refuses a read for a moment on Windows (#1087, the night of
-    #1132), and ``queued_posts`` leaves out only a queue file that is gone, never one it cannot read."""
+    puts a file of Logi or the settings file in place, which refuses a read for a moment on Windows, and
+    ``queued_posts`` leaves out only a queue file that is gone, never one it cannot read."""
 
     import json
     import tempfile
@@ -667,8 +667,8 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
 
 def _check_clock_moved_whole(errors: list[str]) -> None:
     """Centrum's clock (``ScriptedClock``) reads each move of ``advance_clock`` whole while its wake-up thread asks it
-    every 0.2 s: a read of a half-written file stopped that thread, so the queue never tried again (#1124). A read the
-    system refuses while the file is put in place (#1087) waits for it."""
+    every 0.2 s: a read of a half-written file stopped that thread, so the queue never tried again. A read the
+    system refuses while the file is put in place waits for it."""
 
     import contextlib
     import io
@@ -736,7 +736,7 @@ def _check_clock_without_move(errors: list[str]) -> None:
     """Centrum's clock without a move of the drive stands still at once, as only a refusal is tried again
     (``_read_put_in_place``), and a refusal that outlasts the clock's limit fails the clock instead of moving it by 0.
     Each read gets ``CLOCK_ANSWER_S``, so a clock that tries again without end fails this check, not the whole
-    self-test at the step's time limit (review of #1169)."""
+    self-test at the step's time limit."""
 
     import contextlib
     import io
@@ -780,7 +780,7 @@ def _check_clock_without_move(errors: list[str]) -> None:
 
 def _check_box_reads_while_put_in_place(errors: list[str]) -> None:
     """The scripted skrzynka reads an issue file once the drive has put it in place (``edit_issue``): its comments,
-    a new comment and the issues with a label each wait while the system refuses to read it (#1087)."""
+    a new comment and the issues with a label each wait while the system refuses to read it."""
 
     import json
     import tempfile
@@ -1058,7 +1058,7 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
 
 def _check_clock_alarm_failure(errors: list[str]) -> None:
     """Once the wake-up thread of Centrum's clock dies (here on a move it cannot read), the drive fails on it at the
-    next ``advance_clock`` instead of waiting for a wake-up that never fires (#1124). A wait that times out names the
+    next ``advance_clock`` instead of waiting for a wake-up that never fires. A wait that times out names the
     dead clock in ``drive()`` of ``drive_centrum.py``, which ``tests/test_podstawa_w_czesciach.py`` checks."""
 
     import contextlib

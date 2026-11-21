@@ -190,13 +190,16 @@ class Major:
     """Ważne ``heading`` (``W1 r2``) werdyktu ``FAIL`` rundy ``round`` z kodem z ostatniego werdyktu, który go dotyczy
     (``None``, gdy żaden nie podał kodu w szablonie), i chwilą Ważnego ``since``, czyli utworzenia werdyktu ``FAIL``
     rundy ``round`` (``None`` bez chwili); rozstrzygnięcie innym kodem (Q25) zmienia kod, a nie chwilę, a ``mechanism``
-    to szczebel z pola ``Mechanizm:`` Ważnego tego werdyktu ``FAIL`` (``None`` bez pola)."""
+    to szczebel z ostatniego werdyktu, który go dotyczy: z pola ``Mechanizm:`` Ważnego tego werdyktu ``FAIL`` albo
+    z późniejszego punktu ``Mechanizm W<n> r<k>: …`` (``None`` bez obu), a ``files`` pliki miejsc jego pola ``Gdzie:``
+    (``Root.files``)."""
 
     heading: str
     round: int
     code: str | None
     since: datetime | None = None
     mechanism: Mechanism | None = None
+    files: frozenset[str] = frozenset()
 
 
 def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[tuple[int, Root]]]:
@@ -217,24 +220,32 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
                     found[key] = replace(found[key], code=root.code)
                 if root.mechanism is not None:
                     found[key] = replace(found[key], mechanism=root.mechanism)
+                if root.files:
+                    found[key] = replace(found[key], files=root.files)
         for resolution in current.findings.resolutions:
             key = f"{resolution.label} r{resolution.round}"
             if key in found:
                 found[key] = replace(found[key], code=resolution.code)
             else:
                 strays.append((current.number, resolution))
+        for point in current.findings.mechanisms:
+            if (key := f"{point.label} r{point.round}") in found:
+                found[key] = replace(found[key], mechanism=point.mechanism)
     return found, strays
 
 
 @dataclass(frozen=True)
 class Occurrence:
     """Wystąpienie kodu ``code`` w PR ``pull``: Ważne (``W1 r2``) albo ``Czerwony main #N`` i chwila wystąpienia
-    ``when`` (Ważnego: utworzenie werdyktu ``FAIL`` jego rundy, ``Major.since``; czerwonego `main`: merge PR)."""
+    ``when`` (Ważnego: utworzenie werdyktu ``FAIL`` jego rundy, ``Major.since``; czerwonego `main`: merge PR), a przy
+    Ważnym szczebel ``mechanism`` i pliki ``files`` z jego ``Major`` (blok czerwonego `main` ich nie ma)."""
 
     code: str
     pull: int
     major: str
     when: datetime
+    mechanism: Mechanism | None = None
+    files: frozenset[str] = frozenset()
 
 
 def read(repository: str, deployed: datetime | None) -> list[Occurrence]:
@@ -306,7 +317,7 @@ def _reviewed(node: dict[str, Any], deployed: datetime, limit: datetime | None, 
     if werdykt_pr.rule_applies(pull, deployed) and any(verdict.decision == "FAIL" for verdict in verdicts):
         rounds = werdykt_pr.rounds(pull, werdykt_pr.from_graphql)
         known = majors(rounds)[0]
-        found += [Occurrence(major.code, pull.number, major.heading, major.since) for major in known.values() if major.code is not None and major.since is not None and major.since >= deployed]
+        found += [Occurrence(major.code, pull.number, major.heading, major.since, major.mechanism, major.files) for major in known.values() if major.code is not None and major.since is not None and major.since >= deployed]
         if merged is not None and werdykt_pr.rule_applies(pull, guarded):
             guards = tuple(GuardCase(pull.number, heading, merged, blocks[heading].selector() if heading in blocks else None) for heading in sorted(known, key=_natural))
     if merged is not None:
