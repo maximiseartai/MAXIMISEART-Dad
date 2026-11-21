@@ -357,6 +357,7 @@ IMPORT_CONTRACTS: typing.Final = (
     "Przeglądarkę okna efenix importuje tylko centrum/efenix_chrome.py",
     "Moduły skoroszytu nie znają Komunikatów",
     "Kopię Wzorca importuje tylko template_file",
+    "Przygotowanie pliku zbiorczego i Wpis narzędzia nie zależą od Kontroli ilości",
 )
 wymaga_import_linter = pytest.mark.skipif(
     importlib.util.find_spec("importlinter") is None,
@@ -537,6 +538,12 @@ def _contract_tree(src: Path) -> None:
         "workbook_parts.py": "",
         "template_copy.py": "",
         "template_file.py": "from rozliczenia import template_copy\n",
+        "quantity_check.py": "from rozliczenia import tool_entry\n",
+        "tool_entry.py": "",
+        "collective_preparation.py": "from rozliczenia import tool_entry\n",
+        "preparation_files.py": "",
+        "preparation_plan.py": "",
+        "preparation_process.py": "",
         "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\nimport rozliczenia.efenix_browser\n",
     }.items():
         (src / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)

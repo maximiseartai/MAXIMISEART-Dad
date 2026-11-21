@@ -1,18 +1,3 @@
-"""Plik Legendy czynności (ADR 0038) ↔ typy ``activity_legend``.
-
-Dokument YAML ze ``schema_version: 1`` i listą ``kody``: ``legenda-czynnosci.yaml`` taty w ``config``.
-``parse_activity_legend`` bierze dokument po ``yaml.safe_load`` i daje ``ActivityLegend`` albo pierwszy problem z
-polem (``LegendProblem``): nieznany klucz, brak klucza, zły rodzaj wartości i każdy niezmiennik typu legendy.
-``dump_activity_legend`` daje dokument, który ``parse_activity_legend`` czyta z powrotem w ten sam typ.
-
-Wpis kodu: ``id``, ``zapisy``, co najwyżej jedno z ``kolumna`` (stała kolumna) i ``przedzialy`` (lista ``od``, ``do``,
-``kolumna``), ``wartosc`` (Ilość usług przy kolumnie, bez pola 1), ``kwota`` (w ``AS``), ``wypelnienia`` (lista
-``kolumna``, ``kolor``) i ``w_usterce`` (``false``: kod w usterce się nie liczy, ADR 0044; bez pola ``true``).
-
-``DEFAULT_ACTIVITY_LEGEND`` to Legenda czynności z Wydania: plik ``legenda_czynnosci_domyslna.yaml`` obok tego modułu,
-czytany tym samym parserem.
-"""
-
 from __future__ import annotations
 
 from importlib import resources
@@ -63,8 +48,6 @@ def dump_codes(codes: tuple[ActivityCode, ...]) -> dict[str, object]:
 
 
 def parse_code(entry: object) -> ActivityCode | LegendProblem:
-    """Jeden kod w postaci wpisu pliku (``dump_code``) albo problem jego pól, bez niezmienników całej legendy."""
-
     try:
         return _code(entry, "kody[0]")
     except _Malformed as malformed:

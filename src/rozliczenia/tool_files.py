@@ -1,15 +1,3 @@
-"""Układ plików narzędzia na komputerze taty: katalog narzędzia, ``config/`` (ADR 0006), metryki, dziennik, start Centrum.
-
-Jedyne miejsce, które zna nazwy plików narzędzia, adres i port Centrum rozliczeń, polecenie jego startu i adres
-repozytorium na GitHubie. Moduł używa tylko biblioteki standardowej, bo czyta go launcher przed FastAPI i opiekun
-ponownego startu ze swojej kopii (ADR 0009). Opiekun działa z kopii poza klonem, więc ścieżki klonu liczy od jego
-katalogu (``config_dir``, ``start_command``), a nie od ``TOOL_ROOT``.
-
-Port zajmuje ``listen_locally``, które od razu słucha, więc kolejne uruchomienie czeka na odpowiedź ``health``, zamiast
-dostać odmowę połączenia. ``SO_REUSEADDR`` gniazdo dostaje tylko poza Windows: na Windows dwa gniazda z tą opcją
-dostają ten sam port, więc drugie Centrum zajęłoby port, na którym słucha już działające Centrum.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,8 +13,6 @@ def config_dir(root: Path) -> Path:
 
 
 def log_path(root: Path) -> Path:
-    """Dziennik Centrum rozliczeń klonu narzędzia w ``root``; obok niego w ``logs`` leżą Logi Uruchomienia."""
-
     return root / "logs" / "centrum-rozliczen.log"
 
 
@@ -41,35 +27,25 @@ INTERMAX_METRICS: Final = TOOL_ROOT / ".uporzadkowanie-intermax-metrics.jsonl"
 EFENIX_METRICS: Final = TOOL_ROOT / ".wycena-efenix-metrics.jsonl"
 REPORT_ENTERING_METRICS: Final = TOOL_ROOT / ".wpisanie-raportow-metrics.jsonl"
 REPORT_ENTERING_STATE: Final = "wpisanie-raportow-stan.json"
-"""Pamięć własnych wpisów Wpisania raportów i dzień wdrożenia w ``config`` (ADR 0028)."""
 REPORT_ENTERING_RESULT: Final = "wpisanie-raportow-wynik.json"
-"""Wynik ostatniego udanego kliknięcia Wpisania raportów dla widoku Raporty w ``config`` (ADR 0028)."""
 REPORT_ENTERING_DECISIONS: Final = "wpisanie-raportow-decyzje.json"
-"""Decyzje taty „Zostaw moją” Wpisania raportów w ``config`` (ADR 0028)."""
 REMINDERS_RESULT: Final = "przypomnienia-wynik.json"
-"""Wynik ostatniego sprawdzenia Przypomnień o raporcie dla widoku Raporty w ``config`` (ADR 0030)."""
 REMINDERS_SCHEDULES: Final = "przypomnienia-pory.json"
-"""Pory, przy których sprawdzała praca Przypomnień o raporcie, od której chwili, w ``config`` (ADR 0032)."""
 
 LOG_PATH: Final = log_path(TOOL_ROOT)
 
 HOST: Final = "127.0.0.1"
-"""Centrum słucha wyłącznie na tym komputerze (ADR 0004)."""
 DEFAULT_PORT: Final = 47811
 
 REPOSITORY: Final = "maximiseartai/MAXIMISEART-Dad"
 REPOSITORY_URL: Final = f"https://github.com/{REPOSITORY}.git"
 
 PORT_FLAG: Final = "--port"
-"""Flaga ``run_centrum.py``, tak jak ``NO_BROWSER_FLAG`` i ``NO_DIALOGS_FLAG``. Opiekun ze starej kopii startuje nimi
-nową wersję, więc te trzy napisy to kontrakt między wersjami."""
 NO_BROWSER_FLAG: Final = "--no-browser"
 NO_DIALOGS_FLAG: Final = "--bez-okienek"
 
 
 def centrum_script(root: Path) -> Path:
-    """Skrypt startu Centrum rozliczeń w klonie narzędzia ``root``: uruchamia go skrót, konsola i opiekun."""
-
     return root / "run_centrum.py"
 
 
@@ -78,8 +54,6 @@ def start_command(root: Path, port: int) -> list[str]:
 
 
 def listen_locally(port: int) -> socket.socket:
-    """Zajmuje port na ``HOST``; ``OSError``, gdy port ma już inny program albo inne Centrum."""
-
     listener = _bound(port)
     try:
         listener.listen()

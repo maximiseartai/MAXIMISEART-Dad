@@ -1,13 +1,3 @@
-"""Moduł Legendy czynności na swoim interfejsie (ADR 0038): ``ActivityLegend.read`` i parser pliku ``legenda-czynnosci.yaml``.
-
-Moduł jest szwem: liczą nim Przygotowanie pliku zbiorczego, Ilości do uzupełnienia, Kontrola ilości, podgląd zmiany
-legendy, brama i Wpisanie raportów, więc macierz reguł jest tu raz. Oczekiwania pochodzą z maila taty z 15.11.2026,
-ADR 0039 (w kolumnie zawsze tylko 1, kwoty w ``AS`` się sumują), ADR 0041 (zwykły opis obok kodów nie jest błędem,
-własny zapis kodu to zwykły opis, Błąd opisu to tylko kod z liczbą spoza przedziałów, kolumna trafiona drugi raz i dwa
-kolory) i opisu modułu ``activity_legend``. Przykłady Hypothesis są deterministyczne (``derandomize=True``, bez bazy
-przykładów).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -39,6 +29,7 @@ from rozliczenia.activity_legend import (
     WithCodes,
 )
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND, dump_activity_legend, parse_activity_legend
+from rozliczenia.quantity_engine import MAX_VALUE
 
 PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples=200)
 
@@ -175,13 +166,21 @@ def test_kwoty_w_as_sie_sumuja_takze_tego_samego_kodu_i_nie_sa_bledem() -> None:
     assert _codes("pz15m pz20m").amount == 960
 
 
-def test_rozne_kody_w_roznych_kolumnach_wyznaczaja_kazdy_swoje() -> None:
+def test_rozne_kody_w_roznych_kolumnach_wyznaczaja_kazdy_swoje_w_kolejnosci_kolumn_arkusza() -> None:
     read = _codes("spawpg, dzielnik1/2 inst25m instutp17m rt2")
 
-    assert dict(read.quantities) == {"Y": 1, "AB": 1, "AJ": 1, "AM": 1}
+    assert list(read.quantities.items()) == [("Y", 1), ("AB", 1), ("AJ", 1), ("AM", 1)]
     assert read.amount == 120
-    assert dict(read.fills) == {"AF": FillColour.GREEN, "AM": FillColour.RED, "AS": FillColour.RED}
+    assert list(read.fills.items()) == [("AF", FillColour.GREEN), ("AM", FillColour.RED), ("AS", FillColour.RED)]
     assert [found.code for found in read.found] == ["spawpg", "dzielnik1/2", "inst", "instutp", "rt2"]
+
+
+def test_kod_z_wartoscia_wpisuje_ja_w_swoja_kolumne() -> None:
+    legend = ActivityLegend((ActivityCode("gniazdo", ("gn",), FixedColumn("AP"), value=2), ActivityCode("spawpg", ("spawpg",), FixedColumn("AB"))))
+
+    read = legend.read("spawpg gn", fault=False)
+
+    assert isinstance(read, WithCodes) and dict(read.quantities) == {"AB": 1, "AP": 2}
 
 
 _RT2_OUTSIDE_FAULTS = ActivityLegend(
@@ -237,6 +236,36 @@ def test_dwa_rozne_kolory_w_jednej_kolumnie_to_blad_opisu_a_ten_sam_kolor_dwa_ra
     assert isinstance(read, WithCodes) and dict(read.fills) == {column: FillColour.GREEN}
 
 
+def _two_colours_in(*columns: str) -> ActivityLegend:
+    return ActivityLegend(
+        (
+            ActivityCode("zielony", ("zielony",), fills=tuple(CellFill(column, FillColour.GREEN) for column in columns)),
+            ActivityCode("czerwony", ("czerwony",), fills=tuple(CellFill(column, FillColour.RED) for column in columns)),
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "legend", "problems"),
+    [
+        (
+            "rt2 bypas5m instmdik inst20m",
+            DEFAULT_ACTIVITY_LEGEND,
+            (ColumnTwice("Y", ("instmdik", "inst")), ColumnTwice("AM", ("rt2", "bypas"))),
+        ),
+        (
+            "zielony czerwony",
+            _two_colours_in("AS", "AF"),
+            (TwoColours("AF", ("zielony", "czerwony")), TwoColours("AS", ("zielony", "czerwony"))),
+        ),
+    ],
+)
+def test_powody_kolumn_tego_samego_rodzaju_ida_w_kolejnosci_arkusza_a_nie_opisu(
+    text: str, legend: ActivityLegend, problems: tuple[object, ...]
+) -> None:
+    assert _problems(text, legend) == problems
+
+
 def test_powody_bledu_ida_najpierw_kodami_spoza_przedzialow_w_kolejnosci_z_opisu_potem_kolumnami_kazdy_raz() -> None:
     assert _problems("instmdik montaż instutp40m inst20m instwewrg60m instutp40m") == (
         NumberOutOfRange("instutp", "instutp{n}m", 40),
@@ -289,9 +318,6 @@ def test_legenda_z_dwoma_zapisami_do_tego_samego_slowa_nie_powstaje_a_zdanie_pod
 
 @pytest.mark.parametrize("word", ["tak", "nie"])
 def test_legenda_z_zapisem_tak_albo_nie_nie_powstaje_bo_ten_zapis_nigdy_niczego_nie_wpisze(word: str) -> None:
-    """Słowa ``tak`` i ``nie`` mogą stać w opisie obok kodów i nie są kodem (ADR 0039), więc kod z takim zapisem nigdy
-    niczego by nie wpisał: legenda go nie przyjmuje, a zdanie przy polu zapisu mówi tacie dlaczego."""
-
     codes = (ActivityCode("inst", ("inst{n}m",), FixedColumn("Y")), ActivityCode("zgoda", ("spawpg", word), FixedColumn("AB")))
 
     with pytest.raises(LegendRefused) as refused:
@@ -314,11 +340,7 @@ _SMALL_SPELLING = st.builds(
 )
 
 
-def _words(spelling: str, other: str) -> Iterator[str]:
-    """Słowa zapisu ``spelling``, wśród których jest każde słowo wspólne z zapisem ``other``, jeśli jakieś istnieje: liczba
-    z cyfr 0, 1 i 2 o najwyżej tylu cyfrach, ile cyfr ma ``other`` poza liczbą, i jednej więcej (cyfrę liczby ``other``
-    zastępuje jedna cyfra)."""
-
+def _words_with_every_common_word(spelling: str, other: str) -> Iterator[str]:
     if NUMBER not in spelling:
         yield spelling
         return
@@ -335,7 +357,7 @@ def _matches(spelling: str, word: str) -> bool:
 @PROPERTY
 @given(first=_SMALL_SPELLING, second=_SMALL_SPELLING)
 def test_legenda_odmawia_dokladnie_wtedy_gdy_jakies_slowo_pasuje_do_obu_zapisow(first: str, second: str) -> None:
-    common = [word for word in _words(first, second) if _matches(second, word)]
+    common = [word for word in _words_with_every_common_word(first, second) if _matches(second, word)]
     codes = (ActivityCode("a", (first,), FixedColumn("Y")), ActivityCode("b", (second,), FixedColumn("AB")))
 
     try:
@@ -348,17 +370,20 @@ def test_legenda_odmawia_dokladnie_wtedy_gdy_jakies_slowo_pasuje_do_obu_zapisow(
 
 
 _SPELLINGS = tuple(spelling for code in DEFAULT_ACTIVITY_LEGEND.codes for spelling in code.spellings)
-# Zapis z Legendy z Wydania z liczbą z przedziałów (1–30 pasuje do każdego kodu z przedziałami).
-_CODE = st.sampled_from(_SPELLINGS).flatmap(lambda spelling: st.integers(1, 30).map(lambda number: spelling.replace(NUMBER, str(number))))
+_IN_EVERY_RANGE = tuple(
+    number
+    for number in range(1, MAX_VALUE + 1)
+    if all(code.column.column(number) is not None for code in DEFAULT_ACTIVITY_LEGEND.codes if isinstance(code.column, ColumnByNumber))
+)
+_CODE = st.sampled_from(_SPELLINGS).flatmap(
+    lambda spelling: st.sampled_from(_IN_EVERY_RANGE).map(lambda number: spelling.replace(NUMBER, str(number)))
+)
 _BETWEEN = st.lists(st.sampled_from((" ", ", ", ". ", "; ", " tak ", " nie ", " TAK, ", " - ", "!", "\n", " / ")), min_size=1, max_size=3)
-# Litery i cyfry tekstu Wykonawcy; poza nimi są litery, które ``casefold`` rozkłada na literę i znak diakrytyczny (``İ``).
-_WORD_CHARACTERS = "abcdefghijklmnopqrstuvwxyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWXYZĄĆĘŁŃÓŚŹŻ0123456789"
+_WORKER_TEXT_CHARACTERS = "abcdefghijklmnopqrstuvwxyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWXYZĄĆĘŁŃÓŚŹŻ0123456789"
 
 
 @st.composite
 def _cased(draw: st.DrawFn, code: str) -> str:
-    """Kod tak, jak mógł go zapisać Wykonawca na telefonie: każda litera małą albo wielką."""
-
     upper = draw(st.integers(0, 2 ** len(code) - 1))
     return "".join(char.upper() if upper >> index & 1 else char for index, char in enumerate(code))
 
@@ -384,7 +409,7 @@ def test_wielkosc_liter_interpunkcja_tak_i_nie_nie_zmieniaja_wyniku_samych_kodow
 @given(
     data=st.data(),
     codes=st.lists(_CODE, min_size=0, max_size=3),
-    word=st.text(alphabet=_WORD_CHARACTERS, min_size=1, max_size=12),
+    word=st.text(alphabet=_WORKER_TEXT_CHARACTERS, min_size=1, max_size=12),
 )
 def test_slowo_spoza_legendy_w_dowolnym_miejscu_opisu_nie_zmienia_wyniku(
     data: st.DataObject, codes: list[str], word: str
@@ -405,10 +430,16 @@ def test_kody_sklejone_bez_odstepu_to_jedno_slowo_zwyklego_opisu(first: str, sec
 
 
 @PROPERTY
-@given(word=st.text(alphabet=_WORD_CHARACTERS, min_size=1, max_size=12), code=_CODE)
+@given(word=st.text(alphabet=_WORKER_TEXT_CHARACTERS, min_size=1, max_size=12), code=_CODE)
 def test_kod_w_srodku_albo_na_koncu_dluzszego_slowa_nie_jest_kodem(word: str, code: str) -> None:
     assert _read(word + code) == NO_CODES
     assert _read(code + word) == NO_CODES
+
+
+def test_grupa_zapisu_z_grupa_liczby_w_srodku_jest_ostatnia_grupa_dopasowania() -> None:
+    match = re.fullmatch(r"(?P<zapis0>inst(?P<liczba0>[0-9]+)m)", "inst20m")
+
+    assert match is not None and match.lastgroup == "zapis0"
 
 
 def test_legenda_z_wydania_czyta_sie_z_powrotem_w_ten_sam_typ() -> None:
@@ -471,6 +502,21 @@ def test_parser_odmawia_z_polem(document: object, field: str) -> None:
 
     assert isinstance(problem, LegendProblem)
     assert problem.field == field, problem.message
+
+
+@pytest.mark.parametrize(
+    ("code", "field"),
+    [
+        (ActivityCode("a", ("x",), FixedColumn("Y"), value=True), "kody[a].wartosc"),
+        (ActivityCode("a", ("x",), amount=True), "kody[a].kwota"),
+        (ActivityCode("a", ("x{n}",), ColumnByNumber((NumberRange(True, 5, "AL"),))), "kody[a].przedzialy[0]"),
+    ],
+)
+def test_legenda_nie_przyjmuje_true_jako_liczby_choc_python_liczy_je_jako_1(code: ActivityCode, field: str) -> None:
+    with pytest.raises(LegendRefused) as refused:
+        ActivityLegend((code,))
+
+    assert refused.value.problem.field == field
 
 
 def test_legenda_z_kazdym_dzialaniem_czyta_sie_z_powrotem_w_ten_sam_typ() -> None:
