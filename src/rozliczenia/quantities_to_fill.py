@@ -79,12 +79,8 @@ class CellSource(StrEnum):
     """Czyją wartość pokazuje komórka N:AP wiersza do uzupełnienia."""
 
     TOOL = "tool"
-    """Kolumna, którą wyznaczają Reguły ilości albo Legenda czynności: wartość z pliku, także 0, nie robi wiersza
-    zrobionym."""
     TATA = "tata"
-    """Wartość taty różna od 0 w kolumnie, której narzędzie nie wyznacza: w N:AP robi wiersz zrobionym, w ``AS`` nie."""
     EMPTY = "empty"
-    """Kolumna, której narzędzie nie wyznacza, pusta albo z 0."""
 
 
 @dataclass(frozen=True)
@@ -96,9 +92,7 @@ class QuantityCell:
 
 class RowState(StrEnum):
     TO_FILL = "to_fill"
-    """Bez komórki ``TATA`` w N:AP, a Przebiegu rozliczeń okresu jeszcze nie było."""
     DONE = "done"
-    """Choć jedna komórka ``TATA`` w N:AP."""
     WITHOUT_QUANTITY = "without_quantity"
     """Bez komórki ``TATA`` w N:AP po Przebiegu rozliczeń okresu: wiersz został na zerach („bez ilości”)."""
 
@@ -109,7 +103,6 @@ class RowToFill:
     """Numer wiersza w Pliku zbiorczym z tego odczytu, więc usunięcie wiersza w Excelu przenumerowuje listę."""
     texts: RowTexts
     cells: tuple[QuantityCell, ...]
-    """Każda kolumna ``CELL_COLUMNS`` po kolei."""
     state: RowState
 
     @property
@@ -125,8 +118,6 @@ class KindToFill:
 
     @property
     def done(self) -> bool:
-        """Każdy wiersz zrobiony; rodzaj bez wierszy jest zrobiony."""
-
         return all(row.done for row in self.rows)
 
 
@@ -142,11 +133,8 @@ class DescriptionRows:
 @dataclass(frozen=True)
 class QuantitiesToFill:
     kinds: tuple[KindToFill, ...]
-    """Każdy ``FillKind`` w kolejności z ``FillKind``, także bez wierszy."""
     description_rows: DescriptionRows
     description_filled: Mapping[str, int]
-    """Każda kolumna z opisu technika (``DESCRIPTION_COLUMNS``) → liczba wierszy, w których tata coś w niej wpisał, poza
-    wierszami, w których tę kolumnę wyznacza narzędzie."""
 
     @property
     def without_quantity(self) -> tuple[int, ...]:
