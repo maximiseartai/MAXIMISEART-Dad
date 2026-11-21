@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
 
+from rozliczenia.centrum.scope import ALWAYS, Part
 from rozliczenia.centrum.settings.files import Read, SettingsFile, Unreadable
 
 T = TypeVar("T")
@@ -53,3 +54,4 @@ class ReleaseChange(Generic[T]):
     propose: Callable[[ReleaseInputs[T]], Proposal[T]]
     refused_absent: str | None = None
     waiting: Waiting | None = None
+    part: Part = ALWAYS

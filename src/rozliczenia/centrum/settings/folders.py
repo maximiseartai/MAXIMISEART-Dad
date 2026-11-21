@@ -91,8 +91,10 @@ class ChangeTheme:
 FoldersEdit = ChangeFolders | ChooseRegister | ChoosePeriodsDirectory | ChangeTheme
 
 
-def dad_folders(edit: FoldersEdit, before: Path | None) -> Callable[[FolderSettings], FolderSettings]:
+def dad_folders(edit: FoldersEdit, before: Path | None, *, periods: bool) -> Callable[[FolderSettings], FolderSettings]:
     match edit:
+        case ChangeFolders(register=register) if not periods:
+            return lambda current: replace(current, register=register)
         case ChangeFolders(register=register, periods_directory=periods_directory):
             listed = None if periods_directory is None or periods_directory == before else periods_directory_root(periods_directory)
 
