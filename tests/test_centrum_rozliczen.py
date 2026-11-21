@@ -7050,16 +7050,11 @@ def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze
     assert row["at"].endswith("Z")
 
 
-# --- Przypomnienia o raporcie (#1476, ADR 0032 zmienia ADR 0030): formularz, przełącznik, przeniesienie z plików Maksa --
-
 def reminders_form(**changes: object) -> dict[str, object]:
     return {**ADR_0030_REMINDERS, **changes}
 
 
 def test_przypomnienia_bez_pliku_sa_wylaczone_z_porami_i_trescia_z_adr_0030_i_nie_zakladaja_pliku(tmp_path: Path) -> None:
-    """D2 projektu Ustawień: brak pliku przypomnień to dzisiejsze wartości z ADR 0030 jako domyślne, a przypomnienia są
-    wyłączone jak przed Wydaniem bez dnia wdrożenia; odczyt pliku nie zakłada."""
-
     app = centrum(tmp_path)
 
     reminders = app.client.get("/api/settings").json()["reminders"]
@@ -7087,9 +7082,6 @@ def test_przypomnienia_bez_pliku_sa_wylaczone_z_porami_i_trescia_z_adr_0030_i_ni
 def test_zla_pora_godzina_albo_tresc_przypomnien_jest_odrzucona_zdaniem_przy_polu_bez_zapisu_i_bez_podgladu(
     tmp_path: Path, changes: dict[str, object], field: str, sentence: str
 ) -> None:
-    """US 44: pory, które na siebie zachodzą albo są puste, godzina inna niż ``GG:MM`` i treść bez zdania albo z polem
-    innym niż ``{dzień}`` dają odmowę z polem i jednym zdaniem; nic się nie zapisuje, a podgląd odmawia tak samo."""
-
     app = centrum(tmp_path)
 
     saved = app.client.put("/api/settings/reminders", json=reminders_form(**changes))
@@ -7103,9 +7095,6 @@ def test_zla_pora_godzina_albo_tresc_przypomnien_jest_odrzucona_zdaniem_przy_pol
 
 
 def test_pory_stykajace_sie_godzina_i_tresc_z_polem_dnia_zapisuja_sie_od_razu(tmp_path: Path) -> None:
-    """Poranna pora może kończyć się dokładnie wtedy, gdy zaczyna się wieczorna, a godzina pierwszego przypomnienia nie
-    musi leżeć w porze (D11 projektu Ustawień)."""
-
     app = centrum(tmp_path)
     form = reminders_form(
         morning={"start": "07:00", "end": "15:00"},
@@ -7122,8 +7111,6 @@ def test_pory_stykajace_sie_godzina_i_tresc_z_polem_dnia_zapisuja_sie_od_razu(tm
 
 
 def test_godzina_przypomnien_bez_zera_na_poczatku_zapisuje_sie_jako_gg_mm(tmp_path: Path) -> None:
-    """Tata pisze godzinę tak, jak ją mówi („8:00”): przyjmuje ją podgląd i zapis, a sekcja i plik mają ją jako ``GG:MM``."""
-
     app = centrum(tmp_path)
     form = reminders_form(morning={"start": "7:30", "end": "15:00"}, first="8:00")
 
@@ -7149,9 +7136,6 @@ def test_stopka_przypomnien_z_kazdym_znakiem_konca_linii_wraca_z_pliku_ustawien_
 def test_przelacznik_przypomnien_przy_pierwszym_wlaczeniu_zapisuje_dzien_wdrozenia_a_ponowne_go_zostawia(
     tmp_path: Path,
 ) -> None:
-    """US 40: pierwsze włączenie ustawia dzień wdrożenia na dziś taty, a wyłączenie i ponowne włączenie innego dnia go
-    zostawia, bo okno dni i tak kończy się na okresach z Plikiem zbiorczym (DESIGN §5.1)."""
-
     first = centrum(tmp_path, today=date(2026, 11, 12))
     on = first.client.put("/api/settings/reminders/enabled", json={"enabled": True})
     off = first.client.put("/api/settings/reminders/enabled", json={"enabled": False})
@@ -7160,13 +7144,12 @@ def test_przelacznik_przypomnien_przy_pierwszym_wlaczeniu_zapisuje_dzien_wdrozen
     again = later.client.put("/api/settings/reminders/enabled", json={"enabled": True})
 
     shown = [(response.json()["settings"]["reminders"]["enabled"], response.json()["settings"]["reminders"]["since"]) for response in (on, off, again)]
-    assert shown == [(True, "2026-11-12"), (False, "2026-11-12"), (True, "2026-11-12")]
+    assert shown == [(True, "2026-11-12"), (False, "2026-11-12"), (True, "2026-11-12")], (
+        "ponowne włączenie zostawia dzień wdrożenia, bo okno dni i tak kończy się na okresach z Plikiem zbiorczym"
+    )
 
 
 def test_zmiana_przypomnien_ma_wiersz_historii_z_porami_przed_i_po_a_cofniecie_przywraca_pory(tmp_path: Path) -> None:
-    """US 80–81 dla sekcji Przypomnienia: wiersz Historii ma pory i stopkę przed i po, Logi Centrum tylko klucze, a
-    cofnięcie przywraca poprzednie pory i stopkę."""
-
     app = centrum(tmp_path)
     changed = reminders_form(morning={"start": "07:00", "end": "12:00"}, footer="Pozdrawiam\nTata Testowy")
 
@@ -7189,9 +7172,6 @@ def test_zmiana_przypomnien_ma_wiersz_historii_z_porami_przed_i_po_a_cofniecie_p
 def test_reczny_plik_przypomnien_z_porami_zachodzacymi_to_zle_ustawienie_z_polem_i_ostatnimi_dobrymi_porami(
     tmp_path: Path,
 ) -> None:
-    """US 91: plik przypomnień zmieniony ręcznie z porami, które na siebie zachodzą, nie zatrzymuje Centrum: sekcja ma
-    zdanie przy polu i ostatnie dobre pory, a Historia wiersz odrzuconej zmiany spoza Centrum."""
-
     app = centrum(tmp_path)
     app.client.put("/api/settings/reminders", json=reminders_form(first="07:30"))
     content = (app.tool.config / REMINDERS_FILE).read_text(encoding="utf-8").replace("'17:00'", "'19:00'")
@@ -7208,9 +7188,6 @@ def test_reczny_plik_przypomnien_z_porami_zachodzacymi_to_zle_ustawienie_z_polem
 
 
 def test_zla_wartosc_pola_pliku_przypomnien_kaze_zapisac_ustawienia_a_zapis_taty_ja_naprawia(tmp_path: Path) -> None:
-    """Plik przypomnień tata zmienia w oknie Ustawień, więc zdanie złej wartości pola mówi „Zapisz Ustawienia jeszcze
-    raz.”, a nie „Poprawia go Maks.”, i zapis sekcji przez tatę naprawia plik (przegląd #1568 r4, D1)."""
-
     app = centrum(tmp_path)
     app.client.put("/api/settings/reminders", json=reminders_form(first="07:30"))
     path = app.tool.config / REMINDERS_FILE
@@ -7227,7 +7204,7 @@ def test_zla_wartosc_pola_pliku_przypomnien_kaze_zapisac_ustawienia_a_zapis_taty
             "field": "pora_wieczorna",
             "message": settings_messages.bad_field(REMINDERS_FILE, FieldPath("pora_wieczorna"), settings_messages.SAVE_AGAIN),
         },
-    )
+    ), "plik przypomnień tata zmienia w oknie Ustawień, więc zdanie mówi „Zapisz Ustawienia jeszcze raz.”, a nie „Poprawia go Maks.”"
     assert (saved.status_code, after["state"], after["first"]) == (200, "good", "08:00")
 
 
@@ -7255,10 +7232,6 @@ def migrated_reminders(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[s
 def test_przeniesienie_przypomnien_z_plikow_maksa_daje_dzien_wdrozenia_i_stopke_bez_cofnij_a_stare_pliki_zostaja(
     tmp_path: Path, rollout: bytes | None, footer: bytes | None, enabled: bool, since: str | None, kept: str
 ) -> None:
-    """Po Aktualizacji dzień wdrożenia z ``przypomnienia-od.txt`` włącza przypomnienia od tego dnia, a inna treść albo
-    brak pliku zostawia je wyłączone jak dotąd; stopka przechodzi tekstem bez zmian (także z BOM i w UTF-16), pory i treść
-    to wartości domyślne. Przeniesienie ma wiersz z Wydania bez „Cofnij” (D8), a stare pliki zostają bajt w bajt."""
-
     tool = ToolDirectory(tmp_path)
     tool.config.mkdir(parents=True)
     old = {name: content for name, content in ((OLD_ROLLOUT_FILE, rollout), (OLD_FOOTER_FILE, footer)) if content is not None}
@@ -7286,9 +7259,6 @@ def test_bez_starych_plikow_przypomnien_przeniesienie_nie_zaklada_pliku_ani_wier
 
 @NO_ACCESS_ON_WINDOWS
 def test_stary_plik_stopki_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast_zgubic_stopke(tmp_path: Path) -> None:
-    """Stary plik, którego system nie daje teraz czytać, nie jest ani pusty, ani brakujący: przeniesienie czeka bez
-    pliku przypomnień i bez wiersza, a następny start przenosi stopkę."""
-
     tool = ToolDirectory(tmp_path)
     tool.config.mkdir(parents=True)
     (tool.config / OLD_ROLLOUT_FILE).write_text("2026-11-09\n", encoding="utf-8")
@@ -7338,8 +7308,6 @@ def test_przelacznik_autostartu_dwa_razy_wlaczony_daje_jeden_skrot_a_wylaczony_g
 def test_skrot_autostartu_z_instalacji_jest_stanem_wyjsciowym_a_usuniety_recznie_to_wylaczony_z_wierszem_spoza_centrum(
     tmp_path: Path,
 ) -> None:
-    """Polecenie instalacji założyło skrót przed Wydaniem z Ustawieniami; potem ktoś usuwa go z folderu Autostart."""
-
     app = centrum(tmp_path)
     app.autostart.enable()
     installed = app.client.get("/api/settings").json()["autostart"]["state"]
@@ -7408,14 +7376,6 @@ def test_folder_autostartu_ktorego_nie_da_sie_sprawdzic_to_zdanie_przy_przelaczn
 
 
 class PowerShellWithCodePage1252:
-    """PowerShell z WScript.Shell na Windows ze stroną kodową ANSI 1252 (angielski Windows, runner CI): zapisuje skrót
-    pod nazwą przepuszczoną przez tę stronę kodową, w której nie ma „ń”, więc ``ń`` zostaje ``n``.
-
-    ``takes_s``: tyle sekund PowerShell pisze skrót; dłużej niż limit czasu wołającego to ``TimeoutExpired`` jak w
-    ``platform.run_console_program``, po zapisaniu skrótu. ``exit_code``: kod wyjścia PowerShella po zapisaniu skrótu,
-    np. 1, gdy ``Save()`` zapisał część pliku i padł.
-    """
-
     def __init__(self) -> None:
         self.takes_s = 1.0
         self.exit_code = 0
@@ -7459,7 +7419,8 @@ def test_powershell_ktory_nie_zapisze_skrotu_w_limicie_czasu_to_odmowa_bez_skrot
 ) -> None:
     powershell = PowerShellWithCodePage1252()
     client, folder = startup_shortcut(tmp_path, powershell)
-    powershell.takes_s = 60  # zawieszony na minutę, a blokada Ustawień nie czeka tyle
+    hangs_longer_than_the_settings_lock_waits_s = 60
+    powershell.takes_s = hangs_longer_than_the_settings_lock_waits_s
 
     refused = client.put("/api/settings/autostart", json={"enabled": True})
     powershell.takes_s = 1.0
@@ -7485,13 +7446,11 @@ def test_powershell_ktory_skonczy_bledem_po_zapisaniu_czesci_skrotu_to_odmowa_be
 
 
 def test_plik_przerwanego_zapisu_skrotu_nie_zostaje_w_autostarcie_przy_przelaczniku_wylaczonym(tmp_path: Path) -> None:
-    """Centrum zgasło w trakcie PowerShella, który potem dokończył zapis pod nazwą pośrednią: Windows uruchomiłby z
-    niego Centrum po zalogowaniu, choć przełącznik mówi „off”."""
-
     client, folder = startup_shortcut(tmp_path, PowerShellWithCodePage1252())
     client.put("/api/settings/autostart", json={"enabled": True})
     client.put("/api/settings/autostart", json={"enabled": False})
-    (folder / "Centrum rozliczen (zapis).lnk").write_bytes(b"skrot")
+    finished_by_powershell_after_centrum_went_out = folder / "Centrum rozliczen (zapis).lnk"
+    finished_by_powershell_after_centrum_went_out.write_bytes(b"skrot")
 
     shown = client.get("/api/settings").json()["autostart"]
 
@@ -7513,17 +7472,13 @@ def test_na_komputerze_bez_windows_przelacznik_autostartu_jest_nieaktywny_z_jedn
     assert (history["rows"], (tool.config / MEMORY_DIRECTORY / "autostart.json").exists()) == ([], False)
 
 
-# --- Hasło skrzynki raportów (#1469): pole bez starego hasła, jedna próba logowania, Historia bez wartości -------------
-
 SKRZYNKA = "raporty@przyklad.invalid"
 STARE_HASLO = "stare haslo maksa"
+# ZEWNĘTRZNE: Google pokazuje hasło aplikacji w czwórkach liter rozdzielonych spacjami (Pomoc konta Google, Logowanie się przy użyciu haseł aplikacji)
 NOWE_HASLO = "nowe haslo taty"
-"""Hasło aplikacji tak, jak je wpisuje tata (Google pokazuje je w czwórkach ze spacjami); plik dostaje je bez spacji."""
 
 
 def _inbox_centrum(tmp_path: Path, imap: AtrapaImap | None = None) -> tuple[CentrumClient, ToolDirectory]:
-    """Centrum z plikiem skrzynki napisanym przez Maksa w Notatniku (BOM UTF-8, CRLF); bez ``imap`` skrzynka bez sieci."""
-
     tool = ToolDirectory(tmp_path)
     tool.config.mkdir(parents=True, exist_ok=True)
     (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
@@ -7533,11 +7488,6 @@ def _inbox_centrum(tmp_path: Path, imap: AtrapaImap | None = None) -> tuple[Cent
 
 
 def _files_with_password(tool: ToolDirectory, passwords: Sequence[str]) -> list[str]:
-    """Pliki katalogu narzędzia poza plikiem skrzynki, w których jest któreś z ``passwords`` otwartym tekstem.
-
-    Hasło szuka się też bez spacji, bo tak trafia do pliku skrzynki; rekurencyjnie, więc i w pamięci odrzuconych.
-    """
-
     secrets = {form.encode() for password in passwords for form in (password, password.replace(" ", ""))}
     access = tool.config / INBOX_ACCESS_FILE
     files = [path for path in sorted(tool.root.rglob("*")) if path.is_file() and path != access]
@@ -7559,11 +7509,11 @@ def test_nowe_haslo_skrzynki_zastepuje_tylko_linie_hasla_a_jedna_proba_logowania
     with AtrapaImap(address=SKRZYNKA, password=haslo_skrzynki, cut=zerwanie) as imap:
         client, tool = _inbox_centrum(tmp_path, imap)
         saved = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
-        # ``imaplib`` 3.11 pyta o ``CAPABILITY`` osobno, a 3.14 bierze je z powitania: to nie decyzja portu.
-        commands = [command for command in imap.commands if command != "CAPABILITY"]
+        # ZEWNĘTRZNE: imaplib Pythona 3.11 pyta o CAPABILITY osobnym poleceniem, a 3.14 bierze je z powitania serwera (CPython, Lib/imaplib.py)
+        decided_by_the_port = [command for command in imap.commands if command != "CAPABILITY"]
 
     assert (saved.status_code, saved.json()["login"]) == (200, wynik)
-    assert commands == polecenia
+    assert decided_by_the_port == polecenia
     assert saved.json()["settings"]["inbox"] == {"address": SKRZYNKA, "password": True}
     assert (tool.config / INBOX_ACCESS_FILE).read_bytes() == f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode("utf-8-sig")
 
@@ -7591,10 +7541,11 @@ def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_
     assert [secret for secret in secrets for response in responses if secret.encode() in response.content] == []
     assert _files_with_password(tool, [STARE_HASLO, NOWE_HASLO]) == []
     assert tool.log_path.is_file()
-    # Pamięć zapisuje bajty jako base64, którego `_files_with_password` nie rozpozna, więc sam odcisk sprawdza się wprost.
     remembered = json.loads((tool.config / MEMORY_DIRECTORY / f"{INBOX_ACCESS_FILE}.json").read_bytes())
     access = (tool.config / INBOX_ACCESS_FILE).read_bytes()
-    assert (base64.urlsafe_b64decode(remembered["widziany"]), remembered["dobry"]) == (hashlib.sha256(access).digest(), None)
+    assert (base64.urlsafe_b64decode(remembered["widziany"]), remembered["dobry"]) == (hashlib.sha256(access).digest(), None), (
+        "pamięć zapisuje bajty jako base64, którego _files_with_password nie rozpozna, więc odcisk sprawdza się wprost"
+    )
 
 
 def test_wiersz_hasla_skrzynki_z_cofnieciem_wpisanym_w_historie_recznie_nie_ma_cofnij_i_dalej_sie_nie_cofa(tmp_path: Path) -> None:
@@ -7880,11 +7831,6 @@ def test_tablica_okresow_pokazuje_status_okresu_kazdego_folderu_okresu_od_najnow
 
 
 def with_dad_layout(tmp_path: Path, chosen_month: str | None = None) -> tuple[Centrum, Path]:
-    """Centrum w układzie folderów taty ``Załączniki``: Rozliczenia {rok}\\{miesiąc}\\INEA.
-
-    Folder okresów to ``Załączniki`` albo, z ``chosen_month``, folder ``INEA`` tego miesiąca.
-    """
-
     root = dad_layout(tmp_path)
     app = centrum(tmp_path)
     app.platform.chosen_folders.append(root if chosen_month is None else inea(root, chosen_month))
@@ -7893,8 +7839,6 @@ def with_dad_layout(tmp_path: Path, chosen_month: str | None = None) -> tuple[Ce
 
 
 def dad_layout(tmp_path: Path) -> Path:
-    """Układ folderów taty ``Załączniki``: Rozliczenia {rok}\\{miesiąc}\\INEA z folderem obok miesięcy."""
-
     root = tmp_path / "Załączniki"
     for month in ("12_Grudzień_2025",):
         (root / "Rozliczenia 2025" / month / "INEA").mkdir(parents=True)
@@ -8059,8 +8003,6 @@ def test_folder_wskazany_w_ukladzie_plaskim_zapisuje_sie_taki_jak_wskazany(tmp_p
 
 
 def test_folder_okresow_obok_rozliczen_roku_w_zalacznikach_zapisuje_sie_taki_jak_wskazany(tmp_path: Path) -> None:
-    """Folder poza ``Rozliczenia {rok}`` nie jest częścią układu folderów taty, choć ``Załączniki`` nad nim go mają."""
-
     pointed = dad_layout(tmp_path) / "Archiwum" / "INEA"
     pointed.mkdir(parents=True)
     write_period_files(pointed, "22_28_09_2026")
@@ -8076,8 +8018,6 @@ def test_folder_okresow_obok_rozliczen_roku_w_zalacznikach_zapisuje_sie_taki_jak
 
 @NO_ACCESS_ON_WINDOWS
 def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskazany(tmp_path: Path) -> None:
-    """Układu nad folderem bez dostępu nie widać, więc zapisuje się wskazany folder, a nie błąd wyboru."""
-
     root = dad_layout(tmp_path)
     week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
     week.mkdir()
@@ -8104,8 +8044,6 @@ def test_folder_okresow_zapisany_w_srodku_ukladu_folderow_taty_nie_widzi_foldero
 
 
 def test_rejestr_zmieniony_w_sekcji_foldery_zostawia_folder_okresow_cofniety_do_tygodnia(tmp_path: Path) -> None:
-    """Formularz sekcji odsyła obie ścieżki, więc zapisany już folder okresów zostaje, nawet w środku układu."""
-
     root = dad_layout(tmp_path)
     week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
     week.mkdir()
@@ -8124,10 +8062,6 @@ def test_rejestr_zmieniony_w_sekcji_foldery_zostawia_folder_okresow_cofniety_do_
 def test_folder_okresow_od_korzenia_ukladu_listuje_sie_poza_blokada_ustawien(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Folder okresów wskazany w sekcji Foldery zapisuje się od korzenia układu, którego szukanie listuje folder okresów,
-    każdy rok i miesiąc w OneDrive taty; inne żądania Ustawień (tu odczyt okna Ustawień) w tym czasie nie czekają na
-    blokadę właściciela."""
-
     root = dad_layout(tmp_path)
     week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
     week.mkdir()
@@ -8160,10 +8094,6 @@ def test_folder_okresow_od_korzenia_ukladu_listuje_sie_poza_blokada_ustawien(
 def test_zapis_sekcji_foldery_z_folderem_okresow_bez_zmiany_nie_listuje_ukladu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Sekcja Foldery odsyła obie ścieżki naraz, więc zmiana samego Rejestru zleceń odsyła też folder okresów bez zmiany:
-    zapisuje się taki, jaki był, bez szukania korzenia układu, które listuje każdy rok i miesiąc w OneDrive taty (opis
-    okna Ustawień po zapisie listuje go osobno, dla ``periods_all_years``)."""
-
     root = dad_layout(tmp_path)
     register = tmp_path / "Rejestr.xlsx"
     register.touch()
@@ -8185,8 +8115,6 @@ def test_zapis_sekcji_foldery_z_folderem_okresow_bez_zmiany_nie_listuje_ukladu(
 
 
 def write_folder_settings(tool: ToolDirectory, folders: FolderSettings) -> None:
-    """Plik Ustawień Centrum zapisany przed Wydaniem, np. z folderem okresów wskazanym w środku układu."""
-
     tool.settings.parent.mkdir(parents=True, exist_ok=True)
     tool.settings.write_bytes(FOLDERS.dump(folders))
 
@@ -8269,9 +8197,6 @@ def test_folder_okresow_od_korzenia_ukladu_zostaje_po_aktualizacji_bez_wiersza_i
 def test_folder_okresow_nieczytelny_przy_starcie_po_aktualizacji_zamienia_sie_na_zalaczniki_przy_nastepnym(
     tmp_path: Path, obstacle: str
 ) -> None:
-    """Folder bez dostępu albo folder, którego nie ma, a nad nim nie widać układu: zmiana czeka, a nie kończy się
-    „nic do zmiany”, bo wtedy tydzień zostałby zapisany na zawsze."""
-
     root = tmp_path / "Załączniki"
     month = inea(root, "10_Październik_2026")
     tool = ToolDirectory(tmp_path / "narzedzie-taty")
@@ -8290,15 +8215,13 @@ def test_folder_okresow_nieczytelny_przy_starcie_po_aktualizacji_zamienia_sie_na
     again.stop()
 
     assert FOLDERS.parse(later) == FolderSettings(periods_directory=month)
-    assert periods["path"] == str(root)
+    assert periods["path"] == str(root), "zmiana czeka zamiast „nic do zmiany”, bo wtedy tydzień zostałby zapisany na zawsze"
     assert f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
 
 
 def test_zly_plik_ustawien_z_tygodniem_zostaje_po_aktualizacji_bajt_w_bajt_a_zmiana_wchodzi_po_naprawie(
     tmp_path: Path,
 ) -> None:
-    """Przy złym pliku Centrum zna ostatnią dobrą wartość, ale zmiana z Wydania nie nadpisuje nią pliku taty."""
-
     root = dad_layout(tmp_path)
     week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
     week.mkdir()
@@ -8324,16 +8247,12 @@ def test_zly_plik_ustawien_z_tygodniem_zostaje_po_aktualizacji_bajt_w_bajt_a_zmi
 
 
 def stages(row: dict[str, object]) -> list[str]:
-    """Stany kroków Drogi okresu wiersza; ich nazwy sprawdza test pełnego wiersza."""
-
     path = row["path"]
     assert isinstance(path, list)
     return [step["stage"] for step in path]
 
 
 def write_pricing(app: Centrum, token: str, *started: tuple[int, CompletedResult | RecordedStop]) -> None:
-    """Uruchomienia Wyceny w efenix okresu ``token`` w Historii, w kolejności zapisu: (godzina startu 13.10, wynik)."""
-
     store = MetricsStore(app.metrics.efenix, efenix_process.PROCESS.counter_names)
     for hour, ending in started:
         store.append(
@@ -8408,12 +8327,6 @@ def test_droga_okresu_i_nastepny_krok_ida_przez_wycene_w_efenix_zaliczona_ostatn
     next_step: dict[str, object],
     secondary_step: dict[str, object] | None,
 ) -> None:
-    """Droga okresu: Plik zbiorczy → Uzupełnienie w Excelu → Wycena w efenix → Rozliczenia pracowników. Wycena jest
-    zaliczona, gdy ostatnie (najpóźniej wystartowane) jej Uruchomienie okresu ma wynik OK; Wymaga sprawdzenia i
-    Zatrzymanie zostawiają ją w toku. Następny krok to bieżący krok Drogi: przed Wyceną Uzupełnij plik zbiorczy, po
-    nim Wyceń w efenix. Przebieg rozliczeń nie czeka na Wycenę, tylko stoi po niej, a Status okresu się nie zmienia.
-    Wycena innego okresu nic tu nie zalicza."""
-
     app, periods = with_periods_directory(tmp_path)
     folder = write_period_files(periods, "29_05_10_2026")
     if settled:
@@ -8494,7 +8407,6 @@ def _around_boundary(before: str, crossing: str, after: str, crossing_monday: da
     ("today", "token"),
     [
         *[(date(2026, 9, 15) + timedelta(days=offset), "08_14_09_2026") for offset in (0, 6)],
-        # Na przełomie miesięcy i lat token ma miesiąc i rok poniedziałku.
         *_around_boundary("20_26_10_2026", "27_02_11_2026", "03_09_11_2026", date(2026, 11, 2)),
         *_around_boundary("22_28_12_2026", "29_04_01_2027", "05_11_01_2027", date(2027, 1, 4)),
     ],
@@ -8596,18 +8508,16 @@ def test_status_okresu_odzwierciedla_zmiany_na_dysku_przy_kazdym_odczycie(tmp_pa
 def test_odczyt_tablicy_okresow_nie_sprawdza_osobno_kazdego_rozliczenia_pracownika(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Folder okresów taty leży w OneDrive, gdzie każde sprawdzenie pliku z osobna jest drogie.
     app, periods = with_periods_directory(tmp_path)
     worker_folder = write_worker_settlements(
         write_period_files(periods, "29_05_10_2026"), "29_05_10_2026", ["Anna Testowa"]
     )
     checked: list[object] = []
     stat = os.stat
+    only_under_it_as_background_threads_of_earlier_tests_also_stat = periods
 
-    # Tylko ścieżki pod folderem okresów: wątek w tle poprzedniego testu w tym workerze (np. wpis dziennika
-    # Centrum) też woła os.stat.
     def counted_stat(path: str | os.PathLike[str], *args: Any, **kwargs: Any) -> os.stat_result:
-        if isinstance(path, str | os.PathLike) and Path(path).is_relative_to(periods):
+        if isinstance(path, str | os.PathLike) and Path(path).is_relative_to(only_under_it_as_background_threads_of_earlier_tests_also_stat):
             checked.append(path)
         return stat(path, *args, **kwargs)
 
@@ -8618,7 +8528,7 @@ def test_odczyt_tablicy_okresow_nie_sprawdza_osobno_kazdego_rozliczenia_pracowni
         count = worker_settlement_count(next(row for row in board_rows(app) if row["token"] == "29_05_10_2026"))
         return len(checked), count
 
-    checks_and_count()  # pierwsze żądanie dokańcza leniwe importy
+    _first_request_finishes_lazy_imports = checks_and_count()
     one_worker = checks_and_count()
     for number in range(20):
         (worker_folder / f"Rozliczenie 29_05_10_2026 - Wykonawca {number}.xlsx").touch()
@@ -8774,7 +8684,8 @@ def test_tablica_okresow_bez_folderu_okresow_mowi_o_braku_choc_folder_innego_mie
     (year / "10_Październik_2026" / "INEA").mkdir(parents=True)
     periods = year / "11_Listopad_2026" / "INEA"
     app = centrum(tmp_path)
-    write_folder_settings(app.tool, FolderSettings(periods_directory=periods))  # zapis sprzed #1472, w środku układu
+    written_before_the_release_inside_the_layout = FolderSettings(periods_directory=periods)
+    write_folder_settings(app.tool, written_before_the_release_inside_the_layout)
 
     with without_access(year / "10_Październik_2026"):
         board = app.client.get("/api/periods")
@@ -8784,7 +8695,6 @@ def test_tablica_okresow_bez_folderu_okresow_mowi_o_braku_choc_folder_innego_mie
     assert settings.json()["periods_directory"]["state"] == "missing"
 
 
-# Obie trasy wołają requested_folder osobno, więc każda ma swój wiersz (#1452 r1).
 @pytest.mark.parametrize(
     ("route", "body"),
     [("open", {"target": "period_folder"}), ("worker-settlements/open", {"worker": "Anna Testowa"})],
@@ -8803,8 +8713,6 @@ def test_otwieranie_bez_wskazanego_folderu_okresow_prosi_o_jego_wskazanie(
 
 
 def with_register(tmp_path: Path) -> tuple[Centrum, Path]:
-    """Centrum, w którym tata wybrał w Ustawieniach Rejestr zleceń z folderu „Rejestr”."""
-
     register = tmp_path / "Rejestr" / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
     register.parent.mkdir()
     register.touch()
@@ -8875,17 +8783,12 @@ def test_rejestr_w_folderze_bez_dostepu_jest_niedostepny_a_nie_uszkodzony(tmp_pa
 def test_plik_ustawien_bez_odczytu_to_odmowa_o_tym_pliku_a_nie_odpowiedz_jak_przy_niewskazanym_ustawieniu(
     tmp_path: Path, unreadable: str, operation: str
 ) -> None:
-    """Plik Ustawień, którego system nie daje teraz czytać (np. trzyma go OneDrive), nie jest plikiem bez ustawień:
-    otwarcie Rejestru zleceń i podgląd zmiany reguły mówią tacie, którego pliku nie da się przeczytać, zamiast „najpierw
-    wybierz Rejestr zleceń”, „brak folderu okresów” albo „tej reguły już nie ma”, i niczego nie zapisują. Przy czytelnym
-    pliku ta sama operacja wchodzi, więc odmowa pochodzi z odebranego odczytu."""
-
     app, register = with_register(tmp_path)
     assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
     preview = {"kind": "change", "rule_id": "nokia", "rule": _nokia_rule(app, 3)}
     url, body = ("/api/settings/register/open", None) if operation == "openRegister" else (f"{QUANTITY_RULES_URL}/preview", preview)
     readable = app.client.post(url, json=body)
-    assert readable.status_code == 200, readable.text
+    assert readable.status_code == 200, f"przy czytelnym pliku operacja wchodzi, więc odmowa niżej pochodzi z odebranego odczytu: {readable.text}"
     opened, before = list(app.platform.opened), _config_files(app.tool.config)
 
     with without_reading(app.tool.config / unreadable):
@@ -8908,11 +8811,6 @@ def test_plik_ustawien_bez_odczytu_to_odmowa_o_tym_pliku_a_nie_odpowiedz_jak_prz
 def test_zmiana_pary_przy_drugim_pliku_bez_odczytu_to_odmowa_o_nim_a_nie_sprawdzenie_trescia_z_wydania(
     tmp_path: Path, unreadable: str, operation: str
 ) -> None:
-    """Sonda przeglądu #1909 r3: tata ma własne reguły, składnik „ont y” i regułę z nim. Zmiana Listy Urządzeń sprawdza
-    się Regułami ilości, a zmiana reguły Listą Urządzeń; drugi plik pary, którego system nie daje teraz czytać, nie
-    znaczy treści z Wydania, która puściłaby usunięcie składnika potrzebnego regule taty. Usunięcie składnika, „Cofnij”
-    jego dodania, zmiana i podgląd reguły mówią tacie, którego pliku nie da się przeczytać, i niczego nie zapisują."""
-
     app = centrum(tmp_path)
     assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
     added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
@@ -8936,8 +8834,6 @@ def test_zmiana_pary_przy_drugim_pliku_bez_odczytu_to_odmowa_o_nim_a_nie_sprawdz
 
 
 def _own_pair(app: Centrum) -> str:
-    """Tata ma własne reguły, składnik „ont y” i regułę z nim; id składnika."""
-
     assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
     added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
     own: str = added.json()["quantity_rules"]["devices"][-1]["id"]
@@ -8949,10 +8845,6 @@ def _own_pair(app: Centrum) -> str:
 def test_zmiana_i_usuniecie_skladnika_taty_przy_liscie_urzadzen_bez_odczytu_to_409_o_tym_pliku_a_nie_skladnika_juz_nie_ma(
     tmp_path: Path, method: str
 ) -> None:
-    """Składnik taty, którego nie ma na Liście Urządzeń z Wydania, przy liście, której system nie daje teraz czytać: nikt
-    nie wie, czy lista go ma, więc zmiana i usunięcie mówią tacie, którego pliku nie da się przeczytać, zamiast „tego
-    składnika już nie ma”, i niczego nie zapisują."""
-
     app = centrum(tmp_path)
     own = _own_pair(app)
     form = {"name": "ont y", "other_spellings": ["onty"], "group": None}
@@ -8970,9 +8862,6 @@ def test_zmiana_i_usuniecie_skladnika_taty_przy_liscie_urzadzen_bez_odczytu_to_4
 def test_zmiana_i_usuniecie_skladnika_taty_przy_regulach_ilosci_i_drugim_pliku_bez_odczytu_to_409_o_regulach(
     tmp_path: Path, other: str, method: str
 ) -> None:
-    """Plik reguł, którego system nie daje teraz czytać, razem z Historią Ustawień albo Listą Urządzeń: odmowa mówi o
-    pliku reguł, pierwszym pliku pary, a nie o błędzie zapisu Historii ani „tego składnika już nie ma”."""
-
     app = centrum(tmp_path)
     own = _own_pair(app)
     form = {"name": "ont y", "other_spellings": ["onty"], "group": None}
@@ -8989,18 +8878,12 @@ HAND_EDITS: dict[str, tuple[str, str]] = {
     RULES_FILE: ("wartosc: 2", "wartosc: 5"),
     DEVICES_FILE: ("- id: ont-y\n  zapisy:\n  - ont y\n", "- id: ont-y\n  zapisy:\n  - ont y\n  - onty\n"),
 }
-"""Ręczna zmiana pliku pary, która pasuje do drugiego pliku taty: wartość reguły „nokia” i drugi zapis „ont y”."""
 
 
 @pytest.mark.parametrize(("edited", "unreadable"), [(RULES_FILE, DEVICES_FILE), (DEVICES_FILE, RULES_FILE)])
 def test_reczna_zmiana_pliku_pary_przy_drugim_pliku_bez_odczytu_czeka_z_wierszem_historii_na_odczyt_obu(
     tmp_path: Path, edited: str, unreadable: str
 ) -> None:
-    """Przegląd #1927 r1 (P1): ręczna zmiana pliku pary, która pasuje do drugiego pliku taty, przy drugim pliku, którego
-    system nie daje teraz czytać, nie dostaje w Historii wiersza „odrzucono” ze sprawdzenia treścią z Wydania (reguła
-    taty ze składnikiem „ont y” nie pasuje do Listy Urządzeń z Wydania). Werdykt czeka: odczyty bez drugiego pliku nie
-    dopisują wiersza, a pierwszy odczyt z oboma plikami dopisuje jeden wiersz „zapisano” spoza Centrum."""
-
     app = centrum(tmp_path)
     _own_pair(app)
     known = len(history_rows(app))
@@ -9025,10 +8908,6 @@ def _without_nokia(_inputs: ReleaseInputs[tuple[QuantityRule, ...]]) -> Edit[tup
 
 
 def test_zmiana_regul_z_wydania_przy_liscie_bez_odczytu_czeka_na_nastepny_start_zamiast_odrzucenia(tmp_path: Path) -> None:
-    """Zmiana Maksa z Wydania w Regułach ilości taty przy Liście Urządzeń, której system nie daje teraz czytać, nie jest
-    odrzucona sprawdzeniem z Listą Urządzeń z Wydania (reguła taty ze składnikiem „ont y”), bo odrzucona nie wraca:
-    nie wchodzi przy tym starcie i wchodzi przy następnym, z czytelną listą, z jednym wierszem Historii."""
-
     app = centrum(tmp_path)
     _own_pair(app)
     app.client.stop()
@@ -9043,7 +8922,7 @@ def test_zmiana_regul_z_wydania_przy_liscie_bez_odczytu_czeka_na_nastepny_start_
     rows = [row for row in released.get("/api/settings/history").json()["rows"] if row["file"] == RULES_FILE]
     released.stop()
 
-    assert kept == before
+    assert kept == before, "zmiana z Wydania przy liście bez odczytu czeka, bo odrzucona już nie wraca"
     assert "- id: nokia\n" not in rules.read_text(encoding="utf-8")
     assert [(row["source"], row["refused"]) for row in rows if row["source"] != "tata"] == [("release", False)]
 
@@ -9052,10 +8931,6 @@ def test_zmiana_regul_z_wydania_przy_liscie_bez_odczytu_czeka_na_nastepny_start_
 def test_zmiana_pary_przeczekuje_chwilowa_blokade_drugiego_pliku_jak_pliku_zapisywanego(
     tmp_path: Path, blocked: str, operation: str
 ) -> None:
-    """Przegląd #1927 r1 (D3): drugi plik pary, który system trzyma tylko chwilę (np. OneDrive), zapis taty czyta
-    ponownie po przerwie, jak plik zapisywany, zamiast odmówić 409 „spróbuj ponownie”. Dodanie składnika przy chwilowo
-    trzymanych Regułach ilości i zmiana reguły przy chwilowo trzymanej Liście Urządzeń zapisują się po jednej przerwie."""
-
     pauses: list[float] = []
     held = ToolDirectory(tmp_path).config / blocked
 
@@ -9087,9 +8962,6 @@ UNREADABLE_PERIOD = "22_28_09_2026"
 
 
 def _with_folders_and_rules(tmp_path: Path) -> tuple[Centrum, Path]:
-    """Centrum, w którym tata wskazał Rejestr zleceń i folder okresów z Folderem okresu ``UNREADABLE_PERIOD`` oraz ma
-    własne pliki Reguł ilości, Listy Urządzeń i Listy Wykonawców."""
-
     app, _register = with_register(tmp_path)
     write_worker_list(app.tool.worker_list, worker_list({"anna.testowa": "Anna Testowa"}))
     periods = tmp_path / "INEA"
@@ -9103,8 +8975,6 @@ def _with_folders_and_rules(tmp_path: Path) -> tuple[Centrum, Path]:
 
 
 def _start_blockers(app: Centrum) -> dict[str, str | None]:
-    """Zdanie blokady karty startu każdego procesu, który tata uruchamia z Centrum."""
-
     tiles = {tile["process"]: tile["blocker"] for tile in app.client.get("/api/runs/setup").json()["processes"]}
     return {
         **tiles,
@@ -9121,7 +8991,6 @@ START_REQUESTS: dict[str, tuple[str, object]] = {
     "report_entering": ("/api/report-entering/run", None),
     "intermax_restore": ("/api/intermax/copies/restore", {"name": "kopia.xlsx"}),
 }
-"""Start każdego procesu z karty oraz przywrócenie Kopii INTERMAX, które bierze INTERMAX z Folderów."""
 
 
 def _starts(app: Centrum, processes: Sequence[str]) -> dict[str, tuple[int, object]]:
@@ -9134,14 +9003,9 @@ def _starts(app: Centrum, processes: Sequence[str]) -> dict[str, tuple[int, obje
 
 
 def test_start_procesu_i_karta_przy_pliku_folderow_bez_odczytu_odmawiaja_zdaniem_o_tym_pliku(tmp_path: Path) -> None:
-    """Decyzja 1A Maksa: plik Folderów, którego system nie daje teraz czytać (np. trzyma go OneDrive), nie znaczy
-    Rejestru zleceń i folderu okresów niewskazanych. Karta każdego procesu i jego start mówią tacie, którego pliku nie
-    da się przeczytać, zamiast „Najpierw wskaż …”; Uruchomienie się nie zaczyna, a plik w ``config`` zostaje bez
-    zmian. Przy czytelnym pliku karty nie mają tego zdania, więc pochodzi ono z odebranego odczytu."""
-
     app, _periods = _with_folders_and_rules(tmp_path)
     sentence = refusal.settings_file_unreadable(SETTINGS_FILE).message
-    assert sentence not in _start_blockers(app).values()
+    assert sentence not in _start_blockers(app).values(), "przy czytelnym pliku karty nie mają tego zdania, więc pochodzi ono z odebranego odczytu"
     before = _config_files(app.tool.config)
 
     with without_reading(app.tool.config / SETTINGS_FILE):
@@ -9157,14 +9021,9 @@ def test_start_procesu_i_karta_przy_pliku_folderow_bez_odczytu_odmawiaja_zdaniem
 def test_kafelek_procesu_przy_pliku_folderow_bez_odczytu_nie_ma_okresow_do_wyboru_i_zaznacza_ostatni_pelny_okres(
     tmp_path: Path,
 ) -> None:
-    """Przegląd #1931 r1 (D2): przy pliku Folderów, którego system nie daje teraz czytać, nikt nie zna folderu okresów,
-    więc kafelek żadnego procesu nie podaje okresów do wyboru, ani z folderu okresów taty, ani z Folderów z Wydania
-    (ostatnie tygodnie Przygotowania pliku zbiorczego), a zaznaczony jest ostatni pełny okres. Przy czytelnym pliku
-    kafelki mają okresy, więc ich brak pochodzi z odebranego odczytu."""
-
     app, _periods = _with_folders_and_rules(tmp_path)
     readable = app.client.get("/api/runs/setup").json()["processes"]
-    assert all(tile["periods"] for tile in readable)
+    assert all(tile["periods"] for tile in readable), "przy czytelnym pliku kafelki mają okresy, więc ich brak pochodzi z odebranego odczytu"
 
     with without_reading(app.tool.config / SETTINGS_FILE):
         tiles = app.client.get("/api/runs/setup").json()["processes"]
@@ -9179,17 +9038,11 @@ def test_kafelek_procesu_przy_pliku_folderow_bez_odczytu_nie_ma_okresow_do_wybor
 def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_startu_zdaniem_o_nim(
     tmp_path: Path, unreadable: str
 ) -> None:
-    """Decyzja 2A Maksa: plik Reguł ilości, Listy Urządzeń albo Legendy czynności, którego system nie daje teraz czytać,
-    nie znaczy reguł ani legendy z Wydania, którymi Przygotowanie pliku zbiorczego wpisałoby ilości bez ustawień taty.
-    Karta i start Przygotowania i Przebiegu rozliczeń mówią tacie, którego pliku nie da się przeczytać; karta Wpisania
-    raportów mówi to samo, bo nimi czyta opis Wpisu ``tak`` w usterce i poza nią (ADR 0039, ADR 0044), a Wycena w efenix
-    i Uporządkowanie INTERMAX nie mają tej blokady."""
-
     app, _periods = _with_folders_and_rules(tmp_path)
     (app.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     sentence = refusal.settings_file_unreadable(unreadable).message
     counted = ("preparation", "settlement")
-    blocked = (*counted, "report_entering")
+    reading_rules_or_legend = (*counted, "report_entering")
     readable = _start_blockers(app)
     assert sentence not in readable.values()
     before = _config_files(app.tool.config)
@@ -9198,7 +9051,7 @@ def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_star
         blockers = _start_blockers(app)
         starts = _starts(app, counted)
 
-    assert blockers == {process: sentence if process in blocked else readable[process] for process in readable}
+    assert blockers == {process: sentence if process in reading_rules_or_legend else readable[process] for process in readable}
     assert starts == dict.fromkeys(counted, (409, {"message": sentence}))
     assert app.client.get("/api/runs/current").json() == {"state": "idle", "previous": None}
     assert _config_files(app.tool.config) == before
@@ -9207,12 +9060,6 @@ def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_star
 def test_karta_procesu_przy_kilku_plikach_ustawien_bez_odczytu_mowi_o_pierwszym_z_folderow_regul_ilosci_i_legendy(
     tmp_path: Path,
 ) -> None:
-    """Karta startu Przygotowania i Przebiegu rozliczeń, które liczą Regułami ilości i Legendą czynności, przy kilku
-    plikach Ustawień naraz, których system nie daje teraz czytać, mówi o pierwszym z nich: najpierw plik Folderów,
-    potem plik Reguł ilości, potem plik Legendy czynności. Przy jednym pliku bez odczytu karta mówi o nim
-    (``test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_startu_zdaniem_o_nim``), więc zdanie
-    o innym pliku pochodzi z kolejności."""
-
     app, _periods = _with_folders_and_rules(tmp_path)
     config = app.tool.config
     (config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
@@ -9236,9 +9083,6 @@ def test_karta_procesu_przy_kilku_plikach_ustawien_bez_odczytu_mowi_o_pierwszym_
 def test_karta_przygotowania_przy_niewskazanym_folderze_okresow_i_pliku_legendy_bez_odczytu_mowi_o_pliku_legendy(
     tmp_path: Path,
 ) -> None:
-    """Plik Legendy czynności, którego system nie daje teraz czytać, idzie na karcie Przygotowania pliku zbiorczego
-    przed „Najpierw wskaż …”: tata najpierw dowiaduje się, którego pliku nie da się przeczytać."""
-
     app, _register = with_register(tmp_path)
     (app.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     readable = _start_blockers(app)["preparation"]
@@ -9260,7 +9104,6 @@ WINDOW_READS: dict[str, tuple[str, str, object]] = {
     "getQuantityDifferences": ("GET", f"{QUANTITY_RULES_URL}/differences", None),
     "markQuantityException": ("POST", f"{QUANTITY_RULES_URL}/differences/nie-ma-takiej/exception", None),
 }
-"""Odczyty okna Centrum, które odpowiadają tacie z pliku Folderów albo pary Reguł ilości i Listy Urządzeń."""
 
 
 def _window_reads(app: Centrum) -> dict[str, tuple[int, object]]:
@@ -9284,13 +9127,6 @@ def _window_reads(app: Centrum) -> dict[str, tuple[int, object]]:
 def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_o_nim(
     tmp_path: Path, unreadable: str, refusing: tuple[str, ...]
 ) -> None:
-    """Plik Ustawień, którego system nie daje teraz czytać (np. trzyma go OneDrive), nie znaczy treści z Wydania:
-    Tablica okresów, otwarcie ścieżki okresu i Rozliczenia pracownika, Uzupełnienie, różnice Kontroli ilości i „To był
-    wyjątek” odmawiają 409 zdaniem o tym pliku zamiast „Wskaż folder okresów”, „Najpierw wskaż …” albo różnic
-    liczonych regułami z Wydania, a podpowiedzi Wykonawców mówią je w stanie ``unreadable`` zamiast „wskaż Rejestr
-    zleceń” ani loginów, które Lista Wykonawców bez odczytu już ma. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym; odmowa niczego nie otwiera, a
-    pliki w ``config`` zostają bez zmian."""
-
     app, _periods = _with_folders_and_rules(tmp_path)
     sentence = refusal.settings_file_unreadable(unreadable).message
     readable = _window_reads(app)
@@ -9309,8 +9145,6 @@ def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_
 
 
 def _tools_rules(config: Path) -> QuantityRules:
-    """Reguły ilości, którymi liczą narzędzia Maksa (``read_snapshot``)."""
-
     return read_snapshot(config).quantity_rules
 
 
@@ -9350,11 +9184,12 @@ def test_wykonawca_bez_rozliczenia_pracownika_w_okresie_dostaje_odmowe(tmp_path:
 def test_nazwa_wykonawcy_nie_wyprowadza_poza_folder_rozliczen_pracownikow(tmp_path: Path, worker: str) -> None:
     app, periods = with_periods_directory(tmp_path)
     worker_folder = write_worker_settlements(write_period_files(periods, "22_28_09_2026"), "22_28_09_2026", [])
-    # Pliki, które otworzyłaby ścieżka sklejona z nazwą bez sprawdzenia: poza folderem i w podfolderze.
+    opened_by_a_path_joined_without_check_outside_the_folder = periods / "poza.xlsx"
+    opened_by_a_path_joined_without_check_in_a_subfolder = worker_folder / "Rozliczenie 22_28_09_2026 - a" / "b.xlsx"
     (worker_folder / "Rozliczenie 22_28_09_2026 - x").mkdir()
-    (periods / "poza.xlsx").touch()
-    (worker_folder / "Rozliczenie 22_28_09_2026 - a").mkdir()
-    (worker_folder / "Rozliczenie 22_28_09_2026 - a" / "b.xlsx").touch()
+    opened_by_a_path_joined_without_check_outside_the_folder.touch()
+    opened_by_a_path_joined_without_check_in_a_subfolder.parent.mkdir()
+    opened_by_a_path_joined_without_check_in_a_subfolder.touch()
 
     response = app.client.post("/api/periods/22_28_09_2026/worker-settlements/open", json={"worker": worker})
 
@@ -9398,16 +9233,6 @@ def test_nieoczekiwany_wyjatek_daje_bezpieczny_komunikat_i_wpis_bez_tekstu_wyjat
     assert "Syntetyczna" not in log and "CENTRUM-SYN-ROW" not in log and str(periods) not in log
 
 
-# Plik Ustawień Centrum ma tylko bajty: ``SettingsFile.dump`` daje ``bytes``, więc jego treści nie da się zapisać trybem
-# tekstowym, który na Windows zamienia ``\n`` na ``\r\n``.
-#
-# Właściciel Ustawień zapisuje bajty ``dump`` bez zmiany, a krok drive i test porównują plik bajt w bajt (#1585 W1 r2:
-# fikstura pisała ``write_text(WORKERS.dump(...))``, na Windows CRLF, i krok ``wykonawcy-usuniecie-i-powrot`` czekał na
-# bajty, których serwer nie pisze). Z ``bytes`` zapis tekstowy, doklejenie napisu, ponowne kodowanie, porównanie z
-# tekstem pliku i kodek tekstu w ``SettingsFile`` nie przechodzą mypy, a ``write_text`` bajtów rzuca ``TypeError`` w biegu na
-# każdym systemie. Krok drive czyta plik tylko przez ``Run.settings_bytes`` i pisze tylko przez ``Run.put_settings``,
-# oba na ``bytes``. Próbki ``ZNANE_LUKI_BAJTOW_USTAWIEN`` („klasa: postać”) pokazują postacie, które mypy i ruff przepuszczają;
-# w napędzie zapis tekstem pliku Ustawień runu odrzuca w chwili otwarcia ``Run.refusing_text_settings_writes``.
 _GLOWA_BAJTOW: Final = """from pathlib import Path
 
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
@@ -9489,10 +9314,6 @@ def test_tresc_pliku_ustawien_poza_bajtami_nie_przechodzi_mypy_a_znane_luki_prze
     assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_BAJTOW_USTAWIEN}, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_BAJTOW_USTAWIEN)")
 
 
-# --- Wysyłka rozliczeń (ADR 0040): strona, wysyłka jednego Maila z rozliczeniem przez interfejs HTTP, temat i treść w
-# Ustawieniach. Skrzynka to ``FakeMailbox``, a jeden test idzie przez prawdziwy port do ``AtrapaImap`` i ``AtrapaSmtp``;
-# Rozliczenie pracownika z Wierszem danych ma Wykonawcę w ``WYKONAWCA``, a pusty Szablon pracownika to Wzorzec bez niego. --
-
 WYSYLKA_DZIEN = date(2026, 11, 16)
 STREFA_TATY = timezone(timedelta(hours=1))
 WYSYLKA_CHWILA = datetime(2026, 11, 16, 10, 0, tzinfo=STREFA_TATY)
@@ -9516,7 +9337,6 @@ PLIKI_WYSYLKI: dict[str, dict[str, str | None]] = {
              "Daria Nieaktywna": "daria.nieaktywna", "Ewa Spoza": "ewa.spoza"},
     WYSYLKA_STARSZY: {"Anna Łącka": "anna.testowa", "Daria Nieaktywna": "daria.nieaktywna"},
 }
-"""Rozliczenia pracowników okresów: nazwa w pliku → Wykonawca w Wierszu danych (``None``: pusty Szablon)."""
 
 
 @dataclass
@@ -9551,8 +9371,6 @@ class Wysylka:
 
 
 def wysylka_centrum(tmp_path: Path, mailbox: FakeMailbox | None = None, **app: Any) -> Wysylka:
-    """Centrum z folderem okresów, w którym leżą Rozliczenia pracowników ``PLIKI_WYSYLKI``, i Listą Wykonawców ``WYKONAWCY_WYSYLKI``."""
-
     tool = ToolDirectory(tmp_path)
     workers = WorkerList.of(WYKONAWCY_WYSYLKI)
     assert isinstance(workers, WorkerList)
@@ -9593,10 +9411,6 @@ def stany_wysylki(rows: Mapping[str, Mapping[str, Any]]) -> dict[str, tuple[str,
 
 
 def test_strona_pokazuje_okresy_od_najnowszego_ze_stanem_kazdego_rozliczenia_pracownika(tmp_path: Path) -> None:
-    """Stany z ADR 0040: plik bez maila w „Wysłanych” jest do wysłania i zaznaczony, także Nieaktywnego Wykonawcy;
-    Wykonawca bez adresu, pusty Szablon i plik bez Wykonawcy z Listy nie idą; mail Centrum z plikiem to wysłane, a mail
-    bez znaku Centrum to wysłane ręcznie. Mail z plikiem na adres spoza Wykonawcy się nie liczy."""
-
     older = f"Rozliczenie {WYSYLKA_STARSZY} - "
     box = FakeMailbox(
         attachments=[
@@ -9630,9 +9444,6 @@ def test_strona_pokazuje_okresy_od_najnowszego_ze_stanem_kazdego_rozliczenia_pra
 
 
 def test_wysylka_wysyla_plik_wykonawcy_na_wszystkie_jego_adresy_raz_a_ponowienie_niczego_nie_wysyla(tmp_path: Path) -> None:
-    """Mail ma temat i treść z Ustawień z polami, stopkę Przypomnień o raporcie i plik Wykonawcy pod jego nazwą; drugi
-    POST tego samego pliku (podwójne kliknięcie) mail zna i go nie wysyła. Dziennik Centrum ma tylko token okresu."""
-
     app = wysylka_centrum(tmp_path)
     assert app.client.put(
         "/api/settings/settlement-mail", json={"subject": "Rozliczenie {wykonawca} za {okres}", "text": "Cześć,\nplik za {okres}."}
@@ -9660,9 +9471,6 @@ def test_wysylka_wysyla_plik_wykonawcy_na_wszystkie_jego_adresy_raz_a_ponowienie
 
 
 def test_ponowienie_wysylki_zanim_gmail_polozy_mail_w_wyslanych_niczego_nie_wysyla(tmp_path: Path) -> None:
-    """Gmail kładzie Mail z rozliczeniem w „Wysłanych” z opóźnieniem: drugi POST tego samego pliku, zanim mail tam
-    jest, zna go z tej pracy Centrum i go nie wysyła, a wiersz mówi „wysłane” (ADR 0040 „Wysyłka bez powtórek”)."""
-
     app = wysylka_centrum(tmp_path, FakeMailbox(filed_after=10))
 
     first = app.send("Anna Łącka")
@@ -9687,9 +9495,6 @@ def test_wysylka_odmawia_pliku_ktory_nie_idzie_bez_maila(tmp_path: Path) -> None
 
 
 def test_plik_zmieniony_po_wysylce_idzie_drugi_raz_tylko_jako_ponowna_wysylka(tmp_path: Path) -> None:
-    """Plik zmieniony po ostatnim mailu z nim można wysłać jeszcze raz, ale nie jest zaznaczony, a wysyłka bez
-    ``resend`` go nie wysyła."""
-
     name = f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"
     mailed = datetime(2026, 11, 12, 9, 0, tzinfo=STREFA_TATY)
     app = wysylka_centrum(tmp_path, FakeMailbox(attachments=[w_wyslanych(name, [ADRES_ANNY], mailed)]))
@@ -9709,8 +9514,6 @@ def test_plik_zmieniony_po_wysylce_idzie_drugi_raz_tylko_jako_ponowna_wysylka(tm
 
 
 def test_plik_zmieniony_w_granicy_zegara_po_mailu_jest_dalej_wyslany(tmp_path: Path) -> None:
-    """Zegar laptopa i Gmaila różnią się o sekundy: zmiana pliku do 2 minut po mailu nie jest zmianą po wysłaniu."""
-
     name = f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"
     mailed = datetime(2026, 11, 12, 9, 0, tzinfo=STREFA_TATY)
     app = wysylka_centrum(tmp_path, FakeMailbox(attachments=[w_wyslanych(name, [ADRES_ANNY], mailed)]))
@@ -9721,9 +9524,6 @@ def test_plik_zmieniony_w_granicy_zegara_po_mailu_jest_dalej_wyslany(tmp_path: P
 
 
 def test_skrzynka_bez_odczytu_wylacza_wysylke_i_mowi_o_tym_jednym_zdaniem(tmp_path: Path) -> None:
-    """Bez „Wysłanych” nie wiadomo, co już poszło: strona mówi o skrzynce, plik do wysłania ma stan nieznany, a
-    wysyłka nie idzie i mówi dlaczego."""
-
     app = wysylka_centrum(tmp_path, FakeMailbox(attachments=InboxUnreachable("OSError")))
 
     view = app.view()
@@ -9740,10 +9540,6 @@ def test_skrzynka_bez_odczytu_wylacza_wysylke_i_mowi_o_tym_jednym_zdaniem(tmp_pa
 
 @pytest.mark.parametrize("file", [SETTLEMENT_MAIL_FILE, REMINDERS_FILE, WORKERS_FILE])
 def test_plik_tematu_stopki_albo_listy_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki_bez_maila(tmp_path: Path, file: str) -> None:
-    """Temat i treść taty, jego stopka albo Lista Wykonawców, których system nie daje teraz czytać: strona, podgląd i
-    wysyłka odmawiają o tym pliku tym samym zdaniem, a mail z treścią z Wydania bez stopki taty nie idzie (#2029 W1
-    r1), a strona nie mówi „sprawdź Listę Wykonawców w Ustawieniach” zamiast nazwy pliku."""
-
     app = wysylka_centrum(tmp_path)
     assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik taty za {okres}", "text": "Tekst taty"}).status_code == 200
     reminders = app.client.get("/api/settings").json()["reminders"]
@@ -9784,16 +9580,9 @@ TEMATY_ODRZUCONE_DZIS = [
         id="slowo-raport-bez-pamieci",
     ),
 ]
-"""Temat taty, którego dzisiejsza reguła nie przyjmuje, zdanie tej reguły i ``przyjety`` z ``_plik_tematu_taty``:
-odpowiedź ``Re:`` na ``Report 3–9 listopada 2026`` skrzynka raportów wzięłaby za Raport wykonawcy, choć temat nie ma
-słowa „raport”."""
 
 
 def _plik_tematu_taty(tool: ToolDirectory, subject: str, *, przyjety: bool) -> None:
-    """Plik tematu i treści z tematem ``subject`` w bajtach ``SETTLEMENT_MAIL.dump``. ``przyjety``: pamięć właściciela
-    ma go jako ostatnią dobrą treść, jak po zapisie taty w wersji sprzed zaostrzenia reguły tematu; bez niej plik jest zły
-    już przy pierwszym odczycie (ręczna edycja)."""
-
     data = SETTLEMENT_MAIL.dump(SettlementMailSettings(subject, TRESC_TATY))
     (tool.config / MEMORY_DIRECTORY).mkdir(parents=True)
     (tool.config / SETTLEMENT_MAIL_FILE).write_bytes(data)
@@ -9806,10 +9595,6 @@ def _plik_tematu_taty(tool: ToolDirectory, subject: str, *, przyjety: bool) -> N
 def test_temat_taty_ktorego_regula_nie_przyjmuje_to_odmowa_strony_podgladu_i_wysylki_bez_maila(
     tmp_path: Path, subject: str, sentence: Callable[[], str], przyjety: bool
 ) -> None:
-    """Mail z rozliczeniem idzie z tematem i treścią taty albo wcale: bez wartości taty, którą przyjmuje dzisiejsza
-    reguła, strona, podgląd i wysyłka odmawiają jednym zdaniem o tym, co poprawić w Ustawieniach, zamiast wysłać temat i
-    treść z Wydania (#2074). Okno Ustawień pokazuje w polach temat i treść z pliku taty ze zdaniem jego reguły."""
-
     _plik_tematu_taty(ToolDirectory(tmp_path), subject, przyjety=przyjety)
     app = wysylka_centrum(tmp_path)
 
@@ -9830,9 +9615,6 @@ def test_temat_taty_ktorego_regula_nie_przyjmuje_to_odmowa_strony_podgladu_i_wys
 
 
 def test_ostatni_dobry_temat_taty_dalej_idzie_gdy_plik_ma_temat_ktorego_regula_nie_przyjmuje(tmp_path: Path) -> None:
-    """Zła treść pliku ma ostatnią dobrą wartość taty, którą dzisiejsza reguła przyjmuje: Mail z rozliczeniem idzie z
-    nią, a okno Ustawień pokazuje ją ze zdaniem o złej treści (ADR 0032)."""
-
     app = wysylka_centrum(tmp_path)
     assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik taty za {okres}", "text": "Cześć {wykonawca}"}).status_code == 200
     (app.tool.config / SETTLEMENT_MAIL_FILE).write_bytes(SETTLEMENT_MAIL.dump(SettlementMailSettings("Report {okres}", TRESC_TATY)))
@@ -9864,8 +9646,6 @@ def test_porazka_wysylki_to_stan_nie_wyszlo_z_powodem_zaznaczony_do_ponowienia(t
 
 
 def test_podglad_pokazuje_maile_zaznaczonych_plikow_tak_jak_je_dostana_wykonawcy(tmp_path: Path) -> None:
-    """Podgląd ma adresatów, temat, nazwę pliku i treść każdego zaznaczonego pliku z adresem, w kolejności zaznaczenia."""
-
     app = wysylka_centrum(tmp_path)
 
     response = app.client.post(
@@ -9890,10 +9670,6 @@ def test_wysylka_pliku_ktorego_nie_ma_w_okresie_to_odmowa_404(tmp_path: Path) ->
 
 
 def test_mail_z_rozliczeniem_przez_smtp_trafia_do_wyslanych_i_strona_widzi_go_jako_wyslany(tmp_path: Path) -> None:
-    """Prawdziwy port: mail idzie przez SMTP skrzynki raportów z plikiem xlsx pod nazwą z polskimi literami, Gmail
-    (atrapa) kładzie go w „Wysłanych”, a następny odczyt strony bierze go z „Wysłanych” jako wysłany przez Centrum,
-    bez pobierania treści maili."""
-
     (tmp_path / "config").mkdir(parents=True, exist_ok=True)
     access = ToolDirectory(tmp_path).config / INBOX_ACCESS_FILE
     access.parent.mkdir(parents=True, exist_ok=True)
@@ -9988,9 +9764,6 @@ def test_cofniecie_drugiej_zmiany_tematu_i_tresci_przywraca_temat_i_tresc_sprzed
 
 
 def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tmp_path: Path) -> None:
-    """Zapis idzie do ``wysylka-rozliczen.yaml`` z wierszem Historii Ustawień; „Cofnij” przywraca poprzedni temat, a
-    podgląd pokazuje mail pierwszego Wykonawcy z Listy za ostatni pełny okres."""
-
     app = wysylka_centrum(tmp_path)
     form = {"subject": "Rozliczenie {wykonawca}, {okres}", "text": "Dzień dobry {wykonawca}"}
 
