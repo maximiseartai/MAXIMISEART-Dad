@@ -1,11 +1,3 @@
-"""Publikacja przez folder tymczasowy: pliki procesu trafiają do taty wszystkie albo żaden.
-
-Proces zapisuje pliki w nowym folderze tymczasowym obok miejsca publikacji i stamtąd je publikuje: Przebieg rozliczeń
-Folder rozliczeń pracowników jedną zmianą nazwy, a Przygotowanie pliku zbiorczego oba pliki okresu
-(``preparation_files``). Po publikacji i po zatrzymaniu folder tymczasowy jest usuwany. Folder, którego nie da się
-usunąć (np. trzyma jego pliki OneDrive), zostaje, a Komunikat zatrzymania podaje początek jego nazwy.
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -37,13 +29,6 @@ def _remove_staging(staging: Path) -> None:
 
 @dataclass(frozen=True)
 class Disk:
-    """Kroki folderu tymczasowego; ``LOCAL_DISK`` to prawdziwe, a sprawdzenie ``verify-publikacja-plikow-okresu``
-    podaje własne, żeby prowadzić je na dysku w pamięci bez łatania modułu.
-
-    ``make_staging``: nowy folder tymczasowy o początku nazwy ``prefix`` w folderze ``directory`` (``OSError``).
-    ``remove_staging``: usunięcie folderu tymczasowego, którego może się nie dać usunąć; nigdy nie zgłasza błędu.
-    """
-
     make_staging: Callable[[str, Path], Path] = _make_staging
     remove_staging: Callable[[Path], None] = _remove_staging
 

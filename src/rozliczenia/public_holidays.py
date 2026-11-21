@@ -1,13 +1,8 @@
-"""Polskie dni ustawowo wolne od pracy roku z nazwami, bez internetu i bez zależności.
-
-Lista z ustawy o dniach wolnych od pracy: dziesięć dni o stałej dacie (Wigilia od 2025 roku) i cztery liczone od
-Wielkanocy. Rok od 2011, odkąd 6 stycznia jest dniem wolnym; wcześniejszych zmian ustawy funkcja nie zna.
-"""
-
 from __future__ import annotations
 
 from datetime import date, timedelta
 
+# ZEWNĘTRZNE: 6 stycznia jest dniem wolnym od pracy od 2011 roku, więc _FIXED to dni o stałej dacie z ustawy od 2011, a wcześniejszych zmian ustawy funkcja nie zna (ustawa z 18 stycznia 1951 o dniach wolnych od pracy, art. 1)
 _FIXED: tuple[tuple[int, int, str], ...] = (
     (1, 1, "Nowy Rok"),
     (1, 6, "Trzech Króli"),
@@ -32,14 +27,12 @@ def public_holidays(year: int) -> dict[date, str]:
     holidays = {date(year, month, day): name for month, day, name in _FIXED}
     if year >= _CHRISTMAS_EVE_SINCE:
         holidays[date(year, 12, 24)] = "Wigilia"
-    easter = _easter(year)
+    easter = _gregorian_easter(year)
     holidays.update({easter + timedelta(days=days): name for days, name in _FROM_EASTER})
     return holidays
 
 
-def _easter(year: int) -> date:
-    """Niedziela Wielkanocna kalendarza gregoriańskiego (algorytm Meeusa, Jonesa i Butchera)."""
-
+def _gregorian_easter(year: int) -> date:
     golden = year % 19
     century, of_century = divmod(year, 100)
     leap_centuries, century_rest = divmod(century, 4)

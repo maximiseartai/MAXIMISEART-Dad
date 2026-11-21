@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 import itertools
 
+import pytest
 
 from rozliczenia.domain import (
     IssueCountReady,
@@ -135,9 +136,9 @@ def test_projection_marks_failed_faza_przebiegu() -> None:
 
     assert snapshot.phase_states[ProgressPhase.CHECKING] is PhaseState.FAILED
     assert snapshot.phase_durations_ms[ProgressPhase.CHECKING] == 2
-    assert (snapshot.phase_started_at[ProgressPhase.CHECKING], snapshot.phase_ended_at[ProgressPhase.CHECKING]) == (
-        moment(0),
-        moment(1),
+    assert (dict(snapshot.phase_started_at), dict(snapshot.phase_ended_at)) == (
+        {ProgressPhase.CHECKING: moment(0)},
+        {ProgressPhase.CHECKING: moment(1)},
     )
 
 
@@ -168,3 +169,11 @@ def test_projekcja_mierzy_kazde_przetworzenie_szablonu_pracownika_od_jego_rozpoc
         moment(adrian - 1),
         moment(adrian + 5),
     )
+
+
+@pytest.mark.parametrize("field", ["phase_states", "phase_durations_ms", "phase_started_at", "phase_ended_at", "operation_counts"])
+def test_snapshot_projekcji_jest_niemutowalny_takze_w_mapach(field: str) -> None:
+    snapshot = project([PhaseStarted(ProgressPhase.CHECKING, elapsed_ms=1)], ticking()).snapshot
+
+    with pytest.raises(TypeError):
+        getattr(snapshot, field)[ProgressPhase.CHECKING] = 0

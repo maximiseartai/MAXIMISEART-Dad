@@ -1,26 +1,3 @@
-"""Hiperłącza komórek: adres poza skoroszytem, który komórka otwiera po kliknięciu (GLOSSARY „Hiperłącze”).
-
-Przygotowanie pliku zbiorczego przenosi je z komórek Rejestru zleceń do obu
-plików okresu, a Przebieg rozliczeń z każdej komórki A:AT Wiersza danych Pliku
-zbiorczego do tej samej komórki Rozliczenia pracownika. Każdy zapis zastępuje
-nimi hiperłącza komórek Wzorca w zapisywanych wierszach.
-
-``read_sheet_hyperlinks`` czyta Hiperłącza jednego arkusza z bajtów skoroszytu:
-blok ``<hyperlinks>``, który w schemacie arkusza leży za ``</sheetData>``, i
-relacje arkusza (``workbook_parts``), bez parsowania wierszy. Skoroszyt otwarty
-przez openpyxl tylko do odczytu (Plik zbiorczy, Rejestr zleceń) hiperłączy nie daje.
-
-Hiperłączem jest tylko odnośnik ``r:id`` do relacji ``…/hyperlink`` z
-``TargetMode="External"``; jego adres to ``Target``, a przy ``location`` także
-``#location``. Odnośnik do miejsca w tym samym skoroszycie (samo ``location``),
-brak części relacji albo brak relacji o tym ``Id`` nie dają Hiperłącza. Zakres
-``F18:F20`` daje Hiperłącze każdej komórce, a przy kilku odnośnikach do jednej
-komórki wygrywa ostatni w pliku, jak w openpyxl. Komórka bez wartości nie niesie
-Hiperłącza: openpyxl wpisałby adres jako jej wartość.
-
-Adres to treść wiersza (np. numer sprawy klienta), więc ``repr`` go nie pokazuje.
-"""
-
 from __future__ import annotations
 
 import re
@@ -41,8 +18,6 @@ _LAST_COLUMN: Final = 16_384
 
 @dataclass(frozen=True)
 class Hyperlink:
-    """Hiperłącze komórki: adres poza skoroszytem."""
-
     address: str = field(repr=False)
 
 
@@ -86,12 +61,6 @@ NO_HYPERLINKS: Final = SheetHyperlinks({}, [])
 
 
 def read_sheet_hyperlinks(content: bytes, sheet_title: str) -> SheetHyperlinks:
-    """Hiperłącza arkusza ``sheet_title`` skoroszytu ``content`` (.xlsx).
-
-    Zepsuty XML bloku albo relacji to ``ElementTree.ParseError``, brakująca część skoroszytu ``KeyError``, a zepsuty
-    zip błąd ``zipfile``.
-    """
-
     with package_parts(content) as parts:
         return _sheet_hyperlinks(parts, sheet_part(parts, sheet_title))
 
@@ -99,6 +68,7 @@ def read_sheet_hyperlinks(content: bytes, sheet_title: str) -> SheetHyperlinks:
 def _sheet_hyperlinks(parts: Mapping[str, bytes], part: str) -> SheetHyperlinks:
     xml = parts[part]
     root = WORKSHEET_ROOT.search(xml)
+    # ZEWNĘTRZNE: w arkuszu .xlsx blok <hyperlinks> stoi za <sheetData>, więc szukanie bloku zaczyna się za ostatnim sheetData i nie czyta wierszy (ECMA-376 część 1, schemat SpreadsheetML, kolejność elementów typu CT_Worksheet)
     block = _BLOCK.search(xml, max(xml.rfind(b"sheetData"), 0))
     if root is None or block is None or block.group(2):
         return NO_HYPERLINKS

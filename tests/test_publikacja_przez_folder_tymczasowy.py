@@ -151,3 +151,20 @@ def test_inny_wyjatek_przechodzi_bez_zmian_a_folder_tymczasowy_jest_sprzatany(tm
 
     assert raised.value is error
     assert list(tmp_path.iterdir()) == []
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_prawdziwe_usuniecie_folderu_tymczasowego_ktorego_nie_da_sie_usunac_nie_zglasza_bledu(tmp_path: Path) -> None:
+    staging = tmp_path / f"{STAGING_PREFIX_TATA_SEARCHES_FOR}k2x9"
+    staging.mkdir()
+    (staging / "plik.xlsx").write_bytes(b"")
+    raised: OSError | None = None
+    staging.chmod(0o555)
+    try:
+        LOCAL_DISK.remove_staging(staging)
+    except OSError as error:
+        raised = error
+    finally:
+        staging.chmod(0o755)
+
+    assert (raised, left_behind(tmp_path)) == (None, [staging.name])

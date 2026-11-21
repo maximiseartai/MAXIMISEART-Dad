@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import time
 
@@ -12,6 +12,7 @@ import pytest
 
 from rozliczenia.centrum.clock import SYSTEM_CLOCK
 from rozliczenia.centrum.keyed_box import KeyedBox
+from rozliczenia import wall_clock
 from rozliczenia.wall_clock import dad_today, local_now, utc_now
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,3 +76,14 @@ def test_dzien_taty_jest_dniem_strefy_komputera_a_nie_dniem_utc(monkeypatch: pyt
     assert east[0] > west[0], "strefy dzieli 26 h, więc mają inny dzień w każdej chwili, a dzień UTC byłby w obu ten sam"
     assert (east[1], west[1]) == (timedelta(hours=14), timedelta(hours=-12))
     assert east[2] == west[2] == timedelta(0)
+
+
+def test_chwila_strefy_taty_dzien_taty_i_sekundy_od_epoki_to_ta_sama_chwila_co_utc_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    moment = datetime(2026, 11, 21, 23, 30, 0, 123456, tzinfo=timezone.utc)
+    monkeypatch.setattr(wall_clock, "utc_now", lambda: moment)
+
+    assert (wall_clock.local_now(), wall_clock.dad_today(), wall_clock.epoch_s()) == (
+        moment.astimezone(),
+        moment.astimezone().date(),
+        moment.timestamp(),
+    )

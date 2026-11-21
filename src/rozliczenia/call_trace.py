@@ -1,10 +1,3 @@
-"""Ślad wywołań wyjątku w kodzie narzędzia, bez treści wyjątku.
-
-Treść wyjątku może mieć dane z Rejestru zleceń, a pełna ścieżka nazwę konta, więc ślad nie ma ani jednego, ani
-drugiego. Ramki bibliotek i biblioteki standardowej są pomijane. Ślad niesie tylko Zatrzymanie; pokazują go Zgłoszenie
-do Maksa (ADR 0007) i Logi Uruchomienia.
-"""
-
 from __future__ import annotations
 
 import traceback
@@ -19,8 +12,6 @@ _OUTSIDE_TOOL: Final = frozenset({".venv", "site-packages"})
 
 @dataclass(frozen=True)
 class CallFrame:
-    """Ramka kodu narzędzia: plik względem katalogu narzędzia (z ``/``), linia i funkcja."""
-
     file: str
     line: int
     function: str
@@ -28,18 +19,12 @@ class CallFrame:
 
 @dataclass(frozen=True)
 class CallCause:
-    """Przyczyna z łańcucha ``__cause__``: typ wyjątku i ramki kodu narzędzia od miejsca, w którym przeszła w następny
-    wyjątek, do miejsca rzucenia."""
-
     exception_type: str
     frames: tuple[CallFrame, ...]
 
 
 @dataclass(frozen=True)
 class CallTrace:
-    """Typ wyjątku i ramki kodu narzędzia od miejsca przechwycenia do miejsca rzucenia, a w ``causes`` łańcuch
-    ``__cause__`` po kolei, od bezpośredniej przyczyny do źródłowej."""
-
     exception_type: str
     frames: tuple[CallFrame, ...]
     causes: tuple[CallCause, ...] = ()
@@ -71,9 +56,6 @@ def _frames(error: BaseException) -> tuple[CallFrame, ...]:
 
 
 def _tool_file(filename: str, root: Path) -> str | None:
-    """Plik ramki względem ``root``; ``None`` poza kodem narzędzia (biblioteki, środowisko Pythona) i dla ramki, której
-    nazwa nie jest ścieżką bezwzględną, np. „<frozen runpy>” albo „<string>”."""
-
     path = Path(filename)
     if not path.is_absolute():
         return None
