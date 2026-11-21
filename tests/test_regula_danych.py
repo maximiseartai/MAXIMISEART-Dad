@@ -85,6 +85,7 @@ def test_liczba_wartosci_pamieci_rosnie_z_kazda_nowa_wartoscia_a_powtorzona_jej_
 
     for column, value in (
         (ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5"),
+        (ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 7"),
         (ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5 m 7"),
         (ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5"),
         (ForbiddenColumn.ORANGE, "syntetyczna lipowa 5"),
@@ -92,7 +93,7 @@ def test_liczba_wartosci_pamieci_rosnie_z_kazda_nowa_wartoscia_a_powtorzona_jej_
         forbidden.remember_value(column, value)
         counts.append(remembered(forbidden))
 
-    assert counts == [1, 2, 2, 2]
+    assert counts == [1, 2, 3, 3, 3]
 
 
 def _kroki_straznika(forbidden: ForbiddenValues, tekst: str) -> int:
@@ -114,13 +115,20 @@ def _kroki_straznika(forbidden: ForbiddenValues, tekst: str) -> int:
     return kroki
 
 
-def test_kroki_straznika_nie_zaleza_od_liczby_zapamietanych_wartosci() -> None:
-    tekst = "klient Syntetyczna Lipowa 5 dzwonić po 16, " * 20
+@pytest.mark.parametrize(
+    "inna_wartosc",
+    [
+        pytest.param(lambda numer: f"Inna{numer} Ulica 7", id="inne-pierwsze-slowa"),
+        pytest.param(lambda numer: f"Syntetyczna Lipowa {numer + 100}", id="pierwsze-slowo-z-tekstu"),
+    ],
+)
+def test_kroki_straznika_nie_zaleza_od_liczby_zapamietanych_wartosci(inna_wartosc: Callable[[int], str]) -> None:
+    tekst = "klient Syntetyczna Lipowa 5, sąsiad Syntetyczna Brzozowa 9 dzwonić po 16, " * 20
     mala, duza = empty_memory(), empty_memory()
     for pamiec in (mala, duza):
         pamiec.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5")
     for numer in range(1000):
-        duza.remember_value(ForbiddenColumn.ADDRESS, f"Inna{numer} Ulica 7")
+        duza.remember_value(ForbiddenColumn.ADDRESS, inna_wartosc(numer))
 
     assert guarded(duza, tekst, "tekst") == guarded(mala, tekst, "tekst")
     assert _kroki_straznika(duza, tekst) == _kroki_straznika(mala, tekst)
