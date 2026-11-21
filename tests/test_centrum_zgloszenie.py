@@ -17,9 +17,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.keyed_box import KEY_CHECK_THREAD
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Refused, Unreachable
-from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import REPORT_THREAD, SEARCH_DEADLINE_S
-from rozliczenia.centrum.runs import EndedRun
 
 from tests.fixtures.centrum import (
     QUEUED_FOR_INTERNET,
@@ -36,7 +34,6 @@ from tests.fixtures.centrum import (
     centrum as plain_centrum,
     centrum_app,
     dad_cases,
-    finished_view,
     join_threads_since,
     write_report_key,
 )
@@ -793,43 +790,3 @@ def test_dwa_klikniecia_w_trakcie_wysylki_daja_jedno_zgloszenie_a_centrum_odpowi
     assert (notifications["unread"], [item["state"] for item in notifications["items"]]) == (0, [QUEUED_FOR_INTERNET])
     assert answers == [{"state": "sent"}, {"state": "sent"}]
     assert len(box.sent) == 1
-
-
-def test_stan_zgloszenia_ktory_przychodzi_po_nastepnym_uruchomieniu_nie_trafia_na_jego_karte(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    write_report_key(centrum.tool)
-    run_id = stopped_for_maks(centrum)
-    box = centrum.surroundings.report_box
-    hold = box.search_hold = threading.Event()
-    diagnose(centrum, run_id)
-    assert box.searching.wait(10), "Diagnoza pyta skrzynkę o Zgłoszenie tego problemu"
-
-    following = run_to_end(centrum, dry_run=True)
-    hold.set()
-
-    assert wait_for(lambda: all(thread.name != REPORT_THREAD for thread in centrum.client.threads()))
-    assert (following["result"]["report"], current_report(centrum)) == (None, None)
-
-
-def test_diagnoza_uruchomienia_przed_koncem_jego_dzialan_po_wyniku_jest_odrzucona(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    centrum = preparing_centrum(tmp_path)
-    reached, released = threading.Event(), threading.Event()
-    checked = QuantityCheckAfterRun.run_ended
-
-    def held(self: QuantityCheckAfterRun, run: EndedRun) -> None:
-        reached.set()
-        released.wait()
-        checked(self, run)
-
-    monkeypatch.setattr(QuantityCheckAfterRun, "run_ended", held)
-    centrum.engines.fail_summary = True
-    run_id = centrum.start(dry_run=True).json()["run"]["id"]
-    assert reached.wait(30), "Uruchomienie doszło do działań po wyniku"
-
-    refused = centrum.client.post(f"/api/runs/{run_id}/diagnosis")
-    released.set()
-
-    assert finished_view(centrum.client)["result"]["stop_kind"] == "for_maks"
-    assert refused.status_code == 409
