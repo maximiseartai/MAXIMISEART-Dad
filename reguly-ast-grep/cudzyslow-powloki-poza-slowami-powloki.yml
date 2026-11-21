@@ -14,7 +14,7 @@ metadata:
   przypadki:
     - 6896260c4cf8ac7cf70ae0360c743ca370302f3a tools/hooks/ciezkie.py:17
 rule:
-  # Słowo w apostrofach: apostrof, klasa „wszystko poza apostrofem” z * albo +, apostrof, a klasa w grupie
-  # przechwytującej albo bez przechwytu, albo bez grupy.
+  # Słowo w apostrofach: apostrof, klasa „wszystko poza apostrofem”, apostrof, a między nimi tylko nawiasy grup
+  # (przechwytującej, nazwanej ?P<nazwa> albo bez przechwytu ?:, także zagnieżdżonych) i kwantyfikatory (*, +, ?).
   kind: string
-  regex: "'\\(?(\\?:)?\\[\\^'\\][*+]\\)?'"
+  regex: "'(?:\\(|\\?:|\\?P<\\w+>)*\\[\\^'\\](?:\\)|[*+?])*'"

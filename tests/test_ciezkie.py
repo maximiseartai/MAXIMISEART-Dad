@@ -43,7 +43,7 @@ ODMOWY = [
     pytest.param(f"echo '#'; {SZYBKO}", NA_BOXIE_SZYBKO, id="szybko-za-haszem-w-apostrofach"),
     pytest.param(f"{SZYBKO}\r", NA_BOXIE_SZYBKO, id="szybko-z-koncem-linii-crlf"),
     pytest.param(".venv/bin/python tools/szybk\\o.py", NA_BOXIE_SZYBKO, id="szybko-z-ucieczka-poza-cudzyslowem"),
-    pytest.param(".venv/bin/python \\\ntools/szybko.py", NA_BOXIE_SZYBKO, id="szybko-z-kontynuacja-linii"),
+    pytest.param(".venv/bin/python \\\n    tools/szybko.py", NA_BOXIE_SZYBKO, id="szybko-z-kontynuacja-linii"),
     pytest.param(
         f"{ROOT}/.venv/bin/python {ROOT}/tools/szybko.py", NA_BOXIE_SZYBKO, id="szybko-sciezka-bezwzgledna"
     ),

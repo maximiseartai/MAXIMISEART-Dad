@@ -2522,6 +2522,9 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"\\\\([\\s\\S])|'([^']*)'\")\n", [3], id="slowo-w-apostrofach-w-grupie"),
     pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'(?:[^']*)'|[^ ]\")\n", [3], id="slowo-w-apostrofach-bez-przechwytu"),
     pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}\"'[^']+'\")\n", [3], id="slowo-w-apostrofach-bez-grupy"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'(?P<single>[^']*)'\")\n", [3], id="slowo-w-apostrofach-w-grupie-nazwanej"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^']*?)'\")\n", [3], id="slowo-w-apostrofach-leniwie"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'((?:[^'])*)'\")\n", [3], id="slowo-w-apostrofach-w-grupie-zagniezdzonej"),
     pytest.param(
         "cudzyslow-powloki-poza-slowami-powloki",
         f"from slowa_powloki import QUOTED\n{_RE}rf\"(?:[^ ]|{{QUOTED}})+\")\n",
