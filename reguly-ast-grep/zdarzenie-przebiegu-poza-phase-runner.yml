@@ -1,0 +1,25 @@
+id: zdarzenie-przebiegu-poza-phase-runner
+language: python
+severity: error
+message: >-
+  Zdarzenie przebiegu tworzy w src/ tylko src/rozliczenia/phase_runner.py, bo PhaseRunner pilnuje kolejności etapów
+  i Szablonów pracownika: zgłoś krok metodą PhaseRunner (check, read, plan, save, step), zamiast tworzyć zdarzenie
+files:
+  - src/**/*.py
+ignores:
+  - src/rozliczenia/phase_runner.py
+  - src/rozliczenia/domain.py
+metadata:
+  przypadki:
+    - 3ab14d1618f6c58ced3de75f78a8adedd85d51e0 src/rozliczenia/engine.py:152
+rule:
+  kind: call
+  has:
+    field: function
+    any:
+      - kind: identifier
+        regex: '^(PhaseStarted|PhaseEnded|PhaseFailed|IssueCountReady|PlanReady|WorkerStarted|WorkerEnded|WorkerFailed|StepReached)$'
+      - kind: attribute
+        has:
+          field: attribute
+          regex: '^(PhaseStarted|PhaseEnded|PhaseFailed|IssueCountReady|PlanReady|WorkerStarted|WorkerEnded|WorkerFailed|StepReached)$'

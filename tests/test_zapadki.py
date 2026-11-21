@@ -29,7 +29,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
-from typing import Final
+from typing import Final, get_args
 
 import pytest
 
@@ -751,6 +751,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "pytest-current-test-poza-testami": "sesję pytest rozpoznaje PYTEST_VERSION",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "zdarzenie-przebiegu-poza-phase-runner": "zgłoś krok metodą PhaseRunner",
     "stanowisko-z-tytulu": "weź ze znaku Stanowiska w treści",
     "stosunek-czasow-sciany": "licz kroki budżetu (węzły, wywołania), nie zegar",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
@@ -828,6 +829,7 @@ REGULY_CALEGO_DRZEWA: Final = (
     "stosunek-czasow-sciany",
     "watki-workera",
     "wlasna-wyrocznia-numeru",
+    "zdarzenie-przebiegu-poza-phase-runner",
 )
 CALE_DRZEWO: Final = "."
 
@@ -3715,6 +3717,106 @@ def test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_pa
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_EVENT_RULE = "zdarzenie-przebiegu-poza-phase-runner"
+_IN_RUN = "from rozliczenia import domain\nfrom rozliczenia.domain import PhaseFailed, PhaseStarted, ProgressPhase, WorkerEnded\n\n\ndef run(runner, event):\n"
+_PROBKI_ZDARZEN_PRZEBIEGU: Final = [
+    pytest.param(f"{_IN_RUN}    return PhaseStarted(ProgressPhase.CHECKING, elapsed_ms=0)\n", [6], id="zdarzenie-z-nazwy"),
+    pytest.param(f'{_IN_RUN}    return domain.StepReached("krok", worker=None, done=0, total=0, elapsed_ms=0)\n', [6], id="zdarzenie-z-atrybutu-modulu"),
+    pytest.param(f'{_IN_RUN}    return WorkerEnded(\n        "Adrian Testowy", template_index=1, status="ZAPISANO", rows=1, elapsed_ms=1, issue_count=0\n    )\n', [6], id="zdarzenie-na-kilku-liniach"),
+    pytest.param(f"{_IN_RUN}    runner.emit(domain.PlanReady(elapsed_ms=0, template_total=1, issue_count=0))\n", [6], id="zdarzenie-w-argumencie"),
+    pytest.param(f"{_IN_RUN}    match event:\n        case PhaseStarted(phase=phase):\n            return phase\n", [], id="wzorzec-match-przechodzi"),
+    pytest.param(f"{_IN_RUN}    return isinstance(event, PhaseFailed)\n", [], id="isinstance-przechodzi"),
+    pytest.param(f'{_IN_RUN}    runner.step("krok", done=1, total=2)\n', [], id="krok-przez-phase-runner-przechodzi"),
+    pytest.param(f"{_IN_RUN}    return PhaseStarted\n", [], id="nazwa-bez-wywolania-przechodzi"),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_ZDARZEN_PRZEBIEGU)
+def test_regula_zdarzen_przebiegu_zglasza_tworzenie_zdarzenia_a_przepuszcza_wzorzec_isinstance_i_krok_phase_runner(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    (tmp_path / "src" / "rozliczenia" / "kopia.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_EVENT_RULE, tmp_path, base) == [("src/rozliczenia/kopia.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_zdarzen_przebiegu_zglasza_tylko_src_poza_phase_runner_i_domain(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path in ("src/rozliczenia/phase_runner.py", "src/rozliczenia/domain.py", "src/rozliczenia/kopia.py", "tests/test_kopii.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(f"{_IN_RUN}    return PhaseStarted(ProgressPhase.CHECKING, elapsed_ms=0)\n", encoding="utf-8")
+
+    assert _findings_of(_EVENT_RULE, tmp_path, base) == [("src/rozliczenia/kopia.py", 6)]
+
+
+def test_regula_zdarzen_przebiegu_zna_kazdy_rodzaj_zdarzenia_przebiegu() -> None:
+    import yaml
+
+    from rozliczenia.domain import ProgressEvent
+
+    rule = yaml.safe_load((ROOT / AST_GREP_RULES / f"{_EVENT_RULE}.yml").read_text(encoding="utf-8"))["rule"]
+    patterns = {branch.get("regex") or branch["has"]["regex"] for branch in rule["has"]["any"]}
+    kinds = "|".join(sorted(kind.__name__ for kind in get_args(ProgressEvent)))
+
+    assert {"|".join(sorted(pattern.removeprefix("^(").removesuffix(")$").split("|"))) for pattern in patterns} == {kinds}
+
+
+ZNANE_LUKI_ZDARZEN_PRZEBIEGU: Final[dict[str, str]] = {
+    "zdarzenie pod aliasem importu": """\
+from rozliczenia.domain import PhaseStarted as Started
+from rozliczenia.domain import ProgressPhase
+
+
+def started() -> Started:
+    return Started(ProgressPhase.CHECKING, elapsed_ms=0)
+""",
+    "kopia zdarzenia przez dataclasses.replace": """\
+import dataclasses
+
+from rozliczenia.domain import PhaseEnded
+
+
+def later(event: PhaseEnded) -> PhaseEnded:
+    return dataclasses.replace(event, elapsed_ms=event.elapsed_ms + 1)
+""",
+    "klasa zdarzenia w zmiennej": """\
+from rozliczenia.domain import PhaseFailed, ProgressPhase
+
+
+def failed() -> PhaseFailed:
+    kind = PhaseFailed
+    return kind(ProgressPhase.CHECKING, elapsed_ms=0, phase_elapsed_ms=0)
+""",
+    "typ zdarzenia z innego zdarzenia": """\
+from rozliczenia.domain import PhaseStarted
+
+
+def again(event: PhaseStarted) -> PhaseStarted:
+    return type(event)(event.phase, elapsed_ms=0)
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_zdarzen_przebiegu_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_ZDARZEN_PRZEBIEGU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_zdarzen_przebiegu_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
 _DOC_RULE = "odczyt-docstringu"

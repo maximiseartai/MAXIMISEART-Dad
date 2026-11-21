@@ -7,12 +7,13 @@ import os
 import re
 from pathlib import Path
 import time
+from xml.etree import ElementTree
 import zipfile
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Color, PatternFill
 from openpyxl.utils import column_index_from_string
-from openpyxl.utils.datetime import CALENDAR_MAC_1904
+from openpyxl.utils.datetime import CALENDAR_MAC_1904, from_excel
 import pytest
 
 from rozliczenia.period_folder import PeriodFolder
@@ -415,12 +416,21 @@ def test_rejestr_row_ending_before_the_last_column_has_an_empty_general_cell_the
     sheet.append([datetime(2026, 9, 8, 9, 0), "syntetyczne miasto"])
     workbook.save(path)
     rewrite_parts(path, _without_sheet_dimension)
+    reader = load_workbook(path, read_only=True)
+    try:
+        assert [len(cells) for cells in reader.worksheets[0].iter_rows(min_row=2, values_only=True)] == [2]
+    finally:
+        reader.close()
 
     [register] = period_sheets(read(path, DadFiles()), None)
 
     [row] = register.register_rows
     assert row.cells["CZYNNOŚCI ZREALIZOWANE"] == DataCell(None, PLAIN, "General", None)
     assert row.cells["MIASTO"].value == "syntetyczne miasto"
+
+
+def test_openpyxl_zaokragla_czesc_dnia_daty_do_milisekund_wiec_chwila_przed_polnoca_to_juz_nastepny_dzien() -> None:
+    assert (from_excel(46273.99999999), from_excel(46273.9999999999)) == (datetime(2026, 9, 8, 23, 59, 59, 999000), datetime(2026, 9, 9))
 
 
 def test_odczyt_danych_okresu_ma_wiersze_od_dnia_przed_okresem_do_dnia_po_nim(tmp_path: Path) -> None:
@@ -431,7 +441,6 @@ def test_odczyt_danych_okresu_ma_wiersze_od_dnia_przed_okresem_do_dnia_po_nim(tm
 
     [sheet] = period_sheets(read(path, DadFiles()), period)
 
-    # ZEWNĘTRZNE: openpyxl zaokrągla część dnia daty z komórki do milisekund (openpyxl/utils/datetime.py, from_excel)
     margin = timedelta(days=1)
     window = [row for row, day in enumerate(days, start=2) if period.start - margin <= day < period.end + margin]
     assert [row.number for row in sheet.register_rows] == window
@@ -1406,10 +1415,14 @@ def _excel_register_after_history(tmp_path: Path, lista_rows: int = 1) -> Prepar
     return fixture
 
 
+_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+
 def _shared_strings(path: Path) -> list[str]:
     with zipfile.ZipFile(path) as archive:
-        table = archive.read("xl/sharedStrings.xml").decode("utf-8")
-    return ["".join(re.findall(r"<t[^>]*>([^<]*)</t>", item)) for item in re.findall(r"<si>(.*?)</si>", table, re.S)]
+        table = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
+    texts = (f"./{_MAIN}t", f"./{_MAIN}r/{_MAIN}t")
+    return ["".join(text.text or "" for path in texts for text in item.iterfind(path)) for item in table]
 
 
 def test_teksty_zlecen_okresu_z_konca_tabeli_tekstow_wspolnych_rejestru_trafiaja_do_rozliczenia_wewnetrznego(

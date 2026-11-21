@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import ast
 from collections.abc import Callable
-from pathlib import Path
-from typing import get_args
 
 import pytest
 
@@ -194,20 +191,3 @@ def test_krok_zapisywania_z_liczba_zlecen_inna_niz_nieujemna_calkowita_jest_bled
         runner.save(lambda: runner.step("Zlecenia", worker="adrian.testowy", **orders))
 
     assert not any(isinstance(event, StepReached) for event in events)
-
-
-def test_zdarzenia_przebiegu_tworzy_w_src_tylko_phase_runner() -> None:
-    kinds = {kind.__name__ for kind in get_args(ProgressEvent)}
-    package = Path(__file__).resolve().parents[1] / "src" / "rozliczenia"
-    found = []
-    for path in sorted(package.parent.rglob("*.py")):
-        if path in (package / "phase_runner.py", package / "domain.py"):
-            continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            match node:
-                case ast.Call(func=ast.Name(id=str(name)) | ast.Attribute(attr=str(name))) if name in kinds:
-                    found.append(f"{path.relative_to(package.parent)}:{node.lineno} {name}")
-                case _:
-                    pass
-
-    assert found == []
