@@ -430,13 +430,12 @@ def write_dad_quantity_rules(tool: ToolDirectory, file: str, old: str, new: str)
 # Przygotowanie nie czeka na Decyzję taty.
 PERIOD_TUESDAY = datetime(2026, 9, 8, 10, 0)
 PERIOD_MONDAY = datetime(2026, 9, 14, 9, 0)
-# Zlecenia skuteczne okresu po kolei, więc w Pliku zbiorczym od wiersza 18: wiersz → URZĄDZENIA.
 FILLING_DEVICES = {
-    18: "nokia zte",  # Reguły ilości znają każdy składnik
-    19: "przeniesienie",  # nieznane URZĄDZENIA: wiersz bez reguły
-    20: "prewencja",  # wiersz z opisu
-    21: "",  # puste URZĄDZENIA: wiersz z opisu
-    22: "router x9",  # nieznane URZĄDZENIA: wiersz bez reguły
+    18: "nokia zte",
+    19: "przeniesienie",
+    20: "prewencja",
+    21: "",
+    22: "router x9",
 }
 
 
@@ -595,8 +594,6 @@ def run_to_end(centrum: _Starting, *, dry_run: bool) -> dict[str, Any]:
 
 
 def stopped_for_maks(centrum: PreparingCentrum | SettlingCentrum) -> str:
-    """Zatrzymanie „do Maksa” bez zmiany plików: podgląd, którego planu nie da się pokazać."""
-
     centrum.engines.fail_summary = True
     try:
         view = run_to_end(centrum, dry_run=True)
