@@ -1,13 +1,3 @@
-"""Wpisanie raportów z Centrum rozliczeń przez HTTP API i strumień zdarzeń, jak widzi je przeglądarka (#1227, #1232,
-ADR 0028).
-
-Przycisk „Wpisz raporty z maili” na ekranie Raporty stoi poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty,
-maile daje atrapa Skrzynki raportów (``FakeInbox``), a hasło aplikacji sprawdza lokalny serwer IMAP (``AtrapaImap``)
-zamiast Gmaila.
-Pierwsze kliknięcie ma okno dni od dziś (dzień wdrożenia), więc zlecenia z Wpisami są z dnia ``ENTERING_NOW``.
-Przeszkody kliknięcia (#1232) mają zdania Komunikatów ze speca #1224 (US 44–51).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -127,8 +117,6 @@ def _order(day: int, hour: int, worker: str, number: int) -> Order:
     return Order(datetime(2026, 11, day, hour), worker, number, cells=((NUMBER, number),))
 
 
-# Uporządkowane zlecenia: Jana z 8.11 (sprzed okna) i z 9.11 oraz Anny z 9.11; na dole dwa Surowe zlecenia Jana z 9.11,
-# z których drugie stoi pod nagłówkami (pierwszy wiersz wklejenia jest przesunięty, jak z aplikacji).
 INTERMAX = Intermax(
     ordered=(
         _order(8, 9, "jan.testowy", 40000010),
@@ -140,8 +128,6 @@ INTERMAX = Intermax(
 
 
 def _cells(register: Path) -> dict[int, tuple[object, object]]:
-    """``NUMER ZL.`` → ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` każdego wiersza arkusza zleceń z numerem."""
-
     sheet = load_workbook(register)[ORDER_SHEET]
     found: dict[int, tuple[object, object]] = {}
     for row in sheet.iter_rows(min_row=2):
@@ -158,10 +144,6 @@ def _finished(centrum: EnteringCentrum) -> dict[str, Any]:
 
 
 def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_bez_kopii_intermax(tmp_path: Path) -> None:
-    """Kryterium #1227: Wpis z Raportu wykonawcy od adresu z listy trafia do obu komórek jego zlecenia z dnia z tematu,
-    zapisem bez Kopii INTERMAX; karta pokazuje liczbę wpisanych, a Historia ma Uruchomienie. Uruchomienie nie potwierdza
-    Gotowości, bo ta dotyczy Pliku zbiorczego przed Rozliczeniami pracowników."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m rt2")])
     before = _cells(centrum.register)
 
@@ -190,8 +172,6 @@ def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_
 
 
 def _workers(register: Path) -> dict[int, object]:
-    """``NUMER ZL.`` → ``WYKONAWCA`` każdego wiersza arkusza zleceń z numerem."""
-
     sheet = load_workbook(register)[ORDER_SHEET]
     column = FIRST + HEADERS.index("WYKONAWCA")
     return {
@@ -203,9 +183,6 @@ def _workers(register: Path) -> dict[int, object]:
 
 
 def test_raport_wykonawcy_trafia_do_zlecenia_spod_drugiego_loginu_dopisanego_w_ustawieniach(tmp_path: Path) -> None:
-    """US 29 (#1474): tata dopisuje Wykonawcy w Ustawieniach drugi login z INTERMAX. Raport wykonawcy z jego adresu
-    wpisuje się też w zlecenie spod drugiego loginu, które zostaje w miejscu, bez Przeniesienia zlecenia pod pierwszy."""
-
     intermax = Intermax(
         ordered=(
             _order(9, 9, "jan.testowy", 40000001),
@@ -231,11 +208,6 @@ def test_raport_wykonawcy_trafia_do_zlecenia_spod_drugiego_loginu_dopisanego_w_u
 def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w_czynnosciach_zamaskowany(
     tmp_path: Path,
 ) -> None:
-    """Logi Wpisania raportów przechodzą przez strażnika Reguły danych: adres nadawcy, temat i treść maila spoza
-    Wpisów nie mają w nich żadnego pola (Raport spoza listy adresów nie zostawia w nich swojej treści), a telefon w
-    czynnościach jest zamaskowany (ADR 0025, ADR 0028); Błąd opisu tego Wpisu ma w Logach sam powód z kodem, bez słów
-    zwykłego opisu (ADR 0039, ADR 0041)."""
-
     activities = "instutp40m wymiana routera, klient tel. 600 100 200"
     stranger = "obcy@przyklad.invalid"
     later = datetime(2026, 11, 9, 18, 40)
@@ -282,10 +254,6 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
     ],
 )
 def test_logi_maja_powod_kazdego_bledu_tematu_i_dzien_bez_tematu(tmp_path: Path, subject: str, fault: str, day: str | None) -> None:
-    """Każdy powód błędu tematu, który daje dziś rdzeń, ma swoje słowo w Logach (mail i problem), mail ma dzień z
-    tematu, gdy da się go przeczytać, a problem dzień, za który Centrum liczy raport (ADR 0041: Jan ma zlecenie tylko
-    9.11), a sam temat do Logów nie trafia (ADR 0028)."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, subject, "40000001 tak wymiana")])
 
     _finished(centrum)
@@ -300,9 +268,6 @@ def test_logi_maja_powod_kazdego_bledu_tematu_i_dzien_bez_tematu(tmp_path: Path,
 
 
 def test_logi_maja_kopie_wejscia_z_przeczytanymi_wierszami_bez_adresu_i_numeru_umowy(tmp_path: Path) -> None:
-    """Kopia wejścia Wpisania raportów to uporządkowane wiersze z dni okna, które proces przeczytał, z komórkami od A do
-    ``UWAGI`` bez ``ADRES`` i ``NUMER UMOWY``; Surowego zlecenia i wiersza sprzed okna w niej nie ma."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
 
     _finished(centrum)
@@ -313,16 +278,13 @@ def test_logi_maja_kopie_wejscia_z_przeczytanymi_wierszami_bez_adresu_i_numeru_u
     numbers = [row["cells"].get("I") for row in sheet["rows"]]
     columns = {letter for row in sheet["rows"] for letter in row["cells"]}
     assert (copied["name"], sheet["sheet"]) == (REGISTER_NAME, ORDER_SHEET)
+    assert {40000010, 40000003, 40000004} <= set(_cells(centrum.register)), "INTERMAX ma wiersz sprzed okna i Surowe zlecenia"
     assert numbers == [40000002, 40000001]
     assert columns <= {chr(ord("A") + column - 1) for column in range(1, LAST + 1)} - {"E", "K"}
     assert "Ulica 40000001" not in json.dumps(logs, ensure_ascii=False)
 
 
 def test_kopia_wejscia_ma_date_zlecenia_ze_sladem_przesuniecia_choc_w_drugim_polozeniu_stoi_pod_adresem(tmp_path: Path) -> None:
-    """Uporządkowany wiersz z datą z godziną w kolumnie A (ślad przesunięcia) pamięć zna w obu położeniach, więc Kopia
-    nie ma komórek, które w przesunięciu stoją pod ``ADRES`` i ``NUMER UMOWY``; ``DATA GODZ. POCZ.`` zostaje, bo bez
-    niej odtworzenie nie powtórzy Uruchomienia (ADR 0025)."""
-
     traced = Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001), (1, datetime(2026, 11, 9, 9))))
     centrum = entering_centrum(tmp_path, Intermax(ordered=(traced,), raw=()), [report(JAN, SUBJECT, "40000001 tak wymiana")])
 
@@ -338,11 +300,6 @@ def test_kopia_wejscia_ma_date_zlecenia_ze_sladem_przesuniecia_choc_w_drugim_pol
 def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z_tresci_maila_jest_pod_straznikiem(
     tmp_path: Path,
 ) -> None:
-    """``NUMER ZL.`` z wiersza INTERMAX może wyjść do Logów (ADR 0025) także z 9 cyframi, które strażnik maskuje jako
-    telefon w tekście: pamięć własnych wpisów w Logach drugiego kliknięcia ma go jako liczbę. Numer z treści maila
-    zostaje tekstem pod strażnikiem, więc 9 cyfr bez zera z przodu jest w nim zamaskowane, bo ten sam kształt ma
-    telefon klienta na początku linii raportu; odtworzenie dostanie to jako granicę (#1233)."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 412345678),), raw=())
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "412345678 tak montaż")])
 
@@ -363,10 +320,6 @@ def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z
 def test_numer_z_zerem_z_przodu_z_tresci_maila_jest_w_logach_a_telefon_na_poczatku_linii_raportu_nie(
     tmp_path: Path,
 ) -> None:
-    """Wykonawca pisze w raporcie ``NUMER ZL.`` z zerem z przodu, czyli 9 cyfr, a żaden polski telefon nie zaczyna się od
-    0: Logi mają ten numer we Wpisie i w problemie nieznanego numeru w postaci z maila, więc odtworzenie powtarza
-    kliknięcie. Telefon klienta na początku linii raportu rdzeń też czyta jako Wpis, a w Logach jest on ``[telefon]``."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 14043137),), raw=())
     body = "014043137 tak montaż, klient prosi o kontakt\n600123456 po 17"
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, body)])
@@ -382,10 +335,6 @@ def test_numer_z_zerem_z_przodu_z_tresci_maila_jest_w_logach_a_telefon_na_poczat
 def test_odrzucone_haslo_skrzynki_raportow_nie_trafia_do_api_strumienia_logow_zgloszenia_ani_dziennika(
     tmp_path: Path,
 ) -> None:
-    """Gmail odrzuca hasło aplikacji z pliku dostępu: Zatrzymanie do Maksa ze Zgłoszeniem, a samo hasło i adres skrzynki
-    nie wychodzą z odczytu skrzynki: nie ma ich w odpowiedziach Centrum, strumieniu zdarzeń, Logach, Zgłoszeniu ani
-    dzienniku (US 48)."""
-
     password = "qwer tyui opas dfgh"
     tool = ToolDirectory(tmp_path)
     write_report_key(tool, "github_pat_SYNTETYCZNY123")
@@ -436,10 +385,7 @@ def _events_until_finished(centrum: EnteringCentrum) -> list[dict[str, Any]]:
 
 
 def test_wpisanie_raportow_nie_startuje_w_trakcie_innego_uruchomienia(tmp_path: Path) -> None:
-    """Slot „jedno naraz”: w czasie Uruchomienia, które czeka na Decyzję taty, kliknięcie odmawia i niczego nie czyta."""
-
     centrum = preparing_centrum(tmp_path, incomplete_period_rows())
-    # Bez adresu na Liście Wykonawców Wpisanie raportów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
     write_worker_list(centrum.tool.worker_list, worker_list(addresses={"adrian.testowy": [JAN]}))
     centrum.start(dry_run=False)
     waiting = views_until(centrum.client, "awaiting_decision")[-1]
@@ -473,9 +419,6 @@ def _state(centrum: EnteringCentrum) -> Path:
 
 
 def test_intermax_otwarty_w_excelu_zatrzymuje_klikniecie_zanim_proces_przeczyta_skrzynke(tmp_path: Path) -> None:
-    """ADR 0028, US 44: przy INTERMAX otwartym w Excelu tata dostaje Komunikat „Zamknij INTERMAX i kliknij jeszcze
-    raz”, a skrzynka raportów nie jest czytana."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     open_in_excel(centrum.register)
     before = _cells(centrum.register)
@@ -494,9 +437,6 @@ def test_intermax_otwarty_w_excelu_zatrzymuje_klikniecie_zanim_proces_przeczyta_
 
 
 def test_odmowa_podmiany_intermax_nie_zapisuje_pamieci_wpisow_ani_dnia_wdrozenia(tmp_path: Path) -> None:
-    """Pamięć własnych wpisów i dzień wdrożenia zapisują się tylko po zapisie komórek: po odmowie podmiany (OneDrive
-    trzyma INTERMAX) pliku stanu nie ma, więc następne kliknięcie, dzień później, ma okno od swojego dnia."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     before = _cells(centrum.register)
     centrum.disk.replace, _ = failing_replace(denied)
@@ -515,10 +455,6 @@ def test_odmowa_podmiany_intermax_nie_zapisuje_pamieci_wpisow_ani_dnia_wdrozenia
 
 
 def test_logi_zatrzymania_przy_zapisie_maja_wpisy_i_komorki_do_wpisania_bez_liczby_wpisanych(tmp_path: Path) -> None:
-    """Zatrzymanie przy zapisie przychodzi po rdzeniu raportów, więc Logi mają Wpisy i komórki, które kliknięcie miało
-    wpisać, a liczby wpisanych komórek nie mają, bo INTERMAX nie został zmieniony: po niej odtworzenie poznaje, że
-    Zatrzymanie taty zależało od jego dysku."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     centrum.disk.replace, _ = failing_replace(denied)
 
@@ -531,9 +467,6 @@ def test_logi_zatrzymania_przy_zapisie_maja_wpisy_i_komorki_do_wpisania_bez_licz
 
 
 def _tata_writes(register: Path, number: int, value: str, *, column: int = SUCCESSFUL) -> None:
-    """Tata wpisuje ``value`` w kolumnie ``column`` (``SKUTECZNE``) zlecenia ``number`` i zapisuje INTERMAX (bez Excela
-    na dysku)."""
-
     book = load_workbook(register)
     sheet = book[ORDER_SHEET]
     [row] = [cell.row for line in sheet.iter_rows(min_row=2) for cell in line if cell.value == number]
@@ -542,9 +475,6 @@ def _tata_writes(register: Path, number: int, value: str, *, column: int = SUCCE
 
 
 def test_zapis_intermax_przez_tate_w_trakcie_odczytu_skrzynki_zostaje_w_intermax(tmp_path: Path) -> None:
-    """Proces czyta INTERMAX dopiero po skrzynce raportów, tuż przed zapisem: zapis taty w czasie odczytu Gmaila nie
-    przepada przy podmianie INTERMAX."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     centrum.fake_inbox.during = lambda: _tata_writes(centrum.register, 40000002, "nie")
 
@@ -585,11 +515,6 @@ def test_zapis_intermax_przez_tate_w_trakcie_odczytu_skrzynki_zostaje_w_intermax
 def test_nieczytelna_pamiec_wpisow_to_zatrzymanie_do_maksa_bez_odczytu_skrzynki(
     tmp_path: Path, spoil: Callable[[Path], object]
 ) -> None:
-    """DESIGN §2.3: bez pamięci własnych wpisów narzędzie nie odróżni swojego wpisu od ręcznego, więc plik stanu, którego
-    nie da się odczytać (zły JSON, bajty spoza UTF-8, dwie różne wartości jednej komórki zlecenia), zatrzymuje kliknięcie
-    do Maksa, zamiast liczyć się jak pusta pamięć. Przy zepsutych pamięci i decyzjach „Zostaw moją” Komunikat nazywa
-    pamięć, bo proces czyta ją pierwszą."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     before = _cells(centrum.register)
     spoil(_state(centrum))
@@ -620,10 +545,6 @@ def test_nieczytelna_pamiec_wpisow_to_zatrzymanie_do_maksa_bez_odczytu_skrzynki(
 def test_nieczytelny_plik_decyzji_zostaw_moja_zatrzymuje_klikniecie_do_maksa_komunikatem_o_nim_a_nie_o_pamieci(
     tmp_path: Path, spoil: Callable[[Path], object]
 ) -> None:
-    """Bez decyzji „Zostaw moją” różnice, które tata zostawił, wróciłyby, więc plik decyzji, którego nie da się
-    odczytać, zatrzymuje kliknięcie do Maksa. Komunikat nazywa plik decyzji i mówi, żeby go nie usuwać, a nie wskazuje
-    poprawnej pamięci własnych wpisów: jej „naprawa” skasowałaby własne wpisy i dzień wdrożenia (werdykt #1253)."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     _finished(centrum)
     memory = _state(centrum).read_bytes()
@@ -645,9 +566,6 @@ def test_nieczytelny_plik_decyzji_zostaw_moja_zatrzymuje_klikniecie_do_maksa_kom
 
 
 def test_nieczytelny_plik_decyzji_przed_zapisana_pamiecia_wpisow_tez_zatrzymuje_klikniecie_do_maksa(tmp_path: Path) -> None:
-    """Decyzja „Zostaw moją” bywa zapisana, zanim pamięć własnych wpisów zapisała się choć raz (pamięć niezapisana po
-    kliknięciu), więc plik decyzji czyta się także bez pliku pamięci i zepsuty zatrzymuje kliknięcie do Maksa."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     before = _cells(centrum.register)
     (centrum.tool.config / REPORT_ENTERING_DECISIONS).write_text("{", encoding="utf-8")
@@ -660,8 +578,6 @@ def test_nieczytelny_plik_decyzji_przed_zapisana_pamiecia_wpisow_tez_zatrzymuje_
 
 
 def _next_morning(centrum: EnteringCentrum) -> None:
-    """Następnego ranka Anna przysyła Raport za 9.11, a Raport Jana z 9.11 dalej jest w skrzynce."""
-
     centrum.moment.append(datetime(2026, 11, 10, 8))
     centrum.fake_inbox.outcome = [
         report(JAN, SUBJECT, "40000001 tak wymiana"),
@@ -670,8 +586,6 @@ def _next_morning(centrum: EnteringCentrum) -> None:
 
 
 def _memory_before(centrum: EnteringCentrum, view: dict[str, Any]) -> list[tuple[int, str, str]]:
-    """Pamięć własnych wpisów, z którą zaczęło Uruchomienie ``view``, z jego Logów."""
-
     [logs] = [entry for entry in centrum.run_logs() if entry["run_id"] == view["run"]["id"]]
     return [(entry["number"], entry["column"], entry["value"]) for entry in logs["report_entering"]["memory_before"]]
 
@@ -681,9 +595,6 @@ ANNA_OWN = [(40000002, "CZYNNOŚCI ZREALIZOWANE", "montaż"), (40000002, "SKUTEC
 
 
 def test_klikniecie_nastepnego_dnia_czyta_od_dnia_wdrozenia_a_pamiec_wpisow_przechodzi_przez_rdzen(tmp_path: Path) -> None:
-    """Okno dni kliknięcia następnego dnia zaczyna się od zapisanego dnia wdrożenia, więc Raport za wczoraj trafia do
-    pustych komórek; rdzeń dostaje zapamiętane własne wpisy, więc pamięć po tym kliknięciu dalej ma wpisy z pierwszego."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     _finished(centrum)
     _next_morning(centrum)
@@ -697,9 +608,6 @@ def test_klikniecie_nastepnego_dnia_czyta_od_dnia_wdrozenia_a_pamiec_wpisow_prze
 
 
 def test_pamiec_wpisow_niezapisana_czeka_w_centrum_na_nastepne_klikniecie(tmp_path: Path) -> None:
-    """Gdy pliku stanu nie da się zapisać, raporty są wpisane z ostrzeżeniem, a pamięć czeka w tej pracy Centrum: drugie
-    kliknięcie bierze ją, choć plik dalej jest niedostępny."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     centrum.fake_inbox.during = lambda: _state(centrum).mkdir(exist_ok=True)
 
@@ -717,10 +625,6 @@ def test_pamiec_wpisow_niezapisana_czeka_w_centrum_na_nastepne_klikniecie(tmp_pa
 def test_wynik_niezapisany_trafia_do_pliku_przy_widoku_raporty_po_odzyskaniu_dostepu_i_zostaje_po_ponownym_otwarciu_centrum(
     tmp_path: Path,
 ) -> None:
-    """Gdy pliku wyniku Wpisania raportów nie da się zapisać, widok Raporty pokazuje wynik z tej pracy Centrum, a
-    pierwszy widok po odzyskaniu dostępu zapisuje go do pliku: po zamknięciu i ponownym otwarciu Centrum widok jest ten
-    sam."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     result = centrum.tool.config / REPORT_ENTERING_RESULT
     centrum.fake_inbox.during = result.mkdir
@@ -738,10 +642,6 @@ def test_wynik_niezapisany_trafia_do_pliku_przy_widoku_raporty_po_odzyskaniu_dos
 def test_reczna_zmiana_komorki_miedzy_kliknieciami_wygrywa_z_poprawka_a_nietkniety_wlasny_wpis_ja_dostaje(
     tmp_path: Path,
 ) -> None:
-    """Kryterium #1230: po pierwszym kliknięciu tata zmienia w INTERMAX ``SKUTECZNE`` Jana, a rano Jan i Anna przysyłają
-    poprawki. Ręczne ``nie`` taty zostaje z różnicą w Logach i w liczbie problemów, a własne wpisy, których nikt nie
-    zmienił (opis Jana, oba Anny), dostają poprawkę; pamięć ma po kliknięciu wartości z poprawek bez ręcznej."""
-
     anna = SENDERS["anna.kowalska"]
     reports = [report(JAN, SUBJECT, "40000001 tak inst20m"), report(anna, SUBJECT, "40000002 tak spawpg")]
     centrum = entering_centrum(tmp_path, INTERMAX, reports)
@@ -778,12 +678,7 @@ def test_reczna_zmiana_komorki_miedzy_kliknieciami_wygrywa_z_poprawka_a_nietknie
     ]
 
 
-# --- Przeszkody kliknięcia (#1232) --------------------------------------------------------------------------------------
-
-
 def _conflict_copy(centrum: EnteringCentrum, device: str = "LAPTOP-TATY") -> Path:
-    """Kopia konfliktu OneDrive obok INTERMAX: INTERMAX z dopiskiem nazwy komputera, jak ją zostawia OneDrive."""
-
     copy = centrum.register.with_name(f"{centrum.register.stem}-{device}{centrum.register.suffix}")
     copy.write_bytes(centrum.register.read_bytes())
     return copy
@@ -801,9 +696,6 @@ def _conflict_note(copy: Path) -> str:
 def test_kopia_konfliktu_onedrive_przed_kliknieciem_blokuje_karte_i_zatrzymuje_klikniecie_bez_odczytu_skrzynki(
     tmp_path: Path,
 ) -> None:
-    """US 46: kopia konfliktu OneDrive obok INTERMAX blokuje kartę z instrukcją, a kliknięcie ze starej karty kończy się
-    Zatrzymaniem „dla taty” z tą samą instrukcją, zanim proces przeczyta skrzynkę; po usunięciu kopii raport się wpisuje."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     copy = _conflict_copy(centrum)
     before = centrum.register.read_bytes()
@@ -830,26 +722,21 @@ def test_kopia_konfliktu_onedrive_przed_kliknieciem_blokuje_karte_i_zatrzymuje_k
 
 
 def test_kopia_konfliktu_obok_intermax_otwartego_w_excelu_daje_komunikat_o_kopii(tmp_path: Path) -> None:
-    """Spec #1224, kolejność kroków kliknięcia: kopia konfliktu (krok 2) przed blokadą Excela (krok 3), bo po zamknięciu
-    INTERMAX kopia dalej by zatrzymała kliknięcie; tata najpierw przepisuje zmiany z kopii w Excelu."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     copy = _conflict_copy(centrum)
     open_in_excel(centrum.register)
 
     result = _stopped(centrum)
 
-    assert (result["stop_kind"], result["stops"][0]["where"]) == ("for_tata", f"plik {copy.name}, folder OneDrive")
+    assert (result["stop_kind"], result["stops"][0]["where"]) == ("for_tata", f"plik {copy.name}, folder OneDrive"), (
+        "kopia konfliktu idzie przed Excelem, bo po zamknięciu INTERMAX dalej zatrzymałaby kliknięcie"
+    )
     assert centrum.fake_inbox.days == []
 
 
 def test_kopia_konfliktu_onedrive_po_zapisie_zatrzymuje_dla_taty_z_wpisanymi_raportami_i_blokuje_nastepne_klikniecie(
     tmp_path: Path,
 ) -> None:
-    """US 46: kopia konfliktu, którą OneDrive kładzie obok INTERMAX tuż po podmianie, daje Zatrzymanie „dla taty” z
-    instrukcją; raporty i pamięć własnych wpisów są już zapisane (Logi mają liczbę wpisanych komórek), a dopóki kopia
-    leży, karta jest zablokowana, a kliknięcie kończy się bez odczytu skrzynki."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     copies: list[Path] = []
 
@@ -915,11 +802,6 @@ def test_kopia_konfliktu_onedrive_po_zapisie_zatrzymuje_dla_taty_z_wpisanymi_rap
 def test_karta_rozpoznaje_kopie_konfliktu_onedrive_po_nazwie_intermax_z_dopiskiem_nazwy_komputera(
     tmp_path: Path, name: str, conflict: bool
 ) -> None:
-    """Kopia konfliktu OneDrive to ``<nazwa INTERMAX>-<nazwa komputera><rozszerzenie>`` obok INTERMAX, bez względu na
-    wielkość liter (Microsoft Learn: „Report-JOHNS-SURFACE.txt” dla „Report.txt”), także z domyślną nazwą Maca z
-    apostrofem („Jan’s MacBook Air”); kopia z Eksploratora, plik blokady Excela, plik tymczasowy zapisu i inny plik z
-    łącznikiem kopią nie są."""
-
     centrum = entering_centrum(tmp_path, INTERMAX)
     register = centrum.register
     beside = register.with_name(name.format(stem=register.stem, lower=register.stem.lower(), suffix=register.suffix))
@@ -932,9 +814,6 @@ def test_karta_rozpoznaje_kopie_konfliktu_onedrive_po_nazwie_intermax_z_dopiskie
 
 
 def test_odmowa_onedrive_przy_zapisie_zostawia_intermax_i_pamiec_wpisow_bajt_w_bajt(tmp_path: Path) -> None:
-    """US 45: gdy OneDrive trzyma INTERMAX przy podmianie, zapis odmawia tym samym zdaniem co w Uporządkowaniu, a INTERMAX
-    i pamięć własnych wpisów z poprzedniego kliknięcia zostają takie, jak były."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     _finished(centrum)
     _next_morning(centrum)
@@ -952,10 +831,6 @@ def test_odmowa_onedrive_przy_zapisie_zostawia_intermax_i_pamiec_wpisow_bajt_w_b
 
 
 def test_zapis_na_scalone_komorki_zlecenia_zatrzymuje_do_maksa_a_logi_maja_zaplanowane_wpisy(tmp_path: Path) -> None:
-    """Gdy zapis trafia na układ, do którego narzędzie nie wpisuje (``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` zlecenia
-    Jana scalone w jedną komórkę), kliknięcie zatrzymuje się do Maksa z INTERMAX bajt w bajt, a Logi Uruchomienia
-    mają wpisy zaplanowane z Raportu, z których Maks odtworzy Uruchomienie."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     merged = f'<mergeCells count="1"><mergeCell ref="{get_column_letter(SUCCESSFUL)}3:{get_column_letter(COMPLETED)}3"/>'
     rewrite_parts(
@@ -1007,10 +882,6 @@ def _unreadable_border(register: Path) -> None:
 def test_zapis_odrzucony_albo_nieczytelny_przy_zapisie_zatrzymuje_a_logi_maja_zaplanowane_wpisy(
     tmp_path: Path, text: str, spoil: Callable[[Path], object], stop: tuple[str, str]
 ) -> None:
-    """Zapis odrzuca komórkę z tekstem, którego komórka nie przyjmie (znak spoza XML z treści maila), albo nie czyta
-    stylów INTERMAX, które odczyt pominął: kliknięcie zatrzymuje się z INTERMAX bajt w bajt, a Logi Uruchomienia mają
-    wpisy zaplanowane z Raportu, z których Maks odtworzy Uruchomienie."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, text)])
     spoil(centrum.register)
     before = centrum.register.read_bytes()
@@ -1044,10 +915,6 @@ def _issue_texts(surroundings: Surroundings) -> list[str]:
 def test_odrzucone_haslo_to_komunikat_do_maksa_ze_zgloszeniem_a_powtorka_komentarzem_w_otwartym_zgloszeniu(
     tmp_path: Path,
 ) -> None:
-    """US 47–48: odrzucone hasło aplikacji daje Komunikat „Skrzynka raportów odrzuciła hasło, Maks musi je odnowić” i
-    Zatrzymanie „do Maksa” ze Zgłoszeniem w Skrzynce Zgłoszeń; to samo przy następnym kliknięciu ma ten sam odcisk
-    problemu, więc trafia jako komentarz do otwartego Zgłoszenia, a INTERMAX zostaje nietknięty."""
-
     write_report_key(ToolDirectory(tmp_path))
     surroundings = Surroundings()
     centrum = entering_centrum(tmp_path, INTERMAX, PasswordRejected(), surroundings=surroundings)
@@ -1083,9 +950,6 @@ def test_odrzucone_haslo_to_komunikat_do_maksa_ze_zgloszeniem_a_powtorka_komenta
 def test_brak_sieci_albo_gmail_bez_odpowiedzi_to_tylko_komunikat_sprobuj_za_chwile_bez_zgloszenia(
     tmp_path: Path, cause: str
 ) -> None:
-    """US 49: gdy Gmail nie odpowiada, tata dostaje Zatrzymanie „dla taty” z „Spróbuj za chwilę”, bez Diagnozy i
-    Zgłoszenia, a INTERMAX i pamięć wpisów zostają nietknięte."""
-
     write_report_key(ToolDirectory(tmp_path))
     surroundings = Surroundings()
     centrum = entering_centrum(tmp_path, INTERMAX, InboxUnreachable(cause), surroundings=surroundings)
@@ -1121,16 +985,12 @@ ADDRESSES_MISSING = "Na Liście Wykonawców nikt nie ma jeszcze adresu. Dopisz a
     [
         pytest.param("missing", True, ACCESS_MISSING, id="bez-hasla"),
         pytest.param("ready", False, ADDRESSES_MISSING, id="bez-adresow"),
-        pytest.param("missing", False, ACCESS_MISSING, id="bez-obu"),
+        pytest.param("missing", False, ACCESS_MISSING, id="bez-obu-najpierw-haslo-ktore-dopisuje-maks"),
     ],
 )
 def test_bez_pliku_hasla_albo_adresow_wykonawcow_karta_mowi_czego_brakuje_a_start_jest_odrzucony(
     tmp_path: Path, access: InboxAccess, addresses: bool, sentence: str
 ) -> None:
-    """US 51: bez pliku dostępu do skrzynki raportów albo bez adresu żadnego Wykonawcy na Liście Wykonawców karta mówi,
-    czego brakuje, a start jest odrzucony tym samym zdaniem, bez Uruchomienia i bez odczytu skrzynki; brak hasła mówi
-    pierwszy, bo dopisuje je Maks."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")], access=access)
     if not addresses:
         write_worker_list(centrum.tool.worker_list, worker_list(WORKERS))
@@ -1157,9 +1017,6 @@ def test_karta_przy_liscie_wykonawcow_bez_odczytu_nie_mowi_o_adresach_a_start_od
 
 
 def test_klikniecie_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrzezeniem_na_karcie(tmp_path: Path) -> None:
-    """DESIGN §4.3 dla Wpisania raportów (przegląd #1569 r2, D1): plik Listy Wykonawców dostaje złą treść po odczycie
-    Ustawień, więc kliknięcie wpisuje raporty adresów z ostatniej dobrej listy, a karta mówi o tym ostrzeżeniem startu."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana routera")])
     assert centrum.client.get("/api/settings").json()["workers"]["state"] == "good"
     centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
@@ -1176,10 +1033,6 @@ def test_klikniecie_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_os
 def test_nieczytelny_plik_hasla_to_nie_brak_pliku_karta_bez_blokady_a_klikniecie_zatrzymuje_do_maksa_bez_odczytu_skrzynki(
     tmp_path: Path,
 ) -> None:
-    """Plik dostępu do skrzynki raportów, który jest, ale nie da się go odczytać, to nie brak pliku (US 51): karta nie
-    jest zablokowana zdaniem o brakującym haśle, a kliknięcie kończy się Zatrzymaniem „do Maksa” w Sprawdzaniu, zanim
-    proces przeczyta skrzynkę."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")], access="unreadable")
     before = _cells(centrum.register)
 
@@ -1197,9 +1050,6 @@ def test_nieczytelny_plik_hasla_to_nie_brak_pliku_karta_bez_blokady_a_klikniecie
 
 
 def test_intermax_w_folderze_ktorego_juz_nie_ma_zatrzymuje_klikniecie_dla_taty_bez_odczytu_skrzynki(tmp_path: Path) -> None:
-    """INTERMAX z Ustawień taty w folderze, którego już nie ma (OneDrive przeniósł albo tata usunął folder): karta
-    działa bez blokady kopii konfliktu, a kliknięcie kończy się Zatrzymaniem „dla taty” o brakującym INTERMAX."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     shutil.rmtree(centrum.register.parent)
 
@@ -1211,22 +1061,16 @@ def test_intermax_w_folderze_ktorego_juz_nie_ma_zatrzymuje_klikniecie_dla_taty_b
     assert centrum.fake_inbox.days == []
 
 
-# --- Dopasowanie Wpisów do zleceń i zakres maili kliknięcia (#1229) ---------------------------------------------------
-
 ANNA = SENDERS["anna.kowalska"]
 MONDAY_PERIOD = "03_09_11_2026"
 
 
 def _entering(centrum: EnteringCentrum, view: dict[str, Any]) -> dict[str, Any]:
-    """Wpisanie raportów w Logach Uruchomienia ``view``."""
-
     [logs] = [entry for entry in centrum.run_logs() if entry["run_id"] == view["run"]["id"]]
     return dict(logs["report_entering"])
 
 
 def _copied_numbers(centrum: EnteringCentrum, view: dict[str, Any]) -> list[object]:
-    """``NUMER ZL.`` wierszy INTERMAX w Kopii wejścia Uruchomienia ``view``, po kolei."""
-
     [logs] = [entry for entry in centrum.run_logs() if entry["run_id"] == view["run"]["id"]]
     return [row["cells"].get("I") for copied in logs["input_copy"] for sheet in copied["sheets"] for row in sheet["rows"]]
 
@@ -1238,8 +1082,6 @@ def _click_at(centrum: EnteringCentrum, moment: datetime, mails: list[Any]) -> d
 
 
 def test_ten_sam_numer_dwa_razy_u_wykonawcy_w_jednym_dniu_niczego_nie_wpisuje(tmp_path: Path) -> None:
-    """US 31: dwa uporządkowane wiersze Jana z numerem 40000001 i dniem 9.11 zostają puste, a problem mówi o numerze."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 13, "jan.testowy", 40000001)), raw=())
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     sheet = load_workbook(centrum.register)[ORDER_SHEET]
@@ -1259,32 +1101,21 @@ NEW_ADDRESS = "jan.nowy@przyklad.invalid"
 
 
 def _assign(centrum: EnteringCentrum, login: str, address: str) -> Any:
-    """„Przypisz do Wykonawcy…” z widoku Raporty: adres nieznanego nadawcy u Wykonawcy z loginem ``login``."""
-
     return centrum.client.post(f"/api/settings/workers/{login}/addresses", json={"address": address})
 
 
 def _addresses(centrum: EnteringCentrum) -> dict[str, list[str]]:
-    """Adresy Wykonawców z sekcji Wykonawcy po pierwszym loginie."""
-
     workers = centrum.client.get("/api/settings").json()["workers"]["workers"]
     return {worker["logins"][0]: worker["addresses"] for worker in workers}
 
 
 def _worker_rows(centrum: EnteringCentrum) -> list[dict[str, Any]]:
-    """Wiersze Historii Ustawień o Liście Wykonawców, od najnowszego."""
-
     return [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
 
 
 def test_tata_przypisuje_nieznanego_nadawce_do_wykonawcy_a_nastepne_wpisanie_raportow_rozpoznaje_jego_raport(
     tmp_path: Path,
 ) -> None:
-    """US 25, ADR 0028: Raport z nowego adresu Jana stoi w widoku Raporty jako nieznany nadawca z samym dniem, adresem i
-    powodem, bez tematu i treści maila. Tata przypisuje adres Janowi: adres dopisuje się na Liście Wykonawców, nadawca w
-    widoku Raporty jest przypisany do Jana jeszcze przed następnym kliknięciem, a następne kliknięcie wpisuje ten sam mail
-    bez innej pracy."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak inst20m rt2")])
     before = _cells(centrum.register)
     _finished(centrum)
@@ -1315,11 +1146,6 @@ def test_tata_przypisuje_nieznanego_nadawce_do_wykonawcy_a_nastepne_wpisanie_rap
 def test_adres_innego_wykonawcy_nie_przypisuje_sie_a_cofniecie_przypisania_przywraca_nieznanego_nadawce(
     tmp_path: Path,
 ) -> None:
-    """US 25, 28: adresu, który ma już inny Wykonawca, nie da się przypisać: odmowa przy polu adresu, a Lista Wykonawców i
-    Historia zostają bez zmian, tak samo przy Wykonawcy, którego już nie ma; adres, który Wykonawca już ma, niczego nie
-    zmienia. Przypisanie ma wiersz Historii z „Cofnij”, które zdejmuje adres, więc nadawca w widoku Raporty znowu jest
-    nieznany."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
     _finished(centrum)
     listed_before = centrum.tool.worker_list.read_bytes()
@@ -1358,12 +1184,6 @@ def test_adres_innego_wykonawcy_nie_przypisuje_sie_a_cofniecie_przypisania_przyw
 def test_raport_z_ostatniego_dnia_okresu_wpisuje_sie_w_nowym_okresie_dopoki_okres_nie_ma_pliku_zbiorczego(
     tmp_path: Path, month: Path
 ) -> None:
-    """US 11–12 i 42: we wtorek 10.11 kliknięcie wpisuje Raport Jana z poniedziałku 9.11, bo okres 03_09_11_2026 nie ma
-    Pliku zbiorczego. Gdy tata go przygotuje, Raport Anny z 9.11 się nie wpisuje, choć rdzeń go czyta (jego niezgodne
-    Wpisy mówiłyby o dniach otwartych, #1350), skrzynka jest czytana od dziś, a Kopia wejścia ma wiersze INTERMAX od
-    ``Window.start``, więc dalej zlecenia z 9.11: po nich rdzeń poznaje zlecenie z okresu z Plikiem zbiorczym, którego nie
-    przenosi."""
-
     centrum = entering_centrum(tmp_path, INTERMAX)
     folder = centrum.periods_directory / month / MONDAY_PERIOD
     folder.mkdir(parents=True)
@@ -1391,9 +1211,6 @@ def test_raport_z_ostatniego_dnia_okresu_wpisuje_sie_w_nowym_okresie_dopoki_okre
 
 
 def _day_rows(register: Path, last: int) -> list[object]:
-    """Wiersze arkusza zleceń od 2 do ``last``: (``NUMER ZL.``, ``WYKONAWCA``) zlecenia, „żółty” wiersz taty albo
-    „pusty”."""
-
     sheet = load_workbook(register)[ORDER_SHEET]
     rows: list[object] = []
     for number in range(2, last + 1):
@@ -1405,9 +1222,6 @@ def _day_rows(register: Path, last: int) -> list[object]:
 
 
 def _order_look(register: Path, number: int) -> list[tuple[object, ...]]:
-    """Wygląd komórek od B do ``UWAGI`` wiersza zlecenia ``number`` poza ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE``, które
-    dostają Wpis: krój, rozmiar, pogrubienie i ramka, z Hiperłączem ``NUMER ZL.``."""
-
     sheet = load_workbook(register)[ORDER_SHEET]
     [row] = [cell.row for cell in sheet[get_column_letter(NUMBER)] if cell.value == number]
     cells = [sheet.cell(row, column) for column in range(FIRST, LAST + 1) if column not in (SUCCESSFUL, COMPLETED)]
@@ -1421,12 +1235,6 @@ def _order_look(register: Path, number: int) -> list[tuple[object, ...]]:
 def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja_w_okienku_dnia_po_obu_stronach(
     tmp_path: Path,
 ) -> None:
-    """Kryterium #1347 (ADR 0029): Anna przysłała Wpis zlecenia 40000001, które INTERMAX ma u Jana w tym samym dniu.
-    Kliknięcie zmienia ``WYKONAWCA`` na Annę i stawia wiersz pod jej ostatnim zleceniem, z wyglądem i Hiperłączem
-    uporządkowanego zlecenia i z jej Wpisem, zapisem bez Kopii INTERMAX; pusty wiersz między segmentami i żółty wiersz
-    dnia zostają na miejscach. Okienko dnia pokazuje „przejęte od jan.testowy” u Anny i „przekazane anna.kowalska” u
-    Jana, bez problemu i bez ``ADRES``, ``NUMER UMOWY`` i treści maila; drugie kliknięcie niczego nie zmienia."""
-
     intermax = Intermax(
         ordered=(
             _order(9, 9, "jan.testowy", 40000001),
@@ -1479,8 +1287,6 @@ def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja
 
 
 def _started(register: Path, number: int) -> tuple[object, str]:
-    """``DATA GODZ. POCZ.`` wiersza zlecenia ``number`` i jej format liczby."""
-
     sheet = load_workbook(register)[ORDER_SHEET]
     [row] = [cell.row for cell in sheet[get_column_letter(NUMBER)] if cell.value == number]
     return sheet.cell(row, DATE).value, sheet.cell(row, DATE).number_format
@@ -1495,19 +1301,11 @@ TWO_DAYS = Intermax(
     ),
     raw=(),
 )
-"""8.11: segment Anny i segment Jana z dwoma zleceniami; 9.11: segment Anny; pusty wiersz pod każdym segmentem, żółty
-wiersz pod dniem 9.11."""
 
 
 def test_klikniecie_przenosi_zlecenie_na_dzien_z_tematu_z_ta_sama_godzina_i_informacja_w_okienku_po_obu_stronach(
     tmp_path: Path,
 ) -> None:
-    """Kryteria #1350 (ADR 0029): Raport Jana za 9.11 z jednym zleceniem z 8.11. Kliknięcie zmienia w INTERMAX dzień w
-    ``DATA GODZ. POCZ.`` na 9.11 z tą samą godziną i formatem daty i stawia wiersz w nowym segmencie Jana 9.11 (za
-    Anną, alfabetycznie), z wyglądem, Hiperłączem i Wpisem; segment Jana 8.11 zostaje z drugim zleceniem, a pusty
-    wiersz między dniami i żółty wiersz zostają. Okienko dnia pokazuje „przeniesione z 8.11” u Jana 9.11 pod zleceniem
-    i „przeniesione na 9.11” u Jana 8.11 osobnym wierszem; drugie kliknięcie niczego nie zmienia."""
-
     centrum = entering_centrum(tmp_path, TWO_DAYS)
     _click_at(centrum, datetime(2026, 11, 8, 18), [])
     look, (_, date_format) = _order_look(centrum.register, 40000002), _started(centrum.register, 40000002)
@@ -1558,11 +1356,6 @@ def test_klikniecie_przenosi_zlecenie_na_dzien_z_tematu_z_ta_sama_godzina_i_info
 def test_zamiana_jedynych_zlecen_dwoch_dni_w_jednym_kliknieciu_przenosi_oba_a_drugie_klikniecie_niczego_nie_zmienia(
     tmp_path: Path,
 ) -> None:
-    """Przegląd #1367 r1 (Ważne 1): 8.11 ma jedno zlecenie (Anny). W jednym kliknięciu Anna przysyła Raport za 9.11 z
-    nim, a Jan Raport za 8.11 ze swoim zleceniem z 9.11. Oba dni są Dniami uporządkowanymi przed kliknięciem, więc
-    kliknięcie przenosi oba zlecenia (zlecenie Jana staje na miejscu dnia 8.11) i wpisuje do nich Wpisy, zamiast
-    zatrzymać całe Wpisanie raportów odrzuceniem zapisu, a drugie kliknięcie z tymi samymi mailami niczego nie zmienia."""
-
     intermax = Intermax(
         ordered=(
             _order(8, 9, "anna.kowalska", 40000001),
@@ -1610,10 +1403,6 @@ def test_zamiana_jedynych_zlecen_dwoch_dni_w_jednym_kliknieciu_przenosi_oba_a_dr
 def test_raport_za_dzien_okresu_z_plikiem_zbiorczym_nie_przenosi_zlecenia_a_problem_stoi_w_dniu_zlecenia(
     tmp_path: Path,
 ) -> None:
-    """Kryterium #1350 (US 14): okres 03_09_11_2026 dostał Plik zbiorczy, a Jan przysyła Raport za 9.11 ze zleceniem,
-    które INTERMAX ma 10.11. Centrum go nie przenosi do zamkniętego okresu, a problem z powodem stoi w okienku Jana
-    10.11, bo dnia 9.11 widok Raporty już nie pokazuje."""
-
     intermax = Intermax(ordered=(_order(9, 9, "anna.kowalska", 40000003), _order(10, 9, "jan.testowy", 40000002)), raw=())
     centrum = entering_centrum(tmp_path, intermax)
     _click_at(centrum, ENTERING_NOW, [])
@@ -1634,9 +1423,6 @@ def test_raport_za_dzien_okresu_z_plikiem_zbiorczym_nie_przenosi_zlecenia_a_prob
     assert problem["number"] == "40000002"
     assert "okres z dniem 09.11.2026 ma już Plik zbiorczy" in problem["reason"]
 def _tata_dates(register: Path, number: int, worker: str, when: datetime) -> None:
-    """Tata zmienia w Excelu ``DATA GODZ. POCZ.`` zlecenia ``number`` Wykonawcy ``worker`` na ``when`` i zapisuje
-    INTERMAX (bez Excela na dysku); wiersz zostaje na swoim miejscu."""
-
     book = load_workbook(register)
     sheet = book[ORDER_SHEET]
     [row] = [
@@ -1647,9 +1433,6 @@ def _tata_dates(register: Path, number: int, worker: str, when: datetime) -> Non
 
 
 def _places(register: Path, number: int) -> list[tuple[object, ...]]:
-    """``DATA GODZ. POCZ.``, ``WYKONAWCA``, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` każdego wiersza zlecenia
-    ``number``, po kolei."""
-
     sheet = load_workbook(register)[ORDER_SHEET]
     return [
         tuple(sheet.cell(cell.row, column).value for column in (DATE, WORKER, SUCCESSFUL, COMPLETED))
@@ -1661,11 +1444,6 @@ def _places(register: Path, number: int) -> list[tuple[object, ...]]:
 def test_wpis_centrum_w_zleceniu_przelozonym_na_jutro_nie_przechodzi_na_reczna_wartosc_drugiego_zlecenia_numeru(
     tmp_path: Path,
 ) -> None:
-    """Przegląd #1367 r3 Ważne 1 przez HTTP API: INTERMAX ma 40000001 u Jana 9.11 (pusty) i u Anny 8.11 z ręcznym „tak”
-    i opisem taty. Kliknięcie wpisuje Raport Jana do jego zlecenia, a stary Raport Anny daje różnice, które tata zostawia
-    („Zostaw moją”). Tata przekłada zlecenie Jana na jutro. Następne kliknięcie z tymi samymi mailami nie zmienia
-    INTERMAX: wpisy Centrum ze zlecenia Jana nie przechodzą na zlecenie Anny, więc jej „tak” zostaje."""
-
     intermax = Intermax(
         ordered=(
             Order(datetime(2026, 11, 8, 9), "anna.kowalska", 40000001, cells=((NUMBER, 40000001), (SUCCESSFUL, "tak"), (COMPLETED, "montaż taty"))),
@@ -1702,11 +1480,6 @@ def test_wpis_centrum_w_zleceniu_przelozonym_na_jutro_nie_przechodzi_na_reczna_w
 
 
 def test_numer_z_jutra_nie_jest_nieznany_ani_przenoszony_a_tata_widzi_jego_dzien(tmp_path: Path) -> None:
-    """Przegląd #1367 r3 Ważne 2 przez HTTP API: dziś 9.11, a tata wkleił już zlecenia na 10.11 (ADR 0019). Raport Jana
-    za 9.11 z numerem, który INTERMAX ma u Jana 8.11 i 10.11, nie przenosi zlecenia z 8.11, a Raport Anny za 9.11 z
-    numerem, który INTERMAX ma tylko 10.11, nie jest nieznanym numerem i nie zmienia zlecenia z jutra. INTERMAX zostaje
-    bajt w bajt, a tata widzi w okienku dnia z tematu oba dni numeru i dzień zlecenia z jutra."""
-
     intermax = Intermax(
         ordered=(
             _order(8, 9, "jan.testowy", 40000001),
@@ -1742,11 +1515,6 @@ def test_numer_z_jutra_nie_jest_nieznany_ani_przenoszony_a_tata_widzi_jego_dzien
 
 
 def test_nadawca_bez_segmentu_w_dniu_dostaje_nowy_segment_na_miejscu_alfabetycznym(tmp_path: Path) -> None:
-    """Kryterium #1347: Anna nie ma zleceń 9.11, a przejmuje jedno z dwóch zleceń Jana. Jej nowy segment staje przed
-    segmentem Jana (alfabetycznie), z jednym pustym wierszem między segmentami z wyglądem pustego wiersza Uporządkowania
-    (Calibri 8 z cienką ramką, ``WYKONAWCA`` Calibri 9); żółty wiersz dnia zostaje jeden pusty wiersz pod dniem, który
-    urósł o wiersz."""
-
     intermax = Intermax(
         ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)),
         raw=(),
@@ -1772,8 +1540,6 @@ def test_nadawca_bez_segmentu_w_dniu_dostaje_nowy_segment_na_miejscu_alfabetyczn
 
 
 def _address_written(register: Path, number: int) -> None:
-    """Tata wpisuje w Excelu ``ADRES`` dopisanego zlecenia ``number``."""
-
     book = load_workbook(register)
     [row] = [cell.row for cell in book[ORDER_SHEET][get_column_letter(NUMBER)] if cell.value == number]
     book[ORDER_SHEET].cell(row, ADDRESS).value = "Ulica Testowa 7"
@@ -1783,13 +1549,6 @@ def _address_written(register: Path, number: int) -> None:
 def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_przypomina_o_adresie_do_jego_wpisania(
     tmp_path: Path,
 ) -> None:
-    """Kryteria #1354 (ADR 0029, US 17–24): Jan przysłał Wpis numeru z 8 cyframi, którego INTERMAX nie ma w żadnym dniu.
-    Kliknięcie dopisuje wiersz pod ostatnim zleceniem Jana 9.11, przed pustym wierszem i żółtym wierszem dnia, z
-    ``NUMER ZL.``, dniem w ``DATA GODZ. POCZ.`` w formacie dat dnia, ``WYKONAWCA``, ``SKUTECZNE`` i ``CZYNNOŚCI
-    ZREALIZOWANE``, w wyglądzie uporządkowanego zlecenia bez Koloru operatora, zapisem bez Kopii INTERMAX; Logi mają
-    dopisanie. Okienko dnia Jana mówi „dopisane z raportu, uzupełnij resztę” bez treści ``ADRES``, a drugie kliknięcie
-    niczego nie dubluje. Gdy tata wpisze ``ADRES``, informacja znika."""
-
     intermax = Intermax(
         ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)),
         raw=(),
@@ -1853,8 +1612,6 @@ def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_p
 
 
 def _day_with(row: Order) -> Intermax:
-    """Uporządkowany 9.11: zlecenie Jana, wiersz ``row`` i zlecenie Anny, bez Surowych zleceń."""
-
     return Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), row, _order(9, 11, "anna.kowalska", 40000002)), raw=())
 
 
@@ -1905,17 +1662,6 @@ _ORDERLESS_ROWS = {
 def test_klikniecie_nie_dopisuje_numeru_ktory_intermax_ma_w_przeczytanym_wierszu_bez_zlecenia(
     tmp_path: Path, intermax: Intermax, numbers: tuple[int, ...]
 ) -> None:
-    """Przegląd #1374 r2 Ważne 1 (ADR 0029: Centrum nigdy nie dubluje zlecenia, które INTERMAX już ma): dziś 9.11, a
-    Jan przysłał Raport za 9.11 z numerami, które INTERMAX ma w wierszu, z którego proces nie robi zlecenia. Kształty z
-    kopii INTERMAX taty i z Uporządkowania: Surowe zlecenia na dole arkusza (pierwsze przesunięte o dwie kolumny w lewo,
-    jak z aplikacji), uporządkowany wiersz bez ``WYKONAWCA`` (także z 8.11 sprzed dnia wdrożenia: to wiersz bez zlecenia,
-    a nie zlecenie sprzed okna), wiersz z ``DATA GODZ. POCZ.`` tekstem, wiersz z wyglądem z
-    aplikacji między uporządkowanymi, taki wiersz przesunięty jak pierwszy wiersz wklejenia i przesunięty pierwszy wiersz dolnego z dwóch wklejeń bez
-    Uporządkowania między nimi, który reguła danych zna w obu położeniach (przegląd #1374 r3 Drobne 1: numer tylko z
-    pierwszego położenia dawał dubel). Kliknięcie nie zmienia INTERMAX, więc żaden numer nie stoi w
-    nim dwa razy, a okienko Jana z 9.11 ma problem z każdym numerem, który mówi, że zlecenie już jest. Logi mają te
-    numery, żeby odtworzenie postawiło je w INTERMAX."""
-
     text = "\n".join(f"{number} tak montaż" for number in numbers)
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, text)])
     before = centrum.register.read_bytes()
@@ -1935,13 +1681,6 @@ def test_klikniecie_nie_dopisuje_numeru_ktory_intermax_ma_w_przeczytanym_wierszu
 
 
 def test_wiersz_dopisany_recznie_pod_dniem_bez_calibri_8_nie_ukrywa_zlecen_nad_nim(tmp_path: Path) -> None:
-    """Logi taty z 16.11 i 18.11.2026: po Uporządkowaniu dnia na pojutrze tata dopisał ręcznie zlecenie na jutro w
-    pustym wierszu pod jutrzejszym dniem, jeszcze bez Calibri 8. Wpisanie raportów kończyło na nim przegląd od dołu,
-    więc czytało tylko dni pod nim, nie wpisało nic, a każdy numer z wcześniejszych dni miało za problem; tata widział
-    0/0 i klikał drugi raz, aż sformatował wiersz. Tu INTERMAX ma uporządkowane 8.11 ze zleceniem Jana, pod nim
-    dopisany ręcznie wiersz Jana z 8.11 z wyglądem z aplikacji i uporządkowane 9.11. Raport Jana za 8.11 wpisuje się do
-    jego zlecenia nad tym wierszem przy pierwszym kliknięciu."""
-
     intermax = Intermax(
         ordered=(
             _order(8, 9, "jan.testowy", 40000010),
@@ -1961,11 +1700,6 @@ def test_wiersz_dopisany_recznie_pod_dniem_bez_calibri_8_nie_ukrywa_zlecen_nad_n
 
 
 def test_wiersz_bez_wykonawcy_nad_dziesiatkami_zlecen_dnia_nie_jest_dopisany_drugi_raz(tmp_path: Path) -> None:
-    """Przegląd #1374 r3 Drobne 2: dzień taty ma dziesiątki zleceń. Tata kliknął pierwszy raz 8.11, a INTERMAX ma wiersz
-    8.11 bez ``WYKONAWCA`` z 40000095 nad dwunastoma zleceniami Anny z 8.11, pod nimi dzień 9.11. Raport Jana za 9.11 z
-    tym numerem: przegląd numerów sięga przez cały dzień 8.11 (granica dni okna, nie dzień najniższego wiersza), więc
-    kliknięcie 9.11 nie dopisuje 40000095 drugi raz, a Jan ma problem, że zlecenie już jest."""
-
     intermax = Intermax(
         ordered=(
             Order(datetime(2026, 11, 8, 7), "", 40000095, cells=((NUMBER, 40000095),)),
@@ -2013,12 +1747,6 @@ _REPASTED_NEXT_TO_ORDER = {
 def test_zlecenie_numeru_z_drugim_wierszem_bez_zlecenia_nie_przechodzi_na_dzien_z_tematu(
     tmp_path: Path, intermax: Intermax
 ) -> None:
-    """Reguła #1367 „numer w kilku miejscach się nie przenosi” liczy też przeczytany wiersz bez zlecenia (przegląd #1374
-    r3): INTERMAX ma 40000002 jako zlecenie Jana z 8.11 (dzień otwarty od pierwszego kliknięcia 8.11) i drugi raz w 9.11
-    jako Surowe zlecenie na dole albo wiersz bez ``WYKONAWCA``. Raport Jana za 9.11 z tym numerem nie przenosi zlecenia z
-    8.11, bo 9.11 miałby wtedy ten numer dwa razy: INTERMAX zostaje bez zmian, a Jan ma problem z miejscem zlecenia i
-    zdaniem o wierszu bez zlecenia."""
-
     centrum = entering_centrum(tmp_path, intermax)
     _click_at(centrum, datetime(2026, 11, 8, 18), [])
     before = centrum.register.read_bytes()
@@ -2053,13 +1781,6 @@ _EIGHTH_BEFORE_ROLLOUT = {
 def test_zlecenie_sprzed_dnia_wdrozenia_nie_jest_dopisane_a_powod_mowi_o_dniu_sprzed_okna(
     tmp_path: Path, intermax: Intermax, number: int
 ) -> None:
-    """Przegląd #1374 r3 (Drobne 3 i granica dnia wdrożenia): tata klika pierwszy raz 9.11, więc zlecenia czyta od 9.11,
-    a INTERMAX ma pełne zlecenie Jana z 8.11 (z ``WYKONAWCA`` i datą z godziną), także nad dwunastoma zleceniami Anny z
-    8.11. Raport Jana za 9.11 z tym numerem nie dopisuje go drugi raz, bo numery proces czyta też z tygodnia przed
-    pierwszym dniem otwartym, sprzed dnia wdrożenia. Powód mówi, że zlecenie jest w dniu sprzed dni, które Centrum
-    czyta, a nie że wierszowi brakuje ``WYKONAWCA`` albo daty, i nie radzi kliknąć jeszcze raz, bo to nic nie zmieni.
-    Logi mają dzień zlecenia, żeby odtworzenie dało ten sam powód."""
-
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, f"{number} tak montaż")])
     before = centrum.register.read_bytes()
 
@@ -2076,11 +1797,6 @@ def test_zlecenie_sprzed_dnia_wdrozenia_nie_jest_dopisane_a_powod_mowi_o_dniu_sp
 
 
 def test_dopisane_zlecenie_przelozone_przez_tate_na_jutro_zostaje_na_jutro_przy_poprawionym_raporcie(tmp_path: Path) -> None:
-    """Przegląd #1374 r4 Ważne 1 przez HTTP API: dziś 9.11. Raport Jana za 9.11 dopisuje 40000077, a tata przekłada
-    dopisany wiersz na 10.11 10:00. Wieczorem Jan przysyła poprawiony Raport za 9.11 z tym numerem. Zlecenia z dnia po
-    dziś Wpis nie zmienia (ADR 0029), także dopisanego, więc kliknięcie nie zmienia INTERMAX, a tata widzi w okienku
-    Jana odmowę z dniem 10.11."""
-
     centrum = entering_centrum(tmp_path, INTERMAX)
     _click_at(centrum, datetime(2026, 11, 8, 18), [])
     added = report(JAN, SUBJECT, "40000077 tak montaż ONT", at=datetime(2026, 11, 9, 17))
@@ -2106,11 +1822,6 @@ def test_dopisane_zlecenie_przelozone_przez_tate_na_jutro_zostaje_na_jutro_przy_
 def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesienia_ktore_zatrzymuja_reczna_zmiane(
     tmp_path: Path,
 ) -> None:
-    """Kryterium #1347: plik pamięci w wersji 1 (bez Przeniesień) czyta się bez błędu, z dniem wdrożenia i własnym
-    wpisem, który poprawka Jana dalej nadpisuje. Kliknięcie z Przeniesieniem zlecenia Jana do Anny zapisuje wersję 4 z
-    tym Przeniesieniem i z miejscem zlecenia Jana, którego Wpis przyjęło u Jana, z pisownią ``WYKONAWCA`` i chwilą
-    maila, więc gdy tata odda potem zlecenie Janowi w Excelu, następne kliknięcie go nie przenosi."""
-
     intermax = Intermax(
         ordered=(
             _order(9, 9, "jan.testowy", 40000001),
@@ -2141,7 +1852,6 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
     assert _entering(centrum, view)["rollout_before"] == "2026-11-09"
     assert _cells(centrum.register)[40000001] == ("nie", "klient nieobecny"), "własny wpis z pamięci w wersji 1"
     assert saved["schema_version"] == 4
-    # Chwila maila ze strefą komputera (``report`` daje ``astimezone()``): na Macu „+01:00”, na Linuksie CI „Z”.
     jan_since, anna_since = datetime(2026, 11, 9, 17).astimezone(), datetime(2026, 11, 9, 17, 30).astimezone()
     assert [{**move, "since": datetime.fromisoformat(move["since"])} for move in saved["moves"]] == [
         {
@@ -2184,19 +1894,6 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
 def test_plik_pamieci_ze_starszej_wersji_nie_niesie_wpisow_na_inne_zlecenie_numeru_z_reczna_wartoscia_taty(
     tmp_path: Path, day: int, worker: str
 ) -> None:
-    """Przegląd #1367 r4 Ważne 1 i r5 Drobne 1, cel Maksa: Centrum nigdy nie nadpisuje ręcznej wartości taty, także po
-    aktualizacji.
-
-    Plik pamięci zapisało Centrum z Wydania v0.8.0 (wersja 1) przy kliknięciu: 40000001 stał z ręcznym „tak” i opisem taty w drugim zleceniu i u Jana w 9.11, a Raport
-    Jana za 9.11 wpisał się do jego zlecenia, więc plik ma wpisy Jana przy numerze w dwóch zleceniach. Drugie zlecenie
-    różni się od Jana 9.11 dniem i Wykonawcą (Anna 8.11), samym Wykonawcą (Anna 9.11) albo samym dniem (Jan 8.11), a
-    kod v0.8.0 zapisuje dla każdego z nich ten sam plik (przegląd #1367 r5 porównał oba nowe miejsca z fixture'em).
-    Po aktualizacji, przed pierwszym kliknięciem, tata usuwa wiersz Jana 9.11 (duplikat). Raport właściciela drugiego zlecenia za jego dzień
-    „nie” nie zmienia jego komórek: wpis ze starszego pliku należy do miejsca z chwili zapisu (numer, dzień i Wykonawca
-    naraz) i nie przechodzi na wiersz, który zgadza się z nim tylko dniem albo tylko Wykonawcą, więc obie komórki są
-    ręczne i zostają z różnicą. Logi mają pamięć, z którą liczyło kliknięcie, a plik pamięci ma potem wersję 4 bez tych
-    wpisów."""
-
     intermax = Intermax(
         ordered=(
             Order(
@@ -2236,8 +1933,6 @@ def test_plik_pamieci_ze_starszej_wersji_nie_niesie_wpisow_na_inne_zlecenie_nume
     assert (after["schema_version"], after["own"]) == (4, [])
 
 def test_bez_folderu_okresow_w_ustawieniach_karta_mowi_co_wskazac_a_start_jest_odrzucony(tmp_path: Path) -> None:
-    """Bez folderu okresów kliknięcie nie wie, które okresy mają Plik zbiorczy, więc nie startuje i nie czyta skrzynki."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")], periods=False)
 
     setup = centrum.setup()
@@ -2271,9 +1966,6 @@ def test_folder_okresow_ktorego_juz_nie_ma_zatrzymuje_klikniecie_dla_taty_bez_od
 def test_folder_okresu_bez_dostepu_zatrzymuje_klikniecie_dla_taty_bez_odczytu_skrzynki(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
 ) -> None:
-    """Bez dostępu do Folderu okresu (OneDrive nie działa) narzędzie nie wie, czy okres ma Plik zbiorczy: Zatrzymanie,
-    zanim proces przeczyta skrzynkę, zamiast wpisu do okresu, który może być zamknięty."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     folder = centrum.periods_directory / MONDAY_PERIOD
     folder.mkdir()
@@ -2293,8 +1985,6 @@ def test_folder_okresu_bez_dostepu_zatrzymuje_klikniecie_dla_taty_bez_odczytu_sk
     assert centrum.register.read_bytes() == before
 
 
-# --- Widok Raporty i „Zostaw moją” (#1231) ------------------------------------------------------------------------------
-
 STRANGER = "obcy@przyklad.invalid"
 
 
@@ -2305,16 +1995,11 @@ def _view(centrum: EnteringCentrum) -> dict[str, Any]:
 
 
 def _faulty_subject(problem: dict[str, Any]) -> tuple[str, str, str | None, datetime]:
-    """Temat, rodzaj błędu, dzień, za który Centrum liczy raport, i chwila przyjścia raportu z błędem tematu z problemu
-    widoku."""
-
     found = problem["faulty_subject"]
     return found["subject"], found["fault"], found["day"], datetime.fromisoformat(found["arrived"])
 
 
 def _worker(view: dict[str, Any], login: str, day: str = "2026-11-09") -> dict[str, Any]:
-    """Dzień ``day`` Wykonawcy ``login`` z widoku Raporty."""
-
     [found] = [shown for worker in view["workers"] if worker["worker"] == login for shown in worker["days"] if shown["day"] == day]
     return dict(found)
 
@@ -2324,18 +2009,12 @@ def _days(view: dict[str, Any]) -> list[str]:
 
 
 def _workers_of(view: dict[str, Any], day: str) -> list[str]:
-    """Wykonawcy, którzy mają w widoku Raporty dzień ``day``."""
-
     return [worker["worker"] for worker in view["workers"] if day in {shown["day"] for shown in worker["days"]}]
 
 
 def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlecenia_bez_raportu_bez_odczytu_skrzynki(
     tmp_path: Path,
 ) -> None:
-    """US 52–56: po kliknięciu widok Raporty ma przy każdym Wykonawcy dnia jego zlecenia, wpisane, Raporty wykonawcy i
-    problemy z powodem i numerem zlecenia, oraz zlecenia bez żadnego Wpisu; Raport z adresu spoza listy stoi osobno z
-    adresem, którego Logi nie mają. Widok czyta wynik z pliku, a nie skrzynkę."""
-
     intermax = Intermax(
         ordered=(
             _order(9, 9, "jan.testowy", 40000001),
@@ -2452,11 +2131,6 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
 
 
 def test_zlecenia_dnia_w_widoku_raporty_zgadzaja_sie_z_intermax_po_kliknieciu_takze_przy_zostaw_moja(tmp_path: Path) -> None:
-    """#1322: przy każdym dniu Wykonawcy widok Raporty ma jego zlecenia w kolejności wierszy INTERMAX, z ``SKUTECZNE`` i
-    ``CZYNNOŚCI ZREALIZOWANE`` takimi, jakie INTERMAX ma po kliknięciu, także z ręczną wartością taty, i stan: wpisane z
-    Wpisu, bez raportu albo problem. Po „Zostaw moją” zlecenie z ręczną wartością jest wpisane, a INTERMAX bez zmian.
-    Ręczny opis taty przy zleceniu bez raportu widok też pokazuje."""
-
     intermax = Intermax(
         ordered=(
             _order(9, 9, "jan.testowy", 40000006),
@@ -2497,10 +2171,6 @@ def test_zlecenia_dnia_w_widoku_raporty_zgadzaja_sie_z_intermax_po_kliknieciu_ta
 
 
 def test_plik_wyniku_sprzed_zlecen_dnia_czyta_sie_z_liczbami_bez_zlecen_az_do_nastepnego_klikniecia(tmp_path: Path) -> None:
-    """#1322: plik wyniku w wersji 1, zapisany przez Centrum sprzed listy zleceń, leży u taty w ``config``. Widok Raporty
-    czyta go bez błędu: liczby, problemy i nieznany nadawca jak w pliku, a ``orders_detail`` jest ``null`` przy każdym
-    dniu; „Zostaw moją” przy jego różnicy działa. Następne kliknięcie zapisuje wynik ze zleceniami dnia."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     old = ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v1.json"
     shutil.copyfile(old, centrum.tool.config / REPORT_ENTERING_RESULT)
@@ -2530,9 +2200,6 @@ def test_plik_wyniku_sprzed_zlecen_dnia_czyta_sie_z_liczbami_bez_zlecen_az_do_na
 
 
 def test_plik_wyniku_sprzed_zlecen_dnia_daje_null_takze_przy_dniu_z_samym_problemem(tmp_path: Path) -> None:
-    """#1322: w pliku wyniku w wersji 1 Wykonawca może mieć dzień z samym problemem, bez liczb. Widok Raporty daje przy
-    nim zera i ``orders_detail`` ``null`` jak przy innych dniach tego pliku, bo wersja 1 nie zapisywała zleceń dnia."""
-
     centrum = entering_centrum(tmp_path, INTERMAX)
     old = json.loads((ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v1.json").read_text(encoding="utf-8"))
     old["problems"].append(
@@ -2578,7 +2245,7 @@ def test_plik_wyniku_sprzed_kodow_przyciskow_i_dni_z_tematu_czyta_sie_bez_nich(t
     assert orders
     assert {(tuple(order["codes"]), order["no_code"], order["request"]) for order in orders} == {((), False, None)}
     assert {(tuple(day["mistaken_subjects"]), tuple(day["overtaken_subjects"])) for day in days} == {((), ())}
-    assert {(problem["request"], problem["faulty_subject"]) for day in days for problem in day["problems"]} <= {(None, None)}
+    assert {(problem["request"], problem["faulty_subject"]) for day in days for problem in day["problems"]} == {(None, None)}
 
 
 def test_widok_raporty_przy_liscie_wykonawcow_bez_odczytu_pokazuje_wynik_klikniecia_z_nieznanym_nadawca_bez_loginu(
@@ -2619,9 +2286,6 @@ def test_widok_raporty_ma_wykonawcow_alfabetycznie_a_przypomnienie_za_dzien_spoz
 
 
 def test_widok_raporty_na_przelomie_roku_daje_swieta_z_obu_lat(tmp_path: Path) -> None:
-    """#1322: okno od Wigilii 2026, dnia wdrożenia, do soboty 2.01.2027 ma przy każdym dniu święto z jego własnego
-    roku, więc 24–26.12.2026 i 1.01.2027 mają nazwy, choć okno kończy się w innym roku niż zaczyna."""
-
     centrum = entering_centrum(tmp_path, INTERMAX)
     _click_at(centrum, datetime(2026, 12, 24, 18), [])
     _click_at(centrum, datetime(2027, 1, 2, 8), [])
@@ -2643,10 +2307,6 @@ def test_widok_raporty_na_przelomie_roku_daje_swieta_z_obu_lat(tmp_path: Path) -
 
 
 def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlecen_i_raportow(tmp_path: Path) -> None:
-    """US 55 i ADR 0041 (historia 20): Anna nie ma zleceń, a jej mail z 9.11 ma temat bez daty, więc Centrum nie liczy
-    go za żaden dzień i jest problemem bez dnia. Widok Raporty pokazuje ją przy dniu przyjścia maila z zerami i tym
-    problemem z tematem bez dnia, zamiast zgubić problem razem z nią."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001),), raw=())
     mail = report(ANNA, "Raport bez daty", "40000002 tak montaż")
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000001 tak wymiana"), mail])
@@ -2688,15 +2348,6 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
 
 
 def test_raport_z_bledem_tematu_stoi_przy_wskazanym_dniu_z_tematem_po_straznika_rodzajem_bledu_i_tym_dniem(tmp_path: Path) -> None:
-    """ADR 0041 (historie 3, 5, 19–20, 40, 42; zmienia zdanie ADR 0028 o przeglądarce): raport z błędem tematu jest
-    przysłany. Jan pisze w temacie nazwisko, adres klienta i telefon, Anna sam ``Raport``. Odpowiedź HTTP widoku Raporty
-    ma przy dniu każdego z nich Raport wykonawcy i problem z tematem po strażniku reguły danych (wartość ``ADRES`` i
-    telefon zamaskowane, nazwisko zostaje, bo tata widzi, co pracownik napisał), rodzajem błędu, dniem, za który Centrum
-    go liczy (dla Jana dzień z tematu, dla Anny jej ostatni dzień ze zleceniami, 8.11, choć mail przyszedł 9.11), i
-    chwilą przyjścia maila. Zlecenia z Wpisami takiego raportu nie są bez raportu: mają stan ``faulty_subject``, a linia
-    Wykonawcy nie liczy ich do bez raportu, tylko drugie zlecenie Jana, którego raport nie ma. Wpisów takiego raportu
-    Centrum nie wpisuje, a temat nie trafia do Logów."""
-
     client = "Testowa 12 m. 3 Wrocław"
     jan_order = Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001), (ADDRESS, client)))
     ordered = (jan_order, _order(9, 12, "jan.testowy", 40000003), _order(8, 11, "anna.kowalska", 40000002))
@@ -2729,9 +2380,6 @@ def test_raport_z_bledem_tematu_stoi_przy_wskazanym_dniu_z_tematem_po_straznika_
 
 
 def test_raport_z_pomylonym_tematem_stoi_przy_dniu_swoich_zlecen_jako_informacja_z_dniem_z_tematu(tmp_path: Path) -> None:
-    """ADR 0041 (historia 41) i ADR 0029: ``Raport 10.11.2026`` z dwoma numerami zleceń Jana z 9.11 to pomylony temat.
-    Wpisy idą do zleceń z 9.11, a przy tym dniu widok Raporty ma informację z dniem z tematu, bez problemu."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)), raw=())
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000005 tak spawpg")])
     _finished(centrum)
@@ -2742,10 +2390,6 @@ def test_raport_z_pomylonym_tematem_stoi_przy_dniu_swoich_zlecen_jako_informacja
 
 
 def test_widok_raporty_ma_cale_okno_od_dnia_wdrozenia_do_dzis_tylko_z_otwartych_okresow(tmp_path: Path) -> None:
-    """US 53, #1322: we wtorek widok Raporty ma dni od poniedziałku, dnia wdrożenia, do dziś, także przed pierwszym
-    kliknięciem tego dnia, a przy poniedziałku Wykonawców z Raportami z ostatniego kliknięcia. Gdy okres poniedziałku
-    dostanie Plik zbiorczy, następne kliknięcie nie daje już jego dni."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     _finished(centrum)
     _next_morning(centrum)
@@ -2775,10 +2419,6 @@ def test_widok_raporty_ma_cale_okno_od_dnia_wdrozenia_do_dzis_tylko_z_otwartych_
 
 
 def test_widok_raporty_nie_daje_dni_okresu_z_plikiem_zbiorczym_miedzy_otwartymi_okresami(tmp_path: Path) -> None:
-    """ADR 0028: okno dni od dnia wdrożenia 9.11 do środy 18.11 nie ma dni okresu 10_16_11_2026, gdy ten ma Plik
-    zbiorczy, choć okres dnia wdrożenia dalej jest otwarty: widok Raporty daje poniedziałek 9.11, wtorek 17.11 i
-    dziś."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     _finished(centrum)
     folder = centrum.periods_directory / "10_16_11_2026"
@@ -2791,9 +2431,6 @@ def test_widok_raporty_nie_daje_dni_okresu_z_plikiem_zbiorczym_miedzy_otwartymi_
 
 
 def test_udane_klikniecie_bez_problemow_nie_daje_powiadomienia(tmp_path: Path) -> None:
-    """US 57: kliknięcie, które wpisało Raport bez problemów, zmienia tylko stan na ekranie: wynik proponuje „Otwórz
-    Raporty”, a pod dzwonkiem nie ma nic nowego."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     before = centrum.client.get("/api/notifications").json()
 
@@ -2811,10 +2448,6 @@ def test_udane_klikniecie_bez_problemow_nie_daje_powiadomienia(tmp_path: Path) -
 def test_zostaw_moja_zapisuje_decyzje_poza_intermax_a_roznica_nie_wraca_dopoki_wykonawca_nie_przysle_innej_tresci(
     tmp_path: Path,
 ) -> None:
-    """US 38–39 i 58: przy różnicy Wpisu z ręcznymi czynnościami taty „Zostaw moją” zapisuje decyzję w pliku decyzji,
-    INTERMAX zostaje bajt w bajt, a różnica znika z widoku od razu i nie wraca przy następnym kliknięciu, które ma
-    decyzję w Logach. Poprawka Wykonawcy z inną treścią pokazuje różnicę znowu, a ręczna wartość dalej zostaje."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     first = _finished(centrum)
@@ -2859,10 +2492,6 @@ def test_zostaw_moja_zapisuje_decyzje_poza_intermax_a_roznica_nie_wraca_dopoki_w
 
 
 def test_logi_klikniecia_maja_decyzje_zostaw_moja_tylko_przy_zleceniach_z_wpisem_w_tym_kliknieciu(tmp_path: Path) -> None:
-    """Logi niosą decyzje „Zostaw moją” tak jak pamięć własnych wpisów: tylko zleceń z Wpisem w tym kliknięciu. Gdy
-    Raportu Jana nie ma już w skrzynce, Logi kliknięcia z samym Raportem Anny nie mają decyzji przy zleceniu Jana, bo
-    odtworzenie Logów z decyzją bez Wpisu kończy się granicą."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     _finished(centrum)
@@ -2876,9 +2505,6 @@ def test_logi_klikniecia_maja_decyzje_zostaw_moja_tylko_przy_zleceniach_z_wpisem
 
 
 def test_zostaw_moja_przy_roznicy_spoza_ostatniego_klikniecia_jest_odrzucone_bez_zapisu_decyzji(tmp_path: Path) -> None:
-    """„Zostaw moją” tylko przy różnicy z wyniku ostatniego kliknięcia: inna treść Wpisu (widok sprzed nowszego
-    kliknięcia) dostaje odmowę, a plik decyzji nie powstaje."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     _finished(centrum)
@@ -2896,10 +2522,6 @@ def test_zostaw_moja_przy_roznicy_spoza_ostatniego_klikniecia_jest_odrzucone_bez
 
 @pytest.mark.parametrize("broken", [REPORT_ENTERING_RESULT, REPORT_ENTERING_DECISIONS])
 def test_nieczytelny_plik_wyniku_albo_decyzji_daje_odmowe_widoku_i_zostaw_moja_bez_zapisu(tmp_path: Path, broken: str) -> None:
-    """Pliku wyniku albo decyzji, którego nie da się odczytać, widok Raporty nie udaje pustym: odczyt i „Zostaw moją”
-    dostają odmowę z tym samym zdaniem, a plik decyzji zostaje bajt w bajt, bo zapis bez dawnych decyzji przywróciłby
-    ich różnice."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     _finished(centrum)
@@ -2922,18 +2544,11 @@ def test_nieczytelny_plik_wyniku_albo_decyzji_daje_odmowe_widoku_i_zostaw_moja_b
     assert (decisions.read_bytes() if decisions.exists() else None) == before
 
 
-# --- Wpis na życzenie (ADR 0041, spec #2032 US 45–53) ----------------------------------------------------------------
-
-
 def _requests(centrum: EnteringCentrum, login: str, day: str = "2026-11-09") -> dict[str, Any]:
-    """Wpis na życzenie przy każdym problemie dnia ``day`` Wykonawcy ``login`` w widoku Raporty, po numerze."""
-
     return {problem["number"]: problem["request"] for problem in _worker(_view(centrum), login, day)["problems"]}
 
 
 def _enter_on_request(centrum: EnteringCentrum, offer: dict[str, Any], at: datetime) -> dict[str, Any]:
-    """Tata klika Wpis na życzenie ``offer`` w chwili ``at``; widok Uruchomienia, które to kliknięcie startuje."""
-
     centrum.moment.append(at)
     started = centrum.client.post("/api/report-entering/request", json=offer)
     assert started.status_code == 200, started.json()
@@ -2949,11 +2564,6 @@ def _without_moment(decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def test_wpis_na_zyczenie_przy_t_wpisuje_tak_z_czynnosciami_a_blad_nie_wraca_przy_nastepnym_kliknieciu(
     tmp_path: Path,
 ) -> None:
-    """US 45–48 i 52: przy Wpisie z ``t`` i z ``nieskuteczne`` zamiast ``tak``/``nie`` widok Raporty ma Wpis na życzenie
-    z tym, co się wpisze (dzień, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE``). Kliknięcie przy Wpisie Jana wpisuje jednym
-    Uruchomieniem ``tak`` i czynności jak każdy Wpis, a Wpis Anny zostaje problemem. Logi mają decyzję taty, a
-    następne kliknięcie „Wpisz raporty z maili” nie przywraca błędu Jana."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
     mails = [
         report(JAN, SUBJECT, "40000001 t inst20m rt2", at=datetime(2026, 11, 9, 17)),
@@ -3003,10 +2613,6 @@ def test_wpis_na_zyczenie_przy_t_wpisuje_tak_z_czynnosciami_a_blad_nie_wraca_prz
 
 
 def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_a_reczna_wartosc_taty_zostaje(tmp_path: Path) -> None:
-    """US 49–50: późniejszy Raport Jana wygrywa z Wpisem na życzenie także wtedy, gdy znowu ma ``t``: błąd wraca z
-    przyciskiem, a drugie kliknięcie znowu go wpisuje. Poprawny Raport z 20:00 wygrywa z oboma. Przy zleceniu z ręcznymi czynnościami taty Wpis na życzenie wpisuje ``nie`` do pustego
-    ``SKUTECZNE``, a czynności taty zostają z różnicą „Zostaw moją”."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)), raw=())
     first = report(JAN, SUBJECT, "40000001 t inst20m\n40000005 n brak dostępu", at=datetime(2026, 11, 9, 17))
     centrum = entering_centrum(tmp_path, intermax, [first])
@@ -3035,9 +2641,6 @@ def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_a_reczna_wartosc_taty_zo
 def test_wpis_na_zyczenie_wpisuje_sie_takze_gdy_zegar_komputera_taty_jest_wczesniej_niz_chwila_maila(
     tmp_path: Path,
 ) -> None:
-    """Decyzja taty należy do maila, przy którym kliknął, a nie do chwili: zegar komputera taty, który stoi przed
-    chwilą przyjścia maila, nie zostawia błędu w kafelku."""
-
     mail = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 17))
     centrum = entering_centrum(tmp_path, INTERMAX, [mail])
     _click_at(centrum, datetime(2026, 11, 9, 18), [mail])
@@ -3048,18 +2651,12 @@ def test_wpis_na_zyczenie_wpisuje_sie_takze_gdy_zegar_komputera_taty_jest_wczesn
 
 
 def _offered_problems(centrum: EnteringCentrum) -> list[tuple[str | None, bool]]:
-    """Numer i przycisk Wpisu na życzenie każdego problemu Jana z 9.11 w widoku Raporty."""
-
     return [(problem["number"], problem["request"] is not None) for problem in _worker(_view(centrum), "jan.testowy")["problems"]]
 
 
 def test_wpisu_na_zyczenie_nie_ma_przy_przeciwnych_wpisach_numerze_bez_zlecenia_i_numerze_w_kilku_miejscach(
     tmp_path: Path,
 ) -> None:
-    """US 51: przycisku nie ma, gdy Centrum nie wie, co wpisać: przy ``t`` i ``nie`` jednego zlecenia, przy ``t`` z
-    numerem, którego INTERMAX nie ma, przy numerze w kilku zleceniach INTERMAX bez zlecenia Jana i przy Wpisie bez
-    żadnego znaku; jest tylko przy ``skuteczne``."""
-
     intermax = Intermax(
         ordered=(
             _order(9, 9, "jan.testowy", 40000001),
@@ -3096,10 +2693,6 @@ def test_wpisu_na_zyczenie_nie_ma_przy_przeciwnych_wpisach_numerze_bez_zlecenia_
 def test_wpis_na_zyczenie_odmawia_jednym_zdaniem_przy_intermax_w_excelu_w_trakcie_innego_uruchomienia_i_po_zmianie_wpisu(
     tmp_path: Path,
 ) -> None:
-    """US 53: przy INTERMAX otwartym w Excelu, w trakcie innego Uruchomienia i przy Wpisie, którego nie ma w ostatnim
-    kliknięciu (także przed pierwszym kliknięciem), Wpis na życzenie odmawia jednym zdaniem, nie startuje Uruchomienia
-    i niczego nie zapisuje."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 t inst20m")])
     _finished(centrum)
     offer = _requests(centrum, "jan.testowy")["40000001"]
@@ -3132,12 +2725,6 @@ def test_wpis_na_zyczenie_odmawia_jednym_zdaniem_przy_intermax_w_excelu_w_trakci
 def test_wpis_na_zyczenie_z_widoku_sprzed_nowszego_klikniecia_odmawia_a_przycisk_nowszego_wpisuje_wpis_pozniejszego_maila(
     tmp_path: Path,
 ) -> None:
-    """US 49 i 53: późniejszy mail Jana z tym samym ``t`` przy tym samym zleceniu wygrywa, więc nowsze kliknięcie daje
-    nowy przycisk, który różni się od dawnego tylko mailem. Przycisk z widoku sprzed nowszego kliknięcia jest
-    nieaktualny: odmawia jednym zdaniem, nie startuje Uruchomienia i niczego nie zapisuje, a przycisk nowszego kliknięcia
-    wpisuje Wpis późniejszego maila z decyzją przy tym mailu. Tak samo odmawia przycisk nowszego kliknięcia z innym
-    dniem zlecenia po Wpisie, niż ma ten przycisk w wyniku, bo tata kliknąłby co innego, niż widział."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001),), raw=())
     first = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 17))
     later = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 18), message_id="<drugi@przyklad.invalid>")
@@ -3161,9 +2748,6 @@ def test_wpis_na_zyczenie_z_widoku_sprzed_nowszego_klikniecia_odmawia_a_przycisk
 
 
 def test_wpis_na_zyczenie_przy_nieczytelnym_pliku_wyniku_odmawia_bez_uruchomienia(tmp_path: Path) -> None:
-    """Pliku wyniku, którego nie da się odczytać, Wpis na życzenie nie bierze za wynik bez tego Wpisu: odmawia tym samym
-    zdaniem co widok Raporty i nie startuje Uruchomienia."""
-
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 t inst20m")])
     _finished(centrum)
     offer = _requests(centrum, "jan.testowy")["40000001"]
@@ -3181,8 +2765,6 @@ def test_wpis_na_zyczenie_przy_nieczytelnym_pliku_wyniku_odmawia_bez_uruchomieni
 
 
 def _order_requests(centrum: EnteringCentrum, login: str, day: str = "2026-11-09") -> dict[str, Any]:
-    """Stan i Wpis na życzenie każdego zlecenia dnia ``day`` Wykonawcy ``login`` w widoku Raporty, po numerze."""
-
     return {
         order["number"]: (order["state"], order["request"])
         for order in _worker(_view(centrum), login, day)["orders_detail"]
@@ -3192,13 +2774,6 @@ def _order_requests(centrum: EnteringCentrum, login: str, day: str = "2026-11-09
 def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_wpis_do_dnia_z_tematu_i_do_wskazanego_dnia(
     tmp_path: Path,
 ) -> None:
-    """US 44, 46, 48 i 52: przy każdym zleceniu raportu ``Raport 09.11.2026 Kowalski`` (stan „Błąd tematu”) widok
-    Raporty ma Wpis na życzenie z dniem z tematu, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE``, także przy Wpisie z ``t``
-    (wpisze ``tak``), a przy raporcie Anny ``Raport`` bez dnia z dniem, który Centrum wskazuje (8.11). Kliknięcie
-    wpisuje jednym Uruchomieniem tylko ten Wpis; błąd tematu Jana stoi, dopóki tata nie wpisze obu jego Wpisów, a
-    potem znika i nie wraca przy następnym kliknięciu „Wpisz raporty z maili”. Logi mają każdą decyzję taty. Chwila
-    przyjścia raportu z błędem tematu idzie w UTC (``Z``), jak każda chwila kontraktu, bo stronę Raporty odrzuca inną."""
-
     ordered = (
         _order(9, 9, "jan.testowy", 40000001),
         _order(9, 10, "jan.testowy", 40000003),
@@ -3237,7 +2812,7 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_wpis_do_dnia_z_t
         shown = _worker(_view(centrum), login, day)
         assert (shown["problems"], {order["state"] for order in shown["orders_detail"]}) == ([], {"entered"}), shown
     assert [decision["number"] for decision in _entering(centrum, first)["requested"]] == ["40000001"]
-    assert faulty_arrived.endswith("Z"), faulty_arrived
+    assert faulty_arrived.endswith("Z"), f"chwila kontraktu w UTC, bo z.iso.datetime() strony Raporty odrzuca inną: {faulty_arrived}"
     assert _without_moment(_entering(centrum, second)["requested"]) == [
         {"mail": mails[0].id.digest, "worker": "jan.testowy", "day": "2026-11-09", "number": number, "verdict": "tak", "activities": activities}
         for number, activities in (("40000001", "inst20m"), ("40000003", "spawpg"))
@@ -3256,13 +2831,6 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_wpis_do_dnia_z_t
 def test_dzien_ze_zleceniem_z_wpisem_na_zyczenie_nie_jest_komplet_a_blad_tematu_nadawcy_ma_jego_przycisk(
     tmp_path: Path, sender: str, subject: str, numbers: list[str], place: tuple[str, str]
 ) -> None:
-    """Historie 42 i 44 speca #2032 przy każdym rodzaju Wpisu na życzenie raportu z błędem tematu: własne zlecenie
-    nadawcy, Przeniesienie do nadawcy (Anna raportuje zlecenie Jana obok swojego) i Przeniesienie na dzień z tematu (Jan
-    raportuje 10.11 zlecenie z 9.11). Problem raportu z błędem tematu w dniu, za który Centrum go liczy, ma przy numerze
-    każdego zlecenia raportu ten sam Wpis na życzenie co to zlecenie, więc tata klika tam, gdzie widzi błąd. Dzień
-    Wykonawcy, w którym takie zlecenie stoi, ma ten problem z Wpisami swoich zleceń, więc strona nie pokaże go jako
-    Komplet ani nie schowa filtrem „Problem”."""
-
     ordered = (_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002), _order(10, 9, "jan.testowy", 40000003))
     faulty = report(sender, subject, "\n".join(f"{number} tak inst20m" for number in numbers))
     centrum = entering_centrum(tmp_path, Intermax(ordered=ordered, raw=()))
@@ -3279,8 +2847,6 @@ def test_dzien_ze_zleceniem_z_wpisem_na_zyczenie_nie_jest_komplet_a_blad_tematu_
     holders = {(offer["worker"], offer["day"]) for offer in offers.values()}
 
     def faults(where: tuple[str, str]) -> list[list[dict[str, Any]]]:
-        """Wpisy na życzenie każdego problemu raportu z błędem tematu dnia ``where``, po numerze zlecenia."""
-
         return [
             sorted(problem["faulty_subject"]["offers"], key=lambda offer: str(offer["request"]["number"]))
             for problem in _worker(view, *where)["problems"]
@@ -3315,13 +2881,6 @@ TAKEN_OVER = (
 def test_blad_tematu_ktorego_kazde_zlecenie_wzial_pozniejszy_raport_innego_wykonawcy_jest_informacja_a_nie_problemem(
     tmp_path: Path, subject: str, text: str, anna_problems: list[str | None]
 ) -> None:
-    """ADR 0041: Jan przysyła ``Raport 09.11.2026 Kowalski`` z telefonem i z jedynym zleceniem Anny z 9.11, a później
-    Anna przysyła swój raport z tym zleceniem, więc o zleceniu decyduje jej Wpis. Błąd tematu Jana nie ma już czego
-    wpisać: dzień Jana nie ma problemu, tylko jedno zdanie informacji z tematem po strażniku reguły danych, a raport dalej liczy się za 9.11, także przy następnym kliknięciu,
-    gdy pamięć wpisów po Wpisie Anny nie pozwala już starszemu mailowi Jana ruszyć zlecenia. Dzień Anny jest jak dziś:
-    po poprawnym raporcie zlecenie wpisane, po raporcie z błędem tematu i po Wpisie z ``t``, którego Centrum nie wpisało,
-    jej problem z Wpisem na życzenie."""
-
     intermax = Intermax(ordered=(_order(9, 11, "anna.kowalska", 40000002),), raw=())
     mails = [
         report(JAN, "Raport 09.11.2026 Kowalski tel. 600 123 456", "40000002 tak inst20m", at=datetime(2026, 11, 9, 17)),
@@ -3344,11 +2903,6 @@ def test_blad_tematu_ktorego_kazde_zlecenie_wzial_pozniejszy_raport_innego_wykon
 def test_blad_tematu_z_jednym_zleceniem_wzietym_przez_pozniejszy_raport_zostaje_problemem_z_przyciskiem_drugiego(
     tmp_path: Path,
 ) -> None:
-    """ADR 0041: raport Jana z błędem tematu ma swoje zlecenie i zlecenie Anny, które później bierze raport Anny. Jego
-    własne zlecenie dalej czeka na decyzję taty, więc błąd tematu zostaje problemem dnia Jana z jednym Wpisem na życzenie
-    (przy jego zleceniu), bez informacji; dzień Anny nie ma problemu. Po kliknięciu tego Wpisu raport nie ma już czego
-    wpisać, więc błąd tematu znika, a informacji też nie ma, bo jedno jego zlecenie wpisał tata."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
     mails = [
         report(JAN, "Raport 09.11.2026 Kowalski", "40000001 tak inst20m\n40000002 tak inst20m", at=datetime(2026, 11, 9, 17)),
@@ -3373,12 +2927,6 @@ def test_blad_tematu_z_jednym_zleceniem_wzietym_przez_pozniejszy_raport_zostaje_
 
 
 def test_wpisy_na_zyczenie_dwoch_wykonawcow_z_tym_samym_message_id_wpisuja_kazdy_swoj_wpis(tmp_path: Path) -> None:
-    """Message-ID ustawia nadawca, więc mail Jana i mail Anny mogą mieć ten sam skrót. Jan przysyła Wpis z ``t`` do
-    swojego zlecenia, a później Anna raport z błędem tematu z tym samym Message-ID i Wpisem ``tak`` z tymi samymi
-    czynnościami do tego zlecenia: przy problemie Jana stoi jego Wpis na życzenie, a przy zleceniu Wpis Anny, który
-    przeniesie je do niej. Przyciski różnią się tylko Wykonawcą, a kliknięcie każdego wpisuje jego Wpis: Jana w
-    zleceniu u Jana, Anny z Przeniesieniem zlecenia do Anny."""
-
     def intermax() -> Intermax:
         return Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
 
@@ -3430,12 +2978,6 @@ def test_widok_raporty_stawia_blad_tematu_przy_jego_nadawcy_z_jego_wpisami_na_zy
 
 
 def _v0_14_0_click() -> tuple[Intermax, list[ReportMail]]:
-    """INTERMAX i maile kliknięcia, po którym Centrum z Wydania v0.14.0 zapisało pliki
-    ``tests/fixtures/wpisanie-raportow-wynik-v3-oferty.json`` i ``tests/fixtures/wpisanie-raportow-stan-v4-requested.json``
-    (swoim kodem, w worktree na tagu ``v0.14.0``): Anna przysyła ``Raport 09.11.2026 Nowak`` (błąd tematu) ze zleceniem
-    Jana (Przeniesienie do Anny) i swoim, a Jan Wpis z ``t``. Plik wyniku zapisało pierwsze kliknięcie, a plik pamięci
-    Wpisy na życzenie Jana przy problemie i Anny przy jej zleceniu, każdy swoim Uruchomieniem."""
-
     intermax = Intermax(
         ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000003), _order(9, 11, "anna.kowalska", 40000002)),
         raw=(),
@@ -3448,9 +2990,6 @@ def _v0_14_0_click() -> tuple[Intermax, list[ReportMail]]:
 
 
 def _buttons(view: dict[str, Any]) -> list[tuple[str, str, str, dict[str, Any]]]:
-    """Każdy przycisk Wpisu na życzenie widoku Raporty: Wykonawca i dzień kafelka, miejsce (zlecenie, problem albo raport
-    z błędem tematu z kafelkiem zlecenia) i cała komórka ``request``, po kolei widoku."""
-
     found: list[tuple[str, str, str, dict[str, Any]]] = []
     for worker in view["workers"]:
         for day in worker["days"]:
@@ -3477,12 +3016,6 @@ def _buttons(view: dict[str, Any]) -> list[tuple[str, str, str, dict[str, Any]]]
 def test_plik_wyniku_z_wpisami_na_zyczenie_z_wydania_v0_14_0_daje_te_same_przyciski_a_klikniecie_wpisuje_wpis(
     tmp_path: Path, button: tuple[str, str], written: dict[int, tuple[str, str]], worker: str
 ) -> None:
-    """ADR 0041: plik wyniku z Wpisami na życzenie, który zapisało Centrum z Wydania v0.14.0 (wersja 3: przy zleceniu
-    Wpis bez dnia i numeru, przy problemie cały), leży u taty w ``config`` po aktualizacji. Widok Raporty daje z niego
-    te same przyciski co v0.14.0, z całą komórką ``request`` przy zleceniach, przy problemie i przy raporcie z błędem
-    tematu, a kliknięcie przycisku z tego pliku startuje Wpisanie raportów, które wpisuje ten Wpis, przy zleceniu Jana
-    z Przeniesieniem do Anny."""
-
     intermax, mails = _v0_14_0_click()
     centrum = entering_centrum(tmp_path, intermax, mails)
     shutil.copyfile(ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v3-oferty.json", centrum.tool.config / REPORT_ENTERING_RESULT)
@@ -3508,13 +3041,6 @@ def test_plik_wyniku_z_wpisami_na_zyczenie_z_wydania_v0_14_0_daje_te_same_przyci
 
 
 def test_plik_pamieci_z_decyzjami_wpisu_na_zyczenie_z_wydania_v0_14_0_wpisuje_je_przy_nastepnym_kliknieciu(tmp_path: Path) -> None:
-    """ADR 0041: plik pamięci w wersji 4 z decyzjami taty Wpisu na życzenie (``requested``), który zapisało Centrum z
-    Wydania v0.14.0 po Wpisie Jana z ``t`` przy problemie i Wpisie Anny z raportu z błędem tematu przy jej zleceniu,
-    leży u taty w ``config`` po aktualizacji, a INTERMAX nie ma tych Wpisów. Następne „Wpisz raporty z maili” wpisuje
-    oba z decyzji z pliku, jak Wpisy z ``tak``: problem Jana i przycisk przy zleceniu Anny nie wracają, Logi mają obie
-    decyzje, a plik pamięci zachowuje je bez zmian. Wpis Anny do zlecenia Jana, przy którym tata nie kliknął, zostaje
-    z przyciskiem."""
-
     intermax, mails = _v0_14_0_click()
     centrum = entering_centrum(tmp_path, intermax, mails)
     saved = ROOT / "tests" / "fixtures" / "wpisanie-raportow-stan-v4-requested.json"
@@ -3546,12 +3072,9 @@ def test_plik_pamieci_w_wersji_4_sprzed_wpisu_na_zyczenie_czyta_sie_bez_decyzji_
     assert json.loads(_state(centrum).read_text(encoding="utf-8"))["requested"] == []
 
 
-# --- Przypomnienia o raporcie: praca Centrum co minutę (ADR 0030, #1349) -----------------------------------------------
-
 SKRZYNKA = "raporty.taty@przyklad.invalid"
 HASLO = "abcdefghijklmnop"
 ANNA = SENDERS["anna.kowalska"]
-# Wtorek rano po dniu zleceń 9.11.2026: pora poranna, pierwsze przypomnienie za 9.11 (US 32).
 REMINDER_MORNING = datetime(2026, 11, 10, 8, 30)
 
 
@@ -3566,8 +3089,6 @@ def _report_in_inbox(uid: int, sender: str, subject: str, at: datetime) -> Atrap
 
 
 def _reminders_form(**changes: object) -> dict[str, object]:
-    """Formularz sekcji Przypomnienia z wartościami domyślnymi z ADR 0030 i zmianami ``changes``."""
-
     form: dict[str, object] = {
         "morning": {"start": "08:00", "end": "17:00"},
         "evening": {"start": "18:00", "end": "22:00"},
@@ -3579,9 +3100,6 @@ def _reminders_form(**changes: object) -> dict[str, object]:
 
 
 def _reminders_set_up(centrum: EnteringCentrum, *, footer: str = "Pozdrawiam\nTata\n") -> None:
-    """Plik Maksa z dostępem do skrzynki raportów w ``config``, a w Ustawieniach tata włącza przypomnienia w dniu
-    zleceń 9.11.2026 (dzień wdrożenia) i wpisuje stopkę (``""``: bez stopki)."""
-
     (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
     assert centrum.client.put("/api/settings/reminders/enabled", json={"enabled": True}).status_code == 200
     assert centrum.client.put("/api/settings/reminders", json=_reminders_form(footer=footer)).status_code == 200
@@ -3594,11 +3112,6 @@ def _reminder_result(centrum: EnteringCentrum) -> dict[str, Any]:
 def test_praca_przypomnien_wysyla_przypomnienie_do_atrapy_smtp_raz_w_porze_takze_po_restarcie_centrum(
     tmp_path: Path,
 ) -> None:
-    """Kryterium #1349: o 8:30 dnia po dniu zleceń Centrum wysyła przez SMTP przypomnienie Wykonawcy z listy, który ma
-    zlecenia 9.11 i nie przysłał raportu, ze stopką taty, czytając INTERMAX otwarty w Excelu tylko do odczytu; druga
-    minuta tej samej pory i Centrum po restarcie w tej porze nie wysyłają drugiego, bo pamięcią są „Wysłane”, a
-    INTERMAX i skrzynka zostają bez zmian (US 31–36, 42–43, 46)."""
-
     anna_report = _report_in_inbox(1, ANNA, "Raport 09.11.2026", datetime(2026, 11, 9, 19, 0))
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[anna_report]) as imap, AtrapaSmtp(imap) as smtp:
         mailbox = ImapInbox(
@@ -3648,9 +3161,6 @@ def test_praca_przypomnien_wysyla_przypomnienie_do_atrapy_smtp_raz_w_porze_takze
 
 @pytest.mark.parametrize("footer", ["", "   \n"], ids=["pusta", "same-spacje"])
 def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopki(tmp_path: Path, footer: str) -> None:
-    """Bez stopki w Ustawieniach (także ze stopką z samych spacji) przypomnienie idzie bez niej, a wynik ostatniego
-    sprawdzenia dla widoku Raporty mówi o tym (US 44)."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum, footer=footer)
@@ -3669,8 +3179,6 @@ def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopk
 
 @dataclass
 class _MailboxBrokenOnce(FakeMailbox):
-    """Skrzynka Przypomnień, której pierwsze pytanie o „Wysłane” kończy się wyjątkiem spoza portu skrzynki."""
-
     broke: bool = False
 
     def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
@@ -3683,9 +3191,6 @@ class _MailboxBrokenOnce(FakeMailbox):
 def test_nieoczekiwany_wyjatek_sprawdzenia_przypomnien_trafia_do_dziennika_a_nastepne_sprawdzenie_wysyla(
     tmp_path: Path,
 ) -> None:
-    """Praca w tle nie może zgasić rytmu Przypomnień o raporcie: wyjątek jednego sprawdzenia ma dziennik Centrum, a
-    następne tyknięcie rytmu sprawdza i wysyła jak zwykle."""
-
     mailbox = _MailboxBrokenOnce()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3712,9 +3217,6 @@ def test_nieoczekiwany_wyjatek_sprawdzenia_przypomnien_trafia_do_dziennika_a_nas
 def test_nieaktywny_i_bez_przypomnien_z_ustawien_nie_dostaja_przypomnienia_od_nastepnego_sprawdzenia(
     tmp_path: Path, login: str, switches: dict[str, bool], reminded: list[str]
 ) -> None:
-    """ADR 0032, US 34, 37 (#1474): przełącznik na karcie Wykonawcy w Ustawieniach działa od następnego sprawdzenia
-    przypomnień: Nieaktywny Wykonawca i Wykonawca z wyłączonymi Przypomnieniami o raporcie ich nie dostają, inni tak."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3730,14 +3232,10 @@ def test_nieaktywny_i_bez_przypomnien_z_ustawien_nie_dostaja_przypomnienia_od_na
 
 
 def _assigned(client: CentrumClient, worker: dict[str, Any]) -> Any:
-    """„Przypisz do Wykonawcy…” z widoku Raporty: adres ``NEW_ADDRESS`` u Wykonawcy ``worker``."""
-
     return client.post(f"/api/settings/workers/{worker['logins'][0]}/addresses", json={"address": NEW_ADDRESS})
 
 
 def _edited(client: CentrumClient, worker: dict[str, Any]) -> Any:
-    """Formularz Wykonawcy ``worker`` z jego loginami, nazwą i adresami, do których tata dopisał ``NEW_ADDRESS``."""
-
     form = {"logins": worker["logins"], "name": worker["name"], "addresses": [*worker["addresses"], NEW_ADDRESS]}
     return client.put(f"/api/settings/workers/{worker['logins'][0]}", json=form)
 
@@ -3751,10 +3249,6 @@ def _edited(client: CentrumClient, worker: dict[str, Any]) -> Any:
 def test_dopisanie_adresu_przypisaniem_albo_formularzem_zostawia_reszte_wykonawcy_a_przypomnienia_go_omijaja(
     tmp_path: Path, change: Callable[[CentrumClient, dict[str, Any]], Any], active: bool, reminders: bool
 ) -> None:
-    """ADR 0032 (D13), W1 #1650 r1: tata dopisuje Annie adres przyciskiem „Przypisz do Wykonawcy…” albo formularzem.
-    Zmienia się tylko lista adresów: loginy (także drugi), nazwa, pierwsze adresy, Nieaktywny i Przypomnienia o raporcie
-    zostają, więc następne sprawdzenie przypomnień dalej omija Annę, a Jan je dostaje."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3778,14 +3272,10 @@ def test_dopisanie_adresu_przypisaniem_albo_formularzem_zostawia_reszte_wykonawc
 
 
 def _listed_worker(client: CentrumClient, login: str) -> dict[str, Any]:
-    """Wykonawca z pierwszym loginem ``login`` z sekcji Wykonawcy w Ustawieniach."""
-
     [worker] = [worker for worker in client.get("/api/settings").json()["workers"]["workers"] if worker["logins"][0] == login]
     return dict(worker)
 
 
-# Treść przypomnienia za 9.11 z pierwszym zdaniem i stopką „Pozdrawiam / Tata”, jakie Centrum wysyłało przed Ustawieniami
-# (spec #1344), i ze wzorem Raportu wykonawcy z kodami czynności (ADR 0039).
 TEXT_BEFORE_SETTINGS = """Poproszę o wysłanie raportu za dzień 09.11.2026.
 
 Raport proszę wysłać według tego wzoru:
@@ -3815,12 +3305,6 @@ Tata
 def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_przed_ustawieniami(
     tmp_path: Path, rollout: bytes, footer: bytes, text: str
 ) -> None:
-    """Kryterium #1476: po Aktualizacji tata nic nie zmienia, a pierwszy start przenosi dzień wdrożenia i stopkę z plików
-    Maksa do Ustawień, więc o 8:30 dnia po dniu zleceń idą te same przypomnienia co przed Wydaniem, z tym samym tematem,
-    pierwszym zdaniem i stopką bajt w bajt (wzór Raportu wykonawcy ma kody czynności, ADR 0039), a druga minuta pory nie
-    wysyła drugiego (ADR 0030, DESIGN §3). Stopka z Notatnika (BOM i CRLF) szła przed Wydaniem z CRLF między liniami i
-    tak samo idzie po nim."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
     (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
@@ -3847,10 +3331,6 @@ def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_p
 def test_zmiana_pory_i_godziny_pierwszego_przypomnienia_dziala_od_nastepnego_sprawdzenia_bez_ponownego_startu(
     tmp_path: Path,
 ) -> None:
-    """Kryterium #1476 (US 49): o 7:30 przypomnienia przy porach z ADR 0030 śpią; tata przesuwa poranną porę na 7:00 i
-    następne sprawdzenie czyta skrzynkę, ale nic nie wysyła, bo pierwsze przypomnienie idzie od 8:00; tata przesuwa je na
-    7:00 i następne sprawdzenie w tej samej porze wysyła przypomnienia, bez ponownego startu Centrum."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3880,9 +3360,6 @@ def test_zmiana_pory_i_godziny_pierwszego_przypomnienia_dziala_od_nastepnego_spr
 
 @dataclass
 class SentFolderMailbox(FakeMailbox):
-    """Skrzynka przypomnień, której „Wysłane” mają każde przypomnienie wysłane przez nią, z chwilą wysyłki według zegara
-    Gmaila, który odchodzi od zegara laptopa taty o ``gmail_clock``."""
-
     gmail_clock: timedelta = timedelta()
 
     def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
@@ -3902,9 +3379,6 @@ class SentFolderMailbox(FakeMailbox):
 def test_przesuniecie_poczatku_pory_po_wysylce_nie_daje_drugiego_maila_tej_samej_pory(
     tmp_path: Path, sent_at: time, later: dict[str, object], checked_at: time
 ) -> None:
-    """Decyzja W1 (#1568): przypomnienie wysłane w porze zamyka tę nazwaną porę na cały dzień, także gdy tata potem
-    przesunie jej początek za chwilę wysyłki, więc następne sprawdzenie w nowej porze nie wysyła Wykonawcom drugiego."""
-
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3928,10 +3402,6 @@ def test_przesuniecie_poczatku_pory_po_wysylce_nie_daje_drugiego_maila_tej_samej
 
 
 def test_pory_bez_zmian_od_kilku_dni_dalej_chronia_poranna_wyslana_przed_ich_przesunieciem(tmp_path: Path) -> None:
-    """Decyzja W1 (#1568): pory z ADR 0030 obowiązują od sprawdzenia 8.11; 10.11 o 8:05 idzie poranne przypomnienie, a
-    tata przesuwa poranną na 9:00–17:00. Pory sprzed doby dalej mówią, że 8:05 była w porannej, więc o 9:01 drugiego
-    porannego nie ma."""
-
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3954,10 +3424,6 @@ def test_pory_bez_zmian_od_kilku_dni_dalej_chronia_poranna_wyslana_przed_ich_prz
 def test_pora_ktora_dzis_jeszcze_nie_poszla_po_zmianie_por_wysyla_przypomnienie_od_nastepnego_sprawdzenia(
     tmp_path: Path,
 ) -> None:
-    """Decyzja W1 (#1568): o 13:00 przy porach z ADR 0030 idzie poranne przypomnienie; tata skraca poranną do 12:00 i
-    zaczyna wieczorną o 12:30, więc 13:00 leży teraz w wieczornej, ale mail poszedł w porannej. Wieczorna dziś jeszcze
-    nie poszła, więc następne sprawdzenie ją wysyła, a jeszcze następne nie wysyła drugiej."""
-
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -3982,8 +3448,6 @@ def test_pora_ktora_dzis_jeszcze_nie_poszla_po_zmianie_por_wysyla_przypomnienie_
 
 
 def _old_version_sends(tmp_path: Path, at: datetime) -> list[tuple[Reminder, datetime]]:
-    """Przypomnienia, które stara wersja (stałe pory z ADR 0030) wysłała o ``at`` do Anny i Jana, jak w jej „Wysłanych”."""
-
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4006,10 +3470,6 @@ def _old_version_sends(tmp_path: Path, at: datetime) -> list[tuple[Reminder, dat
 def test_w_dniu_aktualizacji_zmiana_por_po_wysylce_starej_wersji_nie_daje_drugiego_maila_tej_samej_pory(
     tmp_path: Path, sent_at: time, updated_at: time, later: dict[str, object], checked_at: time
 ) -> None:
-    """Sonda W1 r2 (#1568): stara wersja wysłała przypomnienia przy stałych porach z ADR 0030, a pór z chwili wysyłki nie
-    zapisała. Centrum po Aktualizacji startuje poza porą, tata zmienia w Ustawieniach porę tak, że chwila wysyłki leży
-    już poza nią, a następne sprawdzenie w nowej porze nie wysyła drugiego, bo stara wersja znała tylko pory z ADR 0030."""
-
     day = date(2026, 11, 10)
     mailbox = SentFolderMailbox(sends=_old_version_sends(tmp_path / "stara", datetime.combine(day, sent_at)))
     centrum = entering_centrum(tmp_path / "nowa", INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
@@ -4062,11 +3522,6 @@ def test_w_dniu_aktualizacji_bez_pliku_por_wyslane_przez_stara_wersje_licza_tylk
 
 
 def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_sprzed_zmiany(tmp_path: Path) -> None:
-    """Zapas zegara (``CLOCK_MARGIN``): o 7:30 praca sprawdza przy porannej 7:00–9:00, tata wydłuża ją do 17:00, a
-    sprawdzenie o 9:30 wysyła przypomnienia. Zegar Gmaila spóźnia się o półtorej minuty, więc „Wysłane” mają 9:28:30,
-    jeszcze przed zapisem nowych pór. Po ponownym starcie o 9:35 te maile dalej zamykają poranną, choć przy porach sprzed
-    zmiany 9:28:30 leży poza porą."""
-
     mailbox = SentFolderMailbox(gmail_clock=-timedelta(seconds=90))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4092,12 +3547,6 @@ def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_s
 
 
 def test_zegar_gmaila_spieszacy_sie_o_poltorej_minuty_nie_gubi_por_sprzed_zmiany(tmp_path: Path) -> None:
-    """Zapas zegara (``CLOCK_MARGIN``) w drugą stronę (przegląd #1568 r3, D1): przy porannej 8:00–9:00 i wieczornej
-    9:00–22:00 przypomnienia idą o 8:30 i o 9:29 (wieczorna). Tata przesuwa granicę pór na 9:40, sprawdzenie o 9:30
-    zapisuje nowe pory, a zegar Gmaila spieszy się o półtorej minuty, więc „Wysłane” mają 9:30:30, już po zapisie
-    nowych pór, w których to poranna. Te maile dalej zamykają wieczorną przy porach sprzed zmiany, więc sprawdzenie
-    o 9:45 w nowej wieczornej nie wysyła drugiego."""
-
     mailbox = SentFolderMailbox(gmail_clock=timedelta(seconds=90))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4141,10 +3590,6 @@ _NAIVE_SCHEDULES = b"""{"schema_version": 1,
 def test_nieczytelny_plik_por_liczy_wyslane_takze_przy_biezacych_porach_az_po_nastepny_start(
     tmp_path: Path, broken: bytes
 ) -> None:
-    """Przy porannej 6:00–17:00 przypomnienia idą o 7:00, poza porami z ADR 0030. Plik pór psuje się, a Centrum
-    startuje znowu o 7:30 i o 7:45: nie wiadomo, przy jakich porach ta wersja wysyłała, więc maile z 7:00 zamykają
-    poranną przy porach z ADR 0030 i przy bieżących, także po starcie, przed którym praca zapisała plik od nowa."""
-
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4170,13 +3615,10 @@ def test_nieczytelny_plik_por_liczy_wyslane_takze_przy_biezacych_porach_az_po_na
 
 
 _HALF_HOURS = st.lists(st.integers(6 * 2, 23 * 2 + 1), min_size=4, max_size=4, unique=True).map(sorted)
-"""Cztery różne pełne albo połówkowe godziny od 6:00 do 23:30, rosnąco: początek i koniec porannej i wieczornej."""
 
 
 @st.composite
 def _pory(draw: st.DrawFn) -> tuple[tuple[time, time], tuple[time, time]]:
-    """Dobre pory z formularza: poranna przed wieczorną, czasem stykające się (koniec porannej = początek wieczornej)."""
-
     found = [time(half // 2, 30 * (half % 2)) for half in draw(_HALF_HOURS)]
     if draw(st.booleans()):
         found[2] = found[1]
@@ -4186,10 +3628,6 @@ def _pory(draw: st.DrawFn) -> tuple[tuple[time, time], tuple[time, time]]:
 def test_nieudany_zapis_por_wstrzymuje_wysylke_az_do_zapisu_wiec_ponowny_start_nie_daje_drugiego_maila(
     tmp_path: Path,
 ) -> None:
-    """Przy porannej 6:00–17:00 sprawdzenie o 7:00 nie zapisuje pór (plik tymczasowy zajęty), więc nie wysyła: po
-    ponownym starcie bez pliku pór mail z 7:00 liczyłby się przy porach z ADR 0030, poza porą. Po zwolnieniu pliku
-    następna minuta zapisuje pory i wysyła, a Centrum po ponownym starcie nie wysyła drugiego."""
-
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4222,15 +3660,11 @@ _DAY_MINUTES = st.integers(_FIRST_MINUTE, _LAST_MINUTE)
 _EVENTS = st.lists(
     st.tuples(_DAY_MINUTES, st.one_of(_pory(), st.just("sprawdzenie"), st.just("restart"))), min_size=1, max_size=12
 )
-"""Zdarzenia dnia 10.11.2026 po minutach: tata zapisuje pory, rytm sprawdza przypomnienia albo Centrum startuje znowu.
-Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, jak u taty. W dniu Aktualizacji test
-ściska minuty zdarzeń za chwilę wysyłki starej wersji."""
 _ADR_0030_PORY_MINUTE = st.one_of(st.integers(8 * 60, 17 * 60 - 1), st.integers(18 * 60, 22 * 60 - 1))
 _OLD_VERSION_SENDING_MINUTE_BY_DAY = {"bez-aktualizacji": st.none(), "dzien-aktualizacji": _ADR_0030_PORY_MINUTE}
+_WITHOUT_SHRINKING_AS_EACH_TRIED_EXAMPLE_STARTS_A_NEW_CENTRUM = [Phase.explicit, Phase.generate]
 
 
-# Bez zmniejszania przykładu: każdy próbowany przykład to nowe Centrum, więc zmniejszanie złego przykładu trwa dłużej
-# niż limit testu, a przykład z najwyżej 12 zdarzeniami czyta się i bez niego.
 @pytest.mark.parametrize(
     "old_version_sending_minutes",
     list(_OLD_VERSION_SENDING_MINUTE_BY_DAY.values()),
@@ -4241,7 +3675,7 @@ _OLD_VERSION_SENDING_MINUTE_BY_DAY = {"bez-aktualizacji": st.none(), "dzien-aktu
     database=None,
     deadline=None,
     max_examples=30,
-    phases=[Phase.explicit, Phase.generate],
+    phases=_WITHOUT_SHRINKING_AS_EACH_TRIED_EXAMPLE_STARTS_A_NEW_CENTRUM,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 @given(data=st.data(), events=_EVENTS)
@@ -4251,11 +3685,6 @@ def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_t
     data: st.DataObject,
     events: list[tuple[int, object]],
 ) -> None:
-    """Decyzja W1 (#1568): przy dowolnych zmianach pór w ciągu dnia, sprawdzeniach i ponownych startach Centrum każde
-    przypomnienie idzie w porze obowiązującej w chwili jego sprawdzenia, a Wykonawca dostaje za dzień raportu najwyżej
-    jedno przypomnienie w każdej nazwanej porze (porannej, wieczornej) tego dnia, także w dniu Aktualizacji, gdy
-    „Wysłane” mają już przypomnienia starej wersji, a pliku pór jeszcze nie ma (W1 r2)."""
-
     old_version = data.draw(old_version_sending_minutes)
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path_factory.mktemp("pory"), INTERMAX, reminder_mailbox=mailbox)
@@ -4308,8 +3737,6 @@ def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_t
 
 
 def _named_pora(moment: time, pory: tuple[tuple[time, time], tuple[time, time]]) -> str:
-    """Nazwana pora chwili przy porach ``pory`` (od początku do końca, bez końca), wprost z ADR 0030."""
-
     (morning_start, morning_end), (evening_start, evening_end) = pory
     if morning_start <= moment < morning_end:
         return "poranna"
@@ -4317,9 +3744,6 @@ def _named_pora(moment: time, pory: tuple[tuple[time, time], tuple[time, time]])
 
 
 def test_podglad_przypomnienia_pokazuje_temat_tresc_i_stopke_z_formularza_bez_zapisu_i_bez_wysylki(tmp_path: Path) -> None:
-    """Kryterium #1476 (US 47–48): podgląd na przykładowy dzień (wczoraj taty) pokazuje stały temat, pierwsze zdanie
-    taty z dniem, stały wzór Raportu wykonawcy i stopkę z formularza, a niczego nie zapisuje i nie wysyła."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     before = config_files(centrum.tool.config)
@@ -4345,10 +3769,6 @@ def config_files(config: Path) -> dict[str, bytes]:
 
 
 def test_wylaczone_przypomnienia_nic_nie_wysylaja_a_wlaczone_w_nocy_i_przed_8_dnia_nastepnego_tez_nie(tmp_path: Path) -> None:
-    """Wyłączone w Ustawieniach przypomnienia nie czytają skrzynki, nic nie wysyłają i nie zostawiają śladu; po włączeniu
-    przełącznikiem w dniu zleceń Centrum czyta skrzynkę raz w porze, ale za ten dzień nic nie wysyła, a w nocy i przed
-    8:00 dnia następnego nawet nie czyta (US 32–33, 40–41)."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4372,9 +3792,6 @@ def test_wylaczone_przypomnienia_nic_nie_wysylaja_a_wlaczone_w_nocy_i_przed_8_dn
 
 
 def test_brak_sieci_przy_przypomnieniach_ponawia_w_nastepnej_minucie_tej_samej_pory_bez_zgloszenia(tmp_path: Path) -> None:
-    """Brak sieci przy przypomnieniach to tylko ponowienie w następnej minucie tej samej pory: bez Zgłoszenia, a
-    porażka raz w Logach Centrum (US 47)."""
-
     write_report_key(ToolDirectory(tmp_path))
     surroundings = Surroundings()
     mailbox = FakeMailbox(sent=InboxUnreachable("TimeoutError"))
@@ -4398,10 +3815,6 @@ def test_brak_sieci_przy_przypomnieniach_ponawia_w_nastepnej_minucie_tej_samej_p
 
 
 def test_brak_sieci_przy_odczycie_maili_skrzynki_nie_wysyla_przypomnien_choc_wyslane_sa_czytelne(tmp_path: Path) -> None:
-    """Gdy odczyt maili ze Skrzynki raportów się nie uda, a „Wysłane” są czytelne, nic nie wychodzi, bo bez maili
-    przypomnienie poszłoby też do Wykonawcy, który raport przysłał; pora zostaje otwarta i następna minuta wysyła
-    tylko temu, kto raportu nie przysłał (ADR 0030 „Kto i do kiedy”, US 47)."""
-
     anna_report = report(ANNA, "Raport 09.11.2026", "40000002 tak spawpg")
     mailbox = FakeMailbox(outcome=InboxUnreachable("TimeoutError"))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
@@ -4420,9 +3833,6 @@ def test_brak_sieci_przy_odczycie_maili_skrzynki_nie_wysyla_przypomnien_choc_wys
 
 
 def test_odmowa_wysylki_przez_gmail_nie_ponawia_wysylki_do_konca_pory(tmp_path: Path) -> None:
-    """Odmowa wysyłki przez Gmaila inna niż odrzucone hasło (np. dzienny limit) zamyka porę: następne minuty tej samej
-    pory nie próbują znowu, a wynik dla widoku Raporty mówi o odmowie (US 47)."""
-
     mailbox = FakeMailbox(send_outcome=MailRefused("SMTPDataError"))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4452,10 +3862,6 @@ def test_odmowa_wysylki_przez_gmail_nie_ponawia_wysylki_do_konca_pory(tmp_path: 
 def test_seria_przypomnien_ktora_wyszla_poza_pore_czeka_z_reszta_na_nastepna_pore(
     tmp_path: Path, started: datetime, later: datetime
 ) -> None:
-    """Gdy zegar w trakcie serii przypomnień wyjdzie poza porę, w której seria ruszyła (minęła 22:00 albo 17:00, laptop
-    zasnął i obudził się rano albo wieczorem innego dnia), reszta serii nie idzie, a wysłane przypomnienie ma chwilę
-    swojej wysyłki, nie początku sprawdzenia, w mailu i w wyniku dla widoku Raporty (ADR 0030 „nigdy w nocy”)."""
-
     class TickingMailbox(FakeMailbox):
         def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
             outcome = super().send(reminder, at)
@@ -4478,12 +3884,7 @@ def test_seria_przypomnien_ktora_wyszla_poza_pore_czeka_z_reszta_na_nastepna_por
     ] == [("anna.kowalska", "2026-11-09", first_send.astimezone())]
 
 
-
 def test_seria_porannych_przypomnien_przerwana_o_17_reszta_idzie_dopiero_o_18_bez_duplikatu(tmp_path: Path) -> None:
-    """Seria porannych przypomnień zaczęta o 16:59 staje o 17:00: reszta nie idzie ani wtedy, ani w sprawdzeniu o 17:30,
-    tylko o 18:00 jako wieczorne, po jednym do każdego Wykonawcy, a minuta później żadne (decyzja Maksa 12.11, ADR
-    0030: poranne przypomnienie nie nadrabia się od 17:00)."""
-
     started, first_send = datetime(2026, 11, 10, 16, 59), datetime(2026, 11, 10, 16, 59, 30)
     evening = datetime(2026, 11, 10, 18, 0)
 
@@ -4518,16 +3919,12 @@ def test_seria_porannych_przypomnien_przerwana_o_17_reszta_idzie_dopiero_o_18_be
 
 
 def _shown_sent(centrum: EnteringCentrum) -> list[tuple[str, str, datetime]]:
-    """Wysłane przypomnienia z pliku wyniku, który czyta widok Raporty: Wykonawca, dzień i chwila wysłania."""
-
     return [
         (sent["worker"], sent["day"], datetime.fromisoformat(sent["sent_at"])) for sent in _reminder_result(centrum)["sent"]
     ]
 
 
 def _filed_at(mailbox: FakeMailbox) -> list[datetime]:
-    """Chwile przypomnień, które Gmail atrapy położył już w „Wysłanych”."""
-
     assert isinstance(mailbox.sent, tuple), mailbox.sent
     return [found.sent_at for found in mailbox.sent]
 
@@ -4535,12 +3932,6 @@ def _filed_at(mailbox: FakeMailbox) -> list[datetime]:
 def test_przypomnienie_wyslane_przed_brakiem_sieci_nie_idzie_drugi_raz_zanim_gmail_polozy_je_w_wyslanych(
     tmp_path: Path,
 ) -> None:
-    """Sprawdzenie wysyła przypomnienie Annie, a przy Janie sieć znika, więc pora zostaje otwarta. Następna minuta tej
-    samej pory wysyła tylko Janowi, choć Gmail jeszcze nie położył przypomnienia Anny w „Wysłanych”: maile wysłane w
-    tej pracy Centrum praca pamięta sama (ADR 0030 „Najwyżej jedno w każdej porze”), a widok Raporty pokazuje oba
-    przypomnienia do końca pory. O 18:00 Gmail położył już tylko przypomnienie Anny, a widok pokazuje każde poranne
-    raz: przypomnienia Jana z 8:31 nie zakrywa przypomnienie Anny z „Wysłanych” wysłane minutę wcześniej."""
-
     class NetworkGoneAtJan(FakeMailbox):
         def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
             self.send_outcome = InboxUnreachable("TimeoutError") if len(self.sends) == 1 else MailSent()
@@ -4577,9 +3968,6 @@ def test_przypomnienie_wyslane_przed_brakiem_sieci_nie_idzie_drugi_raz_zanim_gma
 
 
 def _pora_changed_twice(centrum: EnteringCentrum) -> list[tuple[str, str, datetime]]:
-    """Sprawdzenie o 8:30 wysyła poranne przypomnienia, a tata dwa razy zmienia poranną porę, każda zmiana minutę
-    później (#1568). Wynik: widok Raporty po pierwszej zmianie; ten po drugiej zostaje w pliku wyniku."""
-
     _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
@@ -4601,10 +3989,6 @@ def _pora_changed_twice(centrum: EnteringCentrum) -> list[tuple[str, str, dateti
 def test_zmiana_por_tuz_po_wysylce_widok_raporty_pokazuje_przypomnienia_zanim_gmail_je_polozy_i_po_tym_kazde_raz(
     tmp_path: Path,
 ) -> None:
-    """Tata zmienia poranną porę minutę po wysyłce, zanim Gmail położy przypomnienia w „Wysłanych”: nowe sprawdzenie
-    nie wysyła ich drugi raz, a widok Raporty dalej je pokazuje. Po drugiej zmianie Gmail już je położył, a widok
-    pokazuje każde raz, bo mail z „Wysłanych” i z pamięci tej pracy to ten sam mail."""
-
     mailbox = FakeMailbox(filed_after=1)
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
 
@@ -4620,11 +4004,6 @@ def test_zmiana_por_tuz_po_wysylce_widok_raporty_pokazuje_przypomnienia_zanim_gm
 def test_wieczorem_po_polozeniu_przez_gmaila_widok_pokazuje_raz_poranne_wykonawcy_z_dwoma_adresami_z_wolnej_serii(
     tmp_path: Path,
 ) -> None:
-    """Anna ma dwa adresy, a odczyt skrzynki w sprawdzeniu z 8:30 trwa do 8:34, więc poranne przypomnienia idą o 8:34,
-    dalej niż ``CLOCK_MARGIN`` od początku sprawdzenia. Wieczorem Gmail położył je już w „Wysłanych”, a widok Raporty
-    pokazuje każde poranne raz: mail z pamięci tej pracy ma tych samych adresatów i chwilę wysyłki co mail z
-    „Wysłanych”, więc to ten sam mail."""
-
     sent_at = datetime(2026, 11, 10, 8, 34)
     mailbox = FakeMailbox(filed_after=0, during=lambda: centrum.moment.append(sent_at) if not mailbox.sends else None)
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
@@ -4654,9 +4033,6 @@ def test_wieczorem_po_polozeniu_przez_gmaila_widok_pokazuje_raz_poranne_wykonawc
 
 
 def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_porze(tmp_path: Path) -> None:
-    """Odrzucone hasło aplikacji przy wysyłce przypomnienia Centrum zgłasza Maksowi samo, bez taty, i do końca pory
-    nie pyta Gmaila znowu (US 47)."""
-
     write_report_key(ToolDirectory(tmp_path))
     surroundings = Surroundings()
     mailbox = FakeMailbox(send_outcome=PasswordRejected())
@@ -4701,8 +4077,6 @@ def test_zgloszenie_przypomnien_z_narzedzia_bez_commitu_gita_ma_commit_nieznany(
 
 
 def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
-    """Pola każdej linii ``przypomnienia-porazka`` dziennika Centrum po nazwie zdarzenia, po kolei."""
-
     log = centrum.tool.log_path.read_text(encoding="utf-8") if centrum.tool.log_path.exists() else ""
     return [line.split(" przypomnienia-porazka ", 1)[1] for line in log.splitlines() if " przypomnienia-porazka " in line]
 
@@ -4722,12 +4096,6 @@ def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
 def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku(
     tmp_path: Path, cause: str, broken: str
 ) -> None:
-    """Każda porażka sprawdzenia z dniem wdrożenia, które nie doszło do skrzynki (bez INTERMAX w Ustawieniach taty, bez
-    pliku dostępu, nieczytelna pamięć Wpisania raportów albo decyzje „Zostaw moją”, bo pusta pamięć zmieniłaby dzień
-    raportu, bez folderu okresów, nieczytelny INTERMAX albo INTERMAX bez arkusza zleceń), trafia do dziennika Centrum raz, bez
-    adresów, a wynik dla widoku Raporty ją nazywa; wyjątkiem jest tylko brak dnia wdrożenia, przy którym przypomnienia
-    są wyłączone (ADR 0030, przegląd #1372 r1 Drobne 1)."""
-
     mailbox = FakeMailbox(state="missing" if broken == "dostep" else "ready")
     centrum = entering_centrum(tmp_path, INTERMAX, chosen=broken != "ustawienia", reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4795,11 +4163,6 @@ def test_porazka_odczytu_przypomnien_naprawiona_w_tej_samej_porze_daje_przypomni
 def test_plik_ustawien_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia_wpis_z_nazwa_pliku(
     tmp_path: Path, file: str, back: bool
 ) -> None:
-    """Decyzja 4A Maksa: plik Przypomnień, Folderów albo Listy Wykonawców, którego system nie daje teraz czytać (np.
-    trzyma go OneDrive), to nie wyłączone przypomnienia, niewskazany INTERMAX ani Wykonawcy bez adresów. Następna minuta tej samej pory próbuje znowu, więc plik,
-    który wraca w porze, daje przypomnienia bez wpisu w dzienniku Centrum; plik, który nie wraca do końca pory, nie daje
-    żadnego maila, a pierwsze sprawdzenie po porze zostawia w dzienniku Centrum jeden wpis z nazwą tego pliku."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4828,10 +4191,6 @@ def test_plik_ustawien_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia
 
 
 def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_z_ostatniego_sprawdzenia_pracy(tmp_path: Path) -> None:
-    """Decyzja 4A Maksa przy porze taty spoza pór ADR 0030: wczoraj praca sprawdzała w porannej porze taty 6:00–7:30,
-    a dziś OneDrive trzyma plik Przypomnień od startu Centrum do końca tej pory. Porę zna plik pór pracy z wczoraj, więc
-    pierwsze sprawdzenie po 7:30 zostawia w dzienniku Centrum wpis z nazwą pliku, a nie czeka na porę z ADR 0030."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4855,11 +4214,6 @@ def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_z_ostatn
 
 
 def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_zmieniona_poza_pora(tmp_path: Path) -> None:
-    """Decyzja 4A Maksa po zmianie pór poza porą: wczoraj praca sprawdzała w wieczornej porze z ADR 0030, o 22:30 tata
-    przesunął poranną porę na 6:00–7:30 i zamknął Centrum przed nią, a dziś OneDrive trzyma plik Przypomnień od startu
-    Centrum do końca tej pory. Pory z odczytu poza porą zna plik pór pracy, więc pierwsze sprawdzenie po 7:30 zostawia
-    w dzienniku Centrum wpis z nazwą pliku, a nie czeka na porę z ADR 0030."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4885,9 +4239,6 @@ def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_zmienion
 
 
 def test_przypomnienia_wylaczone_w_tej_samej_porze_po_pliku_bez_odczytu_nie_zostawiaja_wpisu(tmp_path: Path) -> None:
-    """Plik Przypomnień bez odczytu w porze, a potem w tej samej porze tata wyłącza przypomnienia: wyłączone są
-    wyłączone, a nie zepsute, więc po końcu pory dziennik Centrum nie dostaje wpisu o pliku bez odczytu."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4906,9 +4257,6 @@ def test_przypomnienia_wylaczone_w_tej_samej_porze_po_pliku_bez_odczytu_nie_zost
 
 
 def test_praca_przypomnien_nie_blokuje_wpisania_raportow_ktore_biegnie_w_trakcie_wysylki(tmp_path: Path) -> None:
-    """Praca przypomnień nie jest Uruchomieniem procesu: gdy czeka na Gmaila w trakcie wysyłki, tata klika „Wpisz
-    raporty z maili”, a Wpisanie raportów startuje i kończy się, zanim wysyłka się skończy (US 46, ADR 0030)."""
-
     sending, release = threading.Event(), threading.Event()
 
     class HeldMailbox(FakeMailbox):
@@ -4939,19 +4287,12 @@ def test_praca_przypomnien_nie_blokuje_wpisania_raportow_ktore_biegnie_w_trakcie
 
 
 def _reminders_of(view: dict[str, Any], login: str) -> list[datetime]:
-    """Chwile Przypomnień o raporcie za 9.11 przy dniu Wykonawcy ``login`` w widoku Raporty."""
-
     return [datetime.fromisoformat(moment) for moment in _worker(view, login)["reminders"]]
 
 
 def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stopki_do_sprawdzenia_po_jej_wpisaniu(
     tmp_path: Path,
 ) -> None:
-    """Kryterium #1351: po pracy przypomnień widok Raporty ma przy dniu 9.11 każdego Wykonawcy chwile wysłanych za ten
-    dzień przypomnień do niego, z „Wysłanych” i z tego sprawdzenia, bez przypomnienia za inny dzień i bez przypomnień
-    innego Wykonawcy (Anna przysyła raport po porannym, więc wieczorne idzie tylko do Jana); brak stopki widok mówi
-    do następnego sprawdzenia po wpisaniu stopki w Ustawieniach, a odpowiedź nie ma adresów, tematu ani stopki (US 44–45, ADR 0030)."""
-
     for_other_day = SentReminder(frozenset({SenderAddress(JAN)}), date(2026, 11, 8), datetime(2026, 11, 9, 8, 0).astimezone())
     mailbox = FakeMailbox(sent=(for_other_day,))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
@@ -4989,10 +4330,6 @@ def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stop
 def test_widok_raporty_mowi_o_braku_stopki_przed_pierwszym_kliknieciem_a_po_nieudanym_sprawdzeniu_milczy(
     tmp_path: Path,
 ) -> None:
-    """Informacja o brakującej stopce stoi w widoku Raporty także przed pierwszym kliknięciem „Wpisz raporty z maili”,
-    bo przypomnienia idą bez niego; sprawdzenie, które nie doszło do stopki (brak sieci przy odczycie skrzynki), niczego
-    o stopce nie twierdzi, choć stopki dalej nie ma (#1351, przegląd #1364 r1 Drobne 2)."""
-
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum, footer="")
@@ -5033,9 +4370,6 @@ def test_sprawdzenie_przy_pliku_przypomnien_bez_odczytu_nie_zmienia_informacji_w
 
 @pytest.mark.parametrize("content", [b"{\"schema_version\": 1, \"sent\": [", b"\xff\xfe nie JSON", b'{"schema_version": 2, "footer": "missing", "sent": []}'])
 def test_nieczytelny_wynik_przypomnien_nie_psuje_widoku_raporty(tmp_path: Path, content: bytes) -> None:
-    """Wynik pracy przypomnień, którego nie da się przeczytać (urwany, nie UTF-8, innej wersji), widok Raporty pomija:
-    pokazuje wynik kliknięcia bez pór przypomnień i bez informacji o stopce, a nie odmowę (#1351)."""
-
     centrum = entering_centrum(tmp_path, INTERMAX)
     _finished(centrum)
     (centrum.tool.config / REMINDERS_RESULT).write_bytes(content)
@@ -5045,15 +4379,10 @@ def test_nieczytelny_wynik_przypomnien_nie_psuje_widoku_raporty(tmp_path: Path, 
     assert (_reminders_of(view, "jan.testowy"), view["reminders_without_footer"]) == ([], False)
 
 
-# --- Błąd opisu we Wpisie ``tak`` z Legendą czynności Ustawień Centrum (ADR 0039) ---
-
 MONTAZ = ActivityCode("montaz", ("montaż",), FixedColumn("Y"))
-"""Kod taty spoza legendy z Wydania: z nim ``montaż`` jest Kodem czynności, a bez niego zwykłym opisem."""
 
 
 def _with_dads_legend(centrum: EnteringCentrum) -> tuple[ActivityCode, ...]:
-    """Legenda czynności taty w ``config``: legenda z Wydania z kodem ``MONTAZ``."""
-
     codes = (*DEFAULT_ACTIVITY_LEGEND.codes, MONTAZ)
     (centrum.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(codes))
     return codes
@@ -5061,11 +4390,6 @@ def _with_dads_legend(centrum: EnteringCentrum) -> tuple[ActivityCode, ...]:
 
 @pytest.mark.parametrize("dads_legend", [False, True], ids=["legenda-z-wydania", "legenda-taty"])
 def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_logach(tmp_path: Path, dads_legend: bool) -> None:
-    """ADR 0039, ADR 0041: Wpisanie raportów czyta opis Wpisu ``tak`` Legendą czynności z Ustawień Centrum, tą samą co
-    Przygotowanie pliku zbiorczego, a Logi Uruchomienia mają ją dla odtworzenia. Przy legendzie z Wydania ``montaż`` to
-    zwykły opis: Wpis się wpisuje, a widok Raporty pokazuje przy zleceniu „BRAK KODU”, nie problem; z ``montaż`` jako
-    kodem w legendzie taty zlecenie ma ten kod. Przy kodzie z liczbą spoza przedziałów widok ma problem z powodem."""
-
     centrum = entering_centrum(
         tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak montaż"), report(ANNA, SUBJECT, "40000002 tak montaż instutp40m")]
     )
@@ -5095,11 +4419,6 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_log
 def test_szczegoly_dnia_maja_przy_zleceniu_tak_kody_z_opisu_albo_brak_kodu_a_przy_bledzie_opisu_jego_powod(
     tmp_path: Path,
 ) -> None:
-    """ADR 0041, US 32–39: Wpisanie raportów wpisuje do ``CZYNNOŚCI ZREALIZOWANE`` cały opis po ``tak``/``nie``, a
-    szczegóły dnia w widoku Raporty mają przy każdym zleceniu ``tak`` słowa, które legenda wzięła za Kody czynności (przy
-    ``inst30m instmdic`` tylko ``inst30m``, bez dopasowania po podobieństwie), przy zleceniu ``tak`` bez kodu „BRAK KODU”
-    jako informację, nie problem, a przy Błędzie opisu jego powód. Zlecenie ``nie`` nie ma ani kodów, ani „BRAK KODU”."""
-
     numbers = (40000001, 40000005, 40000006, 40000007)
     intermax = Intermax(ordered=tuple(_order(9, 9 + index, "jan.testowy", number) for index, number in enumerate(numbers)), raw=())
     text = (
@@ -5136,11 +4455,6 @@ def test_szczegoly_dnia_maja_przy_zleceniu_tak_kody_z_opisu_albo_brak_kodu_a_prz
 def test_praca_przypomnien_czyta_wpisy_od_cyfr_zlecen_z_tego_samego_odczytu_intermax_co_wpisanie_raportow(
     tmp_path: Path,
 ) -> None:
-    """ADR 0041 (historia 14): okres 03_09_11_2026 ma Plik zbiorczy, a Jan przysyła 10.11 wieczorem Raport z pomylonym
-    tematem 11.11 z dwoma numerami swoich zleceń: z 10.11 i siedmiocyfrowym z 9.11. Przypomnienia czytają INTERMAX od
-    ``Window.start``, jak Wpisanie raportów, więc krótszy numer z dnia zamkniętego jest Wpisem, a nie słowem opisu, dwa
-    niezgodne Wpisy to pomylony temat i raport liczy się za 10.11: o 8:30 11.11 przypomnienie dostaje tylko Anna."""
-
     intermax = Intermax(
         ordered=(_order(9, 9, "jan.testowy", 4000007), _order(10, 9, "jan.testowy", 40000005), _order(10, 11, "anna.kowalska", 40000006)),
         raw=(),
@@ -5161,14 +4475,7 @@ def test_praca_przypomnien_czyta_wpisy_od_cyfr_zlecen_z_tego_samego_odczytu_inte
     assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
 
 
-
 def test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu(tmp_path: Path) -> None:
-    """ADR 0041 (historia 14), W1 r1 #2059: Jan przysyła 10.11 rano raport za 10.11 z datą 9.11 i dwoma numerami,
-    których INTERMAX jeszcze nie ma, a kliknięcie o 7:00 dopisuje oba Janowi na 9.11. Wieczorem przychodzi ten sam
-    raport z dobrą datą. Kafelek Wpisania z pamięcią tego kliknięcia liczy raport za 9.11 i za 10.11, bo numery dopisane
-    przez Centrum nie robią z tematu pomylonego, więc praca przypomnień, która czyta tę samą pamięć, o 8:30 11.11 nie
-    przypomina Janowi o 10.11; przypomnienie dostaje tylko Anna bez raportu."""
-
     intermax = Intermax(
         ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000005), _order(10, 11, "anna.kowalska", 40000006)),
         raw=(),
@@ -5194,11 +4501,6 @@ def test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach
 
 
 def test_raport_bez_dnia_w_temacie_nie_konczy_przypomnien_za_dzien_sprzed_wdrozenia_wpisania_raportow(tmp_path: Path) -> None:
-    """ADR 0041 (historia 20), D1 r1 #2068: przypomnienia działają od 9.11, a Wpisanie raportów od pierwszego kliknięcia
-    10.11. Jan ma zlecenia 9.11 i 10.11, a 10.11 przysyła ``Raport 10.11.2026`` i sam ``Raport``. Dzień wskazany raportu
-    bez dnia w temacie leży w dniach otwartych Wpisania, więc ten raport w obu operacjach nie liczy się za żaden dzień:
-    widok Raporty ma problem bez dnia, a 11.11 rano idzie Janowi przypomnienie za 9.11."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000004)), raw=())
     mails = (
         report(JAN, "Raport 10.11.2026", "40000004 tak inst20m", at=datetime(2026, 11, 10, 19)),
@@ -5220,12 +4522,6 @@ def test_raport_bez_dnia_w_temacie_nie_konczy_przypomnien_za_dzien_sprzed_wdroze
 
 
 def test_raport_bez_dnia_w_temacie_z_dnia_wdrozenia_wpisania_konczy_przypomnienie_za_ten_dzien(tmp_path: Path) -> None:
-    """ADR 0041 (historia 20): przypomnienia działają od 9.11, a Wpisanie raportów od pierwszego kliknięcia 10.11. Jan
-    przysyła 10.11 wieczorem sam ``Raport`` z numerem swojego zlecenia z 10.11, więc kafelek Wpisania liczy go za 10.11
-    (dzień wskazany od dnia wdrożenia Wpisania). Praca przypomnień 11.11 o 8:30 czyta ten sam dzień wdrożenia z pamięci
-    Wpisania, więc przypomina tylko Annie; z pamięcią bez dnia wdrożenia dzień wskazany zaczynałby się od dziś i Jan
-    dostałby przypomnienie za 10.11."""
-
     intermax = Intermax(ordered=(_order(10, 9, "jan.testowy", 40000004), _order(10, 11, "anna.kowalska", 40000006)), raw=())
     mailbox = FakeMailbox(outcome=(report(JAN, "Raport", "40000004 tak inst20m", at=datetime(2026, 11, 10, 20)),))
     centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
@@ -5243,11 +4539,6 @@ def test_raport_bez_dnia_w_temacie_z_dnia_wdrozenia_wpisania_konczy_przypomnieni
 def test_okres_z_plikiem_zbiorczym_sprzed_wdrozenia_wpisania_nie_dostaje_przypomnien_od_wdrozenia_przypomnien(
     tmp_path: Path,
 ) -> None:
-    """ADR 0030: przypomnienia działają od poniedziałku 9.11, a Wpisanie raportów od pierwszego kliknięcia we wtorek
-    10.11, więc okno przypomnień zaczyna się dzień wcześniej, w okresie 03_09_11_2026. Ten okres dostaje Plik zbiorczy:
-    11.11 rano Jan bez raportów dostaje przypomnienie tylko za 10.11, a za 9.11 nie, choć ten dzień leży przed dniem
-    wdrożenia Wpisania."""
-
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000004)), raw=())
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
@@ -5269,8 +4560,6 @@ _SONDA_PAMIECI_WPISANIA = ROOT / "src" / "rozliczenia" / "centrum" / "sonda_pami
 
 
 def _pamiec_wpisania(importy: str, cialo: str) -> str:
-    """Moduł Centrum, który z ``ReportState`` pracy pyta pamięć Wpisania o odczyt okna jak Wpisanie raportów."""
-
     return (
         "from collections.abc import Sequence\nfrom datetime import date\n\n"
         f"{importy}\n"
@@ -5372,29 +4661,6 @@ ZNANE_LUKI_PAMIECI_WPISANIA: Final = {
 
 @wymaga_ruff_i_mypy
 def test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
-    """Przypomnienia o raporcie i Wpisanie raportów liczą dzień raportu z tej samej pamięci Wpisania, bo wejście odczytu
-    okna buduje tylko ``EnteringMemory`` za swoimi operacjami, a ``EnteringMemory`` powstaje tylko z ``ReportState`` pracy
-    (``ReportState.load``): wołający nie ma wartości pamięci, którą mógłby zbudować, skopiować albo zmienić obok.
-
-    | Postać | mypy, ruff | Próbka |
-    |---|---|---|
-    | ``report_inputs(…, SavedState(None, OwnEntries.EMPTY), …)`` (#2125 r1 W1) | łapie (mypy ``attr-defined``) | ``DROGI_PAMIECI_WPISANIA`` |
-    | ``EnteringMemory(SavedState(None, OwnEntries.EMPTY))`` | łapie (mypy ``arg-type``) | ``DROGI_PAMIECI_WPISANIA`` |
-    | ``EnteringMemory(EnteringReplay.without_logs(dzień).saved)`` (#2125 r2 W1) | łapie (mypy ``arg-type``) | ``DROGI_PAMIECI_WPISANIA`` |
-    | ``EnteringMemory(type(state.load())(None, OwnEntries.EMPTY))`` (#2125 r2 W1) | łapie (mypy ``arg-type``) | ``DROGI_PAMIECI_WPISANIA`` |
-    | ``replace(pamięć, _saved=replace(state.load(), rollout=None))`` (#2125 r3 W1) | łapie (mypy ``type-var``) | ``DROGI_PAMIECI_WPISANIA`` |
-    | ``pamięć._saved = …`` | łapie (ruff ``SLF001``) | ``DROGI_PAMIECI_WPISANIA`` |
-    | podklasa z własnym ``__init__``: ``class Pusta(EnteringMemory)`` (#2133 r1 W1) | łapie (mypy ``final``) | ``DROGI_PAMIECI_WPISANIA`` |
-    | podklasa, która zmienia pamięć po ``super().__init__(state)`` (#2133 r1 W1) | łapie (mypy ``final``) | ``DROGI_PAMIECI_WPISANIA`` |
-    | ``EnteringMemory(ReportStateInMemory(SavedState(None, OwnEntries.EMPTY)))`` | przepuszcza; w Przypomnieniach testy zachowania | ``ZNANE_LUKI_PAMIECI_WPISANIA`` |
-    | ``object.__setattr__(pamięć, "_saved", …)`` | przepuszcza | ``ZNANE_LUKI_PAMIECI_WPISANIA`` |
-    | podklasa z biegu: ``type("Pusta", (EnteringMemory,), {…})`` | przepuszcza | ``ZNANE_LUKI_PAMIECI_WPISANIA`` |
-
-    ``ReportState`` zbudowany obok w Przypomnieniach o raporcie łapią testy zachowania pracy przypomnień:
-    ``test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu`` (pamięć bez
-    Zleceń dopisanych z raportu) i ``test_raport_bez_dnia_w_temacie_z_dnia_wdrozenia_wpisania_konczy_przypomnienie_za_ten_dzien``
-    (pamięć bez dnia wdrożenia Wpisania)."""
-
     probki = {opis: kod for opis, (kod, _) in DROGI_PAMIECI_WPISANIA.items()} | ZNANE_LUKI_PAMIECI_WPISANIA
     zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=_SONDA_PAMIECI_WPISANIA)
 
@@ -5408,12 +4674,6 @@ def test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_prz
 def test_praca_przypomnien_czyta_okno_od_wdrozenia_wpisania_raportow_gdy_jest_wczesniejsze_niz_wdrozenie_przypomnien(
     tmp_path: Path,
 ) -> None:
-    """ADR 0041 (historia 14), forma siostrzana W1 r1 #2059: Wpisanie raportów działa od 8.11, przypomnienia od 9.11.
-    Jan przysyła Raport z tematem 9.11 z dwoma numerami swoich zleceń z 8.11, czyli pomylony temat, który kafelek
-    Wpisania liczy za 8.11. Praca przypomnień czyta okno od 8.11 jak Wpisanie, więc zna te zlecenia i o 8:30 10.11
-    przypomina Janowi o 9.11, za który raportu nie ma; za 8.11, dzień sprzed wdrożenia przypomnień, nie przypomina
-    nikomu, także Annie bez raportu."""
-
     intermax = Intermax(
         ordered=(
             _order(8, 9, "jan.testowy", 40000001),
