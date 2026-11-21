@@ -18,8 +18,8 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 | Źródło | Właściciel |
 |---|---|
 | zakaz ``TID251`` | plik z ``TID251`` w ``[lint.per-file-ignores]`` ``ruff.toml`` korzenia; że ma wiersz ``OWNERS`` z nazwami, których jest właścicielem, pilnuje ``tests/test_zakazy_ruff.py`` w Required CI tego drzewa |
-| nazwa w ``banned-api`` | moduł, który ją definiuje (``def``, ``class`` albo przypisanie na początku linii), jako ``<katalog importu>/<moduł>.py`` albo ``…/__init__.py`` z katalogów ``src`` i ``repo.IMPORT_ROOTS``: zakaz kieruje do niego resztę kodu |
-| sama reguła | ``ruff.toml`` korzenia z ``banned-api`` i każdy plik reguły ast-grep z ``ruleDirs``, który ma ``id``: lukę we wzorcu albo zasięgu zamyka test jego próbek (``tests/test_zakazy_ruff.py``, ``tests/test_zapadki.py``), a słabszą regułę odrzuca warunek 6 ``tools/scal_pr.py`` |
+| nazwa w ``banned-api`` każdego ``ruff.toml`` | moduł, który ją definiuje (``def``, ``class`` albo przypisanie na początku linii), jako ``<katalog importu>/<moduł>.py`` albo ``…/__init__.py`` z katalogów ``src`` i ``repo.IMPORT_ROOTS``: zakaz kieruje do niego resztę kodu |
+| sama reguła | każdy ``ruff.toml`` z ``banned-api`` (korzenia i katalogu, który go rozszerza) i każdy plik reguły ast-grep z ``ruleDirs``, który ma ``id``: lukę we wzorcu albo zasięgu zamyka test jego próbek (``tests/test_zakazy_ruff.py``, ``tests/test_zapadki.py``), a słabszą regułę odrzuca warunek 6 ``tools/scal_pr.py`` |
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
 
@@ -38,7 +38,7 @@ AST_GREP = "sgconfig.yml"
 IMPORT_ROOTS = (PACKAGES, *repo.IMPORT_ROOTS)
 SOURCES = (
     f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, moduł nazwy z banned-api, {ALLOWED} kontraktu w {IMPORT_CONTRACTS}, "
-    f"ignores: reguły ast-grep z ruleDirs {AST_GREP}, sam plik takiej reguły albo {RUFF} z banned-api"
+    f"ignores: reguły ast-grep z ruleDirs {AST_GREP}, sam plik takiej reguły albo {RUFF} z banned-api, także katalogu"
 )
 _BRACES = re.compile(r"\{([^{}]*)\}")
 _UNREADABLE = (tomllib.TOMLDecodeError, configparser.Error, yaml.YAMLError, UnicodeDecodeError)
@@ -73,16 +73,17 @@ def refusal(files: Sequence[str], protected: frozenset[str]) -> str | None:
 
 
 def _banned(tree: _Tree) -> set[str]:
-    if (config := tree.read(RUFF)) is None:
-        return set()
-    try:
-        lint = tomllib.loads(config).get("lint", {})
-    except _UNREADABLE:
-        return set()
-    ignores = lint.get("per-file-ignores", {})
-    names = lint.get("flake8-tidy-imports", {}).get("banned-api", {})
-    exempt = {path for pattern, codes in ignores.items() if isinstance(codes, list) and BAN in codes for path in _paths(pattern)}
-    return exempt | {path for name in names for path in _defining(tree, name)} | ({RUFF} if names else set())
+    found: set[str] = set()
+    for config in sorted(path for path in tree.files if path.rpartition("/")[2] == RUFF):
+        try:
+            lint = tomllib.loads(tree.read(config) or "").get("lint", {})
+        except _UNREADABLE:
+            continue
+        ignores = lint.get("per-file-ignores", {}) if config == RUFF else {}
+        names = lint.get("flake8-tidy-imports", {}).get("banned-api", {})
+        found |= {path for pattern, codes in ignores.items() if isinstance(codes, list) and BAN in codes for path in _paths(pattern)}
+        found |= {path for name in names for path in _defining(tree, name)} | ({config} if names else set())
+    return found
 
 
 def _defining(tree: _Tree, banned: str) -> Iterator[str]:
