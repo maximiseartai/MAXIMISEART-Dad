@@ -69,3 +69,16 @@ broken_contract_guidance =
     Okno efenix otwiera tylko centrum/efenix_chrome.py (EfenixWindow, atrapa_opening): Centrum bierze okno z
     create_app(efenix_window=...), więc testy i weryfikacja dają mu okno na Atrapie efenix (ADR 0024), a katalog
     procesów dostaje gotowe process_kind.EfenixOpening. Weź okno z efenix_chrome.py zamiast efenix_browser.
+
+[importlinter:contract:skoroszyty-bez-komunikatow]
+name = Moduły skoroszytu nie znają Komunikatów
+type = forbidden
+source_modules =
+    rozliczenia.workbook_files
+    rozliczenia.workbook_parts
+forbidden_modules =
+    rozliczenia.message
+allow_indirect_imports = False
+broken_contract_guidance =
+    Otwarcie skoroszytu zgłasza powód jako WorkbookError (Problem i przy złym układzie LayoutFault), a proces tłumaczy go
+    na Komunikat ze swojego katalogu (workbook_messages, *_messages): przenieś treść do katalogu procesu.

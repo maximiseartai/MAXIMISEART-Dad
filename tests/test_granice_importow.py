@@ -359,6 +359,7 @@ IMPORT_CONTRACTS: typing.Final = (
     "Pakiet silnika (rozliczenia/__init__.py) nie importuje Centrum rozliczeń",
     "imaplib i smtplib importuje tylko port Skrzynki raportów",
     "Przeglądarkę okna efenix importuje tylko centrum/efenix_chrome.py",
+    "Moduły skoroszytu nie znają Komunikatów",
 )
 wymaga_import_linter = pytest.mark.skipif(
     importlib.util.find_spec("importlinter") is None,
@@ -534,6 +535,9 @@ def _contract_tree(src: Path) -> None:
         "centrum/efenix_chrome.py": "from rozliczenia import efenix_browser\n",
         "efenix_browser.py": "",
         "worker_report_inbox.py": "import imaplib\nimport smtplib\n",
+        "message.py": "",
+        "workbook_files.py": "",
+        "workbook_parts.py": "",
         "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\nimport rozliczenia.efenix_browser\n",
     }.items():
         (src / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
