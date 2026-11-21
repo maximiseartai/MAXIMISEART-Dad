@@ -3045,15 +3045,31 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param("postac-tlumienia-poza-wlascicielem", f'{_PATTERN}re.compile(r"#\\s*(?i)noqa")\n', [3], id="tlumienie-z-flaga-wzorca"),
     pytest.param("postac-tlumienia-poza-wlascicielem", f'{_PATTERN}re.compile(r"\\bnoqa\\b")\n', [], id="slowo-noqa-bez-znacznika-przechodzi"),
     pytest.param("postac-tlumienia-poza-wlascicielem", f'{_PATTERN}re.compile(r"ruff: \\d+ błędów")\n', [], id="komunikat-ruff-przechodzi"),
-    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, "--ignore-pattern=dist", "--format", "json"]\\n', [2], id="flaga-wyboru-plikow-bez-listy"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, "--ignore-pattern=dist", "--format", "json"]\n', [2], id="flaga-wyboru-plikow-bez-listy"),
     pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return (program, "--ignore-pattern", "dist")\n', [2], id="flaga-wyboru-plikow-w-krotce"),
-    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, *(f"--ignore-pattern={pattern}" for pattern in ignored)]\\n', [2], id="flagi-wyboru-plikow-z-generatora"),
-    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [[program, "--ignore-pattern", "dist"], files]\\n', [2], id="flaga-wyboru-plikow-w-liscie-zagniezdzonej"),
-    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, "--ignore-pattern", "dist", "--", *files]\\n', [], id="flaga-z-lista-plikow-po-separatorze-przechodzi"),
-    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [[program, "--", *files], [program, "--ignore-pattern", "dist", "--", *files]]\\n', [], id="lista-argv-z-listami-plikow-przechodzi"),
-    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return len(paths[0].read_bytes())\\n', [5], id="dlugosc-bajtow-z-dysku"),
-    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return sum(len(path.read_bytes().replace(b"\\\\r\\\\n", b"\\\\n")) for path in paths)\\n', [5], id="dlugosc-bajtow-po-zamianie-crlf"),
+    pytest.param(
+        "linter-sam-wybiera-pliki",
+        f"{_LINT}" + '    return [program, "-A", "all"] + [f"--ignore-pattern={pattern}" for pattern in ignored] + ["--format", "json"]\n',
+        [2],
+        id="flagi-wyboru-plikow-w-sumie-list",
+    ),
+    pytest.param(
+        "linter-sam-wybiera-pliki",
+        f"{_LINT}" + '    rule_only = [program, "--ignore-pattern", "dist"]\n    return [*rule_only, "--", *files]\n',
+        [],
+        id="argv-w-dwoch-listach-z-separatorem-przechodzi",
+    ),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, *(f"--ignore-pattern={pattern}" for pattern in ignored)]\n', [2], id="flagi-wyboru-plikow-z-generatora"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [[program, "--ignore-pattern", "dist"], files]\n', [2], id="flaga-wyboru-plikow-w-liscie-zagniezdzonej"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, "--ignore-pattern", "dist", "--", *files]\n', [], id="flaga-z-lista-plikow-po-separatorze-przechodzi"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [[program, "--", *files], [program, "--ignore-pattern", "dist", "--", *files]]\n', [], id="lista-argv-z-listami-plikow-przechodzi"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return len(paths[0].read_bytes())\n', [5], id="dlugosc-bajtow-z-dysku"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return sum(len(path.read_bytes().replace(b"\\r\\n", b"\\n")) for path in paths)\n', [5], id="dlugosc-bajtow-po-zamianie-crlf"),
     pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    return sum(map(len, (path.read_bytes() for path in paths)))\n", [5], id="dlugosc-bajtow-przez-map"),
+    pytest.param(
+        "rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    return sum(len(data) for data in map(Path.read_bytes, paths))\n", [5], id="dlugosc-bajtow-z-generatora-po-map"
+    ),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    data = paths[0].read_text()\n    return len(data)\n", [], id="dlugosc-tekstu-w-zmiennej-przechodzi"),
     pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    return len(paths[0].read_bytes().splitlines())\n", [], id="liczba-linii-bajtow-przechodzi"),
     pytest.param(
         "rozmiar-z-bajtow-checkoutu",
@@ -3061,7 +3077,7 @@ _PROBKI_REGUL_POWROTOW: Final = [
         [],
         id="skrot-bajtow-przez-map-przechodzi",
     ),
-    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return len(paths)\\n', [], id="liczba-plikow-przechodzi"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return len(paths)\n', [], id="liczba-plikow-przechodzi"),
 ]
 
 
@@ -3191,11 +3207,14 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
     },
     "linter-sam-wybiera-pliki": {
         "katalog jako cel bez flagi wyboru plików": _LINT + '    return [program, "frontend"]\n',
+        "argv na poziomie modułu": 'PROGRAM = "oxlint"\nARGV = [PROGRAM, "--ignore-pattern=dist"]\n',
         "argv składany przez append": _LINT + '    argv = [program]\n    argv.append("--ignore-pattern=dist")\n    return argv\n',
         "plik ignore zamiast wzorca": _LINT + '    return [program, "--ignore-path", ".eslintignore", "frontend"]\n',
     },
     "rozmiar-z-bajtow-checkoutu": {
         "rozmiar ze stat": _SIZE + "    return paths[0].stat().st_size\n",
+        "bajty w zwykłej zmiennej przed len": _SIZE + "    data = paths[0].read_bytes()\n    return len(data)\n",
+        "rozmiar z os.path.getsize": "import os\n\n\ndef size(path: str) -> int:\n    return os.path.getsize(path)\n",
         "odczyt bajtów przez open": _SIZE + '    with open(paths[0], "rb") as plik:\n        return len(plik.read())\n',
     },
 }

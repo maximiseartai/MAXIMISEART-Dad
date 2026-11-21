@@ -2,27 +2,24 @@ id: linter-sam-wybiera-pliki
 language: python
 severity: error
 message: >-
-  argv lintera z jego własnym wyborem plików (--ignore-pattern) bez jawnej listy plików po "--": narzędzie stosuje
-  wtedy też domyślne pliki ignore (.eslintignore, .gitignore), których repo nie sprawdza; podaj listę plików po "--"
-  i --no-ignore
+  argv lintera z jego własnym wyborem plików (--ignore-pattern) w funkcji bez jawnej listy plików po "--": narzędzie
+  stosuje wtedy też domyślne pliki ignore (.eslintignore, .gitignore), których repo nie sprawdza; podaj listę plików
+  po "--" i --no-ignore
 files:
   - tools/**/*.py
 metadata:
   przypadki:
     - 2291/W1/r1
 rule:
-  # Argv w liście albo krotce z napisem flagi, także w generatorze albo f-napisie, ale nie w zagnieżdżonym argv.
-  any:
-    - kind: list
-    - kind: tuple
-  has:
-    stopBy:
-      any:
-        - kind: list
-        - kind: tuple
-    kind: string
-    regex: '^f?["'']--ignore-pattern'
-  not:
-    has:
-      kind: string
-      regex: '^["'']--["'']$'
+  # Napis flagi wyboru plików w funkcji, w której żaden napis nie jest separatorem "--" listy plików: argv złożony
+  # z kilku list, przez +, wyrażenie listowe albo zmienną jest jedną klasą, bo separator stoi w tej samej funkcji.
+  kind: string
+  regex: '^f?["'']--ignore-pattern'
+  inside:
+    stopBy: end
+    kind: function_definition
+    not:
+      has:
+        stopBy: end
+        kind: string
+        regex: '^["'']--["'']$'
