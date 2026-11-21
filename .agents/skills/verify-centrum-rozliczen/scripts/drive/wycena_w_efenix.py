@@ -1,5 +1,3 @@
-"""Drive features/wycena-w-efenix.md."""
-
 from __future__ import annotations
 
 import json
@@ -306,8 +304,6 @@ def _one_mode_word(run: Run, live: Locator, badge: str) -> None:
 
 
 def _labels_in_one_line(run: Run, live: Locator) -> None:
-    """#1067 saw „Przekazane do akceptacji” break into two lines in the strip of figures of the card."""
-
     heights = {
         label: box["height"]
         for label in (DONE_OK_FORWARDED, "Rozliczone")

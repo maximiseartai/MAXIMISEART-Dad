@@ -19,6 +19,7 @@ from typing import Final, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.report_box import (
@@ -29,6 +30,7 @@ from rozliczenia.centrum.report_box import (
     GitHubReportBox,
     Issue,
     Label,
+    ListedIssue,
     Refused,
     Rejected,
     Sent,
@@ -160,6 +162,10 @@ def _title(live: SkrzynkaLive, case: str) -> str:
     return f"verify-github-skrzynki {live.run}: {case}"
 
 
+def _run_of(title: str) -> str:
+    return title.removeprefix("verify-github-skrzynki ").partition(":")[0]
+
+
 def _int(facts: Facts, name: str) -> int:
     return int(cast(int, facts[name]))
 
@@ -173,7 +179,7 @@ def _sent(outcome: object) -> list[str]:
 
 
 def _numbers(outcome: object) -> list[int] | None:
-    return [issue.number for issue in outcome] if isinstance(outcome, tuple) else None
+    return [entry.issue.number for entry in outcome] if isinstance(outcome, tuple) else None
 
 
 # --- zakładanie issue -----------------------------------------------------------------------------------------------
@@ -410,6 +416,7 @@ def _prepare_closed(live: SkrzynkaLive, earlier: Facts) -> Facts:
     live.settle("zgloszenie", "open", {live.number("zalozenie")}, exact=True)
     return {
         "otwarte": live.number("zalozenie"),
+        "tytul_otwartego": opened["tytul"],
         "tresc_otwartego": text(opened),
         CAUGHT_UP: live.settle("zgloszenie", "all", every),
         **numbers,
@@ -434,14 +441,14 @@ def _judge_closed(facts: Facts, outcome: object) -> list[str]:
         _int(facts, "nie_planowane"),
         _int(facts, "zrobione"),
     )
-    problems = _expect(only_open, (Issue(opened, str(facts["tresc_otwartego"])),))
+    problems = _expect(only_open, (ListedIssue(Issue(opened, str(facts["tresc_otwartego"])), str(facts["tytul_otwartego"])),))
     if not isinstance(every, tuple) or sorted(_numbers(every) or []) != sorted([opened, not_planned, done]):
         return [
             *problems,
             f"z zamkniętymi: {every}, oczekiwane issue {opened}, {not_planned} i {done}",
         ]
     since = datetime.fromisoformat(str(facts["zamknieto_od"]))
-    for issue in every:
+    for issue in (entry.issue for entry in every):
         reason = {opened: None, not_planned: "not_planned", done: "completed"}[issue.number]
         closure = issue.closure
         if reason is None and closure is not None:
@@ -468,7 +475,8 @@ def _find(client: Client, facts: Facts) -> object:
 
 
 def _judge_find(facts: Facts, outcome: object) -> list[str]:
-    return _expect(outcome, (_int(facts, "otwarte"), _int(facts, "zamkniete")))
+    found = tuple(issue.number if isinstance(issue, Issue) else issue for issue in cast(tuple[object, ...], outcome))
+    return _expect(found, (_int(facts, "otwarte"), _int(facts, "zamkniete")))
 
 
 # --- Archiwum okresu -----------------------------------------------------------------------------------------------
@@ -615,6 +623,39 @@ LIMIT_SOURCE: Final = "tests/test_github_skrzynki.py (pomiar #332: 65 536 znakó
 
 def _is(expected: object) -> Callable[[Facts, object], list[str]]:
     return lambda facts, outcome: _expect(outcome, expected)
+
+
+WORKSTATIONS: Final[dict[str, BoxPrefix | None]] = {"tata": None, "andrzej": BoxPrefix.ANDRZEJ}
+
+
+def _period_line(run: str) -> str:
+    return f"- Logi Uruchomienia okresu: verify-{run}"
+
+
+def _prepare_workstations(live: SkrzynkaLive, earlier: Facts) -> Facts:
+    titles = {"tata": _title(live, "logi-taty"), "andrzej": f"{BoxPrefix.ANDRZEJ} {_title(live, 'logi-andrzeja')}"}
+    body = f"{live.marker}\n\n{_period_line(live.run)}\n"
+    numbers = {name: live.open("logi-uruchomienia", title, body) for name, title in titles.items()}
+    return {"tytuly": titles, "numery": numbers, CAUGHT_UP: live.settle("logi-uruchomienia", "open", set(numbers.values()))}
+
+
+def _workstations(client: Client, facts: Facts) -> object:
+    line = _period_line(_run_of(cast(dict[str, str], facts["tytuly"])["tata"]))
+    return {
+        name: KeyedBox(client.box, lambda: client.key, clock=time.monotonic, prefix=prefix).find_issue(
+            "logi-uruchomienia", line, include_closed=False
+        )
+        for name, prefix in WORKSTATIONS.items()
+    }
+
+
+def _judge_workstations(facts: Facts, outcome: object) -> list[str]:
+    numbers = cast(dict[str, int], facts["numery"])
+    return [
+        f"szukanie po linii okresu Stanowiska {name}: {describe(found)}, oczekiwane issue {numbers[name]}"
+        for name, found in cast(dict[str, object], outcome).items()
+        if not (isinstance(found, Issue) and found.number == numbers[name])
+    ]
 
 
 CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
@@ -818,6 +859,14 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
         _deleted,
         _judge_deleted,
     ),
+    Case(
+        "tytuly-stanowisk",
+        "szukanie po linii okresu każdego Stanowiska znajduje jego issue Logów okresu, a nie issue drugiego Stanowiska",
+        "GLOSSARY.md: Skrzynka Zgłoszeń, prefiks ANDRZEJ w tytule (spec #2439); tests/test_klucz_zgloszen.py: test_szukanie_po_linii_daje_tylko_issue_z_prefiksem_stanowiska_na_poczatku_tytulu",
+        _prepare_workstations,
+        _workstations,
+        _judge_workstations,
+    ),
 )
 
 # Czego przebieg nie sprawdza i dlaczego; zawsze w wyniku jako NIESPRAWDZONE.
@@ -834,12 +883,14 @@ UNCHECKED: Final = (
 
 
 def describe(outcome: object) -> str:
-    if isinstance(outcome, tuple) and all(isinstance(item, Issue) for item in outcome) and len(outcome) > 3:
+    if isinstance(outcome, tuple) and all(isinstance(item, ListedIssue) for item in outcome) and len(outcome) > 3:
         return f"({len(outcome)} issue)"
     if isinstance(outcome, tuple) and all(isinstance(item, Comment) for item in outcome) and len(outcome) > 3:
         return f"({len(outcome)} komentarzy)"
-    if isinstance(outcome, tuple) and all(isinstance(item, Issue) for item in outcome):
-        return "(" + ", ".join(f"Issue({i.number}, zamknięcie={i.closure})" for i in outcome) + ")"
+    if isinstance(outcome, tuple) and all(isinstance(item, ListedIssue) for item in outcome):
+        return "(" + ", ".join(f"Issue({i.issue.number}, zamknięcie={i.issue.closure})" for i in outcome) + ")"
+    if isinstance(outcome, Issue):
+        return f"Issue({outcome.number}, zamknięcie={outcome.closure})"
     if isinstance(outcome, tuple) and all(isinstance(item, Comment) for item in outcome):
         return "(" + ", ".join(f"Comment({c.id})" for c in outcome) + ")"
     if isinstance(outcome, tuple):

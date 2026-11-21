@@ -13,6 +13,7 @@ from statistics import median
 import subprocess
 import sys
 import sysconfig
+import time
 import tomllib
 from typing import Any
 
@@ -30,6 +31,7 @@ import rejestr_korzeni
 from rejestr_korzeni import GuardCase, Occurrence, Reviewed
 from repo import MAIN, REMOTE, ROOT
 import repo
+import srodowisko_ci
 import straznik
 from straznik import Guard, Kind
 import szablon_werdyktu
@@ -50,8 +52,11 @@ obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze z jednego
   w chwili ``Occurrence.when``;
 - odpalenie strażnika to porażka kroku strażnika w runie workflow ``CI`` PR-u (``CI_RUNS``: zdarzenie ``pull_request``,
   wynik ``failure``, ostatnia próba runu) założonym w tygodniu: krok ruff i każdy krok mypy zadania ``RUFF_MYPY``
-  odpala ``ruff`` albo ``mypy``, a krok reguł chwastów (``STEP_GUARDS``) ``ast-grep <id>`` każdej reguły z linii
-  ``odpalenia_ast_grep.FIRED_LINE`` w logu kroku (``ponow_ci.log_kroku``), którą zapadka drukuje na każde odpalenie
+  odpala ``ruff`` albo ``mypy``, a krok reguł chwastów (``STEP_GUARDS``) rodzaj strażnika każdego swojego testu z linii
+  ``FAILED`` w logu kroku (``ponow_ci.log_kroku``, ``ponow_ci.TEST_LINE``) według ``WEED_TESTS`` (testy kroków reguł
+  chwastów z ``srodowisko_ci``: zakaz ``noqa`` przy zakazanej nazwie i prawo właściciela to ``ruff``), a test
+  ``ast-grep`` i krok bez linii ``FAILED`` odpalają ``ast-grep <id>`` każdej reguły z linii
+  ``odpalenia_ast_grep.FIRED_LINE`` w logu kroku, którą zapadka drukuje na każde odpalenie
   (``odpalenia_ast_grep.refusal``), a bez takiej linii samo ``ast-grep``
   (porażka zakazu tłumienia); test odpala strażnik ``pytest <węzeł>`` Ważnego scalonego przed założeniem runu, gdy
   linia ``FAILED`` albo ``ERROR`` (``ponow_ci.TEST_LINE``) padniętego zadania to ten węzeł albo jego parametr. Run
@@ -90,6 +95,21 @@ obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze z jednego
   selektora z listy liczy jako „Bez strażnika”; udział wyjątków to Ważne z wyjątkiem (``straznik.EXEMPT``, ``brak -
   …``) przez wszystkie Ważne, a „Wyjątki strażnika” to każde Ważne tygodnia z wyjątkiem albo bez strażnika, żeby
   recenzent tygodnia sprawdził, czy wyjątek był uczciwy;
+- ponowny dowód (``--ponowny-dowod``, ``reproofs``) to dowód każdego strażnika scalonego do końca tygodnia, poza
+  wyjątkami ``brak - …`` (``straznik.EXEMPT``), na ostatnim commicie ``origin/main`` przed końcem tygodnia, tym samym
+  poleceniem co warunek 5 ``tools/scal_pr.py`` (``bramka_straznika.PROOF``: ``--straznik <selektor> --z-commita <commit>
+  --wazne <PR>/W<n>/r<k>``, jedno wywołanie na PR i selektor ze wszystkimi jego Ważnymi; bez flag warunków przyjęcia
+  strażnika w wątku PR, ``--przed-dowodem-testu`` i ``--chroniony-wlasciciel``, bo pytanie to, czy strażnik dalej łapie
+  swój błąd) z kopii tego commitu
+  (``potomne.commit_copy``), więc kod dowodu i zadanie Required CI, które on odtwarza (``srodowisko_ci``), są z tego
+  samego drzewa także po ich zmianie na ``main`` po końcu tygodnia, od najstarszego merge'a,
+  w budżecie ``--budzet-dowodu`` (``REPROOF_BUDGET_S``); „Ponowny dowód strażników” pokazuje każdego strażnika bez
+  ostatniej linii ``DOWÓD OK`` z liniami jego Ważnych i ostatnią linią dowodu (wynik inny niż ``WYKRYTA`` to strażnik,
+  który na tym commicie przestał łapać swój błąd albo którego dowodu, np. mutacji recenzenta, nie da się już nanieść),
+  a także każdego, którego dowód nie skończył się albo nie zaczął przed końcem budżetu. Dowód wykonuje kod
+  ``main`` (testy, backend budowy), więc w workflow biegnie w jobie bez prawa zapisu, który kończy treść issue w pliku
+  (``--tresc-do``), a zapisuje ją job z ``issues: write`` bez pomiaru (``--tresc-z``); pomiar bez
+  ``--ponowny-dowod`` ma w sekcji tylko linię ``REPROOF_SKIPPED``;
 - „Po limicie rund” to każdy PR założony w tygodniu na plikach PR-u zamkniętego bez merge'a, któremu limit rund
   odmawiał kolejnej rundy (``Reviewed.limited``), założony po ostatnim werdykcie ``FAIL`` tamtego PR, z liczbą
   wspólnych plików: limit kończy PR po szóstej rundzie z ``FAIL`` i zostawia tylko nowy PR od ``main``, którego nic
@@ -102,7 +122,8 @@ końca tego tygodnia, więc pomiar tygodnia daje te same liczby, kiedykolwiek go
 i logi runów się nie zmienią.
 
 Treść issue to szablon bez wolnej prozy (``body``): ``## Pomiar``, ``## Czekanie`` (tydzień i od wdrożenia),
-``## Reguły``, ``## Odpalenia strażników`` (z linią ``GRANICE``), ``## Poszerzenia reguł``, ``## Pary do audytu``, ``## Strażniki``
+``## Reguły``, ``## Odpalenia strażników`` (z linią ``GRANICE``), ``## Poszerzenia reguł``, ``## Pary do audytu``,
+``## Ponowny dowód strażników`` (z linią commitu, budżetu i liczb), ``## Strażniki``
 (tydzień i od wdrożenia warunku strażnika), ``## Wyjątki strażnika``, ``## Po limicie rund``, ``## Kody`` (każdy kod
 z wystąpieniem od wdrożenia, kod to kategoria ODC z ADR 0036), ``## Chwasty`` (otwarte issues „Chwast: R-KOD”)
 i ``## Historia`` z wierszem na każdy z ostatnich ``HISTORY`` tygodni od tygodnia wdrożenia. Historię pomiar liczy od
@@ -120,14 +141,16 @@ Koszt przebiegu to skan rejestru (``rejestr_korzeni`` podaje budżet: strona Gra
 issues ``chwast`` i ``rejestr-korzeni``, strona komentarzy issue na każde 100 oraz zapis issue, z etykietą przy pierwszym), żądania REST odpaleń (strona
 padniętych runów tygodnia na każde 100, lista zadań każdego i log każdego padniętego zadania poza ``Required CI
 status``, z 1000 żądań na godzinę ``GITHUB_TOKEN``), ``ALARM_PRS`` kopii commitów z biegiem
-ast-grep z dodatku dev, który workflow instaluje, i polecenia gita na merge'ach, które zmieniły pliki reguł.
+ast-grep z dodatku dev, który workflow instaluje, polecenia gita na merge'ach, które zmieniły pliki reguł, a z
+``--ponowny-dowod`` dowód każdego strażnika (środowisko Required CI z uv i jego biegi, ``srodowisko_ci``) i jego
+żądania werdyktów PR.
 
 Workflow ma dwa crony, bo cron GitHuba biegnie w UTC: ``--cron`` z cronem, który go uruchomił, przepuszcza tylko ten,
 którego godzina jest dziś 6 w Warszawie (``on_time``), a drugi kończy się linią ``REJESTR KORZENI POMINIĘTY``.
 Pusty ``--cron`` (``workflow_dispatch``) biegnie zawsze.
 
 Linie wyniku: ``REJESTR KORZENI | …`` na każdą akcję albo ostrzeżenie, z ``--bez-zapisu`` po nich treść issue, a na
-końcu ``REJESTR KORZENI OK | tydzień RRRR-MM-DD: …``. Błąd GitHuba, Gita, ast-grep, pliku reguły albo zły cron
+końcu ``REJESTR KORZENI OK | tydzień RRRR-MM-DD: …`` (z ``--tresc-z`` ``REJESTR KORZENI OK | treść z PLIK``). Błąd GitHuba, Gita, ast-grep, pliku reguły albo zły cron
 kończy się linią ``REJESTR KORZENI FAIL`` i kodem 1.
 """
 
@@ -164,11 +187,19 @@ META = frozenset({"id", "message", "note", "url", "metadata", "severity", "label
 BANNED_NAMES = "nazwy"
 OWNERS = "per-file-ignores"
 BANNED_CODE = "TID251"
+WEED_TESTS = {**srodowisko_ci.WEED_TESTS, **srodowisko_ci.ADDED_LINES_TESTS}
+REPROOF_BUDGET_S = 150 * 60
+REPROOF_CELL = 300
+REPROOF_LATE = "dowód nie skończył się przed końcem budżetu ponownego dowodu"
+REPROOF_UNSTARTED = "dowód nie zaczął się przed końcem budżetu ponownego dowodu"
+REPROOF_SKIPPED = "Ponowny dowód nie biegł w tym pomiarze (bez --ponowny-dowod)."
 
 EXAMPLES = """\
     .venv/bin/python tools/rejestr_korzeni_tydzien.py --bez-zapisu                       # drukuje treść za ostatni pełny tydzień
     .venv/bin/python tools/rejestr_korzeni_tydzien.py --bez-zapisu --tydzien 2026-11-16  # tydzień z tym dniem
     .venv/bin/python tools/rejestr_korzeni_tydzien.py                                    # zmienia albo zakłada issue
+    .venv/bin/python tools/rejestr_korzeni_tydzien.py --ponowny-dowod --tresc-do tresc.md  # pomiar z ponownym dowodem do pliku
+    .venv/bin/python tools/rejestr_korzeni_tydzien.py --tresc-z tresc.md                 # zapis tej treści w issue
 """
 
 
@@ -189,6 +220,35 @@ class Firing:
 
     def row(self) -> str:
         return f"| {self.owner} | {self.guard} | {', '.join(f'#{case.pull} {case.major}' for case in self.majors) or '-'} |"
+
+
+@dataclass(frozen=True)
+class Reproof:
+    pull: int
+    guard: Guard
+    majors: tuple[str, ...]
+    failure: str | None
+    late: bool = False
+
+    def row(self) -> str:
+        shown = " ".join(str(self.failure).split()).replace("|", "\\|")
+        cell = shown if len(shown) <= REPROOF_CELL else f"{shown[: REPROOF_CELL - 1]}…"
+        return f"| #{self.pull} | {self.guard} | {', '.join(self.majors)} | {cell} |"
+
+
+@dataclass(frozen=True)
+class Reproofs:
+    commit: str
+    budget: int
+    proved: tuple[Reproof, ...]
+
+    def lead(self) -> str:
+        failed = sum(reproof.failure is not None for reproof in self.proved)
+        late = sum(reproof.late for reproof in self.proved)
+        return (
+            f"Dowód każdego strażnika scalonego do końca tygodnia na {MAIN} z {self.commit[:8]} (tools/na_scalonych_pr.py --straznik) w budżecie"
+            f" {self.budget // 60} min: {len(self.proved)} strażników, {failed} bez DOWÓD OK, w tym {late} poza budżetem."
+        )
 
 
 @dataclass(frozen=True)
@@ -316,6 +376,7 @@ def body(
     fired: Sequence[Firing],
     widened: Sequence[Widening],
     audited: Mapping[str, int],
+    reproved: Reproofs | None = None,
 ) -> str:
     """Treść issue ``TITLE`` dla tygodnia od poniedziałku ``week`` z PR-ów skanu rejestru ``pulls``, otwartych issues
     chwastów ``weeds`` (numer i kod), chwili wdrożenia ``deployed`` (szablon), ``guarded`` (warunek strażnika),
@@ -332,6 +393,8 @@ def body(
     lines += _table("Odpalenia strażników", ("PR", "Strażnik", "Ważne strażnika"), (firing.row() for firing in fired), GRANICE)
     lines += _table("Poszerzenia reguł", ("PR", "Reguła", "Pola"), (widening.row() for widening in widened if _inside(widening.when, start, end)))
     lines += _table("Pary do audytu", PAIR_COLUMNS, (pair.row() for pair in pairs(pulls, start, end)))
+    rows = (reproof.row() for reproof in reproved.proved if reproof.failure is not None) if reproved is not None else ()
+    lines += _table("Ponowny dowód strażników", ("PR", "Strażnik", "Ważne", "Wynik"), rows, reproved.lead() if reproved is not None else REPROOF_SKIPPED)
     since_guard = f"Od wdrożenia {guarded.astimezone(WARSAW).date().isoformat()}"
     guards = [f"| Tydzień {week.isoformat()} | {_guard_cells(_guards(pulls, start, end))} |", f"| {since_guard} | {_guard_cells(_guards(pulls, None, end))} |"]
     lines += _table("Strażniki", ("Okres", *GUARD_COLUMNS), guards)
@@ -405,14 +468,45 @@ def _fired(job: Mapping[str, Any], log: str, earlier: Sequence[GuardCase]) -> It
         for step in steps:
             kind = STEP_GUARDS.get(str(step["name"])) if step["conclusion"] == "failure" else None
             if kind is Kind.AST_GREP:
+                kinds = {WEED_TESTS.get(found[1], kind) for found in ponow_ci.TEST_LINE.finditer(ponow_ci.log_kroku(log, steps, str(step["name"])))} or {kind}
+                yield from (Guard(other) for other in sorted(kinds - {kind}, key=str))
                 rules = dict.fromkeys(odpalenia_ast_grep.FIRED_LINE.findall(ponow_ci.log_kroku(log, steps, str(step["name"]))))
-                yield from (Guard(kind, (rule,)) for rule in rules) if rules else (Guard(kind),)
+                if kind in kinds:
+                    yield from (Guard(kind, (rule,)) for rule in rules) if rules else (Guard(kind),)
             elif kind is not None:
                 yield Guard(kind)
     failed = {found[1] for found in ponow_ci.TEST_LINE.finditer(log)}
     for case in earlier:
         if case.guard is not None and case.guard.kind is Kind.PYTEST and any(test == case.guard.arguments[0] or test.startswith(f"{case.guard.arguments[0]}[") for test in failed):
             yield case.guard
+
+
+def reproofs(pulls: Sequence[Reviewed], end: datetime, budget: int) -> Reproofs:
+    commit = repo.git(ROOT, "log", "--first-parent", "-1", f"--before={end.isoformat()}", "--format=%H", f"{REMOTE}/{MAIN}").strip()
+    cases = sorted((case for pull in pulls for case in pull.guards if case.guard is not None and case.guard.kind not in straznik.EXEMPT and case.when < end), key=lambda case: (case.when, case.pull))
+    wanted: dict[tuple[int, Guard], list[str]] = {}
+    for case in cases:
+        if case.guard is not None:
+            wanted.setdefault((case.pull, case.guard), []).append(case.major)
+    with potomne.commit_copy(ROOT, commit) as copy:
+        deadline = time.monotonic() + budget
+        proved = tuple(_reproof(copy, commit, pull, guard, tuple(majors), deadline - time.monotonic()) for (pull, guard), majors in wanted.items())
+    return Reproofs(commit, budget, proved)
+
+
+def _reproof(copy: Path, commit: str, pull: int, guard: Guard, majors: tuple[str, ...], left: float) -> Reproof:
+    if left <= 0:
+        return Reproof(pull, guard, majors, REPROOF_UNSTARTED, late=True)
+    arguments = ["--straznik", str(guard), "--z-commita", commit, *(part for major in majors for part in ("--wazne", f"{pull}/{major.replace(' ', '/')}"))]
+    try:
+        done = potomne.run([sys.executable, str(copy / bramka_straznika.PROOF.relative_to(ROOT)), *arguments], cwd=copy, timeout=left)
+    except subprocess.TimeoutExpired:
+        return Reproof(pull, guard, majors, REPROOF_LATE, late=True)
+    lines = (done.stdout + done.stderr).strip().splitlines()
+    if done.returncode == 0 and lines and lines[-1].startswith(bramka_straznika.PROOF_OK):
+        return Reproof(pull, guard, majors, None)
+    shown = [line for line in done.stdout.splitlines() if line.startswith(f"#{pull} ")] + lines[-1:]
+    return Reproof(pull, guard, majors, "; ".join(dict.fromkeys(shown)) or f"kod {done.returncode} bez wyniku")
 
 
 def widenings(end: datetime) -> list[Widening]:
@@ -494,38 +588,66 @@ def _own(issues: Sequence[dict[str, object]]) -> list[dict[str, object]]:
     return sorted((issue for issue in issues if issue["title"] == TITLE), key=lambda issue: int(str(issue["number"])))
 
 
+def _publish(api: github.GhApi, registry: Sequence[dict[str, object]], text: str, dry: bool) -> list[str]:
+    action, lines = _action(registry, text)
+    if isinstance(action, github.Zaloz):
+        lines += github.zaloz_etykiety(api, rejestr_korzeni.LABELS, PREFIX, zapis=not dry)
+    if action is not None:
+        lines += [f"{PREFIX} | bez zapisu: {github.opis(action)}"] if dry else github.wykonaj(api, [action], PREFIX)
+    return lines
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=OPIS, epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bez-zapisu", action="store_true", help="Niczego nie zapisuj na GitHubie, tylko wydrukuj treść issue.")
     parser.add_argument("--tydzien", type=date.fromisoformat, help="Dzień tygodnia do pomiaru, RRRR-MM-DD (domyślnie ostatni pełny tydzień).")
     parser.add_argument("--cron", default="", help="Cron, który uruchomił workflow; pomiar biegnie, gdy jego godzina to dziś 6 czasu polskiego.")
+    parser.add_argument("--ponowny-dowod", action="store_true", help="Uruchom ponowny dowód scalonych strażników na main z końca tygodnia.")
+    parser.add_argument("--budzet-dowodu", type=int, default=REPROOF_BUDGET_S, metavar="S", help=f"Budżet ponownego dowodu w sekundach (domyślnie {REPROOF_BUDGET_S}).")
+    parser.add_argument("--tresc-do", type=Path, metavar="PLIK", help="Zapisz treść issue do pliku zamiast w issue na GitHubie.")
+    parser.add_argument("--tresc-z", type=Path, metavar="PLIK", help="Zapisz w issue treść z pliku --tresc-do, bez pomiaru.")
     args = parser.parse_args(argv)
+    if args.tresc_z is not None and (args.tydzien is not None or args.cron or args.ponowny_dowod or args.tresc_do is not None):
+        parser.error("--tresc-z zapisuje treść gotowego pomiaru, więc bez --tydzien, --cron, --ponowny-dowod i --tresc-do")
     now = datetime.now(UTC)
     try:
-        if args.cron and not on_time(args.cron, now):
-            print(f"{PREFIX} POMINIĘTY | cron „{args.cron}” nie wypada dziś w godzinie {HOUR} czasu polskiego")
-            return 0
-        week = last_full_week(now) if args.tydzien is None else week_of(midnight(args.tydzien))
-        start, end = midnight(week), midnight(week + timedelta(days=7))
-        repo.run_git(ROOT, "fetch", "--quiet", "--no-tags", REMOTE, f"+refs/heads/{MAIN}:refs/remotes/{REMOTE}/{MAIN}", timeout=github.LIMIT_S).check_returncode()
-        repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
-        deployed, guarded = (werdykt_pr.deployment(MAIN, marker) for marker in (szablon_werdyktu.ADR, bramka_straznika.MARKER))
-        if deployed is None or guarded is None:
-            raise ValueError(f"{szablon_werdyktu.ADR} albo {bramka_straznika.MARKER} nie wszedł jeszcze do {MAIN}, więc rejestru korzeni albo strażników nie ma")
-        pulls = rejestr_korzeni.reviewed(repository, deployed, werdykt_pr.deployment(MAIN, limit_rund.MARKER), guarded)
-        api = github.GhApi()
-        fired = firings(api, pulls, start, end)
-        widened = [widening for widening in widenings(end) if widening.when >= deployed]
-        weeded = weeds(github.issues(api, rejestr_korzeni.WEED, "open"))
-        registry = github.issues(api, rejestr_korzeni.REGISTRY, "open")
-        own = _own(registry)
-        audited = audits(github.strony(api, f"{github.REPO}/issues/{own[0]['number']}/comments")) if own else {}
-        text = body(pulls, weeded, week, deployed, guarded, alarms(end), fired, widened, audited)
-        action, lines = _action(registry, text)
-        if isinstance(action, github.Zaloz):
-            lines += github.zaloz_etykiety(api, rejestr_korzeni.LABELS, PREFIX, zapis=not args.bez_zapisu)
-        if action is not None:
-            lines += [f"{PREFIX} | bez zapisu: {github.opis(action)}"] if args.bez_zapisu else github.wykonaj(api, [action], PREFIX)
+        if args.tresc_z is not None:
+            text = args.tresc_z.read_bytes().decode("utf-8")
+            lines = _publish(github.GhApi(), github.issues(github.GhApi(), rejestr_korzeni.REGISTRY, "open"), text, args.bez_zapisu)
+            summary = f"{PREFIX} OK | treść z {args.tresc_z}"
+        else:
+            if args.cron and not on_time(args.cron, now):
+                print(f"{PREFIX} POMINIĘTY | cron „{args.cron}” nie wypada dziś w godzinie {HOUR} czasu polskiego")
+                return 0
+            week = last_full_week(now) if args.tydzien is None else week_of(midnight(args.tydzien))
+            start, end = midnight(week), midnight(week + timedelta(days=7))
+            repo.run_git(ROOT, "fetch", "--quiet", "--no-tags", REMOTE, f"+refs/heads/{MAIN}:refs/remotes/{REMOTE}/{MAIN}", timeout=github.LIMIT_S).check_returncode()
+            repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
+            deployed, guarded = (werdykt_pr.deployment(MAIN, marker) for marker in (szablon_werdyktu.ADR, bramka_straznika.MARKER))
+            if deployed is None or guarded is None:
+                raise ValueError(f"{szablon_werdyktu.ADR} albo {bramka_straznika.MARKER} nie wszedł jeszcze do {MAIN}, więc rejestru korzeni albo strażników nie ma")
+            pulls = rejestr_korzeni.reviewed(repository, deployed, werdykt_pr.deployment(MAIN, limit_rund.MARKER), guarded)
+            api = github.GhApi()
+            fired = firings(api, pulls, start, end)
+            widened = [widening for widening in widenings(end) if widening.when >= deployed]
+            weeded = weeds(github.issues(api, rejestr_korzeni.WEED, "open"))
+            registry = github.issues(api, rejestr_korzeni.REGISTRY, "open")
+            own = _own(registry)
+            audited = audits(github.strony(api, f"{github.REPO}/issues/{own[0]['number']}/comments")) if own else {}
+            reproved = reproofs(pulls, end, args.budzet_dowodu) if args.ponowny_dowod else None
+            text = body(pulls, weeded, week, deployed, guarded, alarms(end), fired, widened, audited, reproved)
+            if args.tresc_do is not None:
+                args.tresc_do.parent.mkdir(parents=True, exist_ok=True)
+                args.tresc_do.write_bytes(text.encode("utf-8"))
+                lines = [f"{PREFIX} | treść w {args.tresc_do}"]
+            else:
+                lines = _publish(api, registry, text, args.bez_zapisu)
+            occurrences = sum(_inside(occurrence.when, start, end) for pull in pulls for occurrence in pull.occurrences)
+            failed = f", {sum(reproof.failure is not None for reproof in reproved.proved)} strażników bez DOWÓD OK" if reproved is not None else ""
+            summary = (
+                f"{PREFIX} OK | tydzień {week.isoformat()}: {occurrences} wystąpień, {len(fired)} odpaleń strażników,"
+                f" {sum(_inside(widening.when, start, end) for widening in widened)} poszerzeń reguł, {len(_guards(pulls, start, end))} Ważnych w wątkach strażnika{failed}"
+            )
     except (subprocess.SubprocessError, OSError, ValueError, KeyError, yaml.YAMLError, github.BladApi) as error:
         print(f"{PREFIX} FAIL | {error}")
         return 1
@@ -533,11 +655,7 @@ def main(argv: list[str] | None = None) -> int:
         print(line)
     if args.bez_zapisu:
         print(text)
-    occurrences = sum(_inside(occurrence.when, start, end) for pull in pulls for occurrence in pull.occurrences)
-    print(
-        f"{PREFIX} OK | tydzień {week.isoformat()}: {occurrences} wystąpień, {len(fired)} odpaleń strażników,"
-        f" {sum(_inside(widening.when, start, end) for widening in widened)} poszerzeń reguł, {len(_guards(pulls, start, end))} Ważnych w wątkach strażnika"
-    )
+    print(summary)
     return 0
 
 

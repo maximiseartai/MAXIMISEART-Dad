@@ -8,7 +8,7 @@ import json
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time as day_time, timezone
 from pathlib import Path
 from typing import Any, Final, Self, TypeVar
@@ -40,8 +40,8 @@ from rozliczenia.centrum.report_box import (
     CommentOutcome,
     CommentsOutcome,
     Commented,
-    IssuesOutcome,
     Label,
+    ListOutcome,
     OpenArchiveOutcome,
     Refused,
     RemoveOutcome,
@@ -52,7 +52,7 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
 )
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
-from rozliczenia.centrum.scope import Scope
+from rozliczenia.centrum.scope import SCOPES, Scope, Workstation
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -105,6 +105,7 @@ ONLINE_ONLY_FILE = 0x400000
 BACKGROUND_NUMBERS = 1001
 # Logi Uruchomienia idą do skrzynki po każdym Uruchomieniu; testy innych wysyłek ich nie oglądają.
 RUN_LOGS_IN_BACKGROUND: frozenset[Label] = frozenset({"logi-uruchomienia"})
+ANDRZEJ_PREFIX_SCOPE: Final = replace(SCOPES[Workstation.DAD], box_prefix=SCOPES[Workstation.ANDRZEJ].box_prefix)
 # Najdłuższe czekanie zatrzymania Centrum na koniec jego wątków w tle; tyle, co skrzynka czeka na wysyłkę w tle.
 STOP_S = 30.0
 
@@ -324,7 +325,7 @@ class FakeReportBox:
         behind = issue in self.background_issues
         return _comment_url(issue.number, issue.position(comment_id) if behind else comment_id)
 
-    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> ListOutcome:
         if label in self.background:
             with self._changed:
                 return self._background_box.listed(label, include_closed=include_closed)
