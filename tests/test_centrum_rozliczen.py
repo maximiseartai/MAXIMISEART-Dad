@@ -155,6 +155,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import (
     PERIOD_MONDAY,
+    TODAY as SETTLING_TODAY,
     PreparingCentrum,
     SettlingCentrum,
     Surroundings,
@@ -4260,14 +4261,6 @@ def test_zmiana_ustawien_z_wydania_bez_cofniecia_nie_ma_cofnij(tmp_path: Path) -
     assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
 
 
-# --- Plik Ustawień bez odczytu (#1529 W4, #1532 W2, #1572 W1): każda operacja i każda zmiana z Wydania ----------------
-# Test nie zna gałęzi „pliku nie da się przeczytać” z nazwy. Operacja Ustawień z kontraktu i zmiana z Wydania biegnie raz
-# na czytelnych plikach i zapisuje, które pliki katalogu narzędzia czyta (``tests/fixtures/odczyt_bez_dostepu.py``),
-# a potem raz na każdy z nich, gdy system nie daje go czytać. Wynik ma być jednym z dwóch, które nie gubią danych taty
-# (ADR 0032): taki sam jak przy czytelnym pliku albo nic. Nowa operacja i nowa zmiana z Wydania wchodzą do testu same.
-# Odebrany odczyt sprawdza coś tylko na pliku, który w świecie próbki coś znaczy, więc operacja biegnie też raz bez
-# każdego pliku, który czyta przed swoim zapisem, a bieg bez niego ma dać inny wynik niż czytelny (``_meaningless``).
-
 _ROW_ID = re.compile(r"\b[0-9a-f]{32}\b")
 _MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?")
 _COMMIT_FIELD = re.compile(r'"commit": ?"[0-9a-f]{7,40}"')
@@ -4275,16 +4268,12 @@ _REJECTED_MOMENT = re.compile(r"\.\d{8}-\d{6}$")
 
 
 def _without_run_differences(text: str, root: Path) -> str:
-    """Tekst bez tego, co różni dwa przebiegi tej samej operacji: katalog testu, id wiersza Historii, chwila i commit."""
-
     for place in (str(root), json.dumps(str(root))[1:-1]):
         text = text.replace(place, "<narzedzie>")
     return _COMMIT_FIELD.sub('"commit":"<commit>"', _MOMENT.sub("<czas>", _ROW_ID.sub("<id>", text)))
 
 
 def _file_text(path: Path) -> str:
-    """Treść pliku jako tekst; pamięć pliku Ustawień z treścią (``widziany``, ``dobry``) zdekodowaną z base64."""
-
     text = path.read_bytes().decode("utf-8", errors="replace")
     if path.parent.name != MEMORY_DIRECTORY or path.suffix != ".json":
         return text
@@ -4298,11 +4287,6 @@ def _file_text(path: Path) -> str:
 
 
 def _tool_files(tool: ToolDirectory) -> dict[str, str]:
-    """Stan katalogu narzędzia poza Logami: ścieżka → treść bez różnic przebiegu, także bez chwili w nazwie kopii złej
-    treści (``odrzucone/<plik>.RRRRMMDD-GGMMSS``). Wiersze Historii Ustawień stoją posortowane: wiersz zmiany spoza
-    Centrum, który bieg przy pliku bez odczytu odłożył, następny odczyt (``_next_reading``) dopisuje po wierszu operacji,
-    a czytelny bieg przed nim."""
-
     logs = tool.log_path.parent
     files: dict[str, str] = {}
     for path in sorted(tool.root.rglob("*")):
@@ -4310,7 +4294,8 @@ def _tool_files(tool: ToolDirectory) -> dict[str, str]:
             continue
         text = _without_run_differences(_file_text(path), tool.root)
         if path.name == HISTORY_FILE:
-            text = "\n".join(sorted(text.splitlines()))
+            rows_in_any_order_as_the_next_reading_appends_the_deferred_outside_row = sorted(text.splitlines())
+            text = "\n".join(rows_in_any_order_as_the_next_reading_appends_the_deferred_outside_row)
         files[_REJECTED_MOMENT.sub(".<czas>", str(path.relative_to(tool.root)))] = text
     return files
 
@@ -4330,11 +4315,6 @@ SIGNED_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "footer": "Pozdrawi
 
 @dataclass(frozen=True)
 class SettingsWorld:
-    """Centrum po krokach taty, w których każdy plik Ustawień ma znaczenie: usunięta reguła, składnik i Wykonawca w
-    Historii (nowy wpis nie może dostać ich id), wpisy, które operacja zmienia, i zmiana każdego pliku poza Centrum
-    (``_dad_changed_every_file_outside_centrum``). Systemowe okno wyboru ma w kolejce folder ``INEA`` i plik
-    ``Rejestr.xlsx``, inne niż wybrane w świecie."""
-
     client: CentrumClient
     tool: ToolDirectory
     rule: str = ""
@@ -4345,14 +4325,11 @@ class SettingsWorld:
 
 
 WORLD_CODE: Final = {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": [], "counts_in_fault": True}
-"""Kod czynności, który tata w świecie próbek dodał i usunął: nowy kod z tym formularzem nie może dostać jego id."""
 
 EXCEPTION_OF_WORLD = QuantityException(PERIOD, 21, "N", 45, "0123456789abcdef")
-"""Wyjątek Kontroli ilości, który tata oznaczył w świecie próbek, zanim przyszła próbka."""
 
 
 WORLD_SETTLEMENT_MAIL: Final = {"subject": "Rozliczenie taty za {okres}", "text": "Cześć {wykonawca}"}
-"""Temat i treść Maila z rozliczeniem, które tata zapisał w świecie próbek."""
 
 
 def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[str, str]:
@@ -4375,10 +4352,6 @@ def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[
 
 
 def _dad_changed_every_file_outside_centrum(tool: ToolDirectory) -> None:
-    """Tata zmienił każdy plik Ustawień poza Centrum, odkąd Centrum go ostatnio widziało: pamięć każdego pliku ma stan
-    sprzed tej zmiany (plik z pustym wierszem na końcu, który tata usunął; przy sekrecie inny odcisk). Pamięć ma wtedy
-    znaczenie: z nią zapis albo odczyt pliku dopisuje wiersz zmiany spoza Centrum, a bez niej nie."""
-
     for path in sorted((tool.config / MEMORY_DIRECTORY).glob("*.json")):
         if path.name == APPLIED_FILE:
             continue
@@ -4436,14 +4409,9 @@ DIFFERENCE_ROWS: list[dict[str, CellValue]] = [
     {"C": "pr", "D": "usterka", "G": datetime(2026, 9, 11, 16, 30), "V": 1, "AI": 1, "N": 45},
     {"C": "pr", "D": "technicolor", "G": datetime(2026, 9, 9, 12), "V": 1, "O": 1, "Z": 1, "S": 1},
 ]
-"""Dwa Wiersze danych, każdy z jedną różnicą Kontroli ilości: wpis taty inny niż wartość Reguł ilości."""
 
 
 def _differences_world(tmp_path: Path, name: str) -> SettingsWorld:
-    """Świat „To był wyjątek”: okres po Przebiegu rozliczeń z dwiema różnicami Kontroli ilości, z których tata jedną już
-    oznaczył (plik wyjątków jest przed próbką), pliki taty i Maksa (``_files_of_dad_and_maks``) i zmiana każdego pliku
-    poza Centrum (``_dad_changed_every_file_outside_centrum``)."""
-
     settling = settling_centrum(tmp_path / name)
     write_quantity_source(settling.collective_file, DIFFERENCE_ROWS)
     run_to_end(settling, dry_run=False)
@@ -4506,10 +4474,8 @@ SETTINGS_WRITES: dict[str, SettingsRequest] = {
     "switchWorker": lambda w: ("PUT", f"/api/settings/workers/{w.worker}/switches", {"active": False}),
     "markQuantityException": lambda w: ("POST", f"{QUANTITY_RULES_URL}/differences/{w.difference}/exception", None),
 }
-"""Próbka każdej operacji Ustawień z kontraktu, która nie jest odczytem (GET): zapytanie w świecie próbki."""
 
 OWN_WORLDS: dict[str, Callable[[Path, str], SettingsWorld]] = {"markQuantityException": _differences_world}
-"""Świat próbki innej niż ``_settings_world``; Przebieg rozliczeń robi tylko świat, który go potrzebuje."""
 
 
 def test_kazda_operacja_zapisu_ustawien_z_kontraktu_ma_probke_pliku_bez_odczytu() -> None:
@@ -4519,8 +4485,6 @@ def test_kazda_operacja_zapisu_ustawien_z_kontraktu_ma_probke_pliku_bez_odczytu(
 
 
 def _writes_change(operation: str) -> bool:
-    """Operacja, której odpowiedź z kontraktu ma pole ``change`` (wiersz Historii Ustawień): zapis, a nie podgląd."""
-
     contract = _committed_contract()
     for methods in contract["paths"].values():
         for operation_ in methods.values():
@@ -4533,10 +4497,6 @@ def _writes_change(operation: str) -> bool:
 
 @dataclass(frozen=True)
 class Outcome:
-    """Wynik zapytania: status, odpowiedź i skutek w katalogu narzędzia poza Logami po następnym odczycie przy czytelnych
-    plikach (ścieżka → treść po nim, ``None`` dla usuniętego pliku) bez różnic przebiegu (``_tool_files``), więc pliki
-    świata sprzed zapytania (np. z Przebiegu) go nie zmieniają."""
-
     status: int
     body: str
     changed: dict[str, str | None]
@@ -4544,9 +4504,6 @@ class Outcome:
 
 @dataclass(frozen=True)
 class Trial:
-    """Bieg zapytania: wynik i pliki katalogu narzędzia poza Logami, które zapytanie otwierało do odczytu (``read``), te z
-    nich, które czytało przed swoim ostatnim zapisem (``read_before_write``), i te, których przed nim nie było."""
-
     outcome: Outcome
     read: tuple[Path, ...]
     read_before_write: tuple[Path, ...]
@@ -4565,19 +4522,15 @@ def _trial(
     denied: Path | None = None,
     missing: Path | None = None,
 ) -> Trial:
-    """Bieg zapytania ``ask`` (status, odpowiedź) w katalogu ``tool``, gdy system nie daje czytać pliku ``denied`` albo gdy
-    pliku ``missing`` nie ma, a po nim następny odczyt przy czytelnych plikach (``settle``). Plik ``missing``, którego
-    zapytanie nie zapisało, wraca przed ``settle``: nieczytelny plik wzięty za brak pliku zostaje na dysku."""
-
     root = tool.root
     before = _tool_files(tool)
-    kept = None if missing is None else (root / missing, (root / missing).read_bytes())
-    if kept is not None:
-        kept[0].unlink()
+    back_as_an_unreadable_file_stays_on_disk = None if missing is None else (root / missing, (root / missing).read_bytes())
+    if back_as_an_unreadable_file_stays_on_disk is not None:
+        back_as_an_unreadable_file_stays_on_disk[0].unlink()
     with reading(root, frozenset() if denied is None else frozenset({root / denied})) as reads:
         status, body = ask()
-    if kept is not None and not kept[0].exists():
-        kept[0].write_bytes(kept[1])
+    if back_as_an_unreadable_file_stays_on_disk is not None and not back_as_an_unreadable_file_stays_on_disk[0].exists():
+        back_as_an_unreadable_file_stays_on_disk[0].write_bytes(back_as_an_unreadable_file_stays_on_disk[1])
     settle()
     logs = tool.log_path.parent
 
@@ -4590,11 +4543,7 @@ def _trial(
     return Trial(outcome, read, own(reads.before_last_write(outside=logs)), absent)
 
 
-def _next_reading(client: CentrumClient) -> None:
-    """Następny odczyt Ustawień przy czytelnych plikach: okno Historii Ustawień, które najpierw porównuje każdy plik
-    Ustawień z pamięcią (``CentrumSettings.history``), więc zapisuje wiersz zmiany spoza Centrum, który bieg przy pliku
-    bez odczytu odłożył."""
-
+def _next_reading_writing_outside_rows_deferred_at_unreadable_file(client: CentrumClient) -> None:
     response = client.get("/api/settings/history")
     assert response.status_code == 200, f"Historia Ustawień: {response.status_code} {response.text[:200]}"
     client.stop()
@@ -4603,31 +4552,28 @@ def _next_reading(client: CentrumClient) -> None:
 def _send(
     world: SettingsWorld, request: SettingsRequest, *, denied: Path | None = None, missing: Path | None = None
 ) -> Trial:
-    """Bieg zapytania ``request`` w świecie ``world`` (``_trial``) z następnym odczytem Ustawień (``_next_reading``)."""
-
     def ask() -> tuple[int, str]:
         method, url, body = request(world)
         response = world.client.request(method, url, json=body)
         world.client.stop()
         return response.status_code, response.text
 
-    return _trial(world.tool, ask, lambda: _next_reading(world.client), denied=denied, missing=missing)
+    return _trial(
+        world.tool,
+        ask,
+        lambda: _next_reading_writing_outside_rows_deferred_at_unreadable_file(world.client),
+        denied=denied,
+        missing=missing,
+    )
 
 
 def _untouched(world: SettingsWorld) -> dict[str, str | None]:
-    """Skutek samego następnego odczytu Ustawień w świecie ``world``, bez zapytania: skutek odmowy, która nic nie gubi."""
-
     before = _tool_files(world.tool)
-    _next_reading(world.client)
+    _next_reading_writing_outside_rows_deferred_at_unreadable_file(world.client)
     return _changed(before, _tool_files(world.tool))
 
 
 def _meaningless(readable: Trial, without: Callable[[Path], Outcome]) -> list[Path]:
-    """Pliki, które zapytanie czyta przed swoim ostatnim zapisem, a bieg bez pliku (``without``) daje ten sam status i
-    skutek co czytelny bieg, poza samym plikiem: produkt, który nieczytelny plik bierze za brak pliku, daje wtedy wynik
-    jak przy czytelnym, więc odebrany odczyt takiego pliku niczego nie sprawdza. Odczyt po ostatnim zapisie (widok w
-    odpowiedzi) nie zmienia niczego, co zapytanie zapisało, więc warunek go nie obejmuje."""
-
     def apart_from(changed: Mapping[str, str | None], path: Path) -> dict[str, str | None]:
         return {name: text for name, text in changed.items() if name != str(path)}
 
@@ -4641,10 +4587,6 @@ def _meaningless(readable: Trial, without: Callable[[Path], Outcome]) -> list[Pa
 
 
 def _kept_data(locked: Outcome, readable: Outcome, untouched: Mapping[str, str | None]) -> bool:
-    """Wynik przy pliku bez odczytu, który nie gubi danych taty (ADR 0032): odmowa ze zdaniem, po której skutek jest jak
-    bez zapytania, albo status i skutek jak przy czytelnym pliku. Skutek liczy się po następnym odczycie, bo produkt
-    odkłada wiersz zmiany spoza Centrum w pliku, którego teraz nie czyta, do odczytu, który go przeczyta."""
-
     if locked.status >= 400:
         return '"message"' in locked.body and locked.changed == untouched
     return (locked.status, locked.changed) == (readable.status, readable.changed)
@@ -4666,26 +4608,12 @@ READ_WITHOUT_EFFECT: Final[dict[tuple[str, Path], str]] = {
         "removeActivityCode",
     )
 }
-"""Plik, który operacja czyta przed zapisem, ale którego treść nie zmienia jej zapisu w żadnym świecie, z powodem: warunek
-znaczenia (``_meaningless``) go nie zgłasza, a test pada, gdy plik zaczyna coś znaczyć."""
 
 
 @pytest.mark.parametrize("operation", sorted(set(SETTINGS_WRITES) & _settings_write_operations()))
 def test_operacja_ustawien_przy_pliku_bez_odczytu_odmawia_bez_zapisu_albo_daje_wynik_jak_przy_czytelnym(
     tmp_path: Path, operation: str
 ) -> None:
-    """Plik, którego system nie daje czytać, nie jest ani brakiem pliku, ani pustym plikiem: operacja taty odmawia ze
-    zdaniem i niczego nie zmienia albo zapisuje dokładnie to, co przy czytelnym pliku (widok w odpowiedzi może wtedy
-    pokazać sekcję tego pliku jako nieczytelną); skutek liczy się po następnym odczycie Ustawień (``_kept_data``).
-
-    Próbka sprawdza coś tylko wtedy, gdy przy czytelnych plikach operacja wchodzi, operacja zapisu (odpowiedź z polem
-    ``change`` w kontrakcie) zapisuje zmianę z wierszem Historii, każdy plik, który operacja czyta, jest w świecie przed
-    nią, a każdy, który czyta przed swoim zapisem, coś w świecie znaczy (``_meaningless``, poza ``READ_WITHOUT_EFFECT``).
-    Podgląd i otwarcie Rejestru niczego nie zapisują, więc test sprawdza u nich status i skutek po następnym odczycie.
-    Granicę pokazują próbki ``ZNANE_LUKI_ODCZYTU`` (odczyt spoza haka audytu) i ``ZNANE_LUKI_ZNACZENIA`` (warunek
-    znaczenia i porównanie wyniku).
-    """
-
     request = SETTINGS_WRITES[operation]
     world_of = OWN_WORLDS.get(operation, _settings_world)
     worlds = (world_of(tmp_path, f"swiat-{index}") for index in itertools.count())
@@ -4742,8 +4670,6 @@ ZNANE_LUKI_ODCZYTU: Final = {
         "        return str(baza.execute('select wartosc from t').fetchone()[0]).encode()\n"
     ),
 }
-"""Odczyt pliku, którego hak audytu z ``tests/fixtures/odczyt_bez_dostepu.py`` nie odbiera i nie widzi: każda próbka
-to moduł z ``czytaj(sciezka) -> bytes``."""
 
 
 def test_znane_luki_odczytu_bez_dostepu_przechodza_przez_hak_audytu(tmp_path: Path) -> None:
@@ -4799,23 +4725,15 @@ ZNANE_LUKI_ZNACZENIA: Final = {
         "    return 200, widok\n"
     ),
 }
-"""Plik bez odczytu, który zapytanie bierze za pusty albo domyślny, a ani warunek znaczenia (``_meaningless``), ani
-porównanie wyniku (``_kept_data``) tego nie zgłaszają: każda próbka to moduł ze ``swiat(katalog)`` i
-``zapytanie(katalog) -> (status, odpowiedź)`` na plikach w katalogu narzędzia."""
 
 
 def _sample_trial(root: Path, sample: ModuleType, **trial: Path) -> Trial:
-    """Bieg próbki ``sample`` w nowym katalogu narzędzia ``root`` (``_trial``), bez następnego odczytu."""
-
     root.mkdir(parents=True)
     sample.swiat(root)
     return _trial(ToolDirectory(root), lambda: sample.zapytanie(root), lambda: None, **trial)
 
 
 def _sample_reports(root: Path, sample: ModuleType) -> list[str]:
-    """Zgłoszenia warunku znaczenia i porównania wyniku dla próbki ``sample`` w katalogach pod ``root``; bez zapytania
-    próbka niczego nie zmienia."""
-
     roots = (root / str(index) for index in itertools.count())
     readable = _sample_trial(next(roots), sample)
     untouched: dict[str, str | None] = {}
@@ -4877,7 +4795,6 @@ RELEASE_CHANGE_WORLDS: dict[str, Callable[[ToolDirectory], None]] = {
     "2026-11-przypomnienia": _old_reminder_files,
     "2026-11-rt2-bez-usterek": _own_rt2_in_ak,
 }
-"""Świat każdej zmiany z Wydania, w którym zmiana wchodzi (``Edit`` z różnicą): stare pliki albo plik do poprawy."""
 
 
 def test_kazda_zmiana_z_wydania_ma_swiat_do_proby_pliku_bez_odczytu() -> None:
@@ -4899,8 +4816,6 @@ def test_id_kazdej_zmiany_z_wydania_to_rok_miesiac_i_nazwa_i_zadne_sie_nie_powta
 
 @dataclass(frozen=True)
 class ReleaseEffect:
-    """Ślad jednej zmiany z Wydania: jej wiersze Historii, wynik w pamięci zmian z Wydań i treść jej pliku."""
-
     rows: tuple[str, ...]
     remembered: str | None
     file: str | None
@@ -4934,9 +4849,6 @@ def _in_world(root: Path, world: Callable[[ToolDirectory], None]) -> ToolDirecto
 
 
 def _start_reads(tool: ToolDirectory, changes: tuple[ReleaseChange[Any], ...]) -> frozenset[Path]:
-    """Pliki katalogu narzędzia poza Logami, które start z Wydaniem niosącym ``changes`` otwierał do odczytu, także
-    brakujące."""
-
     logs = tool.log_path.parent
     with reading(tool.root) as reads:
         started(tool, changes).stop()
@@ -4946,8 +4858,6 @@ def _start_reads(tool: ToolDirectory, changes: tuple[ReleaseChange[Any], ...]) -
 def _after_start(
     world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...], lost: tuple[Path, ...]
 ) -> Callable[[ToolDirectory], None]:
-    """Świat ``world`` po starcie z Wydaniem niosącym ``changes``, z którego zginęły pliki ``lost`` folderu ``config``."""
-
     def build(tool: ToolDirectory) -> None:
         world(tool)
         started(tool, changes).stop()
@@ -4959,23 +4869,15 @@ def _after_start(
 
 @dataclass(frozen=True)
 class ReleaseWorld:
-    """Świat próby zmiany z Wydania: zdanie w zgłoszeniu, budowa katalogu narzędzia i wymóg na ślad zmiany przy czytelnych
-    plikach (``readable``, ślad świata przed startem), zwracający zdanie, gdy świat nie jest tym, za który uchodzi."""
-
     name: str
     build: Callable[[ToolDirectory], None]
     unmet: Callable[[ReleaseEffect, ReleaseEffect], str | None]
     every_read: bool
-    """Próba odbiera każdy plik startu, a nie tylko pliki odczytów zmiany."""
 
 
 def _release_worlds(
     change: ReleaseChange[Any], world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...]
 ) -> tuple[ReleaseWorld, ...]:
-    """Świat zmiany, w którym zmiana wchodzi, i dwa światy po jej starcie: Historia ma jej wiersz, a pamięć zmian z Wydań
-    go nie ma (zmiana bierze wynik z Historii), oraz zginęły i pamięć, i Historia (zmiana biegnie znów na swoim wyniku,
-    więc czyta swój plik, który już jest)."""
-
     applied = Path(MEMORY_DIRECTORY) / APPLIED_FILE
 
     def enters(readable: ReleaseEffect, _before: ReleaseEffect) -> str | None:
@@ -5000,31 +4902,19 @@ def _release_worlds(
 
 @dataclass(frozen=True)
 class ReleaseTrial:
-    """Próba zmiany z Wydania w jednym świecie: zgłoszenia, pliki odczytów zmiany (start z samą zmianą minus start bez
-    zmian), te z nich, które są w świecie przed startem, i te, bez których start daje inny ślad zmiany."""
-
     reports: list[str]
     own: frozenset[Path]
     present: frozenset[Path]
     meaningful: frozenset[Path]
 
 
-def _own_memory(change: ReleaseChange[Any]) -> Path:
-    """Pamięć pliku zmiany, którą warunek znaczenia pomija: czyta ją każda zmiana przez wspólny odczyt właściciela
-    (``_observe``, ``_change``), którego znaczenie i plik bez odczytu sprawdza test operacji Ustawień, a w światach
-    zmian z Wydania jej treść nie zmienia śladu zmiany, bo ostatnia dobra wartość liczy się tylko przy złym pliku
-    zmiany, przy którym zmiana czeka albo nie rusza pliku."""
-
+def _own_memory_whose_reading_the_settings_operations_test_checks(change: ReleaseChange[Any]) -> Path:
     return Path("config") / MEMORY_DIRECTORY / f"{change.file.name}.json"
 
 
 def _release_trial(
     root: Path, change: ReleaseChange[Any], world: ReleaseWorld, changes: tuple[ReleaseChange[Any], ...]
 ) -> ReleaseTrial:
-    """Próba zmiany ``change`` w świecie ``world``, w katalogach pod ``root``: start na czytelnych plikach zapisuje ślad
-    i pliki, które czyta, potem jeden start na każdy z nich bez odczytu i następny start z odczytem; ślad bez zmiany to
-    ślad świata przed startem."""
-
     roots = (root / str(index) for index in itertools.count())
     readable_tool = _in_world(next(roots), world.build)
     before = _release_effect(readable_tool, change)
@@ -5042,7 +4932,7 @@ def _release_trial(
         return (effect.rows, effect.remembered) if path == own_file else (effect.rows, effect.remembered, effect.file)
 
     meaningful: set[Path] = set()
-    for path in sorted(present - {_own_memory(change)}):
+    for path in sorted(present - {_own_memory_whose_reading_the_settings_operations_test_checks(change)}):
         tool = _in_world(next(roots), world.build)
         (tool.root / path).unlink()
         started(tool, changes).stop()
@@ -5066,11 +4956,6 @@ def _release_trial(
 def _release_reports(
     root: Path, change: ReleaseChange[Any], world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...]
 ) -> list[str]:
-    """Zgłoszenia próby pliku bez odczytu dla zmiany ``change`` z Wydania niosącego ``changes``, w katalogach pod
-    ``root``, w świecie ``world`` i w światach po jej starcie (``_release_worlds``), oraz warunki po wszystkich światach:
-    każdy plik odczytów zmiany jest przed startem w którymś świecie, w którym zmiana go czyta, i w którymś bieg bez
-    niego daje inny ślad zmiany (poza pamięcią pliku zmiany, ``_own_memory``)."""
-
     trials = [
         _release_trial(root / f"swiat-{index}", change, release_world, changes)
         for index, release_world in enumerate(_release_worlds(change, world, changes))
@@ -5080,7 +4965,7 @@ def _release_reports(
     absent = sorted(path for path in own if not any(path in trial.present for trial in trials))
     meaningless = sorted(
         path
-        for path in own - {_own_memory(change), *absent}
+        for path in own - {_own_memory_whose_reading_the_settings_operations_test_checks(change), *absent}
         if not any(path in trial.meaningful for trial in trials)
     )
     reports += [
@@ -5100,17 +4985,12 @@ def _release_reports(
 def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czytelnym(
     tmp_path: Path, change: ReleaseChange[Any]
 ) -> None:
-    """Plik, którego system przy starcie nie daje czytać (stary plik migracji, plik zmiany, Historia, pamięć), nie jest
-    ani złym plikiem, ani brakiem pliku: zmiana z Wydania wchodzi tak jak przy czytelnym pliku albo czeka bez wiersza
-    i bez pamięci i wchodzi przy następnym starcie; odmowa zapamiętana na zawsze zostawiłaby tatę bez danych.
-
-    Próba sprawdza coś tylko wtedy, gdy każdy plik, który czyta sama zmiana, jest w którymś jej świecie i coś w nim
-    znaczy: światy to świat zmiany i dwa światy po jej starcie (``_release_worlds``), w tym Historia z wierszem zmiany,
-    której pamięć zmian z Wydań nie ma. Granicę pokazują próbki ``ZNANE_LUKI_ZMIAN_Z_WYDANIA``."""
-
     reports = _release_reports(tmp_path, change, RELEASE_CHANGE_WORLDS[change.id], RELEASE_CHANGES)
 
-    assert not reports, f"{change.id}:\n" + "\n".join(reports)
+    assert not reports, (
+        f"{change.id} przy pliku bez odczytu wchodzi jak przy czytelnym albo czeka, bo odmowa zapamiętana na zawsze "
+        "zostawiłaby tatę bez danych:\n" + "\n".join(reports)
+    )
 
 
 ZNANE_LUKI_ZMIAN_Z_WYDANIA: Final = {
@@ -5153,7 +5033,8 @@ ZNANE_LUKI_ZMIAN_Z_WYDANIA: Final = {
         "    return Edit(lambda current: replace(current, theme='light'))\n\n\n"
         "zmiana = ReleaseChange('2026-11-znana-luka-flaga', FOLDERS, propose)\n"
     ),
-    "warunek znaczenia pomija pamięć pliku zmiany (``_own_memory``) przy każdym jej odczycie, także przez samą zmianę: "
+    "warunek znaczenia pomija pamięć pliku zmiany (``_own_memory_whose_reading_the_settings_operations_test_checks``) przy "
+    "każdym jej odczycie, także przez samą zmianę: "
     "nieczytelna pamięć jak pusta": (
         "from dataclasses import replace\n"
         "from typing import Any\n\n"
@@ -5173,9 +5054,6 @@ ZNANE_LUKI_ZMIAN_Z_WYDANIA: Final = {
         "zmiana = ReleaseChange('2026-11-znana-luka-pamiec', FOLDERS, propose)\n"
     ),
 }
-"""Zmiana z Wydania, która bierze plik bez odczytu za brak pliku albo pusty, a próba pliku bez odczytu z warunkami
-po światach zmiany (``_release_reports``) tego nie zgłasza: każda próbka to moduł ze ``swiat(katalog_narzedzia)`` i
-zmianą ``zmiana``."""
 
 
 def test_znane_luki_zmian_z_wydania_przechodza_przez_probe_pliku_bez_odczytu(tmp_path: Path) -> None:
@@ -5207,7 +5085,7 @@ def test_zmiana_z_wydania_nie_nadpisuje_zlego_pliku_taty(tmp_path: Path, change:
 
     started(tool, RELEASE_CHANGES).stop()
 
-    assert own.read_bytes() == bad
+    assert own.read_bytes() == bad, "zmiana z Wydania nie pisze ostatniej dobrej wartości na plik, który tata albo Maks właśnie poprawia"
     assert not any('"wynik":"zapisano"' in row.replace(" ", "") for row in _release_effect(tool, change).rows)
 
 
@@ -5231,8 +5109,6 @@ def test_zmiana_z_wydania_po_utracie_pamieci_wlasciciela_biegnie_drugi_raz_bez_r
     )
 
 
-# --- Lista Wykonawców (#1473, ADR 0032): przeniesienie starych plików i reguły pliku ------------------------------------
-
 JAN = "jan.testowy@przyklad.invalid"
 ANNA = "anna.przyklad@przyklad.invalid"
 OBCY = "obcy@przyklad.invalid"
@@ -5247,8 +5123,6 @@ def listed(logins: list[str], name: str, addresses: list[str]) -> dict[str, obje
 
 
 def old_files(tool: ToolDirectory, mapping: str | bytes | None, addresses: str | bytes | None) -> dict[str, bytes]:
-    """Stare pliki Wykonawców w ``config`` taty sprzed Wydania z Listą Wykonawców; ``None``: pliku nie ma."""
-
     tool.config.mkdir(parents=True, exist_ok=True)
     written: dict[str, bytes] = {}
     for name, content in ((OLD_MAPPING_FILE, mapping), (OLD_ADDRESSES_FILE, addresses)):
@@ -5260,8 +5134,6 @@ def old_files(tool: ToolDirectory, mapping: str | bytes | None, addresses: str |
 
 
 def migrated(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Sekcja Wykonawcy i Historia Ustawień po pierwszym starcie Wydania z Listą Wykonawców."""
-
     client = started(tool, RELEASE_CHANGES)
     workers = client.get("/api/settings").json()["workers"]
     rows = [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
@@ -5272,9 +5144,6 @@ def migrated(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]
 def test_przeniesienie_laczy_konfiguracje_i_adresy_w_liste_wykonawcow_a_adres_spoza_konfiguracji_zostaje_dla_taty(
     tmp_path: Path,
 ) -> None:
-    """DESIGN §4.2: login z adresami i login bez adresów przechodzą jako aktywni Wykonawcy z przypomnieniami, adres przy
-    loginie spoza Konfiguracji wykonawców tata widzi do rozstrzygnięcia, a stare pliki zostają bajt w bajt."""
-
     tool = ToolDirectory(tmp_path)
     old = old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
 
@@ -5336,9 +5205,6 @@ def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
 def test_zly_stary_plik_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia(
     tmp_path: Path, mapping: str, reason: str
 ) -> None:
-    """Odrzucone przeniesienie to zły stan Listy Wykonawców bez ostatniej dobrej, także przy następnym starcie, nigdy
-    pusta dobra lista: tata nie może pomyśleć, że Wykonawców nie ma (przegląd #1529 r1, D1)."""
-
     tool = ToolDirectory(tmp_path)
     old_files(tool, mapping, OLD_ADDRESSES)
 
@@ -5351,7 +5217,7 @@ def test_zly_stary_plik_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia
         "workers": [],
         "unresolved": [],
         "problem": {"field": None, "message": settings_messages.worker_list_not_created()},
-    }
+    }, "odrzucone przeniesienie to zła lista bez ostatniej dobrej, nigdy pusta dobra: tata nie może pomyśleć, że Wykonawców nie ma"
     assert [(row["source"], row["refused"], row["reason"]) for row in rows] == [
         ("release", True, settings_messages.workers_not_moved(OLD_MAPPING_FILE, reason))
     ]
@@ -5408,10 +5274,6 @@ def unusable(sentence: str) -> str:
 def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast_zostawic_tate_bez_wykonawcow(
     tmp_path: Path, locked: str
 ) -> None:
-    """DESIGN §4.2: stary plik, którego system nie daje teraz czytać, nie jest ani zły, ani brakujący. Przeniesienie
-    czeka bez Listy Wykonawców i bez wiersza Historii, a następny start z czytelnym plikiem przenosi Wykonawców z
-    adresami (odmowa zostałaby zapamiętana na zawsze, a brak pliku dałby listę bez Wykonawców albo bez adresów)."""
-
     tool = ToolDirectory(tmp_path)
     old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
     with without_access(tool.config / locked):
@@ -5421,7 +5283,9 @@ def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast
     workers, rows = migrated(tool)
 
     assert (listed_while_locked, locked_rows) == (False, [])
-    assert locked_workers == {"state": "bad", "workers": [], "unresolved": [], "problem": WAITING}
+    assert locked_workers == {"state": "bad", "workers": [], "unresolved": [], "problem": WAITING}, (
+        "stary plik bez odczytu czeka: odmowa zostałaby zapamiętana na zawsze, a brak pliku dałby listę bez Wykonawców albo bez adresów"
+    )
     assert workers["workers"] == [
         listed(["jan.testowy"], "Jan Testowy", [JAN]),
         listed(["anna.przyklad"], "Anna Przykład", [ANNA]),
@@ -5432,9 +5296,6 @@ def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast
 
 @contextmanager
 def held_release_changes(tool: ToolDirectory, monkeypatch: pytest.MonkeyPatch, fault: str) -> Iterator[None]:
-    """Do końca bloku start Centrum wstrzymuje zmiany z Wydania: system nie daje czytać Historii Ustawień
-    (``bez-historii``) albo pamięć zmian z Wydań ma uszkodzoną treść (``bez-pamieci``)."""
-
     if fault == "bez-pamieci":
         memory = tool.config / MEMORY_DIRECTORY / APPLIED_FILE
         memory.parent.mkdir(parents=True, exist_ok=True)
@@ -5454,11 +5315,6 @@ def held_release_changes(tool: ToolDirectory, monkeypatch: pytest.MonkeyPatch, f
 def test_przeniesienie_wstrzymane_przy_starcie_ze_starym_plikiem_wykonawcow_czeka_zamiast_pustej_dobrej_listy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, mapping: str | None, addresses: str | None
 ) -> None:
-    """Przegląd #1569 r2, D2: start, który przy pierwszym starcie Wydania z Listą Wykonawców wstrzymuje przeniesienie,
-    bo nie da się przeczytać Historii Ustawień albo pamięci zmian z Wydań, a któryś stary plik Wykonawców leży w
-    ``config``, daje sekcji Wykonawcy to samo złe ustawienie co stary plik bez prawa odczytu, a Przebieg rozliczeń nie
-    startuje na pustej liście."""
-
     tool = settling_centrum(tmp_path).tool
     tool.worker_list.unlink()
     old_files(tool, mapping, addresses)
@@ -5476,9 +5332,6 @@ def test_przeniesienie_wstrzymane_przy_starcie_ze_starym_plikiem_wykonawcow_czek
 def test_przeniesienie_wstrzymane_przy_starcie_bez_starych_plikow_wykonawcow_to_pusta_dobra_lista(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
 ) -> None:
-    """Bez starych plików Wykonawców przeniesienie nie ma czego przenieść, więc wstrzymane przy starcie nie jest
-    złym ustawieniem: sekcja Wykonawcy ma pustą dobrą listę, jak po przeniesieniu bez starych plików."""
-
     tool = ToolDirectory(tmp_path)
     tool.config.mkdir(parents=True)
     with held_release_changes(tool, monkeypatch, fault):
@@ -5511,9 +5364,6 @@ WORKER ="  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\
 def test_lista_wykonawcow_lamiaca_regule_to_zle_ustawienie_z_polem_bez_nazwy_loginu_i_adresu(
     tmp_path: Path, entries: str, field: str, sentence: str
 ) -> None:
-    """Sprawdzenia dzisiejszego czytnika Konfiguracji wykonawców (nazwa jako nazwa pliku, długość, powtórzony login, dwie
-    nazwy na jeden plik) i adresów działają na Liście Wykonawców, a nowa reguła odrzuca adres u dwóch Wykonawców."""
-
     app = centrum(tmp_path)
     app.tool.config.mkdir(parents=True)
     app.tool.worker_list.write_text(f"schema_version: 1\nwykonawcy:\n{entries}", encoding="utf-8")
@@ -5588,10 +5438,6 @@ LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kam
 def test_zly_plik_listy_wykonawcow_mowi_wpis_po_numerze_bez_loginu_nazwy_i_adresu_w_logach_i_zgloszeniu(
     tmp_path: Path, content: str, field: str | None, sentence: str
 ) -> None:
-    """Pole problemu składa się tylko ze znanych nazw pól i numerów, więc tekst z pliku (stary kształt wpisu ``login:
-    Nazwa``, klucz-adres, wartość nie tego typu) nie trafia do odpowiedzi, Logów Centrum ani Zgłoszenia (przegląd #1529
-    r1, W3)."""
-
     centrum_ = settling_centrum(tmp_path)
     centrum_.client.get("/api/settings")
     centrum_.tool.worker_list.write_text(f"schema_version: 1\n{content}", encoding="utf-8")
@@ -5612,9 +5458,6 @@ def test_zly_plik_listy_wykonawcow_mowi_wpis_po_numerze_bez_loginu_nazwy_i_adres
 
 
 def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrzezeniem_na_karcie(tmp_path: Path) -> None:
-    """DESIGN §4.3: karta i Logi Uruchomienia mówią, że proces użył ostatniej dobrej listy, z linkiem do sekcji
-    Wykonawcy (przegląd #1529 r1, D2)."""
-
     centrum_ = settling_centrum(tmp_path)
     centrum_.client.get("/api/settings")
     centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
@@ -5627,9 +5470,6 @@ def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrze
 
 
 def test_sekcja_wykonawcy_przy_zlej_liscie_pokazuje_ostatnia_dobra_liste_ze_zdaniem_o_zlym_ustawieniu(tmp_path: Path) -> None:
-    """Okno Ustawień pokazuje przy złym pliku Listę Wykonawców, którą liczy proces (ostatnią dobrą), a nie pustą listę,
-    obok zdania, co poprawić."""
-
     centrum_ = settling_centrum(tmp_path)
     centrum_.client.get("/api/settings")
     centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
@@ -5646,9 +5486,6 @@ def test_sekcja_wykonawcy_przy_zlej_liscie_pokazuje_ostatnia_dobra_liste_ze_zdan
 
 
 def test_diagnoza_zatrzymania_opisuje_liste_wykonawcow_ze_startu_uruchomienia_a_nie_pozniejsza(tmp_path: Path) -> None:
-    """D9: Diagnoza wyjaśnia to Uruchomienie, więc zła lista ze startu zostaje w Diagnozie po naprawie pliku, a lista
-    zepsuta po starcie do niej nie trafia (przegląd #1529 r1, D2)."""
-
     centrum_ = settling_centrum(tmp_path)
     centrum_.client.get("/api/settings")
     good = centrum_.tool.worker_list.read_bytes()
@@ -5693,10 +5530,6 @@ _WORKER_CHANGES = [
 def test_zmiana_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_mowi_co_poprawic_a_nie_o_pliku_bez_odczytu(
     tmp_path: Path, method: str, route: str, form: dict[str, object] | None
 ) -> None:
-    """Plik da się czytać, więc odmowa „Zapisz” w formularzu Wykonawcy, „Usuń”, przełącznika i „Przypisz do Wykonawcy…”
-    mówi o złym ustawieniu jak odmowa startu, a nie każe zamykać programów, które trzymają plik, ani nie mówi, że
-    Wykonawcy nie ma na liście, i niczego nie zapisuje."""
-
     app = centrum(tmp_path)
     app.tool.config.mkdir(parents=True)
     bad = "schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n"
@@ -5765,8 +5598,6 @@ def test_dodanie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_zapisuje_liste_
 def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia_a_dziennik_bez_danych_osobowych(
     tmp_path: Path,
 ) -> None:
-    """„Cofnij” usuwa dopisaną ręcznie Wykonawczynię, bo jej loginu nie ma w Rejestrze zleceń ani w żadnym okresie."""
-
     app = centrum(tmp_path)
     write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}, {"jan.testowy": [JAN]}))
     app.client.get("/api/settings")
@@ -5788,6 +5619,9 @@ def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia
         ("wykonawcy[anna.przyklad]", True, False),
     ]
     assert row["section"] == "wykonawcy"
+    assert undone.status_code == 200, (
+        f"„Cofnij” usuwa dopisaną ręcznie Wykonawczynię, bo jej loginu nie ma w Rejestrze zleceń ani w żadnym okresie: {undone.text}"
+    )
     assert [worker["name"] for worker in undone.json()["settings"]["workers"]["workers"]] == ["Jan Testowy"]
     assert undone.json()["settings"]["workers"]["workers"][0]["addresses"] == [JAN]
     log = app.tool.log_path.read_text(encoding="utf-8")
@@ -5797,17 +5631,19 @@ def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia
         assert secret not in log, secret
 
 
-# --- Lista Wykonawców: tata zmienia ją w sekcji Wykonawcy (#1474, ADR 0032) ---------------------------------------------
-
 WORKERS_API = "/api/settings/workers"
-# Syntetyczny Plik zbiorczy okresu ``PERIOD`` ma zlecenia adrian.testowy i dariusz.fikcyjny2; kamil.syntetyczny jest na
-# Liście Wykonawców bez zleceń w tym okresie.
 EARLIER_PERIOD = "01_07_09_2026"
 
 
-def listed_workers(client: CentrumClient) -> dict[str, dict[str, Any]]:
-    """Wykonawcy sekcji Wykonawcy po pierwszym loginie."""
+def test_plik_zbiorczy_okresu_ma_zlecenia_adriana_i_dariusza_a_kamil_jest_na_liscie_wykonawcow_bez_zlecen(tmp_path: Path) -> None:
+    centrum_ = settling_with_register(tmp_path, ["inny.login"])
 
+    removed = {login: centrum_.client.delete(f"{WORKERS_API}/{login}").status_code for login in SETTLEMENT_WORKERS}
+
+    assert removed == {"adrian.testowy": 409, "dariusz.fikcyjny2": 409, "kamil.syntetyczny": 200}
+
+
+def listed_workers(client: CentrumClient) -> dict[str, dict[str, Any]]:
     return {worker["logins"][0]: worker for worker in client.get("/api/settings").json()["workers"]["workers"]}
 
 
@@ -5831,8 +5667,6 @@ def register_of(tmp_path: Path) -> Path:
 
 
 def write_orders(register: Path, logins: Sequence[str], headers: tuple[str, ...] = REGISTER_HEADERS) -> None:
-    """Rejestr zleceń ze zleceniem każdego z ``logins`` w kolumnie ``WYKONAWCA`` i nagłówkami ``headers``."""
-
     orders: list[RegisterRow] = [
         register_order(number, datetime(2026, 9, 8, 10), worker=login) for number, login in enumerate(logins, start=1)
     ]
@@ -5840,10 +5674,6 @@ def write_orders(register: Path, logins: Sequence[str], headers: tuple[str, ...]
 
 
 def test_tata_dodaje_wykonawce_a_adres_innego_wykonawcy_i_nazwa_na_ten_sam_plik_sa_odmowa_przy_polu(tmp_path: Path) -> None:
-    """US 23, 28, 30: nowy Wykonawca z loginem, nazwą i adresem trafia na listę jako aktywny z przypomnieniami i ma
-    wiersz Historii; adres, który ma już inny Wykonawca, i nazwa, która daje ten sam plik Rozliczenia pracownika, nie
-    zapisują się, a odmowa wskazuje pole formularza."""
-
     centrum_ = settling_centrum(tmp_path)
     client = centrum_.client
 
@@ -5878,19 +5708,15 @@ WORKER_SUGGESTIONS_API = f"{WORKERS_API}/suggestions"
 def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_znika_po_dodaniu_wykonawcy(
     tmp_path: Path,
 ) -> None:
-    """US 24: login z ``WYKONAWCA`` uporządkowanych zleceń bieżącego okresu i 4 poprzednich (okresy, które Tablica okresów
-    pokazuje od razu), którego nie ma żaden Wykonawca, także Nieaktywny i także jako drugi login, ani sprawa „login bez
-    Wykonawcy”, jest podpowiedzią z liczbą tych zleceń, od najczęstszej; login tylko ze starszych zleceń i zlecenie z
-    pustym ``WYKONAWCA`` nie są (D2 #1650 r1). Odpowiedź ma sam login
-    i liczbę, bez treści Rejestru, a odczyt niczego nie zapisuje. Po dodaniu Wykonawcy z loginem podpowiedzi podpowiedź
-    znika."""
-
-    # Dziś (TODAY) jest środa 16.09.2026 w okresie od wtorku 15.09, więc 4 poprzednie okresy zaczynają się we wtorek 18.08.
+    first_day_of_the_window = datetime(2026, 8, 18, 10)
+    assert first_day_of_the_window.date() == last_complete_period(SETTLING_TODAY).tuesday - timedelta(weeks=3), (
+        "SETTLING_TODAY leży w okresie od wtorku 15.09, więc bieżący i 4 poprzednie okresy zaczynają się we wtorek 18.08"
+    )
     register = register_of(tmp_path)
     register.parent.mkdir()
     orders = [
-        ("stary.login", datetime(2026, 8, 17, 10)),
-        ("brzeg.okna", datetime(2026, 8, 18, 10)),
+        ("stary.login", first_day_of_the_window - timedelta(days=1)),
+        ("brzeg.okna", first_day_of_the_window),
         ("adrian.testowy", datetime(2026, 9, 8, 9)),
         ("kamil.syntetyczny", datetime(2026, 9, 8, 10)),
         ("kamil.drugi", datetime(2026, 9, 8, 10, 30)),
@@ -5948,13 +5774,10 @@ def test_podpowiedzi_czytaja_rejestr_otwarty_w_excelu_z_jego_ostatniej_zapisanej
     )
 
 
-# Zdanie „Co się stało” Komunikatu procesów wklejania o Rejestrze bez obszaru wklejania; nie zależy od ścieżki Rejestru.
 NO_ORDER_SHEET = intermax_messages.no_order_sheet(Path(REGISTER_NAME)).what
 
 
 def _register_unreadable_rows(centrum_: SettlingCentrum) -> None:
-    """Arkusz zleceń, którego wierszy nie da się rozdzielić przy czytaniu od dołu (komentarz pod ostatnim wierszem)."""
-
     rewrite_parts(
         register_of(centrum_.tmp_path),
         lambda name, data: data.replace(b"</sheetData>", b"<!-- x --></sheetData>") if name.startswith("xl/worksheets/") else data,
@@ -6002,23 +5825,18 @@ def test_bez_wskazanego_albo_czytelnego_rejestru_sekcja_wykonawcy_mowi_zdaniem_d
     state: str,
     message: str,
 ) -> None:
-    """US 24, W2 #1577 r1: niewskazany Rejestr zleceń albo Rejestr, którego nie da się przeczytać, to zdanie dla taty w
-    sekcji Wykonawcy, a nie pusta lista, która wygląda jak „brak nowych loginów”. Rejestr bez obszaru wklejania (bez
-    arkusza zleceń albo w starszym układzie bez AKCJE i UWAGI, z którego Przebieg czyta loginy) ma zdanie „Co się
-    stało” tego samego Komunikatu, którym zatrzymują się na nim procesy wklejania (D1 #1650 r1)."""
-
     centrum_ = settling_with_register(tmp_path, register)
     if damage is not None:
         damage(centrum_)
 
     answer = centrum_.client.get(WORKER_SUGGESTIONS_API)
 
-    assert (answer.status_code, answer.json()) == (200, {"state": state, "suggestions": [], "message": message})
+    assert (answer.status_code, answer.json()) == (200, {"state": state, "suggestions": [], "message": message}), (
+        "zdanie dla taty, a nie pusta lista, która wygląda jak „brak nowych loginów”"
+    )
 
 
 def history_rows_of(client: CentrumClient) -> list[dict[str, Any]]:
-    """Wiersze Historii Ustawień o Liście Wykonawców, od najnowszego."""
-
     return [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
 
 
@@ -6036,14 +5854,10 @@ def earlier_collective_file_damaged(centrum_: SettlingCentrum) -> None:
 
 
 def periods_directory_gone(centrum_: SettlingCentrum) -> None:
-    """Folder okresów, który tata wskazał, zniknął (przeniesiony albo OneDrive odłączony)."""
-
     centrum_.periods_directory.rename(centrum_.tmp_path / "INEA przeniesione")
 
 
 def register_without_order_sheets(centrum_: SettlingCentrum) -> None:
-    """Rejestr zleceń, którego żaden arkusz nie ma nagłówków zleceń, choć login stoi pod ``WYKONAWCA``."""
-
     headers = tuple(f"{header} STARY" if header else header for header in REGISTER_HEADERS)
     write_orders(register_of(centrum_.tmp_path), ["adrian.testowy", "kamil.syntetyczny"], headers)
 
@@ -6105,11 +5919,6 @@ def test_usuniecie_wykonawcy_z_loginem_w_okresie_jest_odmowa_z_propozycja_nieakt
     damage: Callable[[SettlingCentrum], None] | None,
     answer: str,
 ) -> None:
-    """ADR 0032, US 34, 36: Wykonawcy, którego login stoi w Rejestrze zleceń albo w Pliku zbiorczym okresu, nie da się
-    usunąć, tak samo gdy któregoś pliku nie da się przeczytać, Rejestr nie ma arkuszy zleceń, folderu okresów nie ma
-    albo Rejestr nie jest wskazany; odmowa proponuje Nieaktywnego, a lista i Historia zostają bez zmiany. Propozycja
-    działa: Nieaktywny zostaje na liście."""
-
     centrum_ = settling_with_register(tmp_path, register)
     if damage is not None:
         damage(centrum_)
@@ -6129,12 +5938,9 @@ def test_usuniecie_wykonawcy_z_loginem_w_okresie_jest_odmowa_z_propozycja_nieakt
 
 
 def test_plik_zbiorczy_z_nazwa_w_innej_wielkosci_liter_zatrzymuje_usuniecie_wykonawcy(tmp_path: Path) -> None:
-    """Windows i macOS nie rozróżniają wielkości liter w nazwach plików: Plik zbiorczy, którego nazwa w Folderze okresu
-    różni się od nazwy okresu tylko wielkością liter, to Plik zbiorczy tego okresu, więc jego login zatrzymuje usunięcie
-    Wykonawcy. Na systemie plików, który rozróżnia wielkość liter, to inny plik, więc test nie ma tam czego sprawdzić."""
-
     centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
     collective_file = centrum_.collective_file
+    # ZEWNĘTRZNE: NTFS na Windows i APFS na macOS domyślnie nie rozróżniają wielkości liter w nazwach plików (Microsoft Learn, Case sensitivity; Apple, APFS)
     collective_file.rename(collective_file.with_name(collective_file.name.upper()))
     if not collective_file.is_file():
         pytest.skip("system plików rozróżnia wielkość liter w nazwach plików")
@@ -6173,9 +5979,6 @@ def test_usuniecie_wykonawcy_gdy_folderu_z_okresami_nie_da_sie_wylistowac_jest_o
     folder: Callable[[SettlingCentrum], Path],
     answer: str,
 ) -> None:
-    """Folder okresów albo Folder okresu, którego system nie daje teraz wylistować (odebrane prawo odczytu, OneDrive,
-    który nie działa), nie znaczy, że loginu w nim nie ma: usunięcie Wykonawcy jest odmową, a lista zostaje."""
-
     centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
     before = centrum_.tool.worker_list.read_bytes()
     path_checks(monkeypatch)
@@ -6188,10 +5991,6 @@ def test_usuniecie_wykonawcy_gdy_folderu_z_okresami_nie_da_sie_wylistowac_jest_o
 
 
 def test_usuniecie_wykonawcy_gdy_pliku_folderow_nie_da_sie_przeczytac_to_odmowa_o_tym_pliku(tmp_path: Path) -> None:
-    """Usunięcie Wykonawcy szuka jego loginów w okresach z Rejestru zleceń i folderu okresów z pliku Folderów; plik,
-    którego system nie daje teraz czytać, to zdanie o tym pliku, a nie „nie udało się zapisać Ustawień” ani „najpierw
-    wskaż Rejestr zleceń”, a lista zostaje."""
-
     centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
     before = centrum_.tool.worker_list.read_bytes()
 
@@ -6207,9 +6006,6 @@ def _without_kamil(_inputs: ReleaseInputs[WorkerList]) -> Edit[WorkerList]:
 
 
 def test_zmiana_maksa_z_wydania_usuwa_wykonawce_z_loginem_w_okresie_bez_sprawdzania_okresow(tmp_path: Path) -> None:
-    """ADR 0032: zmiana Maksa z Wydania nie sprawdza okresów, jak ręczna zmiana w ``config``; tacie ta sama zmiana
-    w sekcji Wykonawcy to odmowa, bo login stoi w Rejestrze zleceń."""
-
     centrum_ = settling_with_register(tmp_path, ["adrian.testowy", "kamil.syntetyczny"])
     refused_ = centrum_.client.delete(f"{WORKERS_API}/kamil.syntetyczny")
     centrum_.client.stop()
@@ -6219,14 +6015,11 @@ def test_zmiana_maksa_z_wydania_usuwa_wykonawce_z_loginem_w_okresie_bez_sprawdza
     released.stop()
 
     assert refused_.status_code == 409
-    assert "kamil.syntetyczny" not in workers
+    assert "kamil.syntetyczny" not in workers, "zmiana Maksa z Wydania nie sprawdza okresów, jak ręczna zmiana w config"
     assert "adrian.testowy" in workers
 
 
 def test_drugie_usuniecie_widzi_plik_zbiorczy_zmieniony_po_pierwszym(tmp_path: Path) -> None:
-    """Sprawdzenie okresów pamięta Wykonawców przeczytanych Plików zbiorczych, ale nie odpowiada starym stanem: zlecenie,
-    które po pierwszym usunięciu doszło Wykonawcy w Pliku zbiorczym, zatrzymuje usunięcie tego Wykonawcy."""
-
     centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
     client = centrum_.client
     client.post(WORKERS_API, json=worker_form(["pomylka.login"], "Pomyłka Testowa"))
@@ -6245,18 +6038,12 @@ def test_drugie_usuniecie_widzi_plik_zbiorczy_zmieniony_po_pierwszym(tmp_path: P
 
 
 def with_second_login(workers_file: Path, login: str, second: str) -> None:
-    """Ręczna zmiana pliku Listy Wykonawców: Wykonawca z loginem ``login`` dostaje login ``second``."""
-
     document = yaml.safe_load(workers_file.read_text(encoding="utf-8"))
     next(entry for entry in document["wykonawcy"] if login in entry["loginy"])["loginy"].append(second)
     workers_file.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
 
 
 def test_login_dopisany_w_trakcie_sprawdzania_okresow_zatrzymuje_usuniecie_wykonawcy(tmp_path: Path) -> None:
-    """Okresy sprawdza się poza blokadą Ustawień, bo pierwsze sprawdzenie czyta Plik zbiorczy każdego okresu. Login,
-    który Wykonawca dostał w tym czasie (tu ręczna zmiana pliku Listy Wykonawców), nie był sprawdzony, więc usunięcie
-    jest odmową, a Wykonawca zostaje z oboma loginami."""
-
     workers_file = ToolDirectory(tmp_path).worker_list
     steps: list[str] = []
 
@@ -6270,15 +6057,15 @@ def test_login_dopisany_w_trakcie_sprawdzania_okresow_zatrzymuje_usuniecie_wykon
 
     refused_ = centrum_.client.delete(f"{WORKERS_API}/kamil.syntetyczny")
 
-    assert steps == ["usuwanie", "dopisany"], "login doszedł w trakcie sprawdzania okresów"
-    assert (refused_.status_code, refused_.json()["message"]) == (422, settings_messages.worker_list_changed())
+    assert steps == ["usuwanie", "dopisany"], (
+        "login doszedł w trakcie sprawdzania okresów, które biegnie poza blokadą Ustawień, bo pierwsze czyta Plik zbiorczy "
+        "każdego okresu"
+    )
+    assert (refused_.status_code, refused_.json().get("message")) == (422, settings_messages.worker_list_changed())
     assert listed_workers(centrum_.client)["kamil.syntetyczny"]["logins"] == ["kamil.syntetyczny", "kamil.drugi"]
 
 
 def test_wykonawce_bez_loginu_w_zadnym_okresie_tata_usuwa_a_historia_pozwala_go_przywrocic(tmp_path: Path) -> None:
-    """US 36: Wykonawca dodany przez pomyłkę (loginu nie ma w Rejestrze zleceń ani w żadnym Pliku zbiorczym) znika z
-    listy po pełnym sprawdzeniu, a „Cofnij” z Historii przywraca go z adresami."""
-
     centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
     centrum_.client.post(WORKERS_API, json=worker_form(["pomylka.login"], "Pomyłka Testowa", [OBCY]))
 
@@ -6293,8 +6080,6 @@ def test_wykonawce_bez_loginu_w_zadnym_okresie_tata_usuwa_a_historia_pozwala_go_
 
 
 def settings_files(centrum_: SettlingCentrum) -> dict[str, bytes]:
-    """Lista Wykonawców, Historia Ustawień i pamięć Ustawień, bajt w bajt."""
-
     config = centrum_.tool.config
     paths = [config / WORKERS_FILE, config / HISTORY_FILE, *(config / MEMORY_DIRECTORY).rglob("*")]
     return {path.relative_to(config).as_posix(): path.read_bytes() for path in paths if path.is_file()}
@@ -6320,10 +6105,6 @@ def settings_files(centrum_: SettlingCentrum) -> dict[str, bytes]:
 def test_cofnij_zmiany_ktora_dala_login_ze_zleceniami_jest_odmowa_jak_usuniecie(
     tmp_path: Path, register: list[str], change: tuple[str, str, dict[str, object]], answer: str
 ) -> None:
-    """ADR 0032: „Cofnij” w Historii i w powiadomieniu „Zapisano · Cofnij” usuwa to, co zmiana dodała, więc przechodzi
-    to samo sprawdzenie okresów co „Usuń Wykonawcę” i formularz: login, który ma już zlecenia w Rejestrze zleceń,
-    zostaje, a odmowa mówi dlaczego i proponuje Nieaktywnego, bez zmiany pliku, Historii i pamięci Ustawień."""
-
     centrum_ = settling_with_register(tmp_path, register)
     method, url, form = change
     saved = centrum_.client.request(method, url, json=form)
@@ -6338,9 +6119,6 @@ def test_cofnij_zmiany_ktora_dala_login_ze_zleceniami_jest_odmowa_jak_usuniecie(
 
 
 def test_cofniecie_dodania_wykonawcy_do_listy_bez_pliku_zostawia_plik_z_pusta_lista(tmp_path: Path) -> None:
-    """Brak pliku Listy Wykonawców po migracji z Wydania nie zawsze znaczy pustą listę (migracja czeka na stare pliki
-    albo ją odrzucono), więc „Cofnij” dodania Wykonawcy bez zleceń zostawia plik z pustą listą zamiast go usuwać."""
-
     register = register_of(tmp_path)
     register.parent.mkdir()
     write_orders(register, ["adrian.testowy"])
@@ -6361,9 +6139,6 @@ def test_cofniecie_dodania_wykonawcy_do_listy_bez_pliku_zostawia_plik_z_pusta_li
 
 
 def test_zapisanego_loginu_nie_da_sie_przepisac_gdy_ma_zlecenia_a_drugi_login_tata_dopisuje(tmp_path: Path) -> None:
-    """US 29, 38: formularz, w którym zapisany login z zleceniami w okresie zastąpiono innym, nie zapisuje się, bo
-    zmieniłby po cichu, czyje zlecenia trafiają do kogo; dopisany drugi login obok zapisanego się zapisuje."""
-
     centrum_ = settling_with_register(tmp_path, ["kamil.syntetyczny"])
     before = centrum_.tool.worker_list.read_bytes()
 
@@ -6378,17 +6153,13 @@ def test_zapisanego_loginu_nie_da_sie_przepisac_gdy_ma_zlecenia_a_drugi_login_ta
     assert (rewritten.status_code, rewritten.json()) == (
         409,
         {"message": kept(f"Ten login ma zlecenia w okresie {PERIOD}, więc zostaje przy Wykonawcy.")},
-    )
+    ), "przepisany login z zleceniami zmieniłby po cichu, czyje zlecenia trafiają do kogo"
     assert unchanged == before
     assert second.status_code == 200, second.json()
     assert listed_workers(centrum_.client)["adrian.testowy"]["logins"] == ["adrian.testowy", "adrian.nowy"]
 
 
 def test_ostrzezenie_o_starej_nazwie_tylko_gdy_rozliczenie_pracownika_z_nia_lezy_w_okresie(tmp_path: Path) -> None:
-    """US 31–32: zmiana nazwy Wykonawcy, którego Rozliczenie pracownika leży już w Folderze rozliczeń pracowników,
-    niczego nie zapisuje bez potwierdzenia i mówi, że stary plik zostaje; potwierdzona zapisuje nazwę i nie rusza
-    plików taty. Wykonawca bez takiego pliku zmienia nazwę od razu."""
-
     centrum_ = settling_centrum(tmp_path)
     folder = write_worker_settlements(centrum_.period_directory, PERIOD, ["Adrian Testowy"])
     files_before = sorted(path.name for path in folder.iterdir())
@@ -6421,9 +6192,6 @@ def test_ostrzezenie_o_starej_nazwie_tylko_gdy_rozliczenie_pracownika_z_nia_lezy
 def test_wykonawca_dodany_w_ustawieniach_z_drugim_loginem_trafia_do_rozliczenia_pracownika_w_nastepnym_przebiegu(
     tmp_path: Path,
 ) -> None:
-    """US 23, 29: Przebieg rozliczeń zatrzymuje się na loginie spoza Listy Wykonawców; po dodaniu Wykonawcy w
-    Ustawieniach i dopisaniu mu tego loginu jako drugiego następny Przebieg daje jego Rozliczenie pracownika."""
-
     centrum_ = settling_centrum(tmp_path, include_unmapped=True)
     stopped = run_to_end(centrum_, dry_run=False)
     centrum_.client.post(WORKERS_API, json=worker_form(["andrzej.nowy"], "Andrzej Nowy"))
@@ -6440,9 +6208,6 @@ def test_wykonawca_dodany_w_ustawieniach_z_drugim_loginem_trafia_do_rozliczenia_
 
 
 def test_kazda_zmiana_wykonawcy_ma_wiersz_historii_a_zgloszenie_nie_ma_loginu_nazwy_ani_adresu(tmp_path: Path) -> None:
-    """Każda zmiana z sekcji Wykonawcy (dodanie, formularz, przełącznik, usunięcie) ma wiersz Historii taty z „Cofnij”,
-    a Zgłoszenie mówi tylko, co się zmieniło, bez loginu, nazwy i adresu (D4 projektu Ustawień)."""
-
     centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
     client = centrum_.client
     client.post(WORKERS_API, json=worker_form([LEAKED_LOGIN], LEAKED_NAME, [LEAKED_ADDRESS]))
@@ -6710,8 +6475,6 @@ def test_zmiana_ustawien_z_wydania_ktorej_nie_da_sie_zapisac_wraca_przy_nastepny
 
 @contextmanager
 def read_only_memory(tool: ToolDirectory) -> Iterator[None]:
-    """Folder pamięci Ustawień tylko do odczytu do końca bloku: żaden zapis pamięci się nie udaje."""
-
     memory = tool.config / MEMORY_DIRECTORY
     memory.mkdir(parents=True, exist_ok=True)
     memory.chmod(0o555)
@@ -6723,22 +6486,17 @@ def read_only_memory(tool: ToolDirectory) -> Iterator[None]:
 
 @contextmanager
 def unreadable_history(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Do końca bloku system nie daje czytać pliku Historii (jak plik trzymany przez OneDrive), a dopisanie wiersza działa:
-    zmiana z Wydania, która mimo to by weszła, zapisuje się, więc widać ją w motywie i w wierszach Historii."""
-
-    def locked(path: Path) -> bytes | None | OSError:
+    def only_reading_locked_so_a_wrong_release_change_shows_in_theme_and_rows(path: Path) -> bytes | None | OSError:
         if path.name == HISTORY_FILE:
             return PermissionError(errno.EACCES, "plik trzymany przez system", str(path))
         return settings_bytes(path)
 
     with monkeypatch.context() as patch:
-        patch.setattr(history_module, "settings_bytes", locked)
+        patch.setattr(history_module, "settings_bytes", only_reading_locked_so_a_wrong_release_change_shows_in_theme_and_rows)
         yield
 
 
 def applied_and_undone(tool: ToolDirectory) -> tuple[dict[str, Any], str]:
-    """Start, w którym zmiana z Wydania ``LIGHT_THEME`` wchodzi, a tata ją cofa: jej wiersz Historii i motyw po cofnięciu."""
-
     first = started(tool, (LIGHT_THEME,))
     [applied] = first.get("/api/settings/history").json()["rows"]
     undone: str = first.post(f"/api/settings/history/{applied['id']}/undo").json()["settings"]["theme"]
@@ -6748,8 +6506,6 @@ def applied_and_undone(tool: ToolDirectory) -> tuple[dict[str, Any], str]:
 
 @NO_ACCESS_ON_WINDOWS
 def test_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca_po_cofnieciu_przez_tate(tmp_path: Path) -> None:
-    """Wiersz Historii idzie przed pamięcią zmian z Wydań, więc nieudany zapis pamięci nie puszcza zmiany drugi raz."""
-
     tool = ToolDirectory(tmp_path)
     with read_only_memory(tool):
         applied, undone = applied_and_undone(tool)
@@ -6767,9 +6523,6 @@ def test_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca_po_cofnieciu
 def test_historia_bez_dostepu_przy_starcie_wstrzymuje_zmiane_z_wydania_ktora_tata_cofnal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Historia, której system przy starcie nie daje czytać, nie jest pustą Historią: zmiana z Wydania, którą tata cofnął,
-    a której pamięć nie ma, nie wchodzi drugi raz."""
-
     tool = ToolDirectory(tmp_path)
     with read_only_memory(tool):
         applied_and_undone(tool)
@@ -6880,7 +6633,6 @@ def test_wyjatek_w_zmianie_ustawien_z_wydania_nie_zatrzymuje_startu_centrum_a_zm
 def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze_w_strefie_taty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Schemat przeglądarki przyjmuje tylko chwilę w UTC („Z”); na komputerze w UTC każda chwila tak wygląda.
     if sys.platform == "win32":
         pytest.skip("time.tzset jest tylko w systemach POSIX")
     monkeypatch.setenv("TZ", "Europe/Warsaw")
@@ -6893,7 +6645,7 @@ def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze
         monkeypatch.undo()
         time.tzset()
 
-    assert row["at"].endswith("Z")
+    assert row["at"].endswith("Z"), "schemat przeglądarki przyjmuje tylko chwilę w UTC („Z”), a na komputerze w UTC każda chwila tak wygląda"
 
 
 def reminders_form(**changes: object) -> dict[str, object]:

@@ -48,6 +48,7 @@ Nowy kod nazywa pojęcie tym identyfikatorem, a nowe hasło dostaje wiersz w tej
 | Lista Wykonawców | `WorkerList` |
 | Nieaktywny Wykonawca | `Worker.active` |
 | Historia Ustawień | `SettingsHistory` |
+| Plik Ustawień bez odczytu | `Unreadable` |
 | Szablon pracownika | `each_template` |
 | Folder okresu | `PeriodFolder` |
 | Folder okresów | `periods_directory` |
@@ -437,6 +438,13 @@ _Avoid_: usunięty Wykonawca, były pracownik
 Każda zmiana Ustawień Centrum: kiedy, co i jaka była wartość przed i po, bez wartości sekretów.
 Z niej tata cofa zmianę, a Zgłoszenie podaje zmiany z ostatnich 30 dni; wierszy Historii nikt nie usuwa ani nie przycina.
 _Avoid_: log ustawień, dziennik konfiguracji
+
+## Plik Ustawień bez odczytu
+
+Plik Ustawień Centrum, którego system teraz nie daje czytać, bo trzyma go OneDrive albo antywirus albo odebrano prawo odczytu.
+Nie jest brakiem pliku ani pustym plikiem: okno Ustawień, karta i start procesu mówią tacie jednym zdaniem, którego pliku nie da się przeczytać, i niczego nie zapisują (decyzja Maksa 15.11.2026 w #1928: 1A i 2A).
+Zmiana z Wydania przy takim pliku wchodzi tak jak przy czytelnym albo czeka do startu, który go przeczyta, bo odmowa zapamiętana na zawsze zostawiłaby tatę bez danych.
+_Avoid_: brakujący plik, pusty plik
 
 ## Szablon pracownika
 
