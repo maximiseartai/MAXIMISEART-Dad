@@ -62,6 +62,7 @@ ONLY: dict[str, frozenset[str]] = {
     "remember_value": frozenset({"rozliczenia/dad_files.py::remember"}),
     "workbook": frozenset({"rozliczenia/dad_files.py::enter_copy"}),
 }
+"""Wywołanie (nazwa funkcji, klasy albo metody) → jedyne miejsca w ``src`` (plik::funkcja), które je wołają."""
 
 EXCEPTIONS: dict[tuple[str, str], str] = {
     (
@@ -93,9 +94,11 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
         "rozliczenia/efenix_pricing.py::_searched",
     ): "adres z listy efenix, a nie z pliku taty",
 }
+"""Miejsca poza ``ONLY`` z powodem."""
 
 MODULE = "workbook_files"
 PATCHERS = frozenset({"setattr", "delattr", "patch", "object", "multiple"})
+"""Wywołania, które łatają atrybut modułu: ``monkeypatch``, wbudowane ``setattr``/``delattr`` i ``unittest.mock``."""
 
 
 def _called(node: ast.Call) -> str | None:
@@ -107,6 +110,8 @@ def _called(node: ast.Call) -> str | None:
 
 
 def _calls(source: str) -> list[tuple[str, str, int, str]]:
+    """Wywołania w tekście modułu: nazwa, funkcja, która woła, linia i tekst wywołania."""
+
     tree = ast.parse(source)
     aliases = {
         alias.asname: alias.name
@@ -136,6 +141,9 @@ def _calls(source: str) -> list[tuple[str, str, int, str]]:
 
 
 def _src_findings(modules: Mapping[str, str]) -> tuple[list[str], set[tuple[str, str]]]:
+    """Wywołania z ``ONLY`` poza ich miejscami i wyjątkami w modułach ``nazwa względem src → tekst`` oraz wyjątki, które
+    wystąpiły."""
+
     found, excepted = [], set()
     for name, source in modules.items():
         for called, function, line, text in _calls(source):

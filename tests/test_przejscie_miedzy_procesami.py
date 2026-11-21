@@ -52,7 +52,7 @@ def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zlecen
         f"Rozliczenie {PERIOD} - {name}.xlsx" for name in expected_rows
     )
     collective_file_rows = cell_values(preparation.collective_file, min_row=18, max_row=20, min_col=1, max_col=46)
-    collective_file_row_of = {
+    collective_file_row_of = {  # Wiersze danych A:AT Pliku zbiorczego, w kolejności Rejestru zleceń
         "Adrian Testowy": collective_file_rows[0],
         "Kamil Syntetyczny": collective_file_rows[1],
         "Darek Fikcyjny": collective_file_rows[2],
@@ -63,6 +63,7 @@ def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zlecen
             expected_row,
             (None,) * 11,
         ]
+        # Przebieg rozliczeń kopiuje cały Wiersz danych A:AT po pozycji kolumn.
         assert cell_values(settlement_file, min_row=18, max_row=18, min_col=1, max_col=46) == [
             collective_file_row_of[name]
         ]
