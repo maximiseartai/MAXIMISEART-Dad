@@ -27,7 +27,7 @@ import odpalenia_ast_grep
 import ponow_ci
 import potomne
 import rejestr_korzeni
-from rejestr_korzeni import GuardCase, Reviewed
+from rejestr_korzeni import GuardCase, Occurrence, Reviewed
 from repo import MAIN, REMOTE, ROOT
 import repo
 import straznik
@@ -36,7 +36,7 @@ import szablon_werdyktu
 from tydzien_polski import WARSAW, last_full_week, midnight, week_of
 import werdykt_pr
 
-OPIS = """Pomiar ADR 0036, 0042 i 0046 w issue „Rejestr korzeni”: odpalenia strażników, poszerzenia reguł, czekanie, strażniki; w poniedziałek, ręcznie z --bez-zapisu.
+OPIS = """Pomiar ADR 0036, 0042 i 0046 w issue „Rejestr korzeni”: odpalenia strażników, poszerzenia reguł, pary do audytu; w poniedziałek, ręcznie z --bez-zapisu.
 
 Miary z [ADR 0036](../docs/adr/0036-chwast-to-regula.md) („Miara”, wiersz miary Q1 w „Wdrożenie”), strażniki
 z [ADR 0042](../docs/adr/0042-straznik-przy-pierwszym-waznym.md) i pomiar bez pola ``Idiom:`` z
@@ -68,6 +68,12 @@ obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze z jednego
   albo inne pliki właścicieli ``TID251`` w ``per-file-ignores``; sama zmiana komunikatu, metadanych, komentarza i nowa reguła nim nie jest,
   a narzędzie nie odróżnia poszerzenia od zawężenia wzorca, więc kolumna ``Pola`` mówi, co się zmieniło, w chwili
   merge'a;
+- para do audytu to Ważne tygodnia z polem ``Mechanizm:`` i wcześniejsze Ważne innego PR-u, scalonego przed chwilą
+  Ważnego tygodnia, z tym samym szczeblem i co najmniej jednym wspólnym plikiem miejsc pola ``Gdzie:``
+  (``Occurrence.files``; miejsca w tej samej funkcji leżą w tym samym pliku), z kolumną wspólnych plików; czy para to
+  ten sam mechanizm błędu, rozstrzyga na ślepo audyt skilla ``polowanie``, a jego komentarz w issue z pierwszą linią
+  ``AUDYT`` (``AUDIT_LINE``) od konta z ``werdykt_pr.TRUSTED`` daje liczbę ucieczek tygodnia w historii (ostatni taki
+  komentarz tygodnia, ``-`` bez audytu);
 - czekanie to czas od utworzenia ostatniego werdyktu ``PASS`` na HEAD PR do jego merge'a, dla PR-ów scalonych
   w okresie, a merge bez takiego werdyktu liczy się osobno (``Bez PASS na HEAD``); chwili zielonego CI skan nie
   czyta, więc czekanie na samo CI jest w tej liczbie;
@@ -96,11 +102,11 @@ końca tego tygodnia, więc pomiar tygodnia daje te same liczby, kiedykolwiek go
 i logi runów się nie zmienią.
 
 Treść issue to szablon bez wolnej prozy (``body``): ``## Pomiar``, ``## Czekanie`` (tydzień i od wdrożenia),
-``## Reguły``, ``## Odpalenia strażników`` (z linią ``GRANICE``), ``## Poszerzenia reguł``, ``## Strażniki``
+``## Reguły``, ``## Odpalenia strażników`` (z linią ``GRANICE``), ``## Poszerzenia reguł``, ``## Pary do audytu``, ``## Strażniki``
 (tydzień i od wdrożenia warunku strażnika), ``## Wyjątki strażnika``, ``## Po limicie rund``, ``## Kody`` (każdy kod
 z wystąpieniem od wdrożenia, kod to kategoria ODC z ADR 0036), ``## Chwasty`` (otwarte issues „Chwast: R-KOD”)
 i ``## Historia`` z wierszem na każdy z ostatnich ``HISTORY`` tygodni od tygodnia wdrożenia. Historię pomiar liczy od
-nowa z rejestru i historii gita przy każdym uruchomieniu, a starej treści issue nie czyta: rozstrzygnięcie kodu (Q25)
+nowa z rejestru, historii gita i komentarzy audytu przy każdym uruchomieniu, a starej treści issue nie czyta: rozstrzygnięcie kodu (Q25)
 poprawia też minione tygodnie, a issue nie staje się drugim rejestrem. Treść należy do narzędzia, więc uwagi idą
 w komentarze.
 
@@ -111,7 +117,7 @@ secondary rate limit.
 
 Koszt przebiegu to skan rejestru (``rejestr_korzeni`` podaje budżet: strona GraphQL na każde 19 PR-ów od wdrożenia,
 1 punkt z 1000 na godzinę ``GITHUB_TOKEN``, bez renderowania treści), stała liczba żądań (``gh repo view``, lista
-issues ``chwast`` i ``rejestr-korzeni`` oraz zapis issue, z etykietą przy pierwszym), żądania REST odpaleń (strona
+issues ``chwast`` i ``rejestr-korzeni``, strona komentarzy issue na każde 100 oraz zapis issue, z etykietą przy pierwszym), żądania REST odpaleń (strona
 padniętych runów tygodnia na każde 100, lista zadań każdego i log każdego padniętego zadania poza ``Required CI
 status``, z 1000 żądań na godzinę ``GITHUB_TOKEN``), ``ALARM_PRS`` kopii commitów z biegiem
 ast-grep z dodatku dev, który workflow instaluje, i polecenia gita na merge'ach, które zmieniły pliki reguł.
@@ -135,6 +141,10 @@ AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 CRON = re.compile(r"(\d{1,2}) (\d{1,2}) \* \* 1")
 WEED_TITLE = re.compile(rf"{re.escape(rejestr_korzeni.TITLE.format(code=''))}({szablon_werdyktu.CODE.pattern})")
 COLUMNS = ("Wystąpienia", "Poszerzenia reguł")
+HISTORY_COLUMNS = (*COLUMNS, "Pary do audytu", "Ucieczki z audytu")
+PAIR_COLUMNS = ("Ważne tygodnia", "Wcześniejsze Ważne", "Mechanizm", "Wspólne pliki")
+AUDIT = "AUDYT POWROTÓW {week} | pary {pairs} | ucieczki {escapes}"
+AUDIT_LINE = re.compile(r"AUDYT POWROTÓW (\d{4}-\d{2}-\d{2}) \| pary \d+ \| ucieczki (\d+)")
 GUARD_COLUMNS = ("Ważne", *(kind.value for kind in Kind), "Bez strażnika", "Udział wyjątków")
 WAIT_COLUMNS = ("Merge'e", "Bez PASS na HEAD", "Mediana PASS → merge", "Najdłużej", "Ponad 1 h")
 HOUR_LONG = timedelta(hours=1)
@@ -190,6 +200,44 @@ class Widening:
 
     def row(self) -> str:
         return f"| #{self.pull} | {self.rule} | {', '.join(self.fields)} |"
+
+
+@dataclass(frozen=True)
+class Pair:
+    new: Occurrence
+    old: Occurrence
+
+    def row(self) -> str:
+        common = ", ".join(sorted(self.new.files & self.old.files))
+        return f"| #{self.new.pull} {self.new.major} | #{self.old.pull} {self.old.major} | {self.new.mechanism} | {common} |"
+
+
+def pairs(pulls: Sequence[Reviewed], start: datetime, end: datetime) -> list[Pair]:
+    """Pary do audytu tygodnia od ``start`` do ``end``: Ważne tygodnia i wcześniejsze Ważne innego PR-u scalonego przed
+    nim, z tym samym szczeblem ``Mechanizm:`` i wspólnym plikiem miejsc ``Gdzie:``."""
+
+    merged = {pull.pull: pull.merged for pull in pulls if pull.merged is not None}
+    placed = [occurrence for pull in pulls for occurrence in pull.occurrences if occurrence.mechanism is not None and occurrence.files]
+    return [
+        Pair(new, old)
+        for new in placed
+        if start <= new.when < end
+        for old in placed
+        if old.pull != new.pull and old.pull in merged and merged[old.pull] <= new.when and old.mechanism == new.mechanism and old.files & new.files
+    ]
+
+
+def audits(comments: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    """Ucieczki z audytu po poniedziałku tygodnia (``RRRR-MM-DD``): z ostatniego komentarza tygodnia od konta
+    z ``werdykt_pr.TRUSTED``, którego pierwsza linia to ``AUDIT_LINE``."""
+
+    found: dict[str, int] = {}
+    for comment in sorted(comments, key=lambda comment: str(comment["created_at"])):
+        first = str(comment.get("body") or "").strip().splitlines()[:1]
+        audit = AUDIT_LINE.fullmatch(first[0].strip()) if first and comment.get("author_association") in werdykt_pr.TRUSTED else None
+        if audit is not None:
+            found[audit[1]] = int(audit[2])
+    return found
 
 
 def _share(part: int, whole: int) -> str:
@@ -267,10 +315,12 @@ def body(
     alarms: Alarms,
     fired: Sequence[Firing],
     widened: Sequence[Widening],
+    audited: Mapping[str, int],
 ) -> str:
     """Treść issue ``TITLE`` dla tygodnia od poniedziałku ``week`` z PR-ów skanu rejestru ``pulls``, otwartych issues
     chwastów ``weeds`` (numer i kod), chwili wdrożenia ``deployed`` (szablon), ``guarded`` (warunek strażnika),
-    odpaleń reguł ``alarms``, odpaleń strażników tygodnia ``fired`` i poszerzeń reguł od wdrożenia ``widened``."""
+    odpaleń reguł ``alarms``, odpaleń strażników tygodnia ``fired``, poszerzeń reguł od wdrożenia ``widened``
+    i ucieczek z audytu po poniedziałku tygodnia ``audited`` (``audits``)."""
 
     start, end = midnight(week), midnight(week + timedelta(days=7))
     since = f"Od wdrożenia {deployed.astimezone(WARSAW).date().isoformat()}"
@@ -281,6 +331,7 @@ def body(
     lines += _table("Reguły", ("Reguła", f"PR-y z odpaleniem z {alarms.prs} ostatnich"), [*rules, f"| Każda reguła | {alarms.any_rule}{share} |"])
     lines += _table("Odpalenia strażników", ("PR", "Strażnik", "Ważne strażnika"), (firing.row() for firing in fired), GRANICE)
     lines += _table("Poszerzenia reguł", ("PR", "Reguła", "Pola"), (widening.row() for widening in widened if _inside(widening.when, start, end)))
+    lines += _table("Pary do audytu", PAIR_COLUMNS, (pair.row() for pair in pairs(pulls, start, end)))
     since_guard = f"Od wdrożenia {guarded.astimezone(WARSAW).date().isoformat()}"
     guards = [f"| Tydzień {week.isoformat()} | {_guard_cells(_guards(pulls, start, end))} |", f"| {since_guard} | {_guard_cells(_guards(pulls, None, end))} |"]
     lines += _table("Strażniki", ("Okres", *GUARD_COLUMNS), guards)
@@ -294,9 +345,15 @@ def body(
     lines += _table("Chwasty", ("Issue", "Kod"), (f"| #{number} | {code} |" for number, code in sorted(weeds)))
     first = week_of(deployed)
     weeks = [first + timedelta(days=7 * index) for index in range((week - first).days // 7 + 1)] if week >= first else []
-    history = (f"| {monday.isoformat()} | {_cells(pulls, widened, midnight(monday), midnight(monday + timedelta(days=7)))} |" for monday in weeks[-HISTORY:])
-    lines += _table("Historia", ("Tydzień", *COLUMNS), history)
+    history = (_history(pulls, widened, audited, monday) for monday in weeks[-HISTORY:])
+    lines += _table("Historia", ("Tydzień", *HISTORY_COLUMNS), history)
     return "\n".join([*lines, ""])
+
+
+def _history(pulls: Sequence[Reviewed], widened: Sequence[Widening], audited: Mapping[str, int], monday: date) -> str:
+    start, end = midnight(monday), midnight(monday + timedelta(days=7))
+    escapes = audited.get(monday.isoformat())
+    return f"| {monday.isoformat()} | {_cells(pulls, widened, start, end)} | {len(pairs(pulls, start, end))} | {'-' if escapes is None else escapes} |"
 
 
 def alarms(end: datetime) -> Alarms:
@@ -423,7 +480,7 @@ def _action(issues: Sequence[dict[str, object]], text: str) -> tuple[github.Akcj
     """Akcja na issue ``TITLE`` z nową treścią ``text`` (``None``: treść już taka jest) i ostrzeżenia; ``issues`` to
     otwarte issues z etykietą ``rejestr_korzeni.REGISTRY``."""
 
-    own = sorted((issue for issue in issues if issue["title"] == TITLE), key=lambda issue: int(str(issue["number"])))
+    own = _own(issues)
     if not own:
         return github.Zaloz(TITLE, text, (rejestr_korzeni.REGISTRY,)), []
     numbers = [f"#{issue['number']}" for issue in own]
@@ -431,6 +488,10 @@ def _action(issues: Sequence[dict[str, object]], text: str) -> tuple[github.Akcj
     if str(own[0].get("body") or "").replace("\r\n", "\n") == text:
         return None, [*notes, f"{PREFIX} | #{own[0]['number']} ma już tę treść"]
     return github.Edytuj(int(str(own[0]["number"])), text), notes
+
+
+def _own(issues: Sequence[dict[str, object]]) -> list[dict[str, object]]:
+    return sorted((issue for issue in issues if issue["title"] == TITLE), key=lambda issue: int(str(issue["number"])))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -455,8 +516,12 @@ def main(argv: list[str] | None = None) -> int:
         api = github.GhApi()
         fired = firings(api, pulls, start, end)
         widened = [widening for widening in widenings(end) if widening.when >= deployed]
-        text = body(pulls, weeds(github.issues(api, rejestr_korzeni.WEED, "open")), week, deployed, guarded, alarms(end), fired, widened)
-        action, lines = _action(github.issues(api, rejestr_korzeni.REGISTRY, "open"), text)
+        weeded = weeds(github.issues(api, rejestr_korzeni.WEED, "open"))
+        registry = github.issues(api, rejestr_korzeni.REGISTRY, "open")
+        own = _own(registry)
+        audited = audits(github.strony(api, f"{github.REPO}/issues/{own[0]['number']}/comments")) if own else {}
+        text = body(pulls, weeded, week, deployed, guarded, alarms(end), fired, widened, audited)
+        action, lines = _action(registry, text)
         if isinstance(action, github.Zaloz):
             lines += github.zaloz_etykiety(api, rejestr_korzeni.LABELS, PREFIX, zapis=not args.bez_zapisu)
         if action is not None:

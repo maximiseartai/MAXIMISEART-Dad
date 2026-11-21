@@ -1,9 +1,10 @@
 name: Rejestr korzeni
 
 # Every Monday at 6:17 Polish time: the numbers of the root registry since the deployment of the verdict template, the
-# guard firings in the failed CI runs of the last full week, the widenings of the rules and the history of weeks go into
-# the body of the one issue "Rejestr korzeni" (label rejestr-korzeni), before the hunt of the skill polowanie at 8:00
-# reads it (tools/rejestr_korzeni_tydzien.py, ADR 0031, ADR 0046). Minute 17, not the full hour: GitHub delays scheduled
+# guard firings in the failed CI runs of the last full week, the widenings of the rules, the pairs to audit and the
+# history of weeks go into the body of the one issue "Rejestr korzeni" (label rejestr-korzeni), before the hunt of the
+# skill polowanie at 8:00 reads it, audits the pairs blind and comments the escapes, which the next run reads into the
+# history (tools/rejestr_korzeni_tydzien.py, ADR 0031, ADR 0046). Minute 17, not the full hour: GitHub delays scheduled
 # runs at the start of an hour and drops some under high load. GitHub's cron runs in UTC, so 6:17 in Warsaw is 5:17 UTC
 # in winter time (CET, UTC+1) and 4:17 UTC in summer time (CEST, UTC+2): the workflow has both crons, and the tool gets
 # the cron that started it and goes on only when that cron is in hour 6 in Warsaw on that day (Poland changes the time
