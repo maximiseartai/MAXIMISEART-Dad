@@ -16,13 +16,16 @@ zwolnieniem dokładnie nazwy, których jest właścicielem; to drugie sprawdza t
 from __future__ import annotations
 
 from collections.abc import Mapping
+import importlib.metadata
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import pkgutil
 import subprocess
 import sys
 import tomllib
+import warnings
 from typing import Any, Final
 
 import pytest
@@ -210,6 +213,20 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Mypy wyłączony na funkcji bez komentarza tłumienia, którego licznik tłumień nie widzi (przegląd #1689, W1).
     "import typing\n@typing.no_type_check\ndef f() -> int:\n    return '1'": (SRC_CONFIG, ("rozliczenia",), "typing.no_type_check"),
     "from typing_extensions import no_type_check as unchecked": (TESTS_CONFIG, (), "typing_extensions.no_type_check"),
+    "import yaml\ntekst = yaml.safe_dump_all(dokumenty, sort_keys=False)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.safe_dump_all"),
+    "import yaml\ntekst = yaml.safe_dump(regula)": (ROOT_CONFIG, (), "yaml.safe_dump"),
+    "from yaml import dump as zapisz": (SRC_CONFIG, ("rozliczenia",), "yaml.dump"),
+    "import yaml as y\ny.dump_all(dokumenty, plik)": (DRIVE_CONFIG, (), "yaml.dump_all"),
+    "import yaml\nyaml.emit(zdarzenia, plik)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.emit"),
+    "import yaml\ntekst = yaml.serialize(wezel)": (ROOT_CONFIG, TOOLS_PROBE, "yaml.serialize"),
+    "from yaml import serialize_all": (SRC_CONFIG, ("rozliczenia",), "yaml.serialize_all"),
+    "import yaml\nclass Zapis(yaml.SafeDumper): ...": (SRC_CONFIG, ("rozliczenia", "centrum"), "yaml.SafeDumper"),
+    "from yaml import CSafeDumper as Zapis": (ROOT_CONFIG, TOOLS_PROBE, "yaml.CSafeDumper"),
+    "from yaml.representer import SafeRepresenter": (ROOT_CONFIG, TOOLS_PROBE, "yaml.representer"),
+    "from yaml.emitter import Emitter": (DRIVE_CONFIG, (), "yaml.emitter"),
+    "import yaml\nZapis = yaml.YAMLObject.yaml_dumper": (ROOT_CONFIG, TOOLS_PROBE, "yaml.YAMLObject"),
+    "from yaml import add_representer": (SRC_CONFIG, ("rozliczenia",), "yaml.add_representer"),
+    "import _yaml\nzapis = _yaml.CEmitter(plik)": (ROOT_CONFIG, TOOLS_PROBE, "_yaml"),
     # Treść z Wydania w miejscu pliku Ustawień bez odczytu: postacie z tabeli przypadków przy ZNANE_LUKI_TRESCI_Z_WYDANIA,
     # pierwsza to mail z treścią z Wydania z przeglądu #2029 (r1, W1).
     "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL": (
@@ -328,7 +345,7 @@ def test_katalog_z_wlasnymi_zakazami_ruff_powtarza_kazdy_zakaz_korzenia() -> Non
         problems += [
             f"{where}: brak zakazu {name} z ruff.toml korzenia"
             for name, entry in root.items()
-            if local.get(name) != entry and not (path == TESTS_CONFIG and name in DYNAMIC_IMPORT)
+            if local.get(name) != entry and not (path == TESTS_CONFIG and name in (*DYNAMIC_IMPORT, *ZAPIS_YAML))
         ]
 
     assert problems == [], "\n".join(
@@ -386,6 +403,89 @@ ZNANE_LUKI_SNU = {
     "nazwa w napisie: getattr": 'import time\n\ngetattr(time, "sleep")(0.3)\n',
     "inne API z limitem czasu: threading.Event.wait": "import threading\n\nthreading.Event().wait(0.3)\n",
 }
+
+
+def _drogi_zapisu_pyyaml() -> set[str]:
+    import yaml
+
+    piszace: tuple[type, ...] = (yaml.emitter.Emitter, yaml.serializer.Serializer, yaml.representer.BaseRepresenter)
+    if importlib.util.find_spec("yaml._yaml") is not None:
+        piszace += (importlib.import_module("yaml._yaml").CEmitter,)
+
+    def klasa_pisze(wartosc: object) -> bool:
+        return isinstance(wartosc, type) and issubclass(wartosc, piszace)
+
+    def funkcja_pisze(wartosc: object) -> bool:
+        return inspect.isfunction(wartosc) and "Dumper" in inspect.signature(wartosc).parameters
+
+    def drogi_modulu(nazwa_modulu: str) -> set[str]:
+        publiczne = {nazwa: wartosc for nazwa, wartosc in vars(importlib.import_module(nazwa_modulu)).items() if not nazwa.startswith("_")}
+        drogi = {nazwa for nazwa, wartosc in publiczne.items() if klasa_pisze(wartosc) or funkcja_pisze(wartosc)}
+        drogi |= {
+            nazwa
+            for nazwa, wartosc in publiczne.items()
+            if inspect.isfunction(wartosc) and set(wartosc.__code__.co_names) & drogi
+        }
+        drogi |= {
+            f"{nazwa}.{atrybut}"
+            for nazwa, wartosc in publiczne.items()
+            if isinstance(wartosc, type) and not klasa_pisze(wartosc)
+            for atrybut in dir(wartosc)
+            if not atrybut.startswith("__") and klasa_pisze(getattr(wartosc, atrybut, None))
+        }
+        return {f"{nazwa_modulu}.{droga}" for droga in drogi}
+
+    najwyzsze = importlib.metadata.distribution("PyYAML").read_text("top_level.txt") or ""
+    moduly = [nazwa for nazwa in najwyzsze.split() if importlib.util.find_spec(nazwa) is not None]
+    assert yaml.__name__ in moduly, f"dystrybucja PyYAML bez modułu {yaml.__name__} w top_level.txt: strażnik nie ma czego przejść"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        moduly += [
+            modul.name
+            for nazwa in moduly
+            if hasattr(importlib.import_module(nazwa), "__path__")
+            for modul in pkgutil.walk_packages(importlib.import_module(nazwa).__path__, f"{nazwa}.")
+        ]
+    drogi: set[str] = set()
+    for nazwa_modulu in moduly:
+        drogi |= drogi_modulu(nazwa_modulu)
+        definiuje = any(
+            getattr(wartosc, "__module__", None) == nazwa_modulu and (klasa_pisze(wartosc) or funkcja_pisze(wartosc))
+            for wartosc in vars(importlib.import_module(nazwa_modulu)).values()
+        )
+        if definiuje and nazwa_modulu != yaml.__name__:
+            drogi.add(nazwa_modulu)
+    return drogi
+
+
+def test_kazda_droga_zapisu_pyyaml_ma_zakaz_poza_tests() -> None:
+    """Drogi zapisu wynikają z wartości w zainstalowanej dystrybucji PyYAML, nie z nazw: klasa pisząca to podklasa
+    ``Emitter``, ``Serializer``, ``BaseRepresenter`` albo ``CEmitter``, a drogą jest moduł dystrybucji (każdy moduł
+    z ``top_level.txt``, także ``_yaml``, i jego podmoduły), który taką klasę albo funkcję definiuje, jego publiczna
+    nazwa i atrybut publicznej klasy, które ją wskazują, oraz funkcja z parametrem ``Dumper`` albo wołająca inną drogę.
+    Pakiet ``yaml`` sam nie jest drogą, bo odczyt (``yaml.safe_load``) zostaje dozwolony: jego drogi stoją nazwa po nazwie."""
+
+    zakazane = set(ZAPIS_YAML)
+    bez_zakazu = [droga for droga in sorted(_drogi_zapisu_pyyaml()) if not any(droga == z or droga.startswith(f"{z}.") for z in zakazane)]
+
+    assert bez_zakazu == [], (
+        "zakaz zapisu YAML przez PyYAML w ruff.toml korzenia, src/ruff.toml i drive/ruff.toml ma wymieniać każdą drogę zapisu PyYAML"
+    )
+
+
+ZNANE_LUKI_ZAPISU_YAML = {
+    "zakaz zna tylko nazwę z importu: getattr(yaml, \"safe_dump\")": 'import yaml\n\ntekst = getattr(yaml, "safe_dump")({"severity": "off"})\n',
+    "zakaz zna tylko PyYAML: inna biblioteka YAML": "from ruamel.yaml import YAML\n\nYAML().dump({}, None)\n",
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_zapisu_yaml_poza_tests_przechodza_przez_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_ZAPISU_YAML, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath(*TOOLS_PROBE, "sonda_luki.py"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_ZAPISU_YAML)")
 
 
 ZNANE_LUKI_LEKSERA_SHLEX = {
@@ -1003,6 +1103,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_mails.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
+    "src/rozliczenia/centrum/settings/files.py": frozenset({"yaml.dump", "yaml.SafeDumper"}),
     "tools/lib/stawka_przegladu.py": frozenset({"wplyw_zmiany.light_review"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
@@ -1202,6 +1303,9 @@ def _release_content_findings(*arguments: str, code: str | None = None) -> list[
 # Nazwy pakietu importlib wynikają z biblioteki działającego Pythona (test nazw niżej); reszta to moduły, których zadaniem
 # jest import albo wykonanie modułu. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po
 # nazwie, są znaną luką z próbkami w ZNANE_LUKI_IMPORTU, nie pełną listą.
+ZAPIS_YAML = tuple(
+    name for name, entry in _banned(tomllib.loads(ROOT_CONFIG.read_text(encoding="utf-8"))["lint"]).items() if "PyYAML" in entry["msg"]
+)
 DYNAMIC_IMPORT = (
     "importlib.import_module",
     "importlib.__import__",

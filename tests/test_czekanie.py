@@ -181,6 +181,7 @@ RERUNS = (
     "gh 'run' \"rerun\" 43035692960",
     "gh r\\un re''run 43035692960",
     "gh\trun\trerun 43035692960",
+    "gh\rrun\rrerun 1",
     'echo "$(date) a" gh run rerun 43035692960',
     "gh api -X POST repos/maximiseartai/MAXIMISEART-Dad/actions/runs/43035189944/rerun-failed-jobs",
     "gh api --method POST repos/{owner}/{repo}/actions/jobs/130564767610/rerun",
@@ -293,6 +294,7 @@ PASSING = (
     "gh api repos/maximiseartai/MAXIMISEART-Dad/branches/tools/rerun-ci",
     "gh run '' rerun 43035692960",
     'gh run "re\\run" 43035692960',
+    'gh "\\""\\ run rerun 1',
     # Adres ponowienia liczy się tylko za ``gh api``: w argumencie innego polecenia ``gh`` to ścieżka pliku.
     "gh pr comment 1459 --body-file ~/.t3/notes/actions/runs/43035692960/rerun.md",
     # Próbnik procesów puszczony ``&`` obok pomiaru i ubity ``kill``.

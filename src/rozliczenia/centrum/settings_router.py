@@ -284,13 +284,14 @@ def describe(view: SettingsView) -> settings_contract.Settings:
     autostart = _describe_autostart(view.autostart) if covers(CentrumFunction.AUTOSTART) else None
     reminders = _reminders(view.reminders) if covers(CentrumFunction.REMINDERS) else None
     settlement_mail = _settlement_mail(view.settlement_mail) if covers(CentrumFunction.SETTLEMENT_MAILING) else None
+    periods = covers(CentrumFunction.PERIODS)
     match view.folders:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")
             return settings_contract.Settings(
                 order_register=unreadable,
-                periods_directory=unreadable,
-                periods_all_years=False,
+                periods_directory=unreadable if periods else None,
+                periods_all_years=False if periods else None,
                 theme=None,
                 folders_problem=None,
                 workers=workers,
@@ -307,8 +308,8 @@ def describe(view: SettingsView) -> settings_contract.Settings:
             problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
     return settings_contract.Settings(
         order_register=_describe_path(folders.register, folders.register_state),
-        periods_directory=_describe_path(folders.periods_directory, folders.periods_directory_state),
-        periods_all_years=folders.periods_directory_all_years,
+        periods_directory=_describe_path(folders.periods_directory, folders.periods_directory_state) if periods else None,
+        periods_all_years=folders.periods_directory_all_years if periods else None,
         theme=folders.theme,
         folders_problem=problem,
         workers=workers,

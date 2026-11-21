@@ -137,6 +137,15 @@ Logów następnego Uruchomienia: lepiej, żeby działanie taty stało w dwóch
 Logach, niż żeby nie stało w żadnych
 (`tests/test_centrum_logi_uruchomienia.py::test_dziennik_dzialan_taty_ktorego_nie_da_sie_oproznic_oddaje_te_same_wpisy_takze_nastepnym_logom`).
 
+**Dopisek (#2236, 2026-11-21).** Działania po wyniku (`runs.AfterRun`: Logi
+Uruchomienia, Kontrola ilości, Uzupełnienie) biegną na wątku Uruchomienia przed
+jego końcem, więc przyjęte zamknięcie Centrum ani Aktualizacja narzędzia ich nie
+przerywa. Dlatego każde tylko czyta i zapisuje lokalnie, bez sieci, w
+milisekundach, poza sprawdzeniem Wzorca, którego wersję praca Centrum widzi
+pierwszy raz albo po nowej wartości pamięci reguły danych
+(`template_archive.TemplateChecks`); to, co idzie do Skrzynki Zgłoszeń, czeka w
+Kolejce wysyłki.
+
 **Dopisek (#2227, 2026-11-20).** Kolejka wysyłki czyta też pliki, które
 zostawiły w niej starsze Wydania (bez Tokenu do Zgłoszeń, bez sieci albo z
 treścią odrzuconą przez Skrzynkę): schemat 1 z celem w kluczu `thread`, schemat

@@ -119,9 +119,6 @@ ZEGAR_START_S = 3 * 24 * 3600.0
 
 
 class _GitHub:
-    """GitHub z runami ``ci.yml`` po dniach, artefaktami ``plan`` (bajty zamiast tekstu: zip uszkodzony) i ``czasy-ci``
-    oraz issues i etykietami w pamięci; każde zapytanie trwa ``tick`` sekund zegara ``now``."""
-
     def __init__(
         self, runs: Sequence[Run], *, plans: Mapping[int, str | bytes] | None = None, czasy: Mapping[str, object] | None = None, tick: float = 0.0
     ) -> None:
