@@ -22,6 +22,7 @@ Nowy kod nazywa pojęcie tym identyfikatorem, a nowe hasło dostaje wiersz w tej
 | Uporządkowanie INTERMAX | `order_register` |
 | Dzień uporządkowany | `OrderedDay` |
 | Kopia INTERMAX | `IntermaxCopy` |
+| Kopia konfliktu OneDrive | `onedrive_conflicts` |
 | Kolor operatora | `OperatorColor` |
 | Wpis urządzenia i czynności INTERMAX | `IntermaxEntry` |
 | Baza zleceń | `OrderBase` |
@@ -254,6 +255,12 @@ Stan Rejestru zleceń zapisany przed Uporządkowaniem INTERMAX albo przed przywr
 Leży poza OneDrive na komputerze, na którym powstała: tata i Andrzej mają każdy swoje.
 Przywraca ją z Centrum rozliczeń ten, na czyim komputerze leży; zmiany późniejsze od niej wtedy znikają, także zrobione na drugim komputerze.
 _Avoid_: backup, wersja
+
+## Kopia konfliktu OneDrive
+
+Druga wersja INTERMAX w jego folderze, którą OneDrive zostawia, gdy plik zmieniły dwa komputery; narzędzie rozpoznaje ją tylko po nazwie pliku.
+Pomyłka w obie strony kosztuje: przeoczona kopia gubi zmiany pracownika taty, a plik wzięty za kopię bez potrzeby zatrzymuje Uporządkowanie INTERMAX albo Wpisanie raportów z nazwą pliku, który tata sprawdzi.
+_Avoid_: duplikat, kopia zapasowa
 
 ## Kolor operatora
 

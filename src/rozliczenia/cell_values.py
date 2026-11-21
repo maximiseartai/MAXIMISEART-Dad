@@ -19,7 +19,7 @@ __all__ = ["CellValues"]
 
 _HEADER_ROW: Final = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
 _TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
-# ZEWNĘTRZNE: Excel pokazuje liczbę w formacie daty jako datę tylko od 0 do 31.12.9999, a ujemną i późniejszą jako ####### (Microsoft Learn: Excel specifications and limits, Latest date allowed for calculation)
+# ZEWNĘTRZNE: Excel nie pokazuje jako daty liczby za 31.12.9999, a w systemie dat 1900 także liczby ujemnej, tylko ##### (Microsoft Learn: Excel specifications and limits, Latest date allowed for calculation; Microsoft Support: How to correct a ##### error)
 _LAST_MOMENT: Final = datetime(9999, 12, 31, 23, 59, 59, 999000)
 _DAY: Final = timedelta(days=1)
 

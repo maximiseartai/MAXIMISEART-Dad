@@ -27,7 +27,6 @@ Reguły szczebla i dowodu:
   Recenzent następnej rundy jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
   Przy Ważnym z korzeniem R-PROZA-KOPIA regułę „Fix the class, not the instance” z `CODING_STANDARDS.md` autor stosuje do prozy: klasą jest każde zdanie diffu od merge-base na temat zdania z werdyktu, które przed kolejną rundą czyta z kodem (#2069: trzy `FAIL` za kolejne zdania o jednym fakcie, `PASS` po przeczesaniu wszystkich).
 - Autor może zakwestionować kod korzenia albo szczebel `Mechanizm:` z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy punktem `Korzeń W<n> r<k>: R-KOD - zdanie` albo `Mechanizm W<n> r<k>: <szczebel> - zdanie` w `## Sprawdzone`, gdzie `r<k>` to `k`-ty werdykt PR.
-  Bramki biorą kod i szczebel z ostatniego werdyktu, który dotyczy tego Ważnego, a kod w tym punkcie sprawdza się jak w polu `Korzeń:`.
 - Autor opisuje wyrwanie każdego Ważnego w sekcji `## Korzeń` opisu PR według wzoru sekcji „Root section” skilla [`pr`](../pr/SKILL.md), a `tools/scal_pr.py` odmawia merge'a, dopóki sekcji czegoś brakuje.
   Większy korzeń (ponad `size:M`, ocenia recenzent) idzie osobnym PR-em korzenia, który scala się najpierw (wzór w tej sekcji skilla `pr`).
 - Gdy żaden kod z listy nie pasuje, recenzent pisze `Korzeń: NOWY R-KOD - opis` z kodem, którego na liście nie ma, a nie najbliższy kod, bo zły kod zafałszowałby rejestr powtórzeń.

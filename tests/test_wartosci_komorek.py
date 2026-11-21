@@ -45,6 +45,7 @@ def _cell(attributes: str, content: str | None) -> str:
         pytest.param(_cell(f' s="{BUILT_IN_DATE}"', "<v>46000</v>"), False, datetime(2025, 12, 9), id="data-we-wbudowanym-formacie-daty"),
         pytest.param(_cell(f' s="{OWN_DATE}"', "<v>46000.5</v>"), False, datetime(2025, 12, 9, 12), id="data-we-wlasnym-formacie-daty"),
         pytest.param(_cell(f' s="{BUILT_IN_TIME}"', "<v>0.75</v>"), False, time(18), id="liczba-ponizej-1-to-godzina"),
+        pytest.param(_cell(f' s="{BUILT_IN_DATE}"', "<v>0</v>"), False, time(0), id="zero-w-formacie-daty-to-polnoc"),
         pytest.param(_cell(f' s="{BUILT_IN_DATE}"', "<v>1</v>"), True, datetime(1904, 1, 2), id="data-w-systemie-dat-1904"),
         pytest.param(_cell(f' s="{BUILT_IN_DATE}"', "<v>1</v>"), False, datetime(1900, 1, 1), id="data-w-systemie-dat-1900"),
         pytest.param(_cell(f' s="{BUILT_IN_DATE}"', "<v>-1</v>"), False, -1.0, id="ujemna-w-formacie-daty-zostaje-liczba"),

@@ -53,9 +53,7 @@ widzi, że pracownik ma plik otwarty, a kopii konfliktu OneDrive nic dziś nie w
   bez potrzeby. Do odtworzenia Uruchomienia wystarcza Kopia wejścia w Logach.
 - **Zapis tylko do zamkniętego INTERMAX**, tą samą drogą co Uporządkowanie (ADR 0019). Gdy plik jest otwarty, tata
   dostaje Komunikat i skrzynka nie jest czytana. Gdy po zapisie obok INTERMAX pojawi się kopia konfliktu OneDrive,
-  następuje Zatrzymanie dla taty. Kopię konfliktu rozpoznaje sama nazwa pliku (`onedrive_conflicts.beside`), a
-  pomyłka w obie strony kosztuje: przeoczona kopia gubi zmiany pracownika taty, a plik wzięty za kopię bez potrzeby
-  zatrzymuje Wpisanie raportów z nazwą pliku, który tata sprawdzi.
+  następuje Zatrzymanie dla taty.
 - **Co widzi przeglądarka.** Tylko widok Raporty, dla dni okresów bez Pliku zbiorczego: `NUMER ZL.`, `WYKONAWCA`,
   dzień, `SKUTECZNE` i `CZYNNOŚCI ZREALIZOWANE` z INTERMAX i z Wpisów (przy różnicy z ręczną wartością i przy
   „Zostaw moją”), powód problemu i adres nadawcy Raportu wykonawcy spoza listy adresów, żeby tata mógł powiedzieć
