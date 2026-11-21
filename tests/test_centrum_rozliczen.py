@@ -662,10 +662,8 @@ def test_centrum_bez_wzorcow_w_config_startuje_a_siega_po_wzorce_tylko_ze_stanow
 def test_zadanie_z_obcym_naglowkiem_host_jest_odrzucone(tmp_path: Path) -> None:
     app = centrum(tmp_path)
 
-    foreign_domain_remapped_to_localhost_in_dns = {"Host": "zly.example:47811", "Origin": "http://zly.example:47811"}
-    assert foreign_domain_remapped_to_localhost_in_dns["Origin"] == f"http://{foreign_domain_remapped_to_localhost_in_dns['Host']}", (
-        "Origin zgadza się z obcym Host, więc tylko sprawdzenie Host odrzuca zadanie zmieniające stan"
-    )
+    foreign_host = "zly.example:47811"
+    foreign_domain_remapped_to_localhost_in_dns = {"Host": foreign_host, "Origin": f"http://{foreign_host}"}
 
     response = app.client.get("/api/health", headers=foreign_domain_remapped_to_localhost_in_dns)
     allowed = _passed_through(app, foreign_domain_remapped_to_localhost_in_dns)
