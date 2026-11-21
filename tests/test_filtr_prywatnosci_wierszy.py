@@ -1,10 +1,3 @@
-"""Filtr prywatności Wiersza danych (``order_facts``): jedyna treść komórek Pliku zbiorczego, która opuszcza komputer taty.
-
-Seam z dwoma wejściami (Kontrola ilości teraz, Logi Uruchomienia później), więc macierz reguły jest tu raz
-(ADR 0013, ADR 0015, ADR 0038). Dozwolone: UMOWA, URZĄDZENIA, CZYNNOŚCI, CZYNNOŚCI ZREALIZOWANE, dzień tygodnia i godzina
-z DATA, N:AP, ``AS`` jako ilość taty i kolory wypełnienia kolumn, które może wypełnić Legenda czynności.
-"""
-
 from __future__ import annotations
 
 from datetime import date, datetime, time
@@ -18,17 +11,17 @@ import pytest
 
 from rozliczenia.activity_legend import FillColour
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia import workbook_files
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.highlights import Highlights
 from rozliczenia.order_facts import NON_NUMERIC, MissingHeaders, OrderFacts, collective_orders, tata_value
 from rozliczenia.quantity_check import legend_row_check
-from rozliczenia.quantity_engine import OrderContent, WeekTime
+from rozliczenia.quantity_engine import OrderContent, WeekTime, WithoutRule
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.collective_file import read_data_rows
 from tests.fixtures.data_rows import data_row
 from atrapy.settlement import write_quantity_source
 
-# Nagłówki A17:K17 Wzorca pliku zbiorczego po normalizacji, jak je daje odczyt Pliku zbiorczego.
 HEADER = {
     "miasto": 1,
     "adres": 2,
@@ -57,6 +50,13 @@ def _filtered(header: dict[str, int], row: list[object], fills: dict[str, Fill] 
     assert isinstance(orders, tuple)
     [facts] = orders
     return facts
+
+
+def test_naglowek_testow_to_naglowek_a17_k17_z_odczytu_pliku_zbiorczego(tmp_path: Path) -> None:
+    path = tmp_path / "Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"
+    write_quantity_source(path, [{"V": 1}])
+
+    assert dict(workbook_files.read_data_rows(path, DadFiles()).header) == HEADER
 
 
 def test_wiersz_po_filtrze_ma_tylko_umowe_urzadzenia_czynnosci_opis_technika_pore_ilosci_i_kwote() -> None:
@@ -215,37 +215,34 @@ def test_bez_naglowka_czynnosci_zrealizowane_opis_technika_jest_pusty() -> None:
     assert _filtered(header, _marked_row()).completed == ""
 
 
-# Kolumny z opisu technika w wierszu: kolumna → wpis taty; Reguły ilości z Wydania nie dają tu nic poza V (bez reguły).
 @pytest.mark.parametrize(
-    ("completed", "cells", "sent"),
+    ("completed", "tata_cells", "sent"),
     [
-        ("inst20m", {"Y": 1}, False),
-        ("inst20m", {}, True),
-        ("spawpg", {"AB": 1, "AS": 70}, True),
-        ("instutp40m", {}, False),
-        ("instutp40m", {"AJ": 1}, True),
-        ("inst20m listwy", {"Y": 1}, False),
-        ("inst20m listwy", {}, True),
-        ("inst20m instutp40m", {"Y": 1}, True),
-        ("tak", {"Y": 1}, True),
-        ("listwy 11 metrów", {}, False),
-        ("listwy 11 metrów", {"AS": 220}, True),
-        ("listwy 11 metrów", {"Y": 1}, True),
-        ("listwy 11 metrów", {"AE": 1}, False),
+        pytest.param("inst20m", {"Y": 1}, False, id="kod-zgodny-z-wpisem-taty"),
+        pytest.param("inst20m", {}, True, id="kod-bez-wpisu-taty"),
+        pytest.param("spawpg", {"AB": 1, "AS": 70}, True, id="spawpg-bez-czerwonego-AS-to-roznica-koloru"),
+        pytest.param("instutp40m", {}, False, id="blad-opisu-bez-wpisu-taty"),
+        pytest.param("instutp40m", {"AJ": 1}, True, id="blad-opisu-z-wpisem-taty"),
+        pytest.param("inst20m listwy", {"Y": 1}, False, id="kod-obok-zwyklego-opisu-wpisuje-to-co-sam-kod"),
+        pytest.param("inst20m listwy", {}, True, id="kod-obok-zwyklego-opisu-bez-wpisu-taty"),
+        pytest.param("inst20m instutp40m", {"Y": 1}, True, id="kod-obok-bledu-opisu"),
+        pytest.param("tak", {"Y": 1}, True, id="wiersz-bez-kodu-z-wpisem-taty"),
+        pytest.param("listwy 11 metrów", {}, False, id="zwykly-opis-bez-wpisu-taty"),
+        pytest.param("listwy 11 metrów", {"AS": 220}, True, id="zwykly-opis-z-kwota-taty"),
+        pytest.param("listwy 11 metrów", {"Y": 1}, True, id="zwykly-opis-z-iloscia-taty"),
+        pytest.param("listwy 11 metrów", {"AE": 1}, False, id="zwykly-opis-z-wpisem-poza-kolumnami-opisu"),
     ],
-    ids=repr,
 )
 def test_opis_technika_wychodzi_tylko_w_wierszu_z_roznica_legendy_albo_z_wpisem_taty_gdy_legenda_nic_nie_wpisala(
-    completed: str, cells: dict[str, int], sent: bool
+    completed: str, tata_cells: dict[str, int], sent: bool
 ) -> None:
-    # spawpg bez czerwonego AS to różnica koloru; inst20m obok zwykłego opisu wpisuje to samo co sam inst20m (ADR 0041);
-    # instutp40m to Błąd opisu, a sam zwykły opis to wiersz bez kodu, więc legenda nic nie wpisuje, tak jak przy samym
-    # „tak”; AE nie jest kolumną z opisu technika.
     row: list[object] = [None] * 46
     row[3], row[6], row[10] = "przeniesienie", STARTED, completed
-    for letter, value in cells.items():
+    for letter, value in tata_cells.items():
         row[column_index_from_string(letter) - 1] = value
 
     checked = legend_row_check(_filtered(HEADER, row), DEFAULT_ACTIVITY_LEGEND, DEFAULT_QUANTITY_RULES)
 
+    assert isinstance(checked.rules.result, WithoutRule)
+    assert set(checked.rules.result.quantities) == {"V"}
     assert checked.description == (completed if sent else None)
