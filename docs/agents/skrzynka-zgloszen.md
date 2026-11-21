@@ -1,7 +1,17 @@
 # Skrzynka Zgłoszeń: issues from Dad's computer
 
 Centrum rozliczeń on Dad's computer sends Zgłoszenia, Kontrole ilości, Logi Uruchomienia and Uwagi taty by itself to issues of the private repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia`, labelled `zgloszenie`, `kontrola-ilosci`, `logi-uruchomienia` and `uwaga-taty` (`Label` in `src/rozliczenia/centrum/report_box.py`; Maks creates the labels, Centrum never does), never to this public one ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)).
-What each of them is, [`GLOSSARY.md`](../../GLOSSARY.md) says (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Archiwum Logów okresu, Kolejka wysyłki); how the queue delivers them and retries, [ADR 0015](../adr/0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md) (notes #840, #844 and #910), the tests of `tests/test_kolejka_skrzynki_zgloszen.py` and the skill `verify-kolejka-skrzynki` say, and how it logs its `skrzynka-*` lines, the docstrings of `src/rozliczenia/centrum/log.py`.
+What each of them is, [`GLOSSARY.md`](../../GLOSSARY.md) says (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Archiwum Logów okresu, Kolejka wysyłki); how the queue delivers them and retries, [ADR 0015](../adr/0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md) (notes #840, #844 and #910), the tests of `tests/test_kolejka_skrzynki_zgloszen.py` and the skill `verify-kolejka-skrzynki` say, and how it logs its `skrzynka-*` lines, the `box_*` methods of `CentrumLog` in `src/rozliczenia/centrum/log.py`.
+
+## Two Stanowiska
+
+The Centrum rozliczeń on Andrzej's laptop (Stanowisko Andrzeja, `GLOSSARY.md`) sends to the same repository with its own Token do Zgłoszeń.
+Everything it sends has `ANDRZEJ ` at the start of the title: `ANDRZEJ <Zgłoszenie title>`, `ANDRZEJ <Uwaga title>`, `ANDRZEJ Logi Uruchomienia <token>`, and its Archiwum Logów okresu is the Release `andrzej-logi-<token>` named `ANDRZEJ Logi Uruchomień <token>`; the labels are the same as Dad's.
+A title without that prefix came from Dad's computer.
+One module owns the rule (`src/rozliczenia/centrum/box_prefix.py`): it prefixes the titles and the tag, and `KeyedBox.find_issue` asks it whether an issue found by a line the tool writes (the period of the Logi and of a Kontrola ilości, the odcisk problemu of a Zgłoszenie) belongs to its Stanowisko, so Dad's Centrum never comments on, numbers or reports Andrzej's issues and Andrzej's never Dad's (the Logi of one period are two issues and two Archiwa, and a Zgłoszenie of the same problem from both computers is two issues).
+An issue a Centrum knows by its number or by the mark of its wysyłka (an Uwaga and its later comments, the closures in Powiadomienia) is its own whatever the title says, because the title of an Uwaga is the text Dad or Andrzej typed.
+For the same reason the title tells the Stanowisko of an issue only in that search by a line, among issues whose title the tool writes (a Zgłoszenie, the Logi, a Kontrola ilości), and the Stanowisko of an issue known by its number or by the mark of its wysyłka comes from the mark in its text, never from its title: every issue Andrzej's Centrum opens ends with the hidden line `<!-- Stanowisko Andrzeja -->` after the mark of its wysyłka (`box_prefix.stamped` in `KeyedBox.open_issue`), Dad's issues end with the mark of the wysyłka as before, and Dad's text always stands above that mark, so it cannot write that last line.
+`tools/scal_pr.py` names the Stanowisko of each Skrzynka issue on a `Naprawia` line from that last line (`naprawia.workstation_of`), an Uwaga of Dad that starts with `ANDRZEJ ` included.
 
 ## Dad's data
 
@@ -14,7 +24,7 @@ Everything in that repository is Dad's data, also the exact URZĄDZENIA, CZYNNO�
 
 ## Zgłoszenia
 
-- Closing a Zgłoszenie tells Dad's Centrum that the fix is ready to update, so `Naprawia` in a PR body leaves it open (`tools/lib/naprawia.py`).
+- Closing a Zgłoszenie tells the Centrum that sent it that the fix is ready to update, so `Naprawia` in a PR body leaves it open and the `SCAL OK` line says which Stanowisko it came from (`tools/lib/naprawia.py`).
 - A Zgłoszenie whose odcisk problemu already has an open issue arrives as a comment `## Zgłoszenie wróciło` on it, so each return of the problem shows there with its version and Logi; after you close the issue, the next return opens a new issue with `- Poprzednie Zgłoszenie: #N`.
 
 ## Kontrola ilości
@@ -25,9 +35,9 @@ Everything in that repository is Dad's data, also the exact URZĄDZENIA, CZYNNO�
 
 ## Logi Uruchomienia
 
-- One period has one issue labelled `logi-uruchomienia`, titled `Logi Uruchomienia <token>`, with one comment per Uruchomienie that ends with `- Pełne Logi: [<file>.json.gz](<link>)`.
+- One period has one issue labelled `logi-uruchomienia` per Stanowisko, titled `Logi Uruchomienia <token>` (Andrzej's `ANDRZEJ Logi Uruchomienia <token>`), with one comment per Uruchomienie that ends with `- Pełne Logi: [<file>.json.gz](<link>)`.
   Closing it only means "reviewed up to here": the next Uruchomienie of that period still comments on it.
-- The full Logi are in the Archiwum Logów okresu, the Release `logi-<token>` of that repository.
+- The full Logi are in the Archiwum Logów okresu, the Release `logi-<token>` of that repository (Andrzej's `andrzej-logi-<token>`: use that tag in the commands below).
   Leave it in place: Centrum would create a new one with the next Logi, without the older files.
   A comment whose full Logi wait in the queue (log line `przyczyna=odmowa-archiwum`) means the Token do Zgłoszeń lacks „Contents: Read and write” or the repository has no commit yet ([ADR 0015](../adr/0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md)).
   Download the Logi of a period, or of one Uruchomienie, with `gh`:
@@ -38,4 +48,4 @@ Everything in that repository is Dad's data, also the exact URZĄDZENIA, CZYNNO�
   gunzip logi-<token>/*.json.gz
   ```
 
-- Replay one Uruchomienie on the Mac with `tools/odtworz_uruchomienie.py`, given the link from the comment or the file.
+- Replay one Uruchomienie on the Mac with `tools/odtworz_uruchomienie.py`, given the link from the comment or the file; a link to `andrzej-logi-<token>` works the same.

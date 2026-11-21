@@ -33,6 +33,10 @@ ALWAYS: Final = Always.PART
 Part = CentrumFunction | Always
 
 
+class BoxPrefix(enum.StrEnum):
+    ANDRZEJ = "ANDRZEJ"
+
+
 class Workstation(enum.StrEnum):
     DAD = "tata"
     ANDRZEJ = "andrzej"
@@ -42,6 +46,7 @@ class Workstation(enum.StrEnum):
 class Scope:
     workstation: Workstation
     functions: frozenset[CentrumFunction]
+    box_prefix: BoxPrefix | None
 
     def covers(self, part: Part) -> bool:
         return part is ALWAYS or part in self.functions
@@ -52,9 +57,9 @@ class Scope:
 
 SCOPES: Final[Mapping[Workstation, Scope]] = MappingProxyType(
     {
-        Workstation.DAD: Scope(Workstation.DAD, frozenset(CentrumFunction)),
+        Workstation.DAD: Scope(Workstation.DAD, frozenset(CentrumFunction), None),
         Workstation.ANDRZEJ: Scope(
-            Workstation.ANDRZEJ, frozenset({CentrumFunction.INTERMAX, CentrumFunction.INTERMAX_COPIES})
+            Workstation.ANDRZEJ, frozenset({CentrumFunction.INTERMAX, CentrumFunction.INTERMAX_COPIES}), BoxPrefix.ANDRZEJ
         ),
     }
 )

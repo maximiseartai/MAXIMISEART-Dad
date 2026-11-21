@@ -173,13 +173,17 @@ else:
 needs_ast_grep = pytest.mark.skipif(na_scalonych_pr.AST_GREP is None, reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt")
 
 
-def _merge(github: FakeGitHub, number: int, *versions: dict[str, str]) -> list[str]:
-    """Commity gałęzi PR-u ``number`` od ``main`` (po jednym na wersję plików) i ich merge do ``main`` jak na GitHubie."""
+def _merge(github: FakeGitHub, number: int, *versions: dict[str, str], meanwhile: dict[str, str] | None = None, merge: bool = True) -> list[str]:
+    """Commity gałęzi PR-u ``number`` od ``main`` (po jednym na wersję plików), commit ``meanwhile`` na ``main`` po nich
+    i, z ``merge``, ich merge do ``main`` jak na GitHubie."""
 
     made: list[str] = []
     for files in versions:
         made.append(github.commit_on(made[-1] if made else "main", files, f"wersja {len(made) + 1}"))
-    git(github.checkout, "merge", "--quiet", "--no-ff", "--message", f"Merge pull request #{number} from organizacja/galaz-{number}", made[-1])
+    if meanwhile is not None:
+        git(github.checkout, "merge", "--quiet", "--ff-only", github.commit_on("main", meanwhile, "main idzie dalej"))
+    if merge:
+        git(github.checkout, "merge", "--quiet", "--no-ff", "--message", f"Merge pull request #{number} from organizacja/galaz-{number}", made[-1])
     git(github.checkout, "push", "--quiet", "origin", "main")
     return made
 
@@ -450,16 +454,19 @@ def _guard_proof(
     findings: str = werdykty_szablonu.WERDYKTY["wazne"],
     later: str | None = None,
     base: dict[str, str] | None = None,
+    meanwhile: dict[str, str] | None = None,
+    merge: bool = True,
+    on_main: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     """Dowód ``arguments`` (``--straznik`` z selektorem) dla Ważnego 5/W1/r1 z werdyktu FAIL z treścią ``findings``,
-    a z ``later`` także z późniejszym werdyktem PASS HEAD z tą treścią; ``dev`` to dodatkowe piny dodatku dev, a ``base``
-    dokłada pliki do bazy."""
+    a z ``later`` także z późniejszym werdyktem PASS HEAD z tą treścią; ``dev`` to dodatkowe piny dodatku dev, ``base``
+    dokłada pliki do bazy, ``meanwhile`` i ``merge`` idą do ``_merge``, a ``on_main`` to pliki PR #6 scalonego po nim."""
 
     files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE, **project(dev=dev, tools='[tool.mypy]\nfiles = ["kod"]\n\n[tool.pytest.ini_options]\n'), **(base or {})}
     files["kod/typy.py"] = "class Obiekt:\n    def dozwolone(self) -> None:\n        pass\n"
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
     fixed = fixed_files or {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST}
-    failed, head = _merge(github, 5, failed_files or {"kod/inne.py": CAUGHT}, fixed)
+    failed, head = _merge(github, 5, failed_files or {"kod/inne.py": CAUGHT}, fixed, meanwhile=meanwhile, merge=merge)
     rendered = {text.replace(WHERE, where): html.replace(WHERE, where) for text, html in werdykty_szablonu.rendered().items()}
     verdicts = [f"WERDYKT: FAIL {failed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + findings.replace(WHERE, where)]
     verdicts += [] if later is None else [f"WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n{later}"]
@@ -473,6 +480,9 @@ def _guard_proof(
         **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": comments}, "reviews": {**pages, "nodes": []}},
     }
     (github.bin / "state.json").write_text(json.dumps(pull), encoding="utf-8")
+    if on_main is not None:
+        _merge(github, 6, on_main)
+        head = git(github.checkout, "rev-parse", "main").strip()
     return github.run(*arguments, "--z-commita", head, "--wazne", "5/W1/r1"), failed
 
 
@@ -586,24 +596,69 @@ def test_chroniony_wlasciciel_to_plik_wskazany_wprost_przez_konfiguracje_regul_d
     assert (chroniony_wlasciciel.refusal([OWNER], protected) is None) is owned
 
 
+BANNED = '[lint.flake8-tidy-imports.banned-api]\n"{name}".msg = "użyj właściciela"\n'
+RULE_FILE = "reguly-ast-grep/regula.yml"
+
+
 @pytest.mark.parametrize(
-    ("base", "fixed", "where", "named"),
+    ("config", "path", "owned"),
     [
-        pytest.param({}, FIXED_WITH_TEST, WHERE, "kod/inne.py", id="plik-spoza-konfiguracji-regul"),
-        pytest.param(_owner("kod/inne.py"), {**FIXED_WITH_TEST, **_owner("kod/drugi.py")}, WHERE, "kod/inne.py", id="wlasciciel-z-bazy-usuniety-w-pr"),
-        pytest.param(_owner("kod/inne.py"), FIXED_WITH_TEST, "Gdzie: kod/inne.py:1, kod/typy.py:1", "kod/typy.py", id="drugi-plik-z-gdzie-poza-wlascicielem"),
-        pytest.param({}, FIXED_WITH_TEST, "Gdzie: ~/.zshrc:17 (poza repo)", "Gdzie bez miejsca plik:linia w repo", id="gdzie-poza-repo"),
+        pytest.param(_ignoring(OWNER), RULE_FILE, True, id="plik-reguly-ast-grep-z-rule-dirs"),
+        pytest.param({**_ignoring(OWNER), RULE_FILE: "files:\n  - '**/*.py'\n"}, RULE_FILE, False, id="plik-w-rule-dirs-bez-id-reguly"),
+        pytest.param(_ignoring(OWNER, directory="poza"), "poza/regula.yml", False, id="plik-reguly-spoza-rule-dirs"),
+        pytest.param({"ruff.toml": BANNED.format(name="os.name")}, "ruff.toml", True, id="ruff-toml-z-banned-api"),
+        pytest.param(_exempt(), "ruff.toml", False, id="ruff-toml-bez-banned-api"),
+        pytest.param({"src/ruff.toml": BANNED.format(name="os.name")}, "src/ruff.toml", True, id="ruff-toml-katalogu-z-banned-api"),
+        pytest.param({"src/ruff.toml": RUFF_EXEMPT.format(pattern=OWNER, code="TID251")}, OWNER, False, id="zwolnienie-tid251-w-ruff-toml-katalogu"),
+        pytest.param({**_ignoring(OWNER), "ruff.toml": BANNED.format(name="os.name")}, "tests/test_inne.py", False, id="plik-spoza-regul-i-zakazow"),
+    ],
+)
+def test_chroniony_wlasciciel_to_tez_sama_regula_lint(tmp_path: Path, config: dict[str, str], path: str, owned: bool) -> None:
+    root = repository(tmp_path / "repo", {OWNER: "WARTOSC = 1\n", "src/pakiet/__init__.py": "", "tests/test_inne.py": "", **config}, tools=())
+    commit(root, "drzewo")
+
+    protected = chroniony_wlasciciel.owners(root, git(root, "rev-parse", "HEAD^{tree}"))
+
+    assert (path in protected) is owned, sorted(protected)
+
+
+@pytest.mark.parametrize(
+    ("base", "fixed", "meanwhile", "where", "named"),
+    [
+        pytest.param({}, FIXED_WITH_TEST, None, WHERE, "kod/inne.py", id="plik-spoza-konfiguracji-regul"),
+        pytest.param(_owner("kod/inne.py"), {**FIXED_WITH_TEST, **_owner("kod/drugi.py")}, None, WHERE, "kod/inne.py", id="wlasciciel-z-bazy-usuniety-w-pr"),
+        pytest.param(_owner("kod/inne.py"), FIXED_WITH_TEST, _owner("kod/drugi.py"), WHERE, "kod/inne.py", id="wlasciciel-usuniety-w-bazie-po-odgalezieniu-pr"),
+        pytest.param(_owner("kod/inne.py"), FIXED_WITH_TEST, None, "Gdzie: kod/inne.py:1, kod/typy.py:1", "kod/typy.py", id="drugi-plik-z-gdzie-poza-wlascicielem"),
+        pytest.param({}, FIXED_WITH_TEST, None, "Gdzie: ~/.zshrc:17 (poza repo)", "Gdzie bez miejsca plik:linia w repo", id="gdzie-poza-repo"),
     ],
 )
 @ONLY_FOUND_BY_NAME_ON_POSIX
 def test_straznik_pytest_szczebla_test_poza_chronionym_wlascicielem_to_odmowa_z_droga_do_architektury(
-    tmp_path: Path, base: dict[str, str], fixed: dict[str, str], where: str, named: str
+    tmp_path: Path, base: dict[str, str], fixed: dict[str, str], meanwhile: dict[str, str] | None, where: str, named: str
 ) -> None:
-    done, _ = _guard_proof(tmp_path, "--straznik", GUARD_NODE, "--chroniony-wlasciciel", base=base, fixed_files=fixed, where=where)
+    done, _ = _guard_proof(tmp_path, "--straznik", GUARD_NODE, "--chroniony-wlasciciel", base=base, fixed_files=fixed, where=where, meanwhile=meanwhile)
 
     last = done.stdout.splitlines()[-1]
     assert done.returncode == 1 and last.startswith(OUTSIDE_OWNER.format(named=named)), done.stdout + done.stderr
     assert "właściciel bez tej ochrony to szczebel architektura: dopisz w tym PR zakaz TID251 albo regułę ast-grep, która kieruje resztę kodu do właściciela" in last, last
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_chroniony_wlasciciel_przy_konflikcie_scalenia_z_baza_to_odmowa(tmp_path: Path) -> None:
+    conflicting = {"kod/inne.py": CAUGHT.replace("zakazane", "inne")}
+
+    done, _ = _guard_proof(tmp_path, "--straznik", GUARD_NODE, "--chroniony-wlasciciel", fixed_files=FIXED_WITH_TEST, meanwhile=conflicting, merge=False)
+
+    last = done.stdout.splitlines()[-1]
+    assert done.returncode == 1 and last.startswith(f"DOWÓD ODMOWA | {GUARD_NODE} | HEAD "), done.stdout + done.stderr
+    assert last.endswith(" z konfliktem (kod/inne.py): zaktualizuj PR z bazy"), last
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_chroniony_wlasciciel_dotyczy_tylko_straznika_pytest(tmp_path: Path) -> None:
+    done, _ = _guard_proof(tmp_path, "--straznik", "mypy", "--chroniony-wlasciciel")
+
+    assert done.returncode == 1 and done.stdout.splitlines()[-1] == "DOWÓD ODMOWA | mypy | --chroniony-wlasciciel dotyczy tylko Strażnik: pytest <węzeł>", done.stdout + done.stderr
 
 
 @wymaga_uv
@@ -617,6 +672,33 @@ def test_straznik_pytest_szczebla_test_ma_dowod_na_wlascicielu_dopisanym_w_tym_s
     [line, end] = done.stdout.splitlines()
     assert line.startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed"), done.stdout
     assert end == f"DOWÓD OK | {GUARD_NODE} | wykryte 1/1", done.stdout
+
+
+@wymaga_uv
+@pytest.mark.parametrize(
+    ("later_files", "state", "last"),
+    [
+        ({"kod/obok.py": "OBOK = 1\n"}, "WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed", "DOWÓD OK"),
+        ({"tests/test_inne.py": "def test_wazne_wola_tylko_dozwolone() -> None:\n    pass\n"}, "NIEWYKRYTA | zakazane z FAIL: NIEWYKRYTA", "DOWÓD ODMOWA"),
+    ],
+    ids=["pozniejszy-commit-nie-rusza-straznika", "pozniejszy-commit-wylacza-straznika"],
+)
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_ponowny_dowod_straznika_scalonego_pr_na_pozniejszym_main_wykrywa_tylko_gdy_main_nie_wylaczyl_straznika(tmp_path: Path, later_files: dict[str, str], state: str, last: str) -> None:
+    done, failed = _guard_proof(
+        tmp_path,
+        "--straznik",
+        "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone",
+        dev=PYTEST_PINS,
+        findings=werdykty_szablonu.WERDYKTY["wazne-z-nieaktualna-mutacja"],
+        later=werdykty_szablonu.WERDYKTY["pass-z-mutacja"],
+        on_main=later_files,
+    )
+
+    assert done.returncode == (0 if last == "DOWÓD OK" else 1), done.stdout + done.stderr
+    [line, end] = done.stdout.splitlines()
+    assert line.startswith(f"#5 W1 r1 | {failed[:8]} | {state}"), done.stdout
+    assert end.startswith(f"{last} | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte"), done.stdout
 
 
 @needs_ast_grep

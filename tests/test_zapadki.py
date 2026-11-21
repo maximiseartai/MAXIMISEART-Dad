@@ -745,6 +745,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "pytest-current-test-poza-testami": "sesję pytest rozpoznaje PYTEST_VERSION",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "stanowisko-z-tytulu": "weź ze znaku Stanowiska w treści",
     "stosunek-czasow-sciany": "licz kroki budżetu (węzły, wywołania), nie zegar",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
     "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
@@ -2914,6 +2915,96 @@ def test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff(t
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
+_TITLE_RULE = "stanowisko-z-tytulu"
+_IN_CASES = "def workstation_of(title, issue, entry, body, prefixes):\n"
+_PROBKI_STANOWISKA_Z_TYTULU: Final[list[tuple[str, list[int]]]] = [
+    (f'{_IN_CASES}    return next((name for prefix, name in prefixes.items() if title.startswith(f"{{prefix}} ")), "taty")\n', [2]),
+    (f'{_IN_CASES}    return issue["title"].startswith("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return entry.title.removeprefix("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return str(issue.get("title", "")).startswith(prefixes)\n', [2]),
+    (f'{_IN_CASES}    return (entry.title\n        .startswith("ANDRZEJ "))\n', [2]),
+    (f'{_IN_CASES}    return entry.Tytul.startswith("ANDRZEJ ")\n', [2]),
+    (f'{_IN_CASES}    return body.splitlines()[-1].startswith("<!-- ")\n', []),
+    (f"{_IN_CASES}    return title.split()\n", []),
+    (f'{_IN_CASES}    return issue["body"].startswith("- Logi Uruchomienia okresu: ")\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_STANOWISKA_Z_TYTULU)
+def test_regula_stanowiska_z_tytulu_zglasza_poczatek_tytulu_a_nie_tresc_sprawy(tmp_path: Path, text: str, lines: list[int]) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tools" / "lib").mkdir(parents=True)
+    (tmp_path / "tools" / "lib" / "sprawy.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_TITLE_RULE, tmp_path, base) == [("tools/lib/sprawy.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_stanowiska_z_tytulu_zglasza_src_i_tools_poza_wlascicielem_prefiksu(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    paths = (
+        "src/rozliczenia/centrum/box_prefix.py",
+        "src/rozliczenia/centrum/box_prefix_kopia.py",
+        "tools/lib/naprawia.py",
+        "tests/test_skrzynki.py",
+        ".agents/skills/verify-skrzynki/scripts/sprawy.py",
+    )
+    for path in paths:
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text('def owns(title):\n    return title.startswith("ANDRZEJ ")\n', encoding="utf-8")
+
+    assert _findings_of(_TITLE_RULE, tmp_path, base) == [("src/rozliczenia/centrum/box_prefix_kopia.py", 2), ("tools/lib/naprawia.py", 2)]
+
+
+ZNANE_LUKI_STANOWISKA_Z_TYTULU: Final[dict[str, str]] = {
+    "tytuł pod inną nazwą": """\
+def workstation_of(issue: dict[str, str]) -> bool:
+    heading = issue["name"]
+    return heading.startswith("ANDRZEJ ")
+""",
+    "str.startswith z tytułem w argumencie": """\
+def workstation_of(title: str) -> bool:
+    return str.startswith(title, "ANDRZEJ ")
+""",
+    "wycinek początku tytułu": """\
+def workstation_of(title: str) -> bool:
+    return title[:8] == "ANDRZEJ "
+""",
+    "pierwsze słowo po split": """\
+def workstation_of(title: str) -> bool:
+    return title.split(" ", 1)[0] == "ANDRZEJ"
+""",
+    "wyrażenie regularne": """\
+import re
+
+
+def workstation_of(title: str) -> bool:
+    return re.match("ANDRZEJ ", title) is not None
+""",
+    "operator in": """\
+def workstation_of(title: str) -> bool:
+    return "ANDRZEJ " in title
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_stanowiska_z_tytulu_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tools" / "lib").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_STANOWISKA_Z_TYTULU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tools" / "lib" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanowiska_z_tytulu_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
 _ORACLE_RULE = "wlasna-wyrocznia-numeru"
 _IN_TEST = "import re\n\n\ndef test_bez_numeru(text, number, texts, order, line):\n"
 # Tekst dodanego pliku ``tests/`` → linie, które reguła ``wlasna-wyrocznia-numeru`` zgłasza: własna wyrocznia numeru
@@ -3322,3 +3413,43 @@ def test_regula_z_zapadki_na_calym_drzewie_zglasza_plik_przeniesiony_spoza_ignor
 
     assert [(finding.path, finding.line) for finding in whole_tree_rules(tmp_path) if finding.rule == rule] == [(new, line)]
     assert _findings_of(rule, tmp_path, base) == []
+
+
+def _ci_step_output(root: Path, step: str, node: str, files: Mapping[str, str]) -> str:
+    import yaml
+
+    copied = (Path(__file__), *(ROOT / "tools" / "lib" / name for name in ("odpalenia_ast_grep.py", "repo.py", "potomne.py")), AST_GREP_CONFIG, ROOT / "ruff.toml", ROOT / "tests" / "ruff.toml")
+    _committed(root, {path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8") for path in (*copied, *ast_grep_rules(AST_GREP_CONFIG))})
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(text.encode("utf-8"))
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "zmiana")
+    [found] = [one for one in yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]["ruff-mypy"]["steps"] if one.get("name") == step]
+    program, *options = [word for word in str(found["run"]).split() if not word.startswith("tests/")]
+    assert program == "python", found
+    environment = {**os.environ, **found.get("env", {}), "CI": "true", "PYTHONPATH": str(root / "tools" / "lib"), "PYTHONUTF8": "1"}
+    printed = subprocess.run([sys.executable, *options, node], cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=300, check=False)
+    assert printed.returncode == 1, printed.stdout + printed.stderr
+    return printed.stdout
+
+
+@needs_ast_grep
+def test_krok_regul_na_liniach_dodanych_drukuje_linie_odpalenia_kazdej_reguly_takze_przy_dlugiej_sciezce(tmp_path: Path) -> None:
+    files = {
+        "tools/a.py": "NAZWA = str.__doc__\n",
+        ".agents/skills/verify-centrum-rozliczen/scripts/check_centrum_wycena_w_efenix_mutations_bardzo_dlugiej_nazwy.py": "WARTOSC = 1  # komentarz obok kodu\n",
+    }
+    printed = _ci_step_output(tmp_path, "ast-grep rules on the added lines of the repository", "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo", files)
+
+    assert sorted(set(odpalenia_ast_grep.FIRED_LINE.findall(printed))) == ["komentarz-poza-src", "odczyt-docstringu"], printed
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_krok_regul_calego_drzewa_drukuje_linie_failed_testu_ktory_padl_na_noqa_przy_zakazanej_nazwie(tmp_path: Path) -> None:
+    import ponow_ci
+
+    node = "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff"
+    printed = _ci_step_output(tmp_path, "Weed rules of the whole tree", node, {"tools/linia.py": "import os\n\nSYSTEM = os.name  # noqa: TID251 - próbka\n"})
+
+    assert [found[1] for found in ponow_ci.TEST_LINE.finditer(printed)] == [node], printed

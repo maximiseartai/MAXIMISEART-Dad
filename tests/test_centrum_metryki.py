@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from datetime import datetime
 import inspect
 import json
 from pathlib import Path
@@ -11,6 +12,8 @@ from typing import Any
 from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute, iter_route_contexts
 
+from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE, CentrumRuns
+from rozliczenia.telemetry import MetricsStore
 from tests.fixtures.centrum import Centrum, ToolDirectory, centrum, centrum_app
 
 from mutacje_zmiany import Hunk, Revert, mutants
@@ -187,6 +190,47 @@ def test_historia_obejmuje_uruchomienia_procesu_obu_procesow_od_najnowszego(tmp_
             "result_word": "do sprawdzenia",
         },
     ]
+
+
+RUN_ID = "0123456789abcdef0123456789abcdef"
+
+
+def test_historia_daje_pochodzenie_z_centrum_takze_linii_bez_identyfikatora_i_pomija_linie_ktorych_nie_da_sie_odczytac(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    starts = [f"2026-10-06T06:{minute}:00+00:00" for minute in ("10", "11", "12", "13")]
+    write_lines(app.metrics.preparation, *(preparation(started_at, period="29_05_10_2026") for started_at in starts))
+    origins = ToolDirectory(tmp_path).config / CENTRUM_RUNS_FILE
+    origins.parent.mkdir(parents=True, exist_ok=True)
+    write_lines(
+        origins,
+        {"process": "preparation", "started_at": starts[0]},
+        "{",
+        {"process": "preparation", "started_at": starts[1], "run_id": 7},
+        {"process": "preparation", "started_at": starts[2], "run_id": RUN_ID},
+    )
+
+    rows = {row["started_at"][14:16]: (row["origin"], row["run_id"]) for row in runs_of(metrics(app))}
+
+    assert rows == {"10": ("centrum", None), "11": ("centrum", None), "12": ("centrum", RUN_ID), "13": ("cmd", None)}
+
+
+def test_uruchomienie_z_centrum_daje_identyfikator_tylko_rekordom_metryk_ze_startem_w_jego_oknie(tmp_path: Path) -> None:
+    path = tmp_path / "metryki.jsonl"
+    before, since, until, after = (f"2026-10-06T06:{minute}:00+00:00" for minute in ("09", "10", "12", "13"))
+    write_lines(path, *(preparation(started_at) for started_at in (before, since, until, after)))
+    runs = CentrumRuns(tmp_path)
+
+    runs.remember(
+        "preparation",
+        RUN_ID,
+        MetricsStore(path, frozenset(PREPARATION_COUNTERS)),
+        datetime.fromisoformat(since),
+        datetime.fromisoformat(until),
+    )
+
+    assert runs.started() == {("preparation", since): RUN_ID, ("preparation", until): RUN_ID}
 
 
 def statistics(body: dict[str, object], process: str, mode: str) -> dict[str, object]:

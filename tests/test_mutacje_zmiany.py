@@ -126,8 +126,6 @@ def test_czesc_nocy_z_zalegloscia_mutuje_tylko_zmiany_main_do_konca_zakresu_z_pl
 
 
 def _named(entry: dict[str, object]) -> str:
-    """Nazwa mutacji wpisu zapisu części (``--zapis``), jak w linii ``NIEWYKRYTA``."""
-
     return f"{entry['plik']}:{entry['linia']} {entry['opis']}"
 
 
@@ -617,7 +615,6 @@ def test_werdykt_mutacji_z_testami_pliku_widac_w_logu_ci_zanim_pobiegnie_nastepn
 
 
 def test_czesc_bez_mutacji_przy_mutacjach_zmiany_konczy_sie_ok_z_numerem_czesci(tmp_path: Path) -> None:
-    # Dwie mutacje zmiany na trzy części: część 1/3 to pusty kawałek listy.
     done = _run(_repo(tmp_path, ONE_CASE), "--czesc", "1/3")
 
     assert done.returncode == 0, done.stdout + done.stderr

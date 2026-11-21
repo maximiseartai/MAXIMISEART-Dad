@@ -48,14 +48,11 @@ def _text(*lines: str) -> str:
 
 
 def _replaced(old: str, *new: str) -> str:
-    """Treść szablonu, w której linia ``old`` ustępuje liniom ``new`` (bez nich: znika)."""
-
     index = LINES.index(old)
     return _text(*LINES[:index], *new, *LINES[index + 1 :])
 
 
 TEMPLATE = _text(*LINES)
-# Blok mutacji recenzenta (``mutacja_recenzenta``): nagłówek ``### Mutacja W<n> r<k>`` i blok kodu ``` z JSON pliku mutacji.
 MUTATION = '[{"nazwa": "odmowa bez przyczyny", "zmiany": [["tools/scal_pr.py", "    return reasons\\n", "    return []\\n"]]}]'
 
 
@@ -64,8 +61,6 @@ def _mutation(text: str = MUTATION, fence: str = "```", label: str = "W1 r1") ->
 
 
 def _with_mutation(*block: str) -> str:
-    """Szablon z blokami ``block`` przed „## Sprawdzone”."""
-
     return _replaced(CHECKED, *block, CHECKED)
 
 
@@ -255,20 +250,14 @@ def _saved() -> dict[str, str]:
 
 
 def rendered() -> dict[str, str]:
-    """HTML z renderera GitHuba dla każdej treści z ``werdykty_szablonu.json``."""
-
     return dict(_saved())
 
 
 def html(text: str) -> str:
-    """HTML treści ``text`` z renderera GitHuba."""
-
     return _saved()[text]
 
 
 def bodies() -> list[str]:
-    """Treści, których HTML muszą mieć testy."""
-
     return [
         *PRZECHODZA.values(),
         *(text for text, _, _ in ODMOWY.values()),

@@ -48,14 +48,14 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-from typing import Any
+from typing import Any, Final
 
 import yaml
 
 from kroki_lokalne import static_steps
 import potomne
 import repo
-from straznik import Environment
+from straznik import Environment, Kind
 
 WORKFLOW = ".github/workflows/ci.yml"
 JOB = "ruff-mypy"  # zadanie Required CI „Ruff, mypy”, w którym biegną ruff i mypy
@@ -70,23 +70,20 @@ _SYSTEM_TEMP = Path("/tmp")
 _JOB_KEYS = {"name", "runs-on", "steps"}
 _INSTALL_ID = "deps"  # ``id`` kroku ``CI_INSTALL``, którego wynik czyta ``_CI_IF``
 _CI_IF = "${{ !cancelled() && steps." + _INSTALL_ID + ".outcome == 'success' }}"
-_PYTEST = "python -m pytest -q -rs -n 0 -p no:cacheprovider"
+_PYTEST = "python -m pytest -q -rfEs -n 0 -p no:cacheprovider"
 # Kroki reguł chwastów za mypy, na których stoi dowód: reguły całego drzewa i zakaz tłumienia reguły ast-grep i zakazu
 # ruff komentarzem (ADR 0036), a potem reguły ast-grep na liniach dodanych od bazy runu, które dowód ``ast-grep <id>``
 # liczy tą samą funkcją ``odpalenia_ast_grep.on_added_lines``.
-_WEED_TESTS = (
-    "tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii",
-    "tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul",
-    "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep",
-    "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff",
-    "tests/test_zakazy_ruff.py::test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw",
-)
-_WEED_RULES: dict[str, object] = {"if": _CI_IF, "run": " ".join((_PYTEST, *_WEED_TESTS))}
-_ADDED_LINES: dict[str, object] = {
-    "if": _CI_IF,
-    "env": {"MAXIMISEART_ZAPADKA_BAZA": "HEAD^1"},
-    "run": f"{_PYTEST} tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo",
+WEED_TESTS: Final = {
+    "tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii": Kind.AST_GREP,
+    "tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul": Kind.AST_GREP,
+    "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep": Kind.AST_GREP,
+    "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff": Kind.RUFF,
+    "tests/test_zakazy_ruff.py::test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw": Kind.RUFF,
 }
+ADDED_LINES_TESTS: Final = {"tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": Kind.AST_GREP}
+_WEED_RULES: dict[str, object] = {"if": _CI_IF, "run": " ".join((_PYTEST, *WEED_TESTS))}
+_ADDED_LINES: dict[str, object] = {"if": _CI_IF, "env": {"MAXIMISEART_ZAPADKA_BAZA": "HEAD^1"}, "run": " ".join((_PYTEST, *ADDED_LINES_TESTS))}
 # Zadanie Required CI z torami pytest (``zakres_runu.TORY``): dowód ``pytest <węzeł>`` powtarza jego tor Linux, czyli
 # Pythona ``CI_PYTHON`` z instalacją ``CI_INSTALL`` (to samo środowisko co ``JOB``) i zmienne zadania ``PYTEST_VARIABLES``.
 PYTEST_JOB = "pytest"

@@ -26,7 +26,12 @@ narzędziami), a wynik to znaleziska w JSON (``kroki_lokalne.JSON_OUTPUT`` i ``d
 dowodu), więc ani maszyna, ani środowisko wołającego, ani konfiguracja wyjścia z PR wyniku nie przestawi. Każdy bieg
 uruchamia kroki po kolei na kopii po instalacji projektu (z przywróconymi plikami), jak zadanie Required CI w jednym
 checkoucie, do ostatniego kroku narzędzia strażnika (przy mypy także ruff), w kolejności kroków zadania, którą wiąże
-``srodowisko_ci.mismatch``; krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
+``srodowisko_ci.mismatch``. Przy ``ruff`` krok ruff biegnie drugi raz bez ``per-file-ignores`` i z ``--ignore-noqa``,
+jak sprawdzenia zakazów ruff w kroku reguł chwastów tego zadania: zakaz ``banned-api`` albo ``import *`` z tego biegu
+to znalezisko, gdy przywrócony plik nie używa tej nazwy na drzewie bez przywrócenia, czyli nazwa spoza prawa
+właściciela (wiersz ``OWNERS`` w ``tests/test_zakazy_ruff.py``) albo pod ``noqa``. Nazwę z ``from moduł import nazwa``
+ruff zgłasza na linii importu, więc jej użycie z ``Gdzie`` w funkcji albo w ciele klasy dowód łapie tylko wtedy, gdy
+kod tego miejsca stoi w drzewie bez zmian (cały plik). Krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
 to ``KROK PISZE PLIKI``, bo Required CI liczy dalsze kroki na zmienionych plikach, a zakres ``Gdzie`` z FAIL ich nie
 opisuje; kopia wraca do stanu sprzed biegu. Każdy krok mypy i ruff i każdy bieg pytest biegnie w piaskownicy systemu
 (``piaskownica.prefix``: Landlock na Linuksie, ``sandbox-exec`` na macOS), w której zapis poza kopią biegu, jej ``HOME``
@@ -114,6 +119,8 @@ REVIEWED = {
     Kind.REMOVED: "czy kod z Gdzie zniknął z PR i nie wraca inną drogą, sprawdza recenzent następnej rundy",
 }
 FRONTEND = "frontend/"  # katalog każdego miejsca ``Gdzie`` zmienionego przez PR przy ``brak - napęd``
+_UNEXEMPTED = ("--ignore-noqa", "--no-fix", "--config", "lint.per-file-ignores = {}")
+_BANNED_CODES = frozenset({"TID251", "F403"})
 # Opcje dopisane do kroku ``kroki_lokalne.static_steps`` obok jego ``JSON_OUTPUT``: bieg bez pamięci, bo plik przywrócony
 # z FAIL ma często ten sam rozmiar i tę samą sekundę zapisu, więc pamięć z biegu na HEAD byłaby dla niego ważna.
 _NO_CACHE = {Kind.MYPY.value: "--no-incremental", Kind.RUFF.value: "--no-cache"}  # bieg bez pamięci, klucz to ``Step.job``
@@ -214,7 +221,8 @@ def prove(root: Path, guard: Guard, environment: Environment, cases: Sequence[Ca
     if before.code != 0:
         failed = f"ODMOWA | na HEAD scalonym z bazą bez przywrócenia krok skończył się kodem {before.code} bez znalezisk ({before.last}) {_SANDBOXED}"
         return [Outcome(False, f"{case.label} | {case.failed[:8]} | {failed}") for case in cases]
-    return [_restored(root, guard, environment, case) for case in cases]
+    owned = {(path, message) for path, _, message in before.hidden}
+    return [_restored(root, guard, environment, case, owned) for case in cases]
 
 
 Build = Callable[[], AbstractContextManager[Environment]]  # nowe środowisko Required CI na jeden bieg
@@ -273,6 +281,7 @@ class _Ran:
     last: str
     findings: tuple[tuple[str, int, str], ...] = ()
     written: str = ""  # krok, który zmienił pliki kopii, i te pliki
+    hidden: tuple[tuple[str, int, str], ...] = ()
 
 
 def _run(guard: Guard, environment: Environment, contents: Mapping[str, bytes | None]) -> _Ran:
@@ -319,7 +328,23 @@ def _steps(guard: Guard, environment: Environment) -> _Ran:
         if code == 0 and not (done.returncode == 0 or (done.returncode == 1 and read)):
             lines = (done.stdout + done.stderr).strip().splitlines()
             code, last = done.returncode, f"{step.name}: {lines[-1][:200] if lines else ''}"
-    return _Ran(code, last, tuple(dict.fromkeys(found)))
+    return _Ran(code, last, tuple(dict.fromkeys(found)), hidden=_hidden(guard, environment, sandbox))
+
+
+def _hidden(guard: Guard, environment: Environment, sandbox: Sequence[str]) -> tuple[tuple[str, int, str], ...]:
+    """Przy strażniku ``ruff`` zakazy (``_BANNED_CODES``: ``banned-api`` i ``import *``, który chowa nazwę przed nim)
+    z kroku ruff bez ``per-file-ignores``, z ``--ignore-noqa`` i bez poprawek (``_UNEXEMPTED``), czyli też te, które
+    ``ruff check`` przepuszcza, a krok reguł chwastów zadania Required CI „Ruff, mypy” odrzuca: nazwę spoza wiersza
+    ``OWNERS`` w pliku z prawem właściciela (``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw``) i nazwę pod
+    ``noqa`` (``test_zadna_linia_repo_nie_tlumi_zakazu_ruff``). Nazwy samych właścicieli odejmuje ``prove`` biegiem na
+    drzewie bez przywrócenia."""
+
+    if guard.kind is not Kind.RUFF:
+        return ()
+    [step] = [step for step in static_steps(environment.copy, str(environment.python)) if step.job == Kind.RUFF.value]
+    done = potomne.run([*sandbox, *step.command, *_UNEXEMPTED, _NO_CACHE[step.job], *JSON_OUTPUT[step.job]], cwd=environment.copy, env=environment.variables)
+    banned = (one for one in diagnostics(step.job, done.stdout, environment.copy) if one.code in _BANNED_CODES)
+    return tuple(dict.fromkeys((one.path, one.line, f"{one.code} {one.message}") for one in banned))
 
 
 def _state(copy: Path) -> dict[str, bytes | None]:
@@ -352,7 +377,10 @@ def _pr_files(root: Path, head: str, base: str, case: Case) -> list[str]:
     return sorted(repo.changed(root, case.fork, case.failed) | repo.changed(root, base, head))
 
 
-def _restored(root: Path, guard: Guard, environment: Environment, case: Case) -> Outcome:
+def _restored(root: Path, guard: Guard, environment: Environment, case: Case, owned: set[tuple[str, str]]) -> Outcome:
+    """Przywrócenie plików z ``Gdzie`` z FAIL; zakaz z biegu bez zwolnień (``_Ran.hidden``) liczy się, gdy nie jest
+    nazwą ``owned``, której ten plik używa na drzewie bez przywrócenia (prawo właściciela)."""
+
     paths = list(dict.fromkeys(path for path, _, _ in case.places))
     groups = [paths, *([[path] for path in paths] if len(paths) > 1 else [])]
     tried = []
@@ -364,10 +392,11 @@ def _restored(root: Path, guard: Guard, environment: Environment, case: Case) ->
         if ran.written:
             return Outcome(False, f"{case.label} | {case.failed[:8]} | {_writes(ran)}")
         where = _listed(changed)
-        inside = [finding for finding in ran.findings if finding[0] in changed and finding[1] in _scope(root, environment.tree, case, finding[0])]
+        findings = list(dict.fromkeys((*ran.findings, *(finding for finding in ran.hidden if (finding[0], finding[2]) not in owned))))
+        inside = [finding for finding in findings if finding[0] in changed and finding[1] in _scope(root, environment.tree, case, finding[0])]
         if inside:
             return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {_shown(inside)}")
-        tried.append(f"{where}: {'znaleziska poza funkcją z Gdzie: ' + _shown(ran.findings) if ran.findings else f'bez znaleziska (kod {ran.code})'}")
+        tried.append(f"{where}: {'znaleziska poza funkcją z Gdzie: ' + _shown(findings) if findings else f'bez znaleziska (kod {ran.code})'}")
     if not tried:
         return Outcome(False, f"{case.label} | {case.failed[:8]} | NIC DO PRZYWRÓCENIA | pliki z Gdzie mają na HEAD scalonym z bazą treść z FAIL")
     return Outcome(False, f"{case.label} | {case.failed[:8]} | NIEWYKRYTA | {' / '.join(tried)}")

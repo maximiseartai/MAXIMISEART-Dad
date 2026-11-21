@@ -31,6 +31,9 @@ Skrzynka was on 2026-11-04.
 - `usuniete-issue`: comment, comments and edit of an issue Maks deleted → `Refused`.
 - `archiwum-brak`, `archiwum-w-pustym-repo`: `archive` of a tag → `None`; `open_archive` in the repository without a
   commit → `Rejected`, and still no Archiwum.
+- `tytuly-stanowisk`: two `logi-uruchomienia` issues with the same period line, one titled as Dad's Centrum titles it
+  and one with `ANDRZEJ ` in front; `KeyedBox.find_issue` of each Stanowisko (`box_prefix.owns` on the title GitHub
+  lists) finds its own issue by that line, and not the other one.
 
 ## How to get to it (user POV)
 

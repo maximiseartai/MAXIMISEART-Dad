@@ -43,9 +43,9 @@
   },
   "src/rozliczenia/centrum/settings/release_changes.py": {
     "periods_directory_from_layout_root": "5c2307a933ec6cc0",
-    "RELEASE_CHANGES": "c0efe1c2a86b41b9"
+    "RELEASE_CHANGES": "a7f0877dea87bbd6"
   },
   "src/rozliczenia/centrum/settings/proposal.py": {
-    "cały plik": "06919572517321fc"
+    "cały plik": "6c8cea598284a21c"
   }
 }
