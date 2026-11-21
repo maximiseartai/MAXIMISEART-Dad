@@ -3279,46 +3279,6 @@ def test_straznik_bez_dowodu_ok_nie_scala_sie(tmp_path: Path, proof: tuple[int, 
     ), last
 
 
-MOVED_ENTRY = f'["1480/W1/r1"]\nstraznik = "{GUARD}"\n'
-PASS_ON_OLD = SPRAWDZONE_PASS.replace("{head}", "{commit}")
-
-
-@pytest.mark.parametrize(
-    ("base", "changed", "proof", "proved", "refusal"),
-    [
-        ({}, {strazniki_przeniesione.PLIK: MOVED_ENTRY}, PROOF_OK, True, None),
-        ({strazniki_przeniesione.PLIK: MOVED_ENTRY.replace(GUARD, "ruff")}, {strazniki_przeniesione.PLIK: MOVED_ENTRY}, PROOF_OK, True, None),
-        ({}, {strazniki_przeniesione.PLIK: MOVED_ENTRY}, PROOF_REFUSED, True, f"strażnik: Ważne 1480/W1/r1 ma Strażnik: {GUARD}, a jego dowód nie przeszedł (kod 1): {PROOF_REFUSED[1]}"),
-        ({strazniki_przeniesione.PLIK: MOVED_ENTRY}, {"kod/inne.py": "INNE: int = 1\n"}, PROOF_REFUSED, False, None),
-        ({}, {strazniki_przeniesione.PLIK: MOVED_ENTRY.replace("1480/W1/r1", "1480/W1")}, PROOF_OK, False, f"strażnik: {strazniki_przeniesione.PLIK}: wpis '1480/W1': klucz to Ważne PR/W<n>/r<k>"),
-    ],
-    ids=["nowy-wpis-ma-dowod", "zmieniony-wpis-ma-dowod", "wpis-bez-dowodu-ok-nie-scala-sie", "wpis-z-bazy-bez-zmiany-bez-dowodu", "wpis-spoza-postaci-to-odmowa-bez-dowodu"],
-)
-def test_wpis_straznika_przeniesionego_scala_sie_tylko_z_dowodem_ok_takze_w_pr_bez_waznego(
-    tmp_path: Path, base: dict[str, str], changed: dict[str, str], proof: tuple[int, str], proved: bool, refusal: str | None
-) -> None:
-    github, head = _guard_pull(tmp_path, "bez-sekcji", PASS_ON_OLD, proof=proof, base=base, changed=changed)
-
-    answered = github.run("1", "--bez-merge")
-
-    last = _last_line(answered)
-    assert _proofs(github) == ([_proof_arguments(head, "1480/W1/r1")] if proved else []), answered.stdout + answered.stderr
-    if refusal is None:
-        assert answered.returncode == 0 and last.startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
-    else:
-        assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {refusal}"), last
-
-
-def test_status_pr_z_nowym_wpisem_straznika_przeniesionego_bierze_warunek_5_z_joba_dowodu(tmp_path: Path) -> None:
-    github, head = _guard_pull(tmp_path, "bez-sekcji", PASS_ON_OLD, changed={strazniki_przeniesione.PLIK: MOVED_ENTRY})
-    refused = {"numer": 1, "sha": head, "pominiety": False, "przyczyny": [{"tekst": "strażnik: Ważne 1480/W1/r1 nie przeszedł", "oczekuje": False}]}
-
-    answered = _run_from(github, github.checkout, "1", "--status", environment={**RUN, scal_pr.GUARD_JOB: "success", scal_pr.GUARD_PROOFS: json.dumps(refused)})
-
-    assert answered.returncode == 0, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | strażnik: Ważne 1480/W1/r1 nie przeszedł"
-
-
 def test_wazne_z_tym_samym_straznikiem_maja_jeden_dowod(tmp_path: Path) -> None:
     github, head = _guard_pull(tmp_path, "dwa-z-tym-samym-straznikiem", FAIL_TWO_SAME)
 
@@ -3356,6 +3316,64 @@ def test_brak_testu_w_watku_sprzed_wdrozenia_dowodu_testu_przechodzi_jak_przed_n
 
 def _fail_with(mechanism: str) -> str:
     return "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 1, Drobne 1)\n" + werdykty_szablonu.PRZECHODZA[f"mechanizm-{mechanism}"]
+
+
+PASS_ON_OLD = SPRAWDZONE_PASS.replace("{head}", "{commit}")
+
+
+def _entry(selector: str, key: str = "1480/W1/r1") -> dict[str, str]:
+    return {strazniki_przeniesione.PLIK: f'["{key}"]\nstraznik = "{selector}"\n'}
+
+
+MOVED_PYTEST = "pytest tests/test_x.py::test_y"
+ENTRY_REFUSAL = f"strażnik: wpis {{case}} w {strazniki_przeniesione.PLIK}: "
+
+
+@pytest.mark.parametrize(
+    ("base", "changed", "cited", "proof", "proved", "refusal"),
+    [
+        pytest.param({}, _entry(GUARD), (FAIL_W1, "MERGED"), PROOF_OK, (GUARD,), None, id="nowy-wpis-ma-dowod"),
+        pytest.param(_entry("ruff"), _entry(GUARD), (FAIL_W1, "MERGED"), PROOF_OK, (GUARD,), None, id="zmieniony-wpis-ma-dowod"),
+        pytest.param(
+            {}, _entry(GUARD), (FAIL_W1, "MERGED"), PROOF_REFUSED, (GUARD,), f"strażnik: Ważne 1480/W1/r1 ma Strażnik: {GUARD}, a jego dowód nie przeszedł (kod 1): {PROOF_REFUSED[1]}", id="wpis-bez-dowodu-ok-nie-scala-sie"
+        ),
+        pytest.param(_entry(GUARD), {"kod/inne.py": "INNE: int = 1\n"}, (FAIL_W1, "MERGED"), PROOF_REFUSED, None, None, id="wpis-z-bazy-bez-zmiany-bez-dowodu"),
+        pytest.param({}, _entry(GUARD, "1480/W1"), (FAIL_W1, "MERGED"), PROOF_OK, None, f"strażnik: {strazniki_przeniesione.PLIK}: wpis '1480/W1': klucz to Ważne PR/W<n>/r<k>", id="wpis-spoza-postaci-to-odmowa-bez-dowodu"),
+        pytest.param({}, _entry(MOVED_PYTEST), (_fail_with("lint"), "MERGED"), PROOF_OK, None, ENTRY_REFUSAL.format(case="1480/W1/r1") + "Mechanizm: lint przyjmuje tylko Strażnik: mypy, ruff albo ast-grep <id reguły>", id="szczebel-lint-odmawia-testu-we-wpisie"),
+        pytest.param({}, _entry(GUARD), (_fail_with("lint"), "MERGED"), PROOF_OK, (GUARD,), None, id="szczebel-lint-przyjmuje-mypy-we-wpisie"),
+        pytest.param({}, _entry(MOVED_PYTEST), (_fail_with("test"), "MERGED"), PROOF_OK, (MOVED_PYTEST, "--chroniony-wlasciciel"), None, id="szczebel-test-dowodzi-wpisu-z-chronionym-wlascicielem"),
+        pytest.param({}, _entry(GUARD, "1/W1/r1"), (FAIL_W1, "MERGED"), PROOF_OK, None, ENTRY_REFUSAL.format(case="1/W1/r1") + "wpis przenosi strażnika Ważnego scalonego PR", id="wpis-dla-waznego-tego-pr"),
+        pytest.param({}, _entry(GUARD), (FAIL_W1, "OPEN"), PROOF_OK, None, ENTRY_REFUSAL.format(case="1480/W1/r1") + "PR #1480 nie jest scalony (OPEN)", id="wpis-dla-pr-niescalonego"),
+        pytest.param({}, _entry(GUARD, "1480/W2/r1"), (FAIL_W1, "MERGED"), PROOF_OK, None, ENTRY_REFUSAL.format(case="1480/W2/r1") + "PR #1480 nie ma Ważnego W2 r1 w werdyktach FAIL", id="wpis-dla-waznego-ktorego-pr-nie-ma"),
+    ],
+)
+def test_wpis_straznika_przeniesionego_scala_sie_tylko_z_dowodem_ok_i_szczeblem_waznego_scalonego_pr(
+    tmp_path: Path, base: dict[str, str], changed: dict[str, str], cited: tuple[str, str], proof: tuple[int, str], proved: tuple[str, ...] | None, refusal: str | None
+) -> None:
+    github, head = _guard_pull(tmp_path, "bez-sekcji", PASS_ON_OLD, proof=proof, base=base, changed=changed, owner=GATE_BEFORE_VERDICTS)
+    verdict, state = cited
+    github.pulls["1480"] = _pr_view(1480, OLD, state=state, comments=[_verdict("comment", verdict.format(commit=OLD), when="2026-10-20T01:00:00Z")])
+    github._save()
+
+    answered = github.run("1", "--bez-merge")
+
+    last = _last_line(answered)
+    expected = [] if proved is None else [["--straznik", proved[0], "--z-commita", head, "--wazne", "1480/W1/r1", *proved[1:]]]
+    assert _proofs(github) == expected, answered.stdout + answered.stderr
+    if refusal is None:
+        assert answered.returncode == 0 and last.startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    else:
+        assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {refusal}"), last
+
+
+def test_status_pr_z_nowym_wpisem_straznika_przeniesionego_bierze_warunek_5_z_joba_dowodu(tmp_path: Path) -> None:
+    github, head = _guard_pull(tmp_path, "bez-sekcji", PASS_ON_OLD, changed=_entry(GUARD))
+    refused = {"numer": 1, "sha": head, "pominiety": False, "przyczyny": [{"tekst": "strażnik: Ważne 1480/W1/r1 nie przeszedł", "oczekuje": False}]}
+
+    answered = _run_from(github, github.checkout, "1", "--status", environment={**RUN, scal_pr.GUARD_JOB: "success", scal_pr.GUARD_PROOFS: json.dumps(refused)})
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | strażnik: Ważne 1480/W1/r1 nie przeszedł"
 
 
 BYPASS_GUARDS = ("mypy", "ruff", "ast-grep")

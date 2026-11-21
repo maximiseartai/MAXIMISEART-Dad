@@ -24,7 +24,8 @@ dostaje nowego strażnika wpisem w ``{PLIK}``, a opis scalonego PR zostaje bez z
 
 Każdy wpis, który PR dodaje albo zmienia, dostaje przy merge'u dowód warunku 5 ``tools/scal_pr.py``
 (``bramka_straznika``): ``tools/na_scalonych_pr.py --straznik <selektor wpisu> --z-commita <HEAD PR> --wazne
-PR/W<n>/r<k>``, także w PR bez Ważnego; czy mutacja wpisu przywraca błąd z Dowodu Ważnego, a nie słabszy, sprawdza
+PR/W<n>/r<k>``, także w PR bez Ważnego, a selektor przyjmuje szczebel z pola ``Mechanizm:`` tego Ważnego jak w jego
+bloku ``## Korzeń`` (ADR 0046); czy mutacja wpisu przywraca błąd z Dowodu Ważnego, a nie słabszy, sprawdza
 recenzent tego PR. Plik czyta się z drzewa commitu, na którym biegnie dowód: ``tools/na_scalonych_pr.py --straznik …
 --z-commita REV`` bierze mutację wpisu z ``REV``, gdy selektor to selektor wpisu, a ``tools/rejestr_korzeni_tydzien.py``
 strażnika wpisu z ostatniego commitu ``main`` przed końcem tygodnia, w ponownym dowodzie i w odpaleniach strażników.
