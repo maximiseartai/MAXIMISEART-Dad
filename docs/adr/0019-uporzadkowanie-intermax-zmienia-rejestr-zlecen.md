@@ -97,6 +97,9 @@ od 2021 roku: około 42 tys. wierszy, cztery arkusze, około 6,5 MB, w OneDrive.
   przeczytać, Uporządkowanie nie używa: dzień porządkuje bez Historii adresu z
   ostrzeżeniem, nie Zatrzymaniem. Baza nie trafia do Kopii wejścia, a Logi mają
   tylko liczby: zlecenia z Historią adresu, skopiowane wiersze i arkusze Bazy.
+  Baza taty ma około 125 tys. wierszy w sześciu arkuszach, więc odczyt bierze z
+  XML tylko kolumnę A, `MIASTO` i granice wierszy, a całe wiersze dopiero dla
+  zleceń z tym samym adresem.
 - **Zapis zmienia też wartości: Wpis urządzenia i czynności INTERMAX**
   (2026-10-27, reguła taty). Surowe zlecenie z rodzajem `Instalacja Hurt` u
   operatora z listy taty (Netia, P4, Plus, VECTRA, SYSTEMIA, ORANGE, TMOBILE)

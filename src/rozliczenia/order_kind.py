@@ -1,10 +1,3 @@
-"""Rodzaj Surowego zlecenia z ``URZĄDZENIA``: zamknięty słownik rodzajów z aplikacji firmowej.
-
-Słownik ma jednego właściciela, bo czytają go dwie reguły: Planowanie Uporządkowania INTERMAX (``raw_orders``) daje
-zleceniu rodzaj, od którego zależą Kolor operatora i Wpis urządzenia i czynności INTERMAX, a pamięć reguły danych
-(``client_data``) nie zapamiętuje wartości z rodzajem jako zakazanej, bo słowo rodzaju nie wskazuje klienta.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping

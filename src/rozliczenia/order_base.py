@@ -1,21 +1,3 @@
-"""Baza zleceń taty czytana raz, tylko do odczytu: Historia adresu zlecenia z jej arkuszy.
-
-Kształt danych. Baza to arkusze w kolejności skoroszytu (``_Sheet``), każdy z własnym układem kolumn: szerokość to
-ostatnia kolumna wiersza 1 z nagłówkiem, kolumnę daty realizacji i numeru zlecenia daje nagłówek (``_DATE_HEADERS``,
-``_NUMBER_HEADERS``, bez wielkości liter), a wiersze Bazy to wiersze od 2 z tekstem w kolumnie A (adres), każdy z
-``MIASTO``, gdy arkusz ma kolumnę o tym nagłówku. Historia adresu zlecenia (``OrderBase.history``) to bloki
-(``HistoryBlock``): wiersze z tym samym adresem (``same_address``), od najnowszej daty realizacji do najstarszej, a
-wiersz bez daty z datą (data tekstem, liczba bez formatu daty, pusta) na końcu, w kolejności arkuszy i wierszy. Wiersz z tym samym numerem zlecenia co zlecenie (po samych cyfrach) nie wchodzi.
-Blok ma wartości komórek od kolumny A do szerokości swojego arkusza, bez stylów i Hiperłączy.
-
-Odczyt (``read``) idzie przez uchwyt plików taty bez Kopii wejścia: pamięć reguły danych poznaje adres z kolumny A
-każdego wiersza Bazy, a Kopia wejścia Bazy nie dostaje. Bazę otwartą w Excelu czyta w jej ostatniej zapisanej wersji.
-Arkusze czyta z XML bez openpyxl (``workbook_parts``, ``cell_values``): przy odczycie tylko kolumnę A, ``MIASTO`` i
-granice wierszy, a wartości całego wiersza dopiero dla trafienia, bo Baza taty ma ~125 tys. wierszy w sześciu arkuszach.
-Plik, którego nie ma, nie da się odczytać albo nie jest skoroszytem, to ``WorkbookError``, a arkusz, którego wierszy
-nie da się rozdzielić albo który ma adresy w kolumnie A bez jej nagłówka, to wynik ``UnsupportedSheet``.
-"""
-
 from __future__ import annotations
 
 import re
@@ -49,7 +31,6 @@ from .workbook_parts import (
 __all__ = ["ORDER_BASE_NAME", "HistoryBlock", "OrderBase", "UnsupportedSheet", "read"]
 
 ORDER_BASE_NAME: Final = "Baza zleceń do 17_11_2026.xlsx"
-"""Nazwa Bazy zleceń w folderze INTERMAX; tata jej nie zmienia, tylko dopisuje arkusze."""
 
 _DATE_HEADERS: Final = frozenset(map(normalize_text, ("data", "DATA GODZ. POCZ.")))
 _NUMBER_HEADERS: Final = frozenset(map(normalize_text, ("nr zle", "NUMER ZL.")))
@@ -60,9 +41,6 @@ _NOT_DIGIT: Final = re.compile(r"\D")
 
 @dataclass(frozen=True)
 class HistoryBlock:
-    """Wiersz Bazy zleceń w Historii adresu zlecenia: wartości komórek od kolumny A do szerokości nagłówka jego arkusza
-    (``cell_values``; ``None``: pusta komórka)."""
-
     values: tuple[object, ...]
 
 
@@ -154,8 +132,6 @@ def read(path: Path, files: DadFiles) -> OrderBase | UnsupportedSheet:
 
 
 def _worksheets(workbook_xml: bytes, rels: Mapping[str, Relationship]) -> list[tuple[str, str]]:
-    """Nazwa i część zip każdego arkusza z wierszami w kolejności skoroszytu; arkusz wykresu nie ma wierszy."""
-
     sheets = ElementTree.fromstring(workbook_xml).iter(f"{MAIN}sheet")
     found = ((sheet.get("name", ""), rels.get(sheet.get(f"{{{OFFICE_REL}}}id", ""))) for sheet in sheets)
     return [(name, rel.target) for name, rel in found if rel is not None and rel.kind.endswith("/worksheet")]
@@ -170,7 +146,4 @@ def _column(header: Sequence[str], names: frozenset[str]) -> int | None:
 
 
 def _order_number(value: object) -> str | None:
-    """Numer zlecenia: same cyfry tego, co pokazuje Excel (``shown``), bez zer wiodących; ``None``: bez cyfry innej niż
-    zero. Cyfry zostają tekstem, bo komórka Bazy ma ich dowolnie wiele."""
-
     return ("" if value is None else _NOT_DIGIT.sub("", shown(value)).lstrip("0")) or None

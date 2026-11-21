@@ -2590,6 +2590,51 @@ def test_wiersz_bazy_z_numerem_porzadkowanego_zlecenia_nie_jest_kopiowany_a_dwa_
     assert day.after_uwagi(day.sheet(), order) == _blocks(first, second)
 
 
+def test_wiersz_bazy_z_numerem_porzadkowanego_zlecenia_pod_naglowkiem_nr_zle_nie_jest_kopiowany(tmp_path: Path) -> None:
+    order = _order(0, "UL. GRABOWA 2", number=501)
+    own = _visit("Miastko,Grabowa 2", "własny", datetime(2019, 10, 1), 501)
+    other = _visit("Miastko,Grabowa 2", "inny", datetime(2019, 9, 1), 777)
+    day = _day(tmp_path, (order,), (BaseSheet("10_12_2018-01_08_2020", FIVE, [own, other]),))
+
+    _ordered(_run(tmp_path, base=True))
+
+    assert day.after_uwagi(day.sheet(), order) == _blocks((FIVE, other))
+
+
+def test_zlecenie_bez_cyfr_w_numerze_dostaje_wiersz_bazy_bez_cyfr_w_numerze(tmp_path: Path) -> None:
+    order = Order(datetime(2026, 10, 26, 7), _LOGIN, 300, cells=((ADDRESS, "UL. GRABOWA 2"), (NUMBER, "brak numeru")))
+    visit = _visit("GRABOWA 2", "bez numeru", datetime(2025, 1, 1), "nr ?")
+    day = _day(tmp_path, (order,), (BaseSheet("19_12_2025-17_11_2026", TWELVE, [visit]),))
+
+    _ordered(_run(tmp_path, base=True))
+
+    assert day.after_uwagi(day.sheet(), order) == _blocks((TWELVE, visit))
+
+
+def test_blok_bazy_konczy_sie_na_ostatnim_naglowku_a_nie_na_pustej_komorce_wiersza_1_za_nim(tmp_path: Path) -> None:
+    order = _order(0, "UL. GRABOWA 2")
+    visit = _visit("GRABOWA 2", "wizyta", datetime(2025, 1, 1))
+    day = _day(tmp_path, (order,), (BaseSheet("19_12_2025-17_11_2026", TWELVE, [visit]),))
+    _with_cell(_base_path(tmp_path), 1, len(TWELVE.headers) + 3, "", "General")
+
+    _ordered(_run(tmp_path, base=True))
+
+    assert day.after_uwagi(day.sheet(), order) == _blocks((TWELVE, visit))
+
+
+def test_arkusz_wykresu_w_bazie_nie_zmienia_historii_adresu(tmp_path: Path) -> None:
+    day = _day(tmp_path, RULE_ORDERS, RULE_BASE)
+    workbook = load_workbook(_base_path(tmp_path))
+    workbook.create_chartsheet("Wykres", 1)
+    workbook.save(_base_path(tmp_path))
+    like_excel(_base_path(tmp_path))
+
+    summary = _ordered(_run(tmp_path, base=True))
+
+    assert summary.warnings == []
+    assert day.after_uwagi(day.sheet(), _MOSTOWA) == _blocks(_V["kropki w nazwie"])
+
+
 def test_bez_bazy_w_wejsciu_dzien_jest_uporzadkowany_bez_historii_adresu_i_bez_ostrzezenia(tmp_path: Path) -> None:
     day = _day(tmp_path, RULE_ORDERS, RULE_BASE)
 
@@ -2607,6 +2652,13 @@ def _no_base(tmp_path: Path) -> DadFiles:
 
 def _garbage(tmp_path: Path) -> DadFiles:
     _base_path(tmp_path).write_bytes(b"to nie jest skoroszyt")
+    return DadFiles()
+
+
+def _package_without_workbook(tmp_path: Path) -> DadFiles:
+    with zipfile.ZipFile(_base_path(tmp_path), "w") as written:
+        written.writestr("[Content_Types].xml", "<Types/>")
+        written.writestr("_rels/.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>')
     return DadFiles()
 
 
@@ -2650,6 +2702,7 @@ def _broken_date(tmp_path: Path) -> DadFiles:
 BASE_PROBLEMS: Final[dict[str, tuple[Callable[[Path], DadFiles], str, str]]] = {
     "brak pliku": (_no_base, "bo w folderze INTERMAX nie ma Bazy zleceń", ""),
     "nie skoroszyt": (_garbage, "bo Bazy zleceń nie można odczytać jako skoroszytu Excela", ""),
+    "paczka bez skoroszytu": (_package_without_workbook, "bo Bazy zleceń nie można odczytać jako skoroszytu Excela", ""),
     "niedostępna": (_inaccessible, "bo nie można teraz odczytać Bazy zleceń", ""),
     "arkusz bez nagłówka kolumny A": (_without_header, "bo arkusz Bazy zleceń ma układ", ", arkusz bez nagłówka"),
     "komentarz w arkuszu": (_comment, "bo arkusz Bazy zleceń ma układ", ", arkusz 08_11_2021-23_03_2024"),
