@@ -2807,6 +2807,7 @@ FAIL_NEW_CODE = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" +
 PASS_RESOLVES = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-w1-r1"]
 FAIL_WITHOUT_ROOT = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + korzenie_pr.WERDYKTY["wazne-bez-korzenia"]
 PASS_RESOLVES_NEW = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-nowym-kodem"]
+PASS_RUNG = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["szczebel-w1-r1-test"]
 # FAIL opublikowany poza --werdykt: kod spoza listy bez NOWY, bez linii Znaleziska, z Ważne 0 i z dwoma Ważnymi prozą.
 FAIL_UNLISTED = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["korzen-3"]
 FAIL_PROSE = "WERDYKT: FAIL {commit}\nTest nie łapie regresji w kod/inne.py:1.\n"
@@ -2924,6 +2925,7 @@ def _root_gate(
         ([], "czerwony-main-kod-spoza-listy", {"labels": RED}, [f"korzeń: kod R-WYMYSLONY-KOD (blok „### Czerwony main #{korzenie_pr.RED_MAIN}”) {UNLISTED}"]),
         ([], "czerwony-main-bez-sekcji", {}, [f"korzeń: GitHub nie podał etykiet #{korzenie_pr.RED_MAIN}, więc nie wiadomo, czy to czerwony main"]),
         ([PASS_RESOLVES], "bez-sekcji", {}, ["korzeń: punkt „Korzeń W1 r1: R-DRUGA-DROGA” werdyktu r1 nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"]),
+        ([PASS_RUNG], "bez-sekcji", {}, ["korzeń: punkt „Mechanizm W1 r1: test” werdyktu r1 nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"]),
         ([FAIL_WITHOUT_ROOT], "szczebel-c", {}, ["korzeń: W1 r1: werdykt nie podaje kodu korzenia w szablonie, więc kod podaje recenzent następnej rundy punktem „Korzeń W1 r1: R-KOD - zdanie”"]),
         ([FAIL_WITHOUT_ROOT, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
         ([FAIL_PROSE], "bez-sekcji", {}, [SECTION_FOR_FAIL]),
@@ -2989,6 +2991,7 @@ def _root_gate(
         "czerwony-main-z-kodem-spoza-listy",
         "bez-etykiet-issue-z-githuba",
         "rozstrzygniecie-bez-waznego",
+        "rozstrzygniecie-szczebla-bez-waznego",
         "wazne-bez-kodu-w-szablonie",
         "wazne-bez-kodu-rozstrzygniete",
         "fail-bez-linii-znaleziska-bez-sekcji",

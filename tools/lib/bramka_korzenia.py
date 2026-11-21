@@ -122,8 +122,8 @@ def problems(pull: Pull, deployed: datetime | None, *, guarded: bool = False) ->
     majors, strays = rejestr_korzeni.majors(rounds)
     stake = stawka_przegladu.stake(pull, majors)
     found = [
-        f"korzeń: punkt „Korzeń {resolution.label} r{resolution.round}: {resolution.code}” werdyktu r{number} nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"
-        for number, resolution in (strays if stake.full else [])
+        f"korzeń: punkt „{point}” werdyktu r{number} nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"
+        for number, point in (strays if stake.full else [])
     ]
     expected = {heading: major.code for heading, major in majors.items() if heading in stake.required}
     codes = {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)} if stake.full else {}
