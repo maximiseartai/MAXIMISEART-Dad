@@ -3208,4 +3208,3 @@ def test_kazda_galaz_gramatyki_pola_narzedzia_ma_poprawny_tekst_narzedzia() -> N
 
     assert sorted(set(DRUGIE_GALEZIE) - set(TOOL_TEXT_GRAMMAR)) == []
     assert brak == []
-
