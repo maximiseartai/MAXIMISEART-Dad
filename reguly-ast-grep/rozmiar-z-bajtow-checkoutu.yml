@@ -1,0 +1,73 @@
+id: rozmiar-z-bajtow-checkoutu
+language: python
+severity: error
+message: >-
+  rozmiar pliku liczony długością bajtów z dysku (len(read_bytes()), także po .replace(b"\r\n", b"\n") albo
+  przez map) zależy od systemu: checkout Windows z core.autocrlf ma \r\n, więc ten sam commit mieści się w budżecie na
+  macOS i pada na Windows; rozmiar pliku repozytorium bierz z obiektu gita (git cat-file --batch-check=%(objectsize)
+  na blobach z indeksu)
+files:
+  - tests/**/*.py
+  - tools/**/*.py
+  - src/**/*.py
+  - .agents/**/*.py
+metadata:
+  przypadki:
+    - 2332/W1/r1
+    - 2332/W1/r2
+rule:
+  # len(...) albo map(len, ...) na bajtach z dysku: read_bytes w argumencie albo w zmiennej pętli wyrażenia listowego po
+  # read_bytes (także map(Path.read_bytes, …)); liczba linii (splitlines) nie zależy od końców linii. Bajty w zwykłej
+  # zmiennej reguła pomija: na main każde len takiej zmiennej służy czemuś innemu niż rozmiar pliku repo. Bez stat().st_size i os.path.getsize: składnia nie wie, czy ścieżka to plik z gita,
+  # a pliki taty, tmp_path i logi mają tę samą postać.
+  any:
+    - all:
+        - matches: dlugosc
+        - has:
+            field: arguments
+            stopBy: end
+            matches: bajty-z-dysku
+    - all:
+        - pattern: len($D)
+        - inside:
+            stopBy: end
+            any:
+              - kind: generator_expression
+              - kind: list_comprehension
+              - kind: set_comprehension
+            has:
+              kind: for_in_clause
+              all:
+                - has:
+                    field: left
+                    pattern: $D
+                - has:
+                    field: right
+                    stopBy: end
+                    matches: bajty-z-dysku
+  not:
+    has:
+      field: arguments
+      stopBy: end
+      kind: attribute
+      regex: '\.splitlines$'
+utils:
+  dlugosc:
+    any:
+      - kind: call
+        has:
+          field: function
+          regex: '^len$'
+      - kind: call
+        all:
+          - has:
+              field: function
+              regex: '^map$'
+          - has:
+              field: arguments
+              has:
+                nthChild: 1
+                regex: '^len$'
+  bajty-z-dysku:
+    kind: attribute
+    regex: '\.read_bytes$'
