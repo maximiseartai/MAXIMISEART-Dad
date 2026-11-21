@@ -1,14 +1,3 @@
-"""Komunikat o skoroszycie, którego nie da się użyć (``WorkbookError``): jeden wybór po ``Problem`` dla każdego katalogu.
-
-Katalog procesu albo strony Centrum opisuje każdy swój skoroszyt jako ``WorkbookMessages``: swój Komunikat na każdy
-``Problem``. ``unusable`` wybiera z niego Komunikat błędu, więc nowy ``Problem`` to nowe pole, które mypy każe dać w
-każdym katalogu. Kody i zdania, których nikt inny nie mówi (brak pliku, plik nieczytelny, zły układ), zostają w katalogu.
-
-Zdania wspólne Komunikatów o pliku taty składa tylko ten moduł, z pliku, ogona „Co się stało” (co zostało bez zmian) i
-zwrotu ponowienia (``DadWorkbook``): plik otwarty w Excelu (``open_in_excel``), plik, którego OneDrive jeszcze nie oddał
-(``not_synced``), i pozostawiony plik blokady Excela (``lock_hint``), który po awarii Excela trzyma skoroszyt „otwarty”.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -59,9 +48,8 @@ class DadWorkbook:
     closing: str = ""
 
 
+# ZEWNĘTRZNE: Excel zamknięty awaryjnie zostawia obok skoroszytu plik właściciela ~$<nazwa>, a ten wygląda dalej na skoroszyt otwarty w Excelu (Microsoft Support, „The document is locked for editing by another user”)
 def lock_hint(path: Path, again: str) -> str:
-    """Zdanie „Co zrobić” o pliku blokady skoroszytu ``path``, który zostaje po awarii Excela; narzędzie go nie usuwa."""
-
     return (
         "Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik "
         f"{excel_lock_file(path).name} i {again}."

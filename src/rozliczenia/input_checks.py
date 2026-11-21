@@ -1,12 +1,3 @@
-"""Sprawdzanie plików taty w obu procesach, to samo w Diagnozie i Konfiguracji Centrum rozliczeń.
-
-Wzorce sprawdza Sprawdzanie Wzorca (``run_context.TemplateCheck``), które proces i Centrum dostają jako zależność, a
-bajty plików taty czyta uchwyt plików taty (``dad_files.DadFiles``). Błąd czytnika (``WorkbookError``, ``PeriodFolderError``) moduł
-sam tłumaczy na Komunikat procesu, który z tego pliku korzysta: proces zatrzymuje się nim (``StopError``), a Diagnoza i
-Konfiguracja pokazują go jako przyczynę albo problem pliku. Rejestr zleceń Przygotowania czyta i tłumaczy jego widok
-Rejestru (``preparation_register``), a tu Sprawdzanie sprawdza tylko, że Rejestr jest dostępny.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
@@ -34,10 +25,7 @@ from .workbook_files import Problem, WorkbookError
 from .worker_list import WorkerList
 
 
-_OLD_WORKER_TEMPLATE_NAME: Final = "placeholder.xlsx"
-"""Nazwa Wzorca rozliczenia pracownika sprzed pierwszego Wydania. Podpowiedź zmiany nazwy pomaga tylko temu, komu Wzorca
-pod obecną nazwą brakuje, więc ta stała i ``_worker_template_unusable`` są do usunięcia, gdy Log Uruchomienia taty pokaże
-Przebieg rozliczeń, którego Sprawdzanie przeszło Wzorzec pod obecną nazwą."""
+_WORKER_TEMPLATE_NAME_BEFORE_FIRST_RELEASE: Final = "placeholder.xlsx"
 
 
 def _worker_template_unusable(error: WorkbookError) -> Message:
@@ -45,22 +33,14 @@ def _worker_template_unusable(error: WorkbookError) -> Message:
 
 
 def _old_worker_template_beside(error: WorkbookError) -> str | None:
-    """Dawna nazwa Wzorca, gdy Wzorca brakuje, a plik o niej leży obok.
-
-    Dysk pyta tylko przy brakującym Wzorcu: przy innym problemie Komunikat mówi o tym problemie, a nie o dawnej nazwie.
-    Plik niedostępny (``file_state``) to brak podpowiedzi, a nie błąd.
-    """
-
     if error.problem is not Problem.MISSING:
         return None
-    old = error.path.with_name(_OLD_WORKER_TEMPLATE_NAME)
+    old = error.path.with_name(_WORKER_TEMPLATE_NAME_BEFORE_FIRST_RELEASE)
     return old.name if file_state(old) == "file" else None
 
 
 @dataclass(frozen=True)
 class TemplateProblem:
-    """Wzorzec nie przechodzi Sprawdzania."""
-
     problem: Problem
     message: Message
 

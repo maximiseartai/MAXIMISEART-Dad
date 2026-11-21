@@ -400,6 +400,8 @@ Wzorzec bez nazwy wykonawcy, z którego powstają Szablony pracowników.
 Ma ten sam układ kolumn co Plik zbiorczy, ale własne stawki pracownika, i te same szerokości kolumn co Wzorzec pliku zbiorczego.
 U taty to pusty plik `Rozliczenie {okres} -.xlsx` w Folderze rozliczeń pracowników.
 Nie jest rozliczeniem konkretnej osoby.
+Przed pierwszym Wydaniem nazywał się `placeholder.xlsx`: gdy Wzorca pod obecną nazwą brakuje, a plik o dawnej nazwie leży obok, Komunikat Sprawdzania podpowiada zmianę nazwy.
+Podpowiedź znika z kodu, gdy Log Uruchomienia taty pokaże Przebieg rozliczeń, którego Sprawdzanie przeszło Wzorzec pod obecną nazwą.
 _Avoid_: Placeholder
 
 ## Przygotowanie pliku zbiorczego
