@@ -1,0 +1,28 @@
+id: linter-sam-wybiera-pliki
+language: python
+severity: error
+message: >-
+  argv lintera z jego własnym wyborem plików (--ignore-pattern) bez jawnej listy plików po "--": narzędzie stosuje
+  wtedy też domyślne pliki ignore (.eslintignore, .gitignore), których repo nie sprawdza; podaj listę plików po "--"
+  i --no-ignore
+files:
+  - tools/**/*.py
+metadata:
+  przypadki:
+    - 2291/W1/r1
+rule:
+  # Argv w liście albo krotce z napisem flagi, także w generatorze albo f-napisie, ale nie w zagnieżdżonym argv.
+  any:
+    - kind: list
+    - kind: tuple
+  has:
+    stopBy:
+      any:
+        - kind: list
+        - kind: tuple
+    kind: string
+    regex: '^f?["'']--ignore-pattern'
+  not:
+    has:
+      kind: string
+      regex: '^["'']--["'']$'

@@ -1,0 +1,48 @@
+id: rozmiar-z-bajtow-checkoutu
+language: python
+severity: error
+message: >-
+  rozmiar pliku liczony długością bajtów z dysku (len(read_bytes()), także po .replace(b"\r\n", b"\n")) zależy od
+  systemu: checkout Windows z core.autocrlf ma \r\n, więc ten sam commit mieści się w budżecie na macOS i pada na
+  Windows; rozmiar pliku repozytorium bierz z obiektu gita (git cat-file --batch-check=%(objectsize) na blobach z indeksu)
+files:
+  - tests/**/*.py
+  - tools/**/*.py
+  - src/**/*.py
+  - .agents/**/*.py
+metadata:
+  przypadki:
+    - 2332/W1/r1
+    - 2332/W1/r2
+rule:
+  # len(...) albo map(len, ...) z read_bytes() w argumencie, także za .replace(b"\r\n", b"\n") i w generatorze
+  # sum(len(p.read_bytes()) for …); liczba linii (splitlines) nie zależy od końców linii.
+  # Bez stat().st_size i os.path.getsize: składnia nie wie, czy ścieżka to plik z gita, a pliki taty, tmp_path i logi
+  # mają tę samą postać.
+  any:
+    - all:
+        - kind: call
+        - has:
+            field: function
+            regex: '^len$'
+    - all:
+        - kind: call
+        - has:
+            field: function
+            regex: '^map$'
+        - has:
+            field: arguments
+            has:
+              nthChild: 1
+              regex: '^len$'
+  has:
+    field: arguments
+    stopBy: end
+    kind: attribute
+    regex: '\.read_bytes$'
+  not:
+    has:
+      field: arguments
+      stopBy: end
+      kind: attribute
+      regex: '\.splitlines$'

@@ -757,6 +757,8 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "postac-tlumienia-poza-wlascicielem": "weź RUFF z tests/test_granice_wyjatkow.py",
     "wyliczone-rodzaje-instrukcji-bez-odmowy": "dodaj else, które odmawia (raise)",
     "zwolnienie-wezlow-po-nazwie-celu": "zwalniaj tekst przez jego właściciela",
+    "linter-sam-wybiera-pliki": "podaj listę plików po \"--\" i --no-ignore",
+    "rozmiar-z-bajtow-checkoutu": "rozmiar pliku repozytorium bierz z obiektu gita",
 }
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
@@ -2390,6 +2392,8 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "wyliczone-rodzaje-instrukcji-bez-odmowy": (("tools",), ".py"),
     "zwolnienie-wezlow-po-nazwie-celu": (("tools",), ".py"),
     "postac-tlumienia-poza-wlascicielem": (("tools",), ".py"),
+    "linter-sam-wybiera-pliki": (("tools",), ".py"),
+    "rozmiar-z-bajtow-checkoutu": (("tools",), ".py"),
 }
 _SYS = "import sys\n\n"
 _BOX = "import box_boat\n\n\ndef infra(wyjscie: str) -> bool:\n    return "
@@ -2398,6 +2402,8 @@ _DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
 _OS = "import os\n\n"
 _LINIA = "def komentarz(linia: str) -> bool:\n    return "
 _PATTERN = "import re\n\nLINE = "
+_LINT = "def lint(program: str, files: list[str], ignored: list[str]) -> list[str]:\n"
+_SIZE = "from pathlib import Path\n\n\ndef size(paths: list[Path]) -> int:\n"
 _BODY = "import ast\n\n\ndef names(tree: ast.Module) -> list[str]:\n    found = []\n    for node in tree.body:\n"
 _CHAIN = (
     "        if isinstance(node, ast.FunctionDef):\n            found.append(node.name)\n"
@@ -3039,6 +3045,23 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param("postac-tlumienia-poza-wlascicielem", f'{_PATTERN}re.compile(r"#\\s*(?i)noqa")\n', [3], id="tlumienie-z-flaga-wzorca"),
     pytest.param("postac-tlumienia-poza-wlascicielem", f'{_PATTERN}re.compile(r"\\bnoqa\\b")\n', [], id="slowo-noqa-bez-znacznika-przechodzi"),
     pytest.param("postac-tlumienia-poza-wlascicielem", f'{_PATTERN}re.compile(r"ruff: \\d+ błędów")\n', [], id="komunikat-ruff-przechodzi"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, "--ignore-pattern=dist", "--format", "json"]\\n', [2], id="flaga-wyboru-plikow-bez-listy"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return (program, "--ignore-pattern", "dist")\n', [2], id="flaga-wyboru-plikow-w-krotce"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, *(f"--ignore-pattern={pattern}" for pattern in ignored)]\\n', [2], id="flagi-wyboru-plikow-z-generatora"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [[program, "--ignore-pattern", "dist"], files]\\n', [2], id="flaga-wyboru-plikow-w-liscie-zagniezdzonej"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [program, "--ignore-pattern", "dist", "--", *files]\\n', [], id="flaga-z-lista-plikow-po-separatorze-przechodzi"),
+    pytest.param("linter-sam-wybiera-pliki", f"{_LINT}" + '    return [[program, "--", *files], [program, "--ignore-pattern", "dist", "--", *files]]\\n', [], id="lista-argv-z-listami-plikow-przechodzi"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return len(paths[0].read_bytes())\\n', [5], id="dlugosc-bajtow-z-dysku"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return sum(len(path.read_bytes().replace(b"\\\\r\\\\n", b"\\\\n")) for path in paths)\\n', [5], id="dlugosc-bajtow-po-zamianie-crlf"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    return sum(map(len, (path.read_bytes() for path in paths)))\n", [5], id="dlugosc-bajtow-przez-map"),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + "    return len(paths[0].read_bytes().splitlines())\n", [], id="liczba-linii-bajtow-przechodzi"),
+    pytest.param(
+        "rozmiar-z-bajtow-checkoutu",
+        "import hashlib\nfrom pathlib import Path\n\n\ndef digests(paths: list[Path]) -> list[object]:\n    return list(map(hashlib.sha256, (path.read_bytes() for path in paths)))\n",
+        [],
+        id="skrot-bajtow-przez-map-przechodzi",
+    ),
+    pytest.param("rozmiar-z-bajtow-checkoutu", f"{_SIZE}" + '    return len(paths)\\n', [], id="liczba-plikow-przechodzi"),
 ]
 
 
@@ -3165,6 +3188,15 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "wzorzec z sąsiednich literałów w jednej linii": f'{_PATTERN}re.compile(r"#\\s*" r"noqa")\n',
         "wzorzec z literałów w kolejnych liniach": f'{_PATTERN}re.compile(\n    r"#\\s*"\n    r"(?:noqa|type:\\s*ignore)"\n)\n',
         "znacznik # zapisany ucieczką": f'{_PATTERN}re.compile(r"\\x23\\s*noqa")\n',
+    },
+    "linter-sam-wybiera-pliki": {
+        "katalog jako cel bez flagi wyboru plików": _LINT + '    return [program, "frontend"]\n',
+        "argv składany przez append": _LINT + '    argv = [program]\n    argv.append("--ignore-pattern=dist")\n    return argv\n',
+        "plik ignore zamiast wzorca": _LINT + '    return [program, "--ignore-path", ".eslintignore", "frontend"]\n',
+    },
+    "rozmiar-z-bajtow-checkoutu": {
+        "rozmiar ze stat": _SIZE + "    return paths[0].stat().st_size\n",
+        "odczyt bajtów przez open": _SIZE + '    with open(paths[0], "rb") as plik:\n        return len(plik.read())\n',
     },
 }
 
