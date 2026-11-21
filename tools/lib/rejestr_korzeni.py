@@ -101,22 +101,16 @@ CONNECTIONS = ("comments", "reviews")
 
 @dataclass(frozen=True)
 class Block:
-    """Blok sekcji ``## Korzeń``: nagłówek bez kodu (``W1 r2`` albo ``Czerwony main #N``), kod i jednostki pod nim."""
-
     heading: str
     code: str
     items: tuple[Item, ...]
 
     def uprooted(self) -> int | None:
-        """Numer z pierwszej linii ``Wyrwany w #M``; ``None`` bez niej."""
-
         first = self.items[0] if self.items else None
         found = UPROOTED.fullmatch(first.text) if first is not None and first.kind == "line" else None
         return int(found[1]) if found else None
 
     def guard(self) -> str | None:
-        """Tekst pola ``Strażnik:`` z ostatniej linii bloku (``straznik.parse`` czyta z niego selektor); ``None`` bez niej."""
-
         last = self.items[-1] if self.items else None
         return last.text.removeprefix(straznik.FIELD).strip() if last is not None and last.kind == "line" and last.text.startswith(straznik.FIELD) else None
 
@@ -133,9 +127,6 @@ class Block:
 
 @dataclass(frozen=True)
 class Section:
-    """Sekcja ``## Korzeń``: bloki w kolejności (także powtórzone) i jednostki, które blokiem nie są (inna jednostka
-    przed blokiem albo nagłówek ``###`` spoza wzoru)."""
-
     blocks: tuple[Block, ...]
     strays: tuple[Item, ...]
 
@@ -334,9 +325,6 @@ def _reviewed(node: dict[str, Any], deployed: datetime, limit: datetime | None, 
 
 
 def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:
-    """PR-y ``repository`` zmienione od ``deployed`` w kolejności założenia, każdy raz: strona to wyszukiwanie od chwili
-    założenia ostatniego PR poprzedniej strony, więc zmiana PR w trakcie skanu nie przesuwa stron."""
-
     search = SEARCH.format(repository=repository, deployed=deployed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
     seen: set[int] = set()
     since = ""
@@ -353,8 +341,6 @@ def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:
 
 
 def pull_node(repository: str, number: int) -> dict[str, Any]:
-    """Węzeł GraphQL PR ``number`` (``FIELDS``) z każdym komentarzem i każdą recenzją: zapytanie na każde 100."""
-
     owner, name = repository.split("/")
     page = _graphql(PULL_QUERY, owner=owner, name=name, number=number, comments=None, reviews=None)["repository"]["pullRequest"]
     found = {kind: list(page[kind]["nodes"]) for kind in CONNECTIONS}

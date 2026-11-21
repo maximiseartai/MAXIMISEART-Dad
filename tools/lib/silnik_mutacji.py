@@ -136,7 +136,6 @@ TIMEOUT = 600
 PARALLEL = min(8, os.cpu_count() or 1)
 # Cache mypy kroków bramy typów (``--cache-dir`` kroku Windows leży w nim), który kopia bez mutacji daje kopiom mutacji.
 MYPY_CACHE = ".mypy_cache"
-# Część ``--limit-s``, ponad którą czas polecenia mutacji daje ostrzeżenie ``CZAS BLISKO LIMITU`` w ``check_all``.
 NEAR_LIMIT = 0.5
 # Linie, którymi pytest-timeout kończy test po limicie, w pytest_timeout.py 2.4: ``PYTEST_FAILURE_MESSAGE`` metody
 # ``signal`` jako błąd testu (``E   Failed: …``) albo w krótkim podsumowaniu (``FAILED <test> - Failed: …``) i nagłówek
@@ -153,10 +152,10 @@ PYTEST_EXIT_NO_TESTS_COLLECTED = 5
 class Verdict(StrEnum):
     """Werdykt mutacji; tylko WYKRYTA dowodzi, że polecenie łapie zepsuty kod."""
 
-    CAUGHT = "WYKRYTA"  # polecenie pada albo kończy się oczekiwaną linią
+    CAUGHT = "WYKRYTA"
     TYPE_GATE = "WYKRYTA PRZEZ BRAMĘ TYPÓW"  # polecenie przechodzi, ale ruff albo mypy, które czerwienią CI, padają
-    SURVIVED = "NIEWYKRYTA"  # polecenie przechodzi po mutacji
-    REGRESSION = "REGRES"  # NIEWYKRYTA na HEAD, a WYKRYTA na merge-base: zmiana osłabiła test
+    SURVIVED = "NIEWYKRYTA"
+    REGRESSION = "REGRES"
     HANG = "ZAWIESZENIE"  # test skończony przez pytest-timeout, co czerwieni CI
     OVER_LIMIT = "PRZEKROCZONY CZAS"  # polecenie bez wyniku w --limit-s narzędzia, czego CI nie widzi
     STALE = "NIEAKTUALNA"  # kotwica nie występuje dokładnie raz albo ścieżka to katalog
@@ -165,7 +164,6 @@ class Verdict(StrEnum):
 
 HANG_CAUGHT = "liczona jako wykryta: pytest-timeout czerwieni test w CI"
 OVER_LIMIT_NOTE = "limit --limit-s narzędzia, nie pytest-timeout"
-# Dopisek NIEWYKRYTA polecenia pytest, w którym z mutacją nie biegł żaden test, a jego pliki się zbierają (``judged``).
 GONE_HINT = "dowodzi tylko test, który z mutacją biegnie i pada, więc wybierz w poleceniu test, który mutacja zostawia, np. bez parametru"
 
 
@@ -185,7 +183,7 @@ def in_ci(verdict: Verdict, last: str) -> tuple[bool, str]:
 
 @dataclass(frozen=True)
 class Edit:
-    file: Path  # względem korzenia repozytorium
+    file: Path
     anchor: str
     replacement: str
 
@@ -257,12 +255,9 @@ def from_json(text: str, command: tuple[str, ...], source: str) -> list[Mutation
 
 @contextmanager
 def checkout_copy(commit: str | None = None) -> Iterator[Path]:
-    """Kopia HEAD z niezacommitowanymi zmianami checkoutu albo, z ``commit``, kopia samego commitu."""
-
     names = [] if commit is not None else sorted(repo.uncommitted(ROOT))
     with potomne.commit_copy(ROOT, commit or "HEAD") as copy:
         present = [name for name in names if (ROOT / name).is_symlink() or (ROOT / name).is_file()]
-        # Najpierw usunięcia: ścieżka, która zmieniła typ, zwalnia miejsce na plik albo katalog o tej nazwie.
         for name in sorted(set(names) - set(present)):
             _remove(copy, copy / name)
         for name in present:
@@ -279,8 +274,6 @@ def checkout_copy(commit: str | None = None) -> Iterator[Path]:
 
 
 def _remove(copy: Path, path: Path) -> None:
-    """Usuwa plik kopii i katalogi, które przez to zostały puste, jak ``git rm``."""
-
     path.unlink(missing_ok=True)
     for parent in path.parents:
         if parent == copy or any(parent.iterdir()):
@@ -289,8 +282,6 @@ def _remove(copy: Path, path: Path) -> None:
 
 
 def _apply(copy: Path, edits: Sequence[Edit]) -> str | None:
-    """Zmienia kod kopii; zwraca opis kotwicy, której nie ma dokładnie raz, albo ścieżki, która jest katalogiem."""
-
     for edit in edits:
         path = copy / edit.file
         if path.is_dir():
@@ -305,11 +296,11 @@ def _apply(copy: Path, edits: Sequence[Edit]) -> str | None:
 
 @dataclass(frozen=True)
 class _Ran:
-    code: int | None  # None: polecenie przekroczyło limit
-    last: str  # ostatnia linia wyjścia
-    hang: str | None  # linia pytest-timeout
-    seconds: float  # czas polecenia, także tego, które przekroczyło limit
-    tail: tuple[str, ...] = ()  # ostatnie linie stdout, potem stderr (``BASE_TAIL`` każdego), z nazwą strumienia
+    code: int | None
+    last: str
+    hang: str | None
+    seconds: float
+    tail: tuple[str, ...] = ()
 
 
 def _run(
@@ -367,8 +358,6 @@ def _no_test_cause(command: Sequence[str], ran: _Ran) -> str:
 
 
 def _merge_base_note(command: Sequence[str], ran: _Ran) -> str:
-    """Dlaczego merge-base nie rozstrzyga mutacji, której podstawa tam jest czerwona."""
-
     if ran.code == PYTEST_EXIT_NO_TESTS_COLLECTED and _without_test(command, ran):
         return "polecenie bez testu, więc test jest nowy i REGRES nie dotyczy"
     if _without_test(command, ran):
@@ -421,7 +410,6 @@ def judged(
     elif mutation.expected is not None:
         found = (Verdict.CAUGHT if ran.last.startswith(mutation.expected) else Verdict.SURVIVED), ran.last
     elif mutation.edits and _without_test(mutation.command, ran):
-        # Zbieranie dostaje czas, który biegowi z mutacją został, więc razem nie przekraczają końca czasu wywołującego.
         budget = max(min(limit_s, left - ran.seconds), 0.0)
         gathered = _run(copy, _collecting(mutation.command), budget, stop, concurrent=concurrent, python=python, env=env, sandbox=sandbox)
         gone = f"{ran.last} (pytest nie uruchomił testu z polecenia, kod {ran.code}, a"
@@ -468,9 +456,6 @@ def _collecting(command: Sequence[str]) -> tuple[str, ...]:
 def _baseline(
     mutations: Sequence[Mutation], limit_s: float, commit: str | None = None, limits: Mapping[tuple[str, ...], float] | None = None
 ) -> dict[tuple[str, ...], _Ran]:
-    """Polecenia, które bez mutacji padają albo kończą się linią oczekiwaną po mutacji, z ich przebiegiem; polecenie z
-    ``limits`` biegnie w swoim limicie zamiast ``limit_s``."""
-
     expected: dict[tuple[str, ...], set[str]] = defaultdict(set)
     for mutation in mutations:
         expected[mutation.command] |= set() if mutation.expected is None else {mutation.expected}
@@ -539,8 +524,8 @@ class Finding:
 
     step: str  # nazwa kroku: ruff, mypy, mypy (Windows)
     job: str  # narzędzie kroku (``Step.job`` w ``tools/lib/kroki_lokalne.py``): ruff albo mypy
-    code: str | None  # kod reguły; None: wyjście, którego nie dało się przeczytać jako diagnostyk
-    text: str  # plik, linia i komunikat, które pokazuje werdykt
+    code: str | None
+    text: str
 
 
 @dataclass(frozen=True)
@@ -548,7 +533,7 @@ class Checked:
     """Wynik bramy typów na jednej kopii: diagnostyki kroków, które padły, i krok, który nie skończył się w czasie."""
 
     findings: tuple[Finding, ...] = ()
-    late: str | None = None  # nazwa kroku i powód, gdy nie dał wyniku przed ``limit_s`` albo ``deadline``
+    late: str | None = None
 
 
 class Gate(Protocol):
@@ -569,8 +554,6 @@ MYPY_LEFTOVER = frozenset({"unused-ignore", "redundant-cast", "no-any-return", "
 
 
 def _ruff_findings(output: str, copy: Path) -> list[tuple[str | None, str]]:
-    """Diagnostyki ``ruff check`` (``kroki_lokalne.diagnostics``) w postaci werdyktu."""
-
     return [(one.code, f"{one.path}:{one.line}: {one.code} {one.message}") for one in diagnostics("ruff", output, copy)]
 
 
@@ -582,9 +565,9 @@ def _mypy_findings(output: str, copy: Path) -> list[tuple[str | None, str]]:
 
 @dataclass(frozen=True)
 class _Tool:
-    output: tuple[str, ...]  # opcje, z którymi narzędzie drukuje diagnostyki w JSON
-    findings: Callable[[str, Path], list[tuple[str | None, str]]]  # kod i tekst każdej diagnostyki ze stdout
-    wrong: Callable[[str], bool]  # czy diagnostyka z tym kodem mówi, że kod jest błędny
+    output: tuple[str, ...]
+    findings: Callable[[str, Path], list[tuple[str | None, str]]]
+    wrong: Callable[[str], bool]
 
 
 _TOOLS = {
@@ -721,9 +704,6 @@ def type_gate(
 
 
 def _part(mutations: Sequence[Mutation], part: str) -> list[Mutation]:
-    """Mutacje części ``K/N`` (``Czesc.kawalek`` po poleceniu i nazwie) w kolejności tabeli; zła postać to ``ValueError``
-    z nazwą zmiennej."""
-
     try:
         czesc = Czesc.z_tekstu(part)
     except ValueError as error:
@@ -782,9 +762,6 @@ class _Judge(Protocol):
 def _skill_judgement(
     mutations: Sequence[Mutation], found: Sequence[tuple[Verdict, str]], *, workers: int, limit_s: float, gate: Gate
 ) -> list[tuple[Verdict, str, bool]]:
-    """Werdykt skryptu mutacji skilla: mutację, którą polecenie przepuściło, sprawdza jeszcze ``type_gate`` z ``gate``, a
-    wykryciem jest to, co złapałoby CI (``in_ci``)."""
-
     judged = []
     for verdict, shown in type_gate(mutations, found, workers=workers, limit_s=limit_s, gate=gate):
         caught, last = in_ci(verdict, shown)
@@ -795,9 +772,6 @@ def _skill_judgement(
 def _review_judgement(
     mutations: Sequence[Mutation], found: Sequence[tuple[Verdict, str]], *, workers: int, limit_s: float, base: str
 ) -> list[tuple[Verdict, str, bool]]:
-    """Werdykt przeglądu z wiersza poleceń: porażką jest wszystko poza WYKRYTA, także ZAWIESZENIE, a mutacja NIEWYKRYTA
-    biegnie też na merge-base HEAD z ``base`` (REGRES), bez bramy typów."""
-
     compared = _against_base(mutations, found, base, workers=workers, limit_s=limit_s)
     return [(verdict, shown, verdict is Verdict.CAUGHT) for verdict, shown in compared]
 
@@ -821,9 +795,6 @@ def check_all(mutations: Sequence[Mutation], *, limit_s: float = TIMEOUT, gate: 
 
 
 def review(mutations: Sequence[Mutation], *, base: str, workers: int, limit_s: float = TIMEOUT, base_commands: Mapping[tuple[str, ...], float] | None = None) -> int:
-    """Główna funkcja narzędzia ``tools/mutacje.py``: werdykt przeglądu (``_review_judgement``) z REGRES na merge-base
-    HEAD z ``base``, ``workers`` mutacji naraz; kod 0, gdy każda mutacja jest WYKRYTA."""
-
     judge = partial(_review_judgement, base=base)
     return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=workers, limit_s=limit_s, base_commands=base_commands)
 
@@ -897,8 +868,6 @@ def _environment_part() -> str:
 
 
 def _script() -> str:
-    """Skrypt, który uruchomił ``check_all``, względem korzenia repozytorium, jak w poleceniu CI."""
-
     path = Path(sys.argv[0]).resolve()
     return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else sys.argv[0]
 
@@ -926,8 +895,6 @@ class NearLimit:
         )
 
     def record(self, key: str) -> dict[str, Any]:
-        """Wpis ``blisko_limitu`` zapisu wykonania zadania planu CI: klucz kroku skilla ``key`` i pola ostrzeżenia."""
-
         return {"klucz": key, **asdict(self)}
 
     @classmethod

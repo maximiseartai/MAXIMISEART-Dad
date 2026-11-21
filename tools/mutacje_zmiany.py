@@ -256,24 +256,22 @@ _HUNK = re.compile(r"^@@ -(?P<old>\d+)(?:,(?P<old_count>\d+))? \+(?P<new>\d+)(?:
 
 
 class Revert(enum.Enum):
-    """Czy mutacja przywraca bazę fragmentu zmiany; takiej mutacji brama typów nie sprawdza."""
-
     NONE = enum.auto()
-    MERGED = enum.auto()  # kod innej mutacji, który cofa też fragment: biegnie zawsze, pod jej opisem
-    HUNK = enum.auto()  # samo cofnięcie fragmentu: biegnie po innych mutacjach części, chyba że jest ``_dominated``
+    MERGED = enum.auto()
+    HUNK = enum.auto()
 
 
 @dataclass(frozen=True)
 class Mutant:
     path: str
-    line: int  # linia, w której wyjątek wyłącza mutację
-    lines: frozenset[int]  # zmienione linie, które mutacja psuje
+    line: int
+    lines: frozenset[int]
     description: str
     source: str  # cały plik po mutacji
-    other_system: bool = False  # kod gałęzi innego systemu niż ten, na którym biegną testy
+    other_system: bool = False
     shared_state: bool = False  # kod funkcji z ``@cache``: wynik pierwszego wywołania dostają następne testy
     revert: Revert = Revert.NONE
-    last_resort: bool = False  # predykat napisu: biegnie tylko na linii bez innej mutacji
+    last_resort: bool = False
 
 
 @dataclass(frozen=True)
@@ -295,7 +293,7 @@ def _short(text: str, limit: int = 60) -> str:
     return flat if len(flat) <= limit else f"{flat[: limit - 1]}…"
 
 
-CODE = ("src/", "tools/")  # foldery, których pliki ``.py`` psuje zakres
+CODE = ("src/", "tools/")
 
 
 def _code(path: str) -> bool:
@@ -351,8 +349,6 @@ def _overlay(fork: str, root: Path) -> tuple[frozenset[str], tuple[str, ...]]:
 
 
 def _rows(text: str) -> list[str]:
-    """Linie z końcami, jak liczy je git: tylko ``\n`` kończy linię (``str.splitlines`` dzieli też na U+2028)."""
-
     rows = [f"{row}\n" for row in text.split("\n")]
     rows[-1] = rows[-1][:-1]
     return rows if rows[-1] else rows[:-1]
@@ -362,10 +358,6 @@ LAYOUT = frozenset({tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.IN
 
 
 def _code_lines(text: str) -> frozenset[int]:
-    """Linie kodu pliku o treści ``text`` według tokenów Pythona: linia z tokenem spoza ``LAYOUT``, więc każda linia
-    napisu wielowierszowego, także pusta albo zaczęta od ``#``; sam komentarz i pusta linia nie biegną na żadnym systemie.
-    """
-
     tokens = tokenize.generate_tokens(io.StringIO(text).readline)
     return frozenset(line for token in tokens if token.type not in LAYOUT for line in range(token.start[0], token.end[0] + 1))
 
@@ -450,8 +442,6 @@ def _ends(body: list[ast.stmt]) -> bool:
 
 
 def _other_system(tree: ast.AST, platform: str) -> set[int]:
-    """Węzły kodu, który na systemie ``platform`` nie biegnie, bo strzeże go ``sys.platform ==``/``!=`` literał."""
-
     other: set[int] = set()
 
     def mark(nodes: list[ast.stmt] | list[ast.expr]) -> None:
@@ -496,8 +486,6 @@ def _cached_lines(tree: ast.AST) -> set[int]:
 
 
 def _own(function: ast.FunctionDef) -> Iterator[ast.AST]:
-    """Węzły ciała funkcji bez ciał funkcji zagnieżdżonych w niej (także metod klasy): ich ``return`` nie jest jej wynikiem."""
-
     pending: list[ast.AST] = list(function.body)
     while pending:
         node = pending.pop()
@@ -507,9 +495,6 @@ def _own(function: ast.FunctionDef) -> Iterator[ast.AST]:
 
 
 def _exit_codes(tree: ast.Module) -> dict[int, tuple[ast.expr, int]]:
-    """Wartość i inny kod wyjścia każdego ``return <liczba>`` funkcji modułu, której wynik moduł podaje ``sys.exit(...)``
-    albo ``raise SystemExit(...)``: ``0`` dla liczby różnej od zera, ``1`` dla zera."""
-
     exiting = {
         argument.func.id
         for node in ast.walk(tree)
@@ -533,8 +518,6 @@ _COLLECTIONS = (ast.List, ast.Tuple, ast.Set, ast.Dict, ast.ListComp, ast.SetCom
 
 
 def _predicates(node: ast.AST, source: _Source) -> Iterator[tuple[Node, Node, str, str]]:
-    """Zamiana predykatu napisu ``in``, ``startswith`` albo ``endswith`` na każdy z pozostałych dwóch."""
-
     if (
         isinstance(node, ast.Compare)
         and len(node.ops) == 1
@@ -556,8 +539,6 @@ def _predicates(node: ast.AST, source: _Source) -> Iterator[tuple[Node, Node, st
     else:
         return
     item_code, text_code = source.segment(item), source.segment(text)
-    # ``selected`` bierze ostatnią zamianę węzła, więc ``in`` dostaje ``startswith``: na #460 r1 test wykrył ``endswith``,
-    # a przeżyło ``startswith``, które znalazł przegląd. Biegnie ona tylko na linii bez innej mutacji (``selected``).
     for method in ("in", "endswith", "startswith"):
         if method == now:
             continue
@@ -797,7 +778,6 @@ def _type_form(value: ast.expr) -> bool:
     if isinstance(value, ast.Subscript):
         value = value.value
     name = value.attr if isinstance(value, ast.Attribute) else value.id if isinstance(value, ast.Name) else None
-    # Klasa ma nazwę w CamelCase, a stała modułu (``OPCJE["nowa"]``) wielkimi literami.
     return name is not None and (name in _TYPE_FORMS or (name[:1].isupper() and not name.isupper()))
 
 
@@ -819,11 +799,6 @@ def _invisible(statement: ast.stmt, loaded: set[str], *, module: bool) -> bool:
 
 
 def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.platform, root: Path = ROOT) -> list[Mutant]:
-    """Mutacje zmienionych linii pliku ``path`` o treści ``text``; każda daje kod, który się kompiluje.
-
-    Testy biegną na systemie ``platform``: mutacja kodu gałęzi innego systemu ma ``other_system``.
-    """
-
     tree = ast.parse(text)
     source = _Source(text)
     changed = changed_lines(hunks)
@@ -842,7 +817,6 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
         lines: frozenset[int], line: int, description: str, mutated: str, *, other_system: bool, revert: Revert = Revert.NONE, last_resort: bool = False
     ) -> None:
         if revert is Revert.HUNK and mutated in found:
-            # Cofnięcie, które daje kod innej mutacji, to ta mutacja: biegnie jako cofnięcie.
             found[mutated] = replace(found[mutated], revert=Revert.MERGED)
             return
         if mutated == text or mutated in found:
@@ -874,9 +848,8 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
         last = hunk.start + hunk.count - 1
         span = f"{hunk.start}" if hunk.count == 1 else f"{hunk.start}–{last}"
         lines = changed_lines([hunk])
-        code = lines & code_lines  # komentarz i pusta linia nie decydują, czyj jest fragment
+        code = lines & code_lines
         add(lines, hunk.start, f"zmiana linii {span} cofnięta do bazy", mutated, other_system=bool(code) and code <= other_lines, revert=Revert.HUNK)
-    # Sortowanie stabilne: w linii zostaje kolejność przejścia drzewa wszerz, z której wybiera ``selected``.
     return sorted(found.values(), key=lambda mutant: mutant.line)
 
 
@@ -909,11 +882,6 @@ def fingerprint(mutant: Mutant, text: str) -> str:
 
 
 def exceptions(text: str, path: str) -> dict[int, Allowance]:
-    """Wyjątki ``# mutacje-zmiany:`` pliku według linii kodu, której dotyczą; zła postać rzuca ``ValueError``.
-
-    Wyjątkiem jest tylko komentarz: napis z tym tekstem (opis postaci wyjątku w docstringu) nim nie jest.
-    """
-
     found: dict[int, Allowance] = {}
     for token in tokenize.generate_tokens(io.StringIO(text).readline):
         match = EXCEPTION.search(token.string) if token.type == tokenize.COMMENT else None
@@ -936,10 +904,10 @@ def exceptions(text: str, path: str) -> dict[int, Allowance]:
 
 @dataclass
 class Coverage:
-    lines: dict[str, dict[str, set[int]]] = field(default_factory=lambda: defaultdict(lambda: defaultdict(set)))  # test → plik → linie
-    files: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))  # test → pliki, których kod wykonał
-    shared: dict[str, set[int]] = field(default_factory=lambda: defaultdict(set))  # plik → linie wykonane dla wielu testów
-    spawners: set[str] = field(default_factory=set)  # testy, które uruchomiły proces
+    lines: dict[str, dict[str, set[int]]] = field(default_factory=lambda: defaultdict(lambda: defaultdict(set)))
+    files: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    shared: dict[str, set[int]] = field(default_factory=lambda: defaultdict(set))
+    spawners: set[str] = field(default_factory=set)
     seconds: dict[str, float] = field(default_factory=dict)  # test → czas z junit pokrycia, a testu ponowionego z ponowienia
 
     def covering(self, mutant: Mutant) -> list[str]:
@@ -999,9 +967,9 @@ class ZapisPokrycia:
     liniami nocy i testy, które padły także po ponowieniu. Części nocy dostają katalog zapisów (``--pokrycie``) i nie
     liczą pokrycia same. Postać JSON zapisu zna tylko ta klasa."""
 
-    pliki_testow: frozenset[str]  # pliki testów, których pokrycie zapis niesie
+    pliki_testow: frozenset[str]
     pokrycie: Coverage
-    padniete: frozenset[str]  # testy, a gdy junit nie mówi które, pliki testów, które padły także po ponowieniu
+    padniete: frozenset[str]
 
     def json(self) -> str:
         coverage = self.pokrycie
@@ -1149,16 +1117,12 @@ def _shard(args: argparse.Namespace) -> int:
 
 
 def _command(tests: Sequence[str], coverage: Coverage, workers: int = 0) -> tuple[str, ...]:
-    """Polecenie pytest testów mutacji od najkrótszego (``Coverage.fastest_first``)."""
-
     if sum(len(test) + 1 for test in tests) > COMMAND_LIMIT:
         tests = sorted({test.split("::")[0] for test in tests})
     return ("-m", "pytest", "-q", "-x", "-n", str(workers), "-p", "no:cacheprovider", *coverage.fastest_first(tests))
 
 
 def _allowance(allowed: Mapping[int, Allowance], mutant: Mutant, today: datetime.date) -> Allowance | None:
-    """Ważny wyjątek z linii mutacji; cofnięcie fragmentu ma linię jego początku."""
-
     allowance = allowed.get(mutant.line)
     return allowance if allowance is not None and allowance.until >= today else None
 
@@ -1184,8 +1148,6 @@ def _part(text: str) -> Czesc:
 
 
 def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mutacji.static_gate) -> int:
-    """Kod wyjścia narzędzia; ``gate`` to brama typów przeżytych mutacji (``silnik_mutacji.type_gate``)."""
-
     parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, od której liczy się zmiana (domyślnie {BASE}).")
     parser.add_argument("--rownolegle", type=int, default=WORKERS, help="Ile mutacji biegnie naraz, każda w swojej kopii.")
@@ -1248,10 +1210,10 @@ class Outcome:
     """Mutacje części, które zgłasza noc, każda z treścią swojego pliku przed mutacją, i tożsamości tych, których noc po
     czerwonej nie powtarza."""
 
-    survived: list[tuple[Mutant, str]] = field(default_factory=list)  # nie wykrył ich ani test, ani brama typów
-    unchecked: list[tuple[Mutant, str]] = field(default_factory=list)  # bez werdyktu po limicie czasu części
-    over_limit: list[tuple[Mutant, str]] = field(default_factory=list)  # ostatni przebieg testów to PRZEKROCZONY CZAS
-    judged: list[Tozsamosc] = field(default_factory=list)  # werdykt bez issue: ``OSADZONE``
+    survived: list[tuple[Mutant, str]] = field(default_factory=list)
+    unchecked: list[tuple[Mutant, str]] = field(default_factory=list)
+    over_limit: list[tuple[Mutant, str]] = field(default_factory=list)
+    judged: list[Tozsamosc] = field(default_factory=list)
 
 
 def entry(mutant: Mutant, text: str) -> dict[str, object]:
@@ -1285,8 +1247,6 @@ def _origins(every: Sequence[Mutant], root: Path) -> list[frozenset[tuple[str, i
 
 
 def _last_changes(every: Sequence[Mutant], root: Path) -> list[frozenset[str]]:
-    """Commity linii pierwszych rodziców, które ostatnie zmieniły linie każdej mutacji z ``every`` (``_origins``)."""
-
     return [frozenset(commit for commit, _ in origin) for origin in _origins(every, root)]
 
 
@@ -1310,7 +1270,7 @@ class ZakresMutacji:
     baza: str  # wspólny przodek HEAD i podanej bazy: od niego liczą plan i część
     teksty: Mapping[str, str]  # plik zmiany → jego treść w checkoucie
     fragmenty: Mapping[str, Sequence[Hunk]]
-    mutanty: tuple[Mutant, ...]  # ``selected`` każdego pliku zmiany, po ``do`` tylko z zakresu do commitu
+    mutanty: tuple[Mutant, ...]
     wyjatki: Mapping[str, Mapping[int, Allowance]]  # ``exceptions`` każdego pliku; puste przy złym wyjątku
     zly_wyjatek: str | None  # pierwszy wyjątek w złej postaci: część kończy się wtedy kodem 2
     niesprawdzone: tuple[str, ...]  # pliki, które commit zmienia, a ``tools/na_scalonych_pr.py`` podmienił (``overlay``)
@@ -1364,8 +1324,6 @@ class ZakresMutacji:
             return repo.git(self.root, "rev-parse", "HEAD").strip()
         line = repo.git(self.root, "rev-list", "--first-parent", "--reverse", f"{self.baza}..HEAD").split()
         position = {commit: number for number, commit in enumerate(line)}
-        # Mutacja wchodzi do zakresu z najwcześniejszym commitem, który zmienił którąś jej linię (jak w ``do``), a commit
-        # spoza linii od bazy (sprzed niej) każdy zakres już zawiera, więc liczy się od pierwszego commitu.
         from_commit = Counter(min(position.get(commit, 0) for commit in commits) for commits in _last_changes(self.mutanty, self.root))
         total = 0
         for number in range(len(line)):
@@ -1390,8 +1348,6 @@ class ZakresMutacji:
         return math.ceil(self.liczba_mutacji / na_czesc)
 
     def czesc(self, czesc: Czesc) -> Sequence[Mutant]:
-        """Mutacje części: jej kolejny kawałek listy, każda mutacja w jednej części."""
-
         return czesc.kawalek(self.mutanty)
 
 
@@ -1532,7 +1488,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     # Linie cofnięć fragmentu części: o tym, czy cofnięcie jest ``_dominated``, mówi wykrycie testem mutacji tych linii.
     reverted = {(revert.path, line) for revert, _, _ in reverts for line in revert.lines}
     ran: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []
-    let_through: set[Mutant] = set()  # mutacje, które brama typów przepuściła przed testami pliku
+    let_through: set[Mutant] = set()
     middle = wide_count = dominated = ahead_count = 0
     narrow_s = wide_s = ahead_s = 0.0
     for second in (False, True):
