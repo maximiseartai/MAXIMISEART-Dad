@@ -82,8 +82,8 @@ def _pull_of(
     )
 
 
-def _body(pulls: Sequence[Reviewed], week: date, alarms: tydzien.Alarms = NO_ALARMS, widened: Sequence[tydzien.Widening] = ()) -> str:
-    return tydzien.body(pulls, [], week, DEPLOYED, GUARDED, alarms, [], widened)
+def _body(pulls: Sequence[Reviewed], week: date, alarms: tydzien.Alarms = NO_ALARMS, widened: Sequence[tydzien.Widening] = (), audited: Mapping[str, int] | None = None) -> str:
+    return tydzien.body(pulls, [], week, DEPLOYED, GUARDED, alarms, [], widened, audited or {})
 
 
 def _rows(text: str, section: str) -> list[str]:
@@ -167,7 +167,7 @@ def test_tydzien_bez_wystapien_ma_zero_a_od_wdrozenia_liczy_wczesniejsze() -> No
 
     assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 0 | 0 |", "| Od wdrożenia 2026-10-01 | 1 | 0 |"], text
     assert _rows(text, "Kody") == ["| R-BEZ-TESTU | 0 | 1 |"], text
-    assert _rows(text, "Historia")[-1] == "| 2026-10-12 | 0 | 0 |", text
+    assert _rows(text, "Historia")[-1] == "| 2026-10-12 | 0 | 0 | 0 | - |", text
 
 
 def test_poszerzenie_liczy_sie_w_tygodniu_merge_a_jego_lista_ma_tylko_tydzien() -> None:
@@ -181,7 +181,7 @@ def test_poszerzenie_liczy_sie_w_tygodniu_merge_a_jego_lista_ma_tylko_tydzien() 
 
     assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 0 | 1 |", "| Od wdrożenia 2026-10-01 | 0 | 2 |"], text
     assert _rows(text, "Poszerzenia reguł") == ["| #31 | b-regula | files, ignores |"], text
-    assert _rows(text, "Historia")[-2:] == ["| 2026-10-05 | 0 | 1 |", "| 2026-10-12 | 0 | 1 |"], text
+    assert _rows(text, "Historia")[-2:] == ["| 2026-10-05 | 0 | 1 | 0 | - |", "| 2026-10-12 | 0 | 1 | 0 | - |"], text
 
 
 def test_czekanie_od_pass_na_head_do_merge_w_tygodniu_merge_a_merge_bez_pass_osobno() -> None:
@@ -280,8 +280,85 @@ def test_historia_ma_najwyzej_26_ostatnich_tygodni_od_tygodnia_wdrozenia() -> No
     assert [row.split(" | ")[0].removeprefix("| ") for row in _rows(_body([], date(2026, 10, 5)), "Historia")] == ["2026-09-28", "2026-10-05"]
 
 
+def _placed(pull: int, when: str, mechanism: str, *files: str, major: str = "W1 r1") -> Occurrence:
+    return Occurrence("R-BEZ-TESTU", pull, major, _at(when), szablon_werdyktu.Mechanism(mechanism), frozenset(files))
+
+
+EARLIER_MAJOR = _placed(1700, "2026-10-12T10:00:00+00:00", "lint", "tools/scal_pr.py", "tools/lib/a.py")
+EARLIER = _pull_of(1700, [EARLIER_MAJOR], "2026-10-13T10:00:00+00:00")
+
+
+def _later(when: str, mechanism: str, *files: str) -> Reviewed:
+    return _pull_of(1710, [_placed(1710, when, mechanism, *files)])
+
+
+@pytest.mark.parametrize(
+    ("pulls", "rows"),
+    [
+        pytest.param([EARLIER, _later("2026-10-20T10:00:00+00:00", "lint", "tools/scal_pr.py")], ["| #1710 W1 r1 | #1700 W1 r1 | lint | tools/scal_pr.py |"], id="ta-sama-funkcja"),
+        pytest.param(
+            [EARLIER, _later("2026-10-20T10:00:00+00:00", "lint", "tools/lib/a.py", "tools/scal_pr.py")],
+            ["| #1710 W1 r1 | #1700 W1 r1 | lint | tools/lib/a.py, tools/scal_pr.py |"],
+            id="dwa-wspolne-pliki",
+        ),
+        pytest.param([EARLIER, _later("2026-10-20T10:00:00+00:00", "lint", "tools/inny.py")], [], id="inny-plik"),
+        pytest.param([EARLIER, _later("2026-10-20T10:00:00+00:00", "test", "tools/scal_pr.py")], [], id="inny-szczebel"),
+        pytest.param([EARLIER, _later("2026-10-14T10:00:00+00:00", "lint", "tools/scal_pr.py")], [], id="wazne-po-merge-u-ale-przed-tygodniem"),
+        pytest.param(
+            [_pull_of(1700, [EARLIER_MAJOR], "2026-10-21T10:00:00+00:00"), _later("2026-10-20T10:00:00+00:00", "lint", "tools/scal_pr.py")],
+            [],
+            id="wazne-przed-merge-em-wczesniejszego",
+        ),
+        pytest.param(
+            [_pull_of(1700, [EARLIER_MAJOR, _placed(1700, "2026-10-20T10:00:00+00:00", "lint", "tools/scal_pr.py", major="W1 r2")], "2026-10-13T10:00:00+00:00")],
+            [],
+            id="ten-sam-pr",
+        ),
+        pytest.param([_pull_of(1700, [EARLIER_MAJOR]), _later("2026-10-20T10:00:00+00:00", "lint", "tools/scal_pr.py")], [], id="wczesniejszy-pr-bez-merge-a"),
+    ],
+)
+def test_pary_do_audytu_to_wazne_tygodnia_z_wczesniejszym_scalonym_waznym_na_tym_samym_szczeblu_i_w_tym_samym_pliku(pulls: list[Reviewed], rows: list[str]) -> None:
+    text = _body(pulls, date(2026, 10, 19))
+
+    assert _rows(text, "Pary do audytu") == rows, text
+    assert _rows(text, "Historia")[-1].split(" | ")[3:] == [str(len(rows)), "- |"], text
+
+
+def _comment(text: str, created: str, association: str = "OWNER") -> dict[str, object]:
+    return {"body": text, "created_at": created, "author_association": association}
+
+
+def test_historia_ma_ucieczki_z_ostatniego_komentarza_audytu_tygodnia_od_zaufanego_konta_a_bez_audytu_kreske() -> None:
+    comments = [
+        _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 1\n- Ucieczka #1710 W1 r1 jak #1700 W1 r1", "2026-10-19T09:00:00Z"),
+        _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 2\n- Ucieczka #1710 W1 r1 jak #1700 W1 r1", "2026-10-19T08:00:00Z"),
+        _comment("AUDYT POWROTÓW 2026-10-12 | pary 2 | ucieczki 7", "2026-10-19T10:00:00Z", "NONE"),
+        _comment("AUDYT POWROTÓW 2026-10-05 | pary 0 | ucieczki 0", "2026-10-12T08:00:00Z"),
+        _comment("Uwaga: AUDYT POWROTÓW 2026-09-28 | pary 1 | ucieczki 1", "2026-10-12T09:00:00Z"),
+    ]
+
+    text = _body([], date(2026, 10, 19), audited=tydzien.audits(comments))
+
+    assert _rows(text, "Historia") == [
+        "| 2026-09-28 | 0 | 0 | 0 | - |",
+        "| 2026-10-05 | 0 | 0 | 0 | 0 |",
+        "| 2026-10-12 | 0 | 0 | 0 | 1 |",
+        "| 2026-10-19 | 0 | 0 | 0 | - |",
+    ], text
+
+
+def test_komentarz_audytu_w_postaci_ze_skilla_polowanie_daje_ucieczki_historii() -> None:
+    skill = (ROOT / ".agents" / "skills" / "polowanie" / "SKILL.md").read_text(encoding="utf-8")
+    line = tydzien.AUDIT.format(week="2026-10-12", pairs=3, escapes=1)
+
+    assert f"`{tydzien.AUDIT.format(week='<poniedziałek>', pairs='<p>', escapes='<u>')}`" in skill
+    assert tydzien.audits([_comment(f"{line}\n- Ucieczka", "2026-10-19T08:00:00Z")]) == {"2026-10-12": 1}
+
+
 WEEK_START, WEEK_END = tydzien_polski.midnight(date(2026, 10, 19)), tydzien_polski.midnight(date(2026, 10, 26))
 WEED_STEP = "ast-grep rules on the added lines of the repository"
+RUFF_WEED_TEST = "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff"
+WHOLE_TREE_TEST = "tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii"
 FIRING_PULLS = [
     _pull_of(30, merged="2026-10-16T10:00:00+00:00", guards=[_guard(30, "2026-10-16T10:00:00+00:00", "pytest tests/test_x.py::test_y")]),
     _pull_of(31, merged="2026-10-16T10:00:00+00:00", guards=[_guard(31, "2026-10-16T10:00:00+00:00", "ast-grep zakazane-wywolanie")]),
@@ -322,6 +399,16 @@ FIRING_PULLS = [
             [(1, "c", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {"Lint Python code": "", "Typecheck Python code (Windows)": "", "Weed rules of the whole tree": "kod/a.py:3"})])],
             ["| #42 | ast-grep | - |", "| #42 | mypy | - |", "| #42 | ruff | - |"],
             id="kroki-ruff-mypy-i-reguł-bez-id-reguły",
+        ),
+        pytest.param(
+            [(1, "c", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {"Weed rules of the whole tree": f"FAILED {RUFF_WEED_TEST} - AssertionError: noqa chowa zakazaną nazwę"})])],
+            ["| #42 | ruff | - |"],
+            id="zakaz-noqa-przy-zakazanej-nazwie-w-kroku-reguł-chwastów-to-ruff",
+        ),
+        pytest.param(
+            [(1, "c", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {"Weed rules of the whole tree": "\n".join([odpalenia_ast_grep.refusal([Finding("kod/a.py", 3, "zakazane-wywolanie", "bez zakazane()")]), f"FAILED {WHOLE_TREE_TEST} - AssertionError", f"FAILED {RUFF_WEED_TEST} - AssertionError"])})])],
+            ["| #42 | ast-grep zakazane-wywolanie | #31 W1 r1 |", "| #42 | ruff | - |"],
+            id="test-reguł-i-test-zakazu-ruff-tego-samego-kroku",
         ),
         pytest.param([(1, "nowa", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {"Lint Python code": ""})])], ["| gałąź nowa | ruff | - |"], id="run-gałęzi-bez-pr-u-w-skanie"),
         pytest.param([(1, "c", "2026-10-18T23:00:00Z", [_ruff_mypy_job(11, {"Lint Python code": ""})])], ["| gałąź c | ruff | - |"], id="run-sprzed-zalozenia-pr-u-gałęzi"),
@@ -420,6 +507,8 @@ elif arguments[:2] == ["api", "repos/{owner}/{repo}/issues?labels=chwast&state=o
     print(json.dumps(state["weeds"]))
 elif arguments[:2] == ["api", "repos/{owner}/{repo}/issues?labels=rejestr-korzeni&state=open&per_page=100&page=1"]:
     print(json.dumps(state["own"]))
+elif arguments[0] == "api" and arguments[1].startswith("repos/{owner}/{repo}/issues/") and "/comments?" in arguments[1]:
+    print(json.dumps(state["comments"]))
 elif arguments[:2] == ["api", "repos/{owner}/{repo}/labels?per_page=100&page=1"]:
     print(json.dumps([{"name": name} for name in state["labels"]]))
 elif arguments[0] == "api" and arguments[1].startswith("repos/{owner}/{repo}/actions/workflows/ci.yml/runs?"):
@@ -532,6 +621,18 @@ Licznik nie widzi prób złapanych lokalnie przed pushem ani błędów bez stra�
 | PR | Reguła | Pola |
 | --- | --- | --- |
 
+## Pary do audytu
+
+| Ważne tygodnia | Wcześniejsze Ważne | Mechanizm | Wspólne pliki |
+| --- | --- | --- | --- |
+
+## Ponowny dowód strażników
+
+Ponowny dowód nie biegł w tym pomiarze (bez --ponowny-dowod).
+
+| PR | Strażnik | Ważne | Wynik |
+| --- | --- | --- | --- |
+
 ## Strażniki
 
 | Okres | Ważne | mypy | ruff | ast-grep | pytest | brak - proza | brak - test | brak - napęd | brak - usunięte | Bez strażnika | Udział wyjątków |
@@ -564,11 +665,11 @@ Licznik nie widzi prób złapanych lokalnie przed pushem ani błędów bez stra�
 
 ## Historia
 
-| Tydzień | Wystąpienia | Poszerzenia reguł |
-| --- | --- | --- |
-| 2026-09-28 | 0 | 0 |
-| 2026-10-05 | 1 | 0 |
-| 2026-10-12 | 0 | 0 |
+| Tydzień | Wystąpienia | Poszerzenia reguł | Pary do audytu | Ucieczki z audytu |
+| --- | --- | --- | --- | --- |
+| 2026-09-28 | 0 | 0 | 0 | - |
+| 2026-10-05 | 1 | 0 | 0 | - |
+| 2026-10-12 | 0 | 0 | 0 | - |
 """
 WEEK_19 = """\
 ## Pomiar
@@ -603,6 +704,18 @@ Licznik nie widzi prób złapanych lokalnie przed pushem ani błędów bez stra�
 | PR | Reguła | Pola |
 | --- | --- | --- |
 
+## Pary do audytu
+
+| Ważne tygodnia | Wcześniejsze Ważne | Mechanizm | Wspólne pliki |
+| --- | --- | --- | --- |
+
+## Ponowny dowód strażników
+
+Ponowny dowód nie biegł w tym pomiarze (bez --ponowny-dowod).
+
+| PR | Strażnik | Ważne | Wynik |
+| --- | --- | --- | --- |
+
 ## Strażniki
 
 | Okres | Ważne | mypy | ruff | ast-grep | pytest | brak - proza | brak - test | brak - napęd | brak - usunięte | Bez strażnika | Udział wyjątków |
@@ -636,12 +749,12 @@ Licznik nie widzi prób złapanych lokalnie przed pushem ani błędów bez stra�
 
 ## Historia
 
-| Tydzień | Wystąpienia | Poszerzenia reguł |
-| --- | --- | --- |
-| 2026-09-28 | 0 | 0 |
-| 2026-10-05 | 1 | 0 |
-| 2026-10-12 | 0 | 0 |
-| 2026-10-19 | 3 | 0 |
+| Tydzień | Wystąpienia | Poszerzenia reguł | Pary do audytu | Ucieczki z audytu |
+| --- | --- | --- | --- | --- |
+| 2026-09-28 | 0 | 0 | 0 | - |
+| 2026-10-05 | 1 | 0 | 0 | - |
+| 2026-10-12 | 0 | 0 | 0 | - |
+| 2026-10-19 | 3 | 0 | 0 | - |
 """
 
 
@@ -662,8 +775,8 @@ OLD_BODY = """\
 
 class RegistryGitHub(FakeGitHub):
     """Checkout z narzędziem pomiaru, ``origin`` z ADR 0031 wdrożonym 1.10.2026 i atrapa ``gh`` z PR-ami ``pulls``,
-    otwartymi issues chwastów ``WEEDS``, otwartymi issues z etykietą ``rejestr-korzeni`` ``own`` i etykietami
-    repozytorium ``labels``."""
+    otwartymi issues chwastów ``WEEDS``, otwartymi issues z etykietą ``rejestr-korzeni`` ``own``, komentarzami
+    najstarszego z nich ``comments`` i etykietami repozytorium ``labels``."""
 
     def __init__(
         self,
@@ -675,6 +788,7 @@ class RegistryGitHub(FakeGitHub):
         files: dict[str, str] | None = None,
         started: str | None = None,
         actions: _Actions | None = None,
+        comments: Sequence[dict[str, object]] = (),
     ) -> None:
         tmp_path.mkdir()
         super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n", **(files or {})}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH, started=started)
@@ -684,7 +798,7 @@ class RegistryGitHub(FakeGitHub):
                 self.push_main({marker: "# ADR\n"})
         actions = actions or _Actions([], {}, {})
         runs = {"runs": actions.runs, "jobs": {str(run): jobs for run, jobs in actions.jobs.items()}, "logs": {str(job): log for job, log in actions.logs.items()}}
-        state = {"repo": opisy_pr.REPO, "pulls": pulls, "weeds": WEEDS, "own": own, "labels": list(labels), **runs}
+        state = {"repo": opisy_pr.REPO, "pulls": pulls, "weeds": WEEDS, "own": own, "comments": list(comments), "labels": list(labels), **runs}
         (self.bin / "state.json").write_text(json.dumps(state), encoding="utf-8")
 
     def writes(self) -> list[list[object]]:
@@ -949,7 +1063,7 @@ def test_poszerzenie_reguly_to_zmiana_zasiegu_reguly_z_bazy_merge_a_bez_zmiany_k
         "| #16 | banned-api a.b | nazwy |",
     ], text
     assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-19 | 0 | 5 |", "| Od wdrożenia 2026-10-01 | 0 | 6 |"], text
-    assert _rows(text, "Historia")[-2:] == ["| 2026-10-12 | 0 | 1 |", "| 2026-10-19 | 0 | 5 |"], text
+    assert _rows(text, "Historia")[-2:] == ["| 2026-10-12 | 0 | 1 | 0 | - |", "| 2026-10-19 | 0 | 5 | 0 | - |"], text
     assert lines[-1].endswith(": 0 wystąpień, 0 odpaleń strażników, 5 poszerzeń reguł, 0 Ważnych w wątkach strażnika"), lines
 
 
@@ -970,3 +1084,121 @@ def test_odpalenia_strażnikow_z_runow_ci_tygodnia_trafiaja_do_tresci_issue_z_li
     section = text.split("## Odpalenia strażników\n", 1)[1].split("\n## ", 1)[0]
     assert section.splitlines()[1] == tydzien.GRANICE, text
     assert _rows(text, "Odpalenia strażników") == ["| #1490 | mypy | - |"], text
+
+
+FAIL_LINT = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 1, Drobne 1)\n" + werdykty_szablonu.PRZECHODZA["mechanizm-lint"]
+FAIL_TEST = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 1, Drobne 1)\n" + werdykty_szablonu.PRZECHODZA["mechanizm-test"]
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_pary_do_audytu_czytaja_szczebel_i_gdzie_z_werdyktow_skanu_a_ucieczki_z_komentarzy_issue_rejestru(tmp_path: Path) -> None:
+    pulls = [
+        _pull(1700, [(FAIL_LINT, "2026-10-12T10:00:00Z")], merged="2026-10-13T10:00:00Z"),
+        _pull(1710, [(FAIL_LINT, "2026-10-20T10:00:00Z")], created="2026-10-19T08:00:00Z"),
+        _pull(1720, [(FAIL_TEST, "2026-10-21T10:00:00Z")], created="2026-10-19T09:00:00Z"),
+    ]
+    comments: list[dict[str, object]] = [{"body": "AUDYT POWROTÓW 2026-10-12 | pary 0 | ucieczki 0", "created_at": "2026-10-19T08:00:00Z", "author_association": "MEMBER"}]
+    github = RegistryGitHub(tmp_path / "gh", [{"number": 1600, "title": "Rejestr korzeni", "body": ""}], pulls=pulls, comments=comments)
+
+    text = "\n".join(_measure(github, "--tydzien", "2026-10-19", "--bez-zapisu")[1:-1])
+
+    assert _rows(text, "Pary do audytu") == ["| #1710 W1 r1 | #1700 W1 r1 | lint | tools/scal_pr.py |"], text
+    assert _rows(text, "Historia")[-2:] == ["| 2026-10-12 | 1 | 0 | 0 | 0 |", "| 2026-10-19 | 2 | 0 | 1 | - |"], text
+    assert "repos/{owner}/{repo}/issues/1600/comments?per_page=100&page=1" in github.calls()
+
+
+FAKE_PROOF = """\
+import json, pathlib, sys, time
+
+with pathlib.Path(LOG).open("a", encoding="utf-8") as log:
+    log.write(json.dumps([pathlib.Path(__file__).resolve().parents[1].name == pathlib.Path.cwd().resolve().name, *sys.argv[1:]]) + "\\n")
+answer = ANSWERS[sys.argv[sys.argv.index("--straznik") + 1]]
+time.sleep(answer.get("czekaj", 0))
+print("\\n".join(answer["linie"]))
+sys.exit(answer["kod"])
+"""
+PYTEST_GUARD = korzenie_pr.STRAZNICY["pytest"]
+REPROOF_PULLS = [
+    _pull(1480, [(FAIL_W1, "2026-10-16T10:00:00Z")], body=korzenie_pr.OPISY["straznik-pytest"], merged="2026-10-16T12:00:00Z"),
+    _pull(1481, [(FAIL_W1, "2026-10-16T10:00:00Z")], body=korzenie_pr.OPISY["straznik-mypy"], merged="2026-10-17T12:00:00Z"),
+    _pull(1482, [(FAIL_W1, "2026-10-16T10:00:00Z")], body=korzenie_pr.OPISY["straznik-usuniete"], merged="2026-10-17T12:00:00Z"),
+    _pull(1483, [(FAIL_W1, "2026-10-16T10:00:00Z")], body=korzenie_pr.OPISY["straznik-ruff"], merged="2026-10-27T12:00:00Z"),
+]
+
+
+def _reproof_github(tmp_path: Path, answers: Mapping[str, Mapping[str, object]]) -> tuple[RegistryGitHub, str]:
+    log = tmp_path / "dowody.jsonl"
+    github = RegistryGitHub(tmp_path / "gh", [], pulls=REPROOF_PULLS, files={"tools/na_scalonych_pr.py": f"LOG = {str(log)!r}\nANSWERS = {json.dumps(answers)}\n{FAKE_PROOF}"})
+    week_end = git(github.checkout, "rev-parse", "main").strip()
+    later = {guard: {"linie": ["DOWÓD ODMOWA | narzędzie dowodu z main po tygodniu"], "kod": 1} for guard in answers}
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("GIT_COMMITTER_DATE", "2026-10-27T10:00:00+00:00")
+        github.push_main({"tools/na_scalonych_pr.py": f"LOG = {str(log)!r}\nANSWERS = {json.dumps(later)}\n{FAKE_PROOF}"})
+    return github, week_end
+
+
+def _proofs(tmp_path: Path) -> list[list[object]]:
+    log = tmp_path / "dowody.jsonl"
+    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_ponowny_dowod_pokazuje_straznika_bez_dowod_ok_na_main_z_konca_tygodnia_a_dowod_ok_wyjatek_i_pozniejszy_merge_nie(tmp_path: Path) -> None:
+    refused = ["#1480 W1 r1 | 00000000 | ODMOWA | kotwicy nie ma dokładnie raz w kod/a.py", f"DOWÓD ODMOWA | {PYTEST_GUARD} | wykryte 0/1"]
+    answers = {PYTEST_GUARD: {"linie": ["FP nie | 1", *refused], "kod": 1}, "mypy": {"linie": ["#1481 W1 r1 | 00000000 | WYKRYTA | z FAIL", "DOWÓD OK | mypy | wykryte 1/1"], "kod": 0}}
+    github, week_end = _reproof_github(tmp_path, answers)
+
+    lines = _measure(github, "--tydzien", "2026-10-19", "--bez-zapisu", "--ponowny-dowod")
+    text = "\n".join(lines[2:-1])
+
+    assert _proofs(tmp_path) == [
+        [True, "--straznik", PYTEST_GUARD, "--z-commita", week_end, "--wazne", "1480/W1/r1"],
+        [True, "--straznik", "mypy", "--z-commita", week_end, "--wazne", "1481/W1/r1"],
+    ]
+    section = text.split("## Ponowny dowód strażników\n", 1)[1].split("\n## ", 1)[0]
+    lead = f"Dowód każdego strażnika scalonego do końca tygodnia na main z {week_end[:8]} (tools/na_scalonych_pr.py --straznik) w budżecie 150 min: 2 strażników, 1 bez DOWÓD OK, w tym 0 poza budżetem."
+    assert section.splitlines()[1] == lead, text
+    assert _rows(text, "Ponowny dowód strażników") == [f"| #1480 | {PYTEST_GUARD} | W1 r1 | {'; '.join(refused).replace('|', chr(92) + '|')} |"], text
+    assert lines[-1].endswith(", 1 strażników bez DOWÓD OK"), lines
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_straznik_ktorego_dowod_przekroczyl_budzet_i_ten_po_nim_stoja_w_ponownym_dowodzie(tmp_path: Path) -> None:
+    answers = {PYTEST_GUARD: {"linie": [], "kod": 0, "czekaj": 20}, "mypy": {"linie": ["DOWÓD OK | mypy | wykryte 1/1"], "kod": 0}}
+    github, _ = _reproof_github(tmp_path, answers)
+
+    text = "\n".join(_measure(github, "--tydzien", "2026-10-19", "--bez-zapisu", "--ponowny-dowod", "--budzet-dowodu", "2")[2:-1])
+
+    assert [proof[2] for proof in _proofs(tmp_path)] == [PYTEST_GUARD]
+    assert _rows(text, "Ponowny dowód strażników") == [f"| #1480 | {PYTEST_GUARD} | W1 r1 | {tydzien.REPROOF_LATE} |", f"| #1481 | mypy | W1 r1 | {tydzien.REPROOF_UNSTARTED} |"], text
+    assert "2 strażników, 2 bez DOWÓD OK, w tym 2 poza budżetem." in text, text
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_tresc_pomiaru_w_pliku_zapisuje_w_issue_osobne_wywolanie_bez_pomiaru(tmp_path: Path) -> None:
+    measured = RegistryGitHub(tmp_path / "pomiar", [])
+    publishing = RegistryGitHub(tmp_path / "zapis", [{"number": 1600, "title": "Rejestr korzeni", "body": OLD_BODY}])
+    saved = tmp_path / "tresc" / "tresc.md"
+
+    first = _measure(measured, "--tydzien", "2026-10-19", "--tresc-do", str(saved))
+    second = _measure(publishing, "--tresc-z", str(saved))
+
+    assert (measured.writes(), first[0]) == ([], f"REJESTR KORZENI | treść w {saved}"), first
+    assert publishing.writes() == [["PATCH", "repos/{owner}/{repo}/issues/1600", {"body": WEEK_19}]]
+    assert second == ["REJESTR KORZENI | zmieniona treść #1600", f"REJESTR KORZENI OK | treść z {saved}"], second
+    assert [call for call in publishing.calls() if call == "graphql"] == [], publishing.calls()
+
+
+REPROOF_MARGIN_S = 15 * 60
+
+
+def test_ponowny_dowod_biegnie_w_jobie_bez_prawa_zapisu_a_issue_zapisuje_job_bez_dowodu() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    runs = {name: " ".join(str(step.get("run", "")) for step in job["steps"]) for name, job in workflow["jobs"].items()}
+    writing = sorted(name for name, job in workflow["jobs"].items() if "write" in job.get("permissions", {}).values())
+    proving = sorted(name for name, run in runs.items() if "--ponowny-dowod" in run)
+
+    assert "write" not in workflow["permissions"].values(), workflow["permissions"]
+    assert (proving, [set(workflow["jobs"][name]["permissions"].values()) for name in proving]) == (["pomiar"], [{"read"}]), workflow["jobs"]
+    assert [(name, "--tresc-z" in runs[name], "--ponowny-dowod" in runs[name] or "--tresc-do" in runs[name]) for name in writing] == [("zapis", True, False)], runs
+    assert workflow["jobs"]["pomiar"]["timeout-minutes"] * 60 >= tydzien.REPROOF_BUDGET_S + REPROOF_MARGIN_S, workflow["jobs"]["pomiar"]

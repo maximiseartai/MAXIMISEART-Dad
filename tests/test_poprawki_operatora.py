@@ -516,6 +516,34 @@ def test_okno_od_do_bierze_chwile_od_poczatku_wlacznie_do_konca_bez_niego(
     )
 
 
+def test_okno_z_sama_data_zaczyna_i_konczy_sie_o_polnocy_czasu_polskiego(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = _base(
+        tmp_path / "statev2.sqlite",
+        [
+            _operator(COORDINATOR, "2026-11-03T22:59:59.999Z", _zdanie(84)),
+            _operator(COORDINATOR, "2026-11-03T23:00:00.000Z", _zdanie(85)),
+            _operator(CHILD, "2026-11-04T22:59:59.999Z", _zdanie(86)),
+            _operator(CHILD, "2026-11-04T23:00:00.000Z", _zdanie(87)),
+        ],
+    )
+
+    code = poprawki_operatora.main(
+        ["--od", "2026-11-04", "--do", "2026-11-05", "--baza", str(base)]
+    )
+
+    assert (code, capsys.readouterr().out.splitlines()) == (
+        0,
+        [
+            f"2026-11-04 00:00 | {COORDINATOR} | {_zdanie(85)}",
+            f"2026-11-04 23:59 | {CHILD} | {_zdanie(86)}",
+            "POPRAWKI OPERATORA OK | okno 2026-11-04 00:00 – 2026-11-05 00:00: 2 wiadomości operatora w 2 wątkach "
+            "z 2 wiadomości user | innych 0 | inne projekty: brak",
+        ],
+    )
+
+
 @pytest.mark.parametrize(
     "weekly", [False, True], ids=["od-do-teraz", "tydzien-ktory-trwa"]
 )

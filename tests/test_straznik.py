@@ -303,6 +303,65 @@ def test_zakaz_ruff_dodany_w_pr_to_dowod_ruff_takze_przy_formacie_z_konfiguracji
     assert "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:5 TID251" in outcome.line, outcome.line
 
 
+OWNER_BANNED = '"os.system".msg = "użyj subprocess.run"\n"time.sleep".msg = "czekaj przez kod.czekanie"\n[tool.ruff.lint.per-file-ignores]\n"kod/powloka.py" = ["TID251", "F401"]'
+OWNER = "import os\n\n\ndef uruchom() -> int:\n    return os.system('true')\n"
+
+
+@wymaga_ruff_i_mypy
+@pytest.mark.parametrize(
+    ("path", "failed", "head", "where", "state"),
+    [
+        pytest.param(
+            "kod/powloka.py",
+            "import os\nimport time\n\n\ndef uruchom() -> int:\n    time.sleep(1)\n    return os.system('true')\n",
+            OWNER,
+            6,
+            "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:6 TID251 `time.sleep`",
+            id="nazwa-spoza-prawa-właściciela",
+        ),
+        pytest.param(
+            "kod/czekanie.py",
+            "import time\n\n\ndef czekaj() -> None:\n    time.sleep(1)  # noqa: TID251\n",
+            "def czekaj() -> None:\n    return None\n",
+            5,
+            "| WYKRYTA | z FAIL: kod/czekanie.py | kod/czekanie.py:5 TID251 `time.sleep`",
+            id="nazwa-pod-noqa",
+        ),
+        pytest.param(
+            "kod/powloka.py",
+            "import os\n\n\ndef uruchom() -> int:\n    os.system('false')\n    return os.system('true')\n",
+            OWNER,
+            5,
+            "| NIEWYKRYTA | kod/powloka.py: bez znaleziska (kod 0)",
+            id="własna-nazwa-właściciela-przechodzi",
+        ),
+        pytest.param(
+            "kod/powloka.py",
+            "import os\n\n\ndef uruchom() -> int:\n    import sys\n    return os.system('true')\n",
+            OWNER,
+            5,
+            "| NIEWYKRYTA | kod/powloka.py: bez znaleziska (kod 0)",
+            id="inna-reguła-z-per-file-ignores-przechodzi",
+        ),
+    ],
+)
+def test_dowod_ruff_lapie_zakaz_ktory_odrzuca_krok_regul_chwastow(tmp_path: Path, path: str, failed: str, head: str, where: int, state: str) -> None:
+    """Plik ``kod/powloka.py`` jest właścicielem ``os.system`` (``OWNER_BANNED``: prawo w ``per-file-ignores`` obok
+    zwolnienia z ``F401``), a nie ``time.sleep``.
+
+    Ruff zwalnia plik właściciela z całego ``TID251`` i nie zgłasza nazwy pod ``noqa``, a krok reguł chwastów
+    zadania Required CI „Ruff, mypy” odrzuca w nim cudzą nazwę i każdą nazwę pod ``noqa`` (#1719 W1 r1); własna nazwa
+    właściciela, której plik używa na HEAD, w nowym miejscu ani reguła spoza zakazów, z której plik zwalnia konfiguracja,
+    nie jest dowodem."""
+
+    config = PYPROJECT.format(mypy="", ruff="", banned=OWNER_BANNED)
+    pull = _pull(tmp_path, {"pyproject.toml": config, "kod/powloka.py": OWNER, path: failed}, {path: head})
+
+    outcome = pull.prove("ruff", ((path, where, where),), scopes=((path, where - 1, where + 1),))
+
+    assert state in outcome.line, outcome.line
+
+
 @pytest.mark.parametrize(
     ("guard", "places", "state"),
     [

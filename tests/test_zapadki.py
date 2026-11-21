@@ -3341,3 +3341,43 @@ def test_regula_z_zapadki_na_calym_drzewie_zglasza_plik_przeniesiony_spoza_ignor
 
     assert [(finding.path, finding.line) for finding in whole_tree_rules(tmp_path) if finding.rule == rule] == [(new, line)]
     assert _findings_of(rule, tmp_path, base) == []
+
+
+def _ci_step_output(root: Path, step: str, node: str, files: Mapping[str, str]) -> str:
+    import yaml
+
+    copied = (Path(__file__), *(ROOT / "tools" / "lib" / name for name in ("odpalenia_ast_grep.py", "repo.py", "potomne.py")), AST_GREP_CONFIG, ROOT / "ruff.toml", ROOT / "tests" / "ruff.toml")
+    _committed(root, {path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8") for path in (*copied, *ast_grep_rules(AST_GREP_CONFIG))})
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(text.encode("utf-8"))
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "zmiana")
+    [found] = [one for one in yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]["ruff-mypy"]["steps"] if one.get("name") == step]
+    program, *options = [word for word in str(found["run"]).split() if not word.startswith("tests/")]
+    assert program == "python", found
+    environment = {**os.environ, **found.get("env", {}), "CI": "true", "PYTHONPATH": str(root / "tools" / "lib"), "PYTHONUTF8": "1"}
+    printed = subprocess.run([sys.executable, *options, node], cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=300, check=False)
+    assert printed.returncode == 1, printed.stdout + printed.stderr
+    return printed.stdout
+
+
+@needs_ast_grep
+def test_krok_regul_na_liniach_dodanych_drukuje_linie_odpalenia_kazdej_reguly_takze_przy_dlugiej_sciezce(tmp_path: Path) -> None:
+    files = {
+        "tools/a.py": "NAZWA = str.__doc__\n",
+        ".agents/skills/verify-centrum-rozliczen/scripts/check_centrum_wycena_w_efenix_mutations_bardzo_dlugiej_nazwy.py": "WARTOSC = 1  # komentarz obok kodu\n",
+    }
+    printed = _ci_step_output(tmp_path, "ast-grep rules on the added lines of the repository", "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo", files)
+
+    assert sorted(set(odpalenia_ast_grep.FIRED_LINE.findall(printed))) == ["komentarz-poza-src", "odczyt-docstringu"], printed
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_krok_regul_calego_drzewa_drukuje_linie_failed_testu_ktory_padl_na_noqa_przy_zakazanej_nazwie(tmp_path: Path) -> None:
+    import ponow_ci
+
+    node = "tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff"
+    printed = _ci_step_output(tmp_path, "Weed rules of the whole tree", node, {"tools/linia.py": "import os\n\nSYSTEM = os.name  # noqa: TID251 - próbka\n"})
+
+    assert [found[1] for found in ponow_ci.TEST_LINE.finditer(printed)] == [node], printed

@@ -1,5 +1,3 @@
-"""Drive features/pomiar-u-taty.md."""
-
 from __future__ import annotations
 
 import json

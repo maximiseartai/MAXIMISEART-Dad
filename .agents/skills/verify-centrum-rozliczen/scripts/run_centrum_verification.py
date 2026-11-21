@@ -102,8 +102,7 @@ def _run_step(name: str, arguments: list[str], evidence: Path, timeout: int = ST
 def lost_requests(evidence: Path) -> Iterator[str]:
     """Each line of what the drive's pages lost (``zadania-strony.txt``) with the server's last ``REQUEST`` line for its
     path before it, or that none was answered (the server writes a request once answered): CI keeps only the log of a
-    failed drive, not its evidence, so the lost ``index.css`` of runs 43392201527 and 43572533066 named no source
-    (#1567, #1756)."""
+    failed drive, not its evidence."""
 
     from drive.common import PAGE_REQUESTS  # Playwright, which drive.common needs, is checked in _preflight
 
