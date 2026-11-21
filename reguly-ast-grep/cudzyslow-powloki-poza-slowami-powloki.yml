@@ -2,19 +2,17 @@ id: cudzyslow-powloki-poza-slowami-powloki
 language: python
 severity: error
 message: >-
-  własna gramatyka słowa powłoki w apostrofach ('[^']*' albo '([^']*)') obok tej z tools/lib/slowa_powloki.py: dwa
-  czytniki słów polecenia rozjeżdżają się w ucieczkach i cudzysłowach; wzorzec słowa składaj z QUOTED, a słowo bez
-  cudzysłowów bierz z unquoted z modułu slowa_powloki
+  hook czyta słowo powłoki w apostrofach własną klasą znaków (bez apostrofu, a z cudzysłowem, jak [^'] albo [^'\n])
+  obok gramatyki z tools/lib/slowa_powloki.py: dwa czytniki słów polecenia rozjeżdżają się w ucieczkach
+  i cudzysłowach; wzorzec słowa składaj z QUOTED, a słowo bez cudzysłowów bierz z unquoted z modułu slowa_powloki
 files:
-  - tools/**/*.py
-  - .agents/skills/*/scripts/**/*.py
-ignores:
-  - tools/lib/slowa_powloki.py
+  - tools/hooks/**/*.py
 metadata:
   przypadki:
     - 6896260c4cf8ac7cf70ae0360c743ca370302f3a tools/hooks/ciezkie.py:17
 rule:
-  # Słowo w apostrofach: apostrof, klasa „wszystko poza apostrofem”, apostrof, a między nimi tylko nawiasy grup
-  # (przechwytującej, nazwanej ?P<nazwa> albo bez przechwytu ?:, także zagnieżdżonych) i kwantyfikatory (*, +, ?).
+  # Środek słowa w apostrofach to klasa zanegowana, która wyklucza apostrof, a cudzysłowu nie, bez względu na pisownię
+  # wokół niej (grupa, kwantyfikator, ukośnik przed apostrofem, sklejone literały). Klasa zwykłej części słowa wyklucza
+  # oba znaki, więc nie pasuje.
   kind: string
-  regex: "'(?:\\(|\\?:|\\?P<\\w+>)*\\[\\^'\\](?:\\)|[*+?])*'"
+  regex: '\[\^[^\]"]*''[^\]"]*\]'

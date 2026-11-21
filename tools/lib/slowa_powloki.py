@@ -4,7 +4,7 @@ import re
 
 QUOTED = r"\\([\s\S])|'([^']*)'|\"([^\"\\]*(?:\\[\s\S][^\"\\]*)*)\""
 _PART = re.compile(QUOTED)
-_ESCAPED_IN_DOUBLE_QUOTES = re.compile(r"\\([\\\"\n])")
+_ESCAPED_IN_DOUBLE_QUOTES = re.compile(r"\\([\\\"\n$`])")
 
 
 def unquoted(word: str) -> str:

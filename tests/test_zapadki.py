@@ -2525,6 +2525,12 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'(?P<single>[^']*)'\")\n", [3], id="slowo-w-apostrofach-w-grupie-nazwanej"),
     pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^']*?)'\")\n", [3], id="slowo-w-apostrofach-leniwie"),
     pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'((?:[^'])*)'\")\n", [3], id="slowo-w-apostrofach-w-grupie-zagniezdzonej"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r'\\\\([\\s\\S])|\\'([^\\']*)\\'')\n", [3], id="slowo-w-apostrofach-po-ukosniku"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^']{{0,}})'\")\n", [3], id="slowo-w-apostrofach-z-klamra"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}\"'\" + \"([^']*)\" + \"'\")\n", [3], id="wzorzec-sklejony-z-kilku-literalow"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^'\\n]*)'\")\n", [3], id="klasa-z-dodatkowym-znakiem"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^\\n']*)'\")\n", [3], id="apostrof-nie-na-poczatku-klasy"),
+    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"[^ \\t'\\\"\\\\]+\")\n", [], id="zwykla-czesc-slowa-bez-obu-cudzyslowow-przechodzi"),
     pytest.param(
         "cudzyslow-powloki-poza-slowami-powloki",
         f"from slowa_powloki import QUOTED\n{_RE}rf\"(?:[^ ]|{{QUOTED}})+\")\n",
@@ -2839,8 +2845,8 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "napis ze znakiem powłoki i zwykłym znakiem": _LITERAL + '    return "a$" not in word\n',
     },
     "cudzyslow-powloki-poza-slowami-powloki": {
-        "wzorzec sklejony z kilku literałów": f"{_RE}\"'\" + \"([^']*)\" + \"'\")\n",
-        "klasa z dodatkowym znakiem": f"{_RE}r\"'([^'\\n]*)'\")\n",
+        "apostrof zapisany kodem znaku": f"{_RE}r\"'([^\\x27]*)'\")\n",
+        "apostrof i cudzysłów w jednej klasie": f"{_RE}r\"'([^'\\\"]*)'\")\n",
         "czytnik znak po znaku bez wzorca": "def quoted(word: str) -> str:\n    return word[1:-1] if word[:1] == \"'\" == word[-1:] else word\n",
     },
     "shlex-czyta-polecenie-agenta": {
