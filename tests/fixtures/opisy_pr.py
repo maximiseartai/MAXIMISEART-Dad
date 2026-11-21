@@ -205,14 +205,10 @@ def real_body(number: int) -> str:
 
 
 def rendered() -> dict[str, str]:
-    """HTML z renderera GitHuba dla każdego opisu z ``opisy_pr.json``."""
-
     return dict(_saved()["html"])
 
 
 def bodies() -> list[str]:
-    """Opisy, których HTML muszą mieć testy."""
-
     return [*(body for _, body, _ in PRZYPADKI), *SCALENIE.values(), *map(real_body, PRAWDZIWE)]
 
 

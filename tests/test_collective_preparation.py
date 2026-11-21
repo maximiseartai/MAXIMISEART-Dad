@@ -542,8 +542,6 @@ def test_failing_observer_is_detached_and_does_not_change_result_or_files(tmp_pa
 
 
 def cell_formats(path: Path, coordinates: list[str]) -> dict[str, tuple[object, ...]]:
-    """Wypełnienie, kolor czcionki, pogrubienie i kursywa wskazanych komórek."""
-
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
@@ -832,8 +830,6 @@ def test_rows_without_date_outside_period_orders_do_not_stop(tmp_path: Path) -> 
 
 
 def earlier_orders(count: int, first_number: int) -> list[RegisterRow]:
-    """Zlecenia z 2025 r., jak historia Rejestru zleceń sprzed okresu."""
-
     return [register_order(first_number + index, datetime(2025, 3, 4, 8, 0) + timedelta(days=index)) for index in range(count)]
 
 
@@ -849,7 +845,7 @@ def test_row_without_date_between_period_orders_separated_by_other_periods_stops
         *earlier_orders(5, 200),
         without_date(90, value),
         *earlier_orders(5, 300),
-        register_order(3, datetime(2026, 9, 14, 8, 0)),  # spóźnione zlecenie okresu
+        register_order(3, datetime(2026, 9, 14, 8, 0)),
     ]
     fixture = make_preparation_fixture(tmp_path, rows)
 
@@ -1031,14 +1027,12 @@ SKUTECZNE_ACTION = (
 
 
 def with_skuteczne(order: dict[str, object], value: object) -> dict[str, object]:
-    """Zlecenie z dowolną odczytaną wartością ``SKUTECZNE``, także nie-tekstem."""
-
     return order | {"SKUTECZNE": value}
 
 
 def test_period_orders_without_tak_or_nie_in_skuteczne_stop_with_empty_and_other_cells(tmp_path: Path) -> None:
     rows: list[RegisterRow] = [
-        register_order(1, datetime(2026, 9, 7, 15, 0), successful="???"),  # poprzedni okres, wiersz 2
+        register_order(1, datetime(2026, 9, 7, 15, 0), successful="???"),
         register_order(2, datetime(2026, 9, 8, 8, 0), successful=""),
         with_skuteczne(register_order(3, datetime(2026, 9, 8, 9, 0)), None),
         register_order(4, datetime(2026, 9, 9, 8, 0), successful=" NIE "),
@@ -1236,14 +1230,14 @@ def test_order_on_monday_anywhere_in_rejestr_means_full_period(tmp_path: Path) -
 def test_skipped_empty_rows_are_all_empty_rows_from_first_to_last_period_order(tmp_path: Path) -> None:
     rows: list[RegisterRow] = [
         None,
-        register_order(1, datetime(2026, 9, 7, 15, 0)),  # poprzedni okres
+        register_order(1, datetime(2026, 9, 7, 15, 0)),
         None,
         register_order(2, datetime(2026, 9, 8, 8, 0)),
         None,
         register_order(3, datetime(2026, 9, 15, 8, 0)),  # następny okres, między zleceniami okresu
         None,
         None,
-        register_order(4, datetime(2026, 9, 14, 8, 0)),  # spóźnione zlecenie okresu
+        register_order(4, datetime(2026, 9, 14, 8, 0)),
         None,
     ]
     fixture = make_preparation_fixture(tmp_path, rows)
@@ -1354,8 +1348,6 @@ def test_dry_run_of_incomplete_period_does_not_ask_tata(tmp_path: Path) -> None:
 
 
 def _orders_around_period() -> list[RegisterRow]:
-    """Trzy zlecenia z 2025 r. (wiersze 2–4) i trzy zlecenia okresu 08_14_09_2026 (wiersze 5–7)."""
-
     return [
         *earlier_orders(3, 100),
         register_order(2, datetime(2026, 9, 8, 8, 0)),

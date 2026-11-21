@@ -17,7 +17,7 @@ from datetime import date
 @dataclass(frozen=True)
 class Kwarantanna:
     issue: int  # numer issue ``Flaky test: <test>`` w tym repozytorium
-    do: date  # ostatni dzień kwarantanny, najwyżej 7 dni od dziś
+    do: date
 
 
 KWARANTANNA: dict[str, Kwarantanna] = {}

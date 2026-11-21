@@ -27,8 +27,6 @@ def files_with_added_lines() -> frozenset[str] | None:
 
 
 def left_behind(before: frozenset[str]) -> list[str]:
-    """Pliki z linią dodaną od ``HEAD``, których nie było w ``before``."""
-
     return sorted((files_with_added_lines() or frozenset()) - before)
 
 
