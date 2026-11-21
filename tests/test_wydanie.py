@@ -160,8 +160,6 @@ class Releasing:
         self._branches = 0
 
     def merge(self, number: int, title: str, files: dict[str, str], *, ci: str = "success") -> str:
-        """PR ``number`` scalony do `main` merge'em; ``ci`` to wynik ``Required CI status`` commitu merge'a na `main`."""
-
         self._branches += 1
         branch = f"zmiana-{self._branches}"
         git(self.checkout, "switch", "--quiet", "--create", branch)
@@ -178,8 +176,6 @@ class Releasing:
         return merged
 
     def squash(self, number: int, title: str, files: dict[str, str]) -> str:
-        """PR ``number`` scalony do `main` squashem, z zielonym CI."""
-
         for name, text in files.items():
             (self.checkout / name).parent.mkdir(parents=True, exist_ok=True)
             (self.checkout / name).write_text(text, encoding="utf-8")
@@ -189,8 +185,6 @@ class Releasing:
         return squashed
 
     def github(self, flag: str) -> None:
-        """Atrapa GitHuba: ``fail_next_post`` (następne utworzenie Release pada) albo ``no_report_box`` (brak dostępu)."""
-
         self._edit(lambda state: state.__setitem__(flag, True))
 
     def ci(self, commit: str, conclusion: str, quarantine: str = "przeszedł") -> None:
@@ -371,8 +365,6 @@ QUARANTINE_HISTORY: dict[str, tuple[str | None, bool]] = {
 
 @pytest.fixture(scope="module")
 def quarantine_history(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, dict[str, str]]:
-    """Repozytorium z commitem na każdy wiersz ``QUARANTINE_HISTORY`` i commit każdego wiersza."""
-
     root = tmp_path_factory.mktemp("kwarantanna")
     git(root, "init", "--quiet")
     commits = {}

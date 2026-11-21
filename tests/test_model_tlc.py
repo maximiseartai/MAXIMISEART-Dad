@@ -78,9 +78,6 @@ FINDING = {"obietnica": "Jedno", "przyczyna": "a", "znalezisko": "opis"}
 
 
 def _model(tmp_path: Path, configs: object) -> model_tlc.Model:
-    """Model testu: obietnice ``Jedno`` (przyczyny w ``slady``), ``Rowno`` (przyczyny w ``rozne``) i czasowa ``Zbieganie``
-    bez znanych znalezisk, z konfiguracjami ``configs``."""
-
     skill = tmp_path / ".agents" / "skills" / "verify-m"
     (skill / "model").mkdir(parents=True, exist_ok=True)
     (skill / "model" / "M.tla").write_text(SPEC, encoding="utf-8")
@@ -110,8 +107,6 @@ def _violation(invariant: str | None, causes: str = "{}", variable: str = "slady
 def _checked(
     model: model_tlc.Model, answer: Callable[[str], str], capsys: pytest.CaptureFixture[str]
 ) -> tuple[int, list[str], list[str]]:
-    """Sprawdzenie modelu z atrapą TLC ``answer(treść .cfg)``: kod wyjścia, linie wyjścia i treści ``.cfg`` przebiegów."""
-
     configs: list[str] = []
 
     def run_tlc(name: str, text: str) -> str:
@@ -161,9 +156,6 @@ def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
 
 
 def test_konfiguracja_wybacza_tylko_znane_znaleziska_ktore_podaje_dla_niej(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Przyczyna znaleziska innej konfiguracji nie jest wybaczona: nowa droga do niej w konfiguracji, która jej nie
-    podaje, to nowe naruszenie. Każde znalezisko ma swój przebieg bez pozostałych znanych swojej konfiguracji."""
-
     first, second, later = (
         {"obietnica": "Jedno", "przyczyna": "a", "znalezisko": "x"},
         {"obietnica": "Rowno", "przyczyna": "b", "znalezisko": "y"},
@@ -574,7 +566,6 @@ def test_tlc_biegnie_w_katalogu_z_kopia_specyfikacji_i_konfiguracja_a_daje_oba_s
     assert seen == {"M.tla": SPEC, "f.cfg": "\\* Opis.\n"}
 
 
-# Początek skryptu atrapy, który bierze blokadę żywego procesu z ``tests/fixtures/potomne.py`` (``hold_lock``, ``held``).
 _ZYWY = (
     "import pathlib, sys, time\n"
     f"sys.path[:0] = [{str(ROOT)!r}, {str(Path(potomne.__file__).parent)!r}]\n"
@@ -729,8 +720,6 @@ class _Przebieg:
 
 
 def _tlc_z_atrapa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, przebieg: _Przebieg, *, limit_s: float, zrzut_s: float) -> str:
-    """``model_tlc.tlc`` z atrapą Javy obok pliku ``jcmd`` i ``potomne.run`` z ``przebieg``."""
-
     (tmp_path / "bin").mkdir()
     for name in ("java", "jcmd"):
         (tmp_path / "bin" / name).write_text("", encoding="utf-8")
@@ -918,9 +907,6 @@ def test_pobrany_jar_z_inna_suma_konczy_sie_bledem_pobierania_i_nie_zostaje_w_ka
 
 
 def _pip_answers(monkeypatch: pytest.MonkeyPatch, codes: list[int], found: int = 0) -> list[list[str]]:
-    """Atrapa ``potomne.run``: instalacja ``jdk4py`` kończy się kolejno kodami z ``codes`` (0 instaluje pakiet), a odczyt
-    ścieżki Javy z pakietu kodem ``found``; zwraca próby instalacji."""
-
     installs: list[list[str]] = []
 
     def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
