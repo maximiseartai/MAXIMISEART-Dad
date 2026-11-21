@@ -1,22 +1,3 @@
-"""Wpisanie raportów (GLOSSARY.md: Wpisanie raportów, Wpis raportu, Przeniesienie zlecenia; ADR 0028 i ADR 0029) jako
-własności Hypothesis na wygenerowanych stanach INTERMAX, pamięci własnych wpisów i Raportach wykonawców.
-
-Przeglądy PR-ów Wpisania raportów (#1238–#1374) raz za razem wymyślały przypadek, którego testy autora nie miały: dzień
-po dziś, wiersz bez ``WYKONAWCA``, pamięć z pliku Wydania v0.7.0/v0.8.0, ten sam Message-ID w dwóch mailach,
-Przeniesienie, pomylony temat, opis Wpisu w kilku liniach i podpis pod nim. Tu takie stany buduje generator, a każdy
-przypadek z rundy FAIL przeglądu jest jawnym przykładem (``@example``).
-
-Kliknięcie idzie drogą procesu ``report_entering.enter_from_mail`` bez Excela i bez skrzynki: uporządkowane wiersze i
-Dni uporządkowane z modelu arkusza zleceń (``raw_orders.ordered_rows`` i ``raw_orders.ordered_days`` od
-``Window.start``, jak ``report_entering._orders`` i ``_ordered_days``), ``NUMER ZL.`` każdego czytanego wiersza
-(``raw_orders.numbered_rows`` od ``Window.numbers_since``, jak ``report_entering._present``), pamięć z pliku sprzed
-wersji 4 przez ``OlderOwnEntries.upgraded``, rdzeń ``EnteringMemory.enter``, plan Przeniesień i Zleceń dopisanych z raportu
-``raw_orders.plan_moves`` (jak ``intermax_cells.write_cells``) i zapis do modelu arkusza według ``MovePlan``. Model zna tożsamość każdego wiersza,
-której Excel nie ma, więc wyrocznie biorą regułę wprost z ADR i GLOSSARY, a nie z kodu.
-
-Przykłady są deterministyczne (``derandomize=True``, bez bazy przykładów), więc każdy przebieg i CI sprawdzają te same.
-"""
-
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -77,35 +58,35 @@ COLUMNS = OrderColumns(
     first=1, date=2, worker=3, last=9, devices=4, activities=5, contract_number=6, address=1, city=1, number=NUMBER_COLUMN
 )
 ORDERED_FACE = (ORDERED_FONT, float(ORDERED_SIZE))
+N0 = "N0 (ADR 0028, okres z Plikiem zbiorczym; ADR 0029, „Okno mówi, gdzie wolno pisać”)"
+N1 = "N1 (GLOSSARY: Wpisanie raportów, ręczna wartość taty zawsze wygrywa)"
+N2 = "N2 (ADR 0029, „Numer w kilku zleceniach się nie przenosi”)"
+N3 = "N3 (ADR 0029, „Ręczna zmiana dalej wygrywa”)"
+N4 = "N4 (ADR 0028, „Każde kliknięcie liczy od nowa”)"
+N5 = "N5 (enter_reports: ten sam wynik w dowolnej kolejności maili)"
+N6 = "N6 (zapis INTERMAX)"
+N7 = "N7 (GLOSSARY: Przeniesienie zlecenia; ADR 0029, „Wiersz idzie za zleceniem”)"
+N8 = "N8 (ADR 0029, „Numer bez zlecenia to Zlecenie dopisane z raportu”)"
+N9 = "N9 (GLOSSARY: Wpis raportu, Zlecenie dopisane z raportu)"
 APP_FACE = ("Arial", 10.0)
 
-UNREAD = date(2026, 10, 29)
-"""Dzień przed dniem wdrożenia: proces nie robi z niego zleceń, ale czyta jego numery (``NUMBERS_SINCE``)."""
+BEFORE_ROLLOUT = date(2026, 10, 29)
 CLOSED_DAY = date(2026, 10, 31)
-"""Dzień okresu 27.10–2.11, który ma Plik zbiorczy."""
 SIXTH, SEVENTH, EIGHTH, NINTH = (date(2026, 11, day) for day in (6, 7, 8, 9))
-DAYS = (UNREAD, CLOSED_DAY, SIXTH, SEVENTH, EIGHTH, NINTH)
+DAYS = (BEFORE_ROLLOUT, CLOSED_DAY, SIXTH, SEVENTH, EIGHTH, NINTH)
 ORDER_DAYS = (*DAYS, SIXTH, SEVENTH, SEVENTH, EIGHTH, EIGHTH, EIGHTH)
-"""Dni wierszy INTERMAX, najczęściej otwarte."""
 MAIL_DAYS = (CLOSED_DAY, SIXTH, SEVENTH, SEVENTH, EIGHTH, EIGHTH, EIGHTH, NINTH)
-"""Dni z tematu maila, najczęściej otwarte."""
 ROLLOUT = date(2026, 10, 30)
 NUMBERS_SINCE = date(2026, 10, 27)
-"""Tydzień przed pierwszym dniem otwartym (3.11, pierwszy dzień po okresie z Plikiem zbiorczym): od niego Wpisanie
-raportów czyta numer każdego wiersza, także sprzed dnia wdrożenia (ADR 0029, „Numer bez zlecenia to Zlecenie dopisane z
-raportu”)."""
 CLOSED = (period_of(CLOSED_DAY).token,)
 CLOSED_PERIOD = (date(2026, 10, 27), date(2026, 11, 2))
-"""Okres rozliczeniowy dnia ``CLOSED_DAY``, od wtorku do poniedziałku (GLOSSARY: Okres rozliczeniowy)."""
 TAPA = timezone(timedelta(hours=1))
 FIRST_CLICK = datetime(2026, 11, 8, 17, tzinfo=TAPA)
-"""Dziś przy pierwszym kliknięciu jest 8.11; ``nowy dzień`` robi dziś z 9.11, czyli z jutra."""
 NEXT_DAY = datetime(2026, 11, 9, 17, tzinfo=TAPA)
 
 ADAM, EWA, JAN = Login("adam.inny"), Login("ewa.probna"), Login("jan.testowy")
 WORKERS = (ADAM, EWA, JAN)
-SPELLING = {ADAM: "Adam.Inny", EWA: "Ewa.Probna", JAN: "Jan.Testowy"}
-"""``WYKONAWCA`` w pisowni taty."""
+TATA_WORKER_SPELLING = {ADAM: "Adam.Inny", EWA: "Ewa.Probna", JAN: "Jan.Testowy"}
 ADDRESS = {
     ADAM: "adam@przyklad.invalid",
     EWA: "ewa@przyklad.invalid",
@@ -114,9 +95,7 @@ ADDRESS = {
 STRANGERS = ("obcy@inny.invalid", "ktos@inny.invalid")
 NUMBERS = ("40000001", "40000002", "40000003", "40000004")
 TYPO = "400000011"
-"""Literówka w numerze z maila: 9 cyfr, czyli nie postać numeru z aplikacji firmowej (ADR 0029)."""
-ADDED_DIGITS = 8
-"""Tyle cyfr ma numer z aplikacji firmowej, a tylko taki numer staje się Zleceniem dopisanym z raportu (ADR 0029)."""
+APP_NUMBER_DIGITS = 8
 
 
 def _address(text: str) -> SenderAddress:
@@ -134,10 +113,8 @@ PHRASES = (
     "klient nieobecny",
     "przełożone na prośbę klienta",
 )
-"""Opisy Wpisów: bez cyfr, bez ``tak``/``nie``, pożegnań i słów przed numerem, więc granice opisu daje tylko układ."""
 TAGS = ("", "alfa", "beta", "gamma", "delta")
-"""Słowo na końcu opisu, które zwykle odróżnia opisy dwóch maili, a bez niego opis bywa równy ręcznej wartości taty."""
-MARKS: dict[str, str | None] = {
+SUCCESSFUL_BY_MARK: dict[str, str | None] = {
     "tak": "tak",
     "Tak": "tak",
     "TAK.": "tak",
@@ -148,8 +125,7 @@ MARKS: dict[str, str | None] = {
     "skuteczne": None,
     "": None,
 }
-"""Znak Wpisu tak, jak go pisze Wykonawca → ``SKUTECZNE`` (GLOSSARY: Wpis raportu); ``None``: brak ``tak``/``nie``."""
-ENDINGS = (
+MAIL_ENDS_AFTER_LAST_ENTRY = (
     "",
     "\n\nJan",
     "\n\nJan Testowy\ntel. 600 100 200",
@@ -161,16 +137,11 @@ ENDINGS = (
     " Wysłane z iPhone'a",
     "\n\nW dniu 8.11.2026 o 17:00 Tata <tata@przyklad.invalid> napisał:\n> Przypomnienie: raport za dzień 08.11.2026",
 )
-"""Koniec maila po ostatnim Wpisie: podpis po pustej linii, pożegnanie, separator podpisu, stopka i cytat."""
 TATA_SUCCESSFUL = (None, None, "tak", "nie")
 TATA_COMPLETED = (None, None, "montaż taty", "wymiana routera")
-"""Ręczne wartości taty, także równe opisowi z maila."""
 
 
 class _Look(Enum):
-    """Wygląd wiersza arkusza zleceń: uporządkowany, Surowe zlecenie pod żółtym wierszem, wiersz z wyglądem z aplikacji
-    między uporządkowanymi, pusty i żółty."""
-
     ORDERED = "uporządkowany"
     RAW = "surowy"
     AMONG = "z aplikacji między uporządkowanymi"
@@ -178,12 +149,13 @@ class _Look(Enum):
     YELLOW = "żółty"
 
 
+_NO_ORDER = 0
+
+
 @dataclass
 class _Line:
-    """Wiersz modelu arkusza zleceń. ``ident``: tożsamość zlecenia, której Excel nie zna (0: wiersz bez zlecenia)."""
-
     look: _Look
-    ident: int = 0
+    ident: int = _NO_ORDER
     number: int | None = None
     day: date | None = None
     text_date: bool = False
@@ -193,8 +165,6 @@ class _Line:
 
     @property
     def started(self) -> datetime | str | None:
-        """``DATA GODZ. POCZ.``: data z godziną, a w wierszu z datą tekstem jej zapis."""
-
         if self.day is None:
             return None
         if self.text_date:
@@ -203,8 +173,6 @@ class _Line:
 
     @property
     def dated(self) -> bool:
-        """Uporządkowany wiersz z datą z godziną: tylko taki proces czyta jako zlecenie dnia."""
-
         return (
             self.look is _Look.ORDERED and self.day is not None and not self.text_date
         )
@@ -221,32 +189,21 @@ class _Line:
 
 @dataclass
 class _Truth:
-    """Wiedza wyroczni o wierszu: wartości, które Centrum (albo Wydanie v0.7.0/v0.8.0) wpisało do jego komórek, a od
-    tamtej pory nikt ich nie zmienił, a Centrum dalej je pamięta (``written``, ``_forget_unsure``), najmniejsza możliwa chwila najświeższego maila, którego opis Centrum
-    wpisało do tego wiersza (``since``), oraz z tabeli przejść #1358: miejsce (Wykonawca i dzień) sprzed pierwszego
-    Przeniesienia Centrum (``origin``), miejsce, w którym Centrum postawiło zlecenie (``placed``; ``None``: Centrum go nie
-    przeniosło albo przeniosło z powrotem na ``origin``) i czy tata przeniósł je potem gdzie indziej (``overridden``)."""
-
     written: dict[ReportColumn, str] = field(default_factory=dict)
-    since: datetime | None = None
-    origin: tuple[Login, date] | None = None
-    placed: tuple[Login, date] | None = None
-    overridden: bool = False
+    newest_written_mail_at: datetime | None = None
+    before_centrum_moves: tuple[Login, date] | None = None
+    placed_by_centrum: tuple[Login, date] | None = None
+    moved_elsewhere_by_tata: bool = False
 
 
 @dataclass(frozen=True)
 class _Sent:
-    """Mail w skrzynce, jego Wykonawca (``None``: obcy adres) i Wpisy, które Wykonawca miał na myśli: numer,
-    ``tak``/``nie`` (``None``: bez nich) i opis."""
-
     mail: ReportMail
     sender: Login | None
     said: tuple[tuple[str, str | None, str], ...]
 
 
-def _facts(lines: Sequence[_Line]) -> tuple[RowFacts, ...]:
-    """Wiersze arkusza od ostatniego w górę, bez wiersza nagłówków (wiersz 1), jak ``PasteArea.rows_from_bottom``."""
-
+def _rows_from_bottom(lines: Sequence[_Line]) -> tuple[RowFacts, ...]:
     found: list[RowFacts] = []
     for index, line in enumerate(lines, start=2):
         if line.look in (_Look.BLANK, _Look.YELLOW):
@@ -270,11 +227,6 @@ def _facts(lines: Sequence[_Line]) -> tuple[RowFacts, ...]:
 
 
 def _laid(lines: Iterable[_Line]) -> list[_Line]:
-    """Arkusz po ręcznych zmianach taty w układzie Uporządkowania INTERMAX: dni po kolei, w dniu segmenty Wykonawców
-    alfabetycznie (wiersz bez ``WYKONAWCA`` to segment bez nazwy) z jednym pustym wierszem między nimi, w segmencie
-    zlecenia w dotychczasowej kolejności, potem wiersze z datą tekstem i z wyglądem z aplikacji, pusty wiersz po dniu,
-    żółty wiersz i Surowe zlecenia na dole."""
-
     orders = [line for line in lines if line.ident]
     sheet: list[_Line] = []
     for day in sorted(
@@ -307,9 +259,6 @@ def _laid(lines: Iterable[_Line]) -> list[_Line]:
 
 @dataclass(frozen=True)
 class _Read:
-    """Odczyt danych procesu: uporządkowane zlecenia i Dni uporządkowane od ``Window.start`` oraz ``NUMER ZL.`` każdego
-    czytanego wiersza od ``Window.numbers_since`` (``RegisterWindow.present``)."""
-
     orders: tuple[RegisterOrder, ...]
     ordered: frozenset[OrderedDay]
     present: tuple[ReadNumber, ...]
@@ -330,8 +279,8 @@ def _register_order(row: RowFacts, shift: int = 0) -> RegisterOrder | None:
     )
 
 
-def _read(lines: Sequence[_Line], window: Window) -> _Read:
-    rows = _facts(lines)
+def _read_like_report_entering(lines: Sequence[_Line], window: Window) -> _Read:
+    rows = _rows_from_bottom(lines)
     orders = tuple(
         found
         for row in ordered_rows(rows, COLUMNS, window.start)
@@ -375,16 +324,10 @@ def _core(
 
 
 def _released(memory: OwnEntries, orders: tuple[RegisterOrder, ...]) -> OwnEntries:
-    """Pamięć z pliku stanu Wydania v0.7.0/v0.8.0 (wersja 1) tak, jak ją dostaje rdzeń: proces czyta ją jako
-    ``OlderOwnEntries`` i zamienia przy odczytanych zleceniach."""
-
     return OlderOwnEntries(memory).upgraded(orders)
 
 
-def _planned(lines: Sequence[_Line], outcome: ReportsOutcome) -> MovePlan | MissingDays:
-    """Plan Przeniesień i Zleceń dopisanych z raportu zapisu INTERMAX na arkuszu, który przeczytał proces, z wierszem
-    dopisanego zlecenia jak ``intermax_cells._added_row``."""
-
+def _planned_like_write_cells(lines: Sequence[_Line], outcome: ReportsOutcome) -> MovePlan | MissingDays:
     moves = {move.order.row: (move.worker, move.day) for move in outcome.moves}
     added = []
     for order in outcome.added:
@@ -395,22 +338,14 @@ def _planned(lines: Sequence[_Line], outcome: ReportsOutcome) -> MovePlan | Miss
         if order.completed is not None:
             cells[COMPLETED_COLUMN] = order.completed
         added.append(AddedRow(order.worker, order.day, cells))
-    return plan_moves(_facts(lines), COLUMNS, moves, added)
+    return plan_moves(_rows_from_bottom(lines), COLUMNS, moves, added)
 
 
-APPLIED = frozenset({"changes", "moves", "added"})
-"""Pola ``ReportsOutcome``, które zmieniają INTERMAX: model arkusza zapisuje każde (``_written``)."""
-NOT_WRITTEN = frozenset({"problems", "workers", "mails", "memory", "notes", "said"})
-"""Pola ``ReportsOutcome``, które INTERMAX nie zmieniają. Każde nowe pole wyniku czerwieni ten test (N8 w ``_click``),
-dopóki nie trafi tu albo, gdy zmienia INTERMAX, do ``APPLIED`` z zapisem w ``_written``."""
+OUTCOME_FIELDS_WRITTEN_TO_INTERMAX = frozenset({"changes", "moves", "added"})
+OUTCOME_FIELDS_NOT_WRITTEN_TO_INTERMAX = frozenset({"problems", "workers", "mails", "memory", "notes", "said"})
 
 
 def _moved(lines: Sequence[_Line], plan: MovePlan, fresh: int) -> list[_Line]:
-    """Arkusz po Przeniesieniach i dopisaniach według ``MovePlan``: wiersze od ``plan.first`` w kolejności planu, nowy
-    pusty wiersz zamiast ``NewSeparator``, nowy ``WYKONAWCA`` i dzień przesunięty o ``shifts`` z tą samą godziną, a
-    zamiast ``NewOrder`` nowy uporządkowany wiersz z tożsamością ``fresh`` plus jego miejsce na liście dopisań, z
-    komórkami ``AddedRow`` i dniem wiersza ``model`` sprzed zapisu przesuniętym o ``days``."""
-
     days = [line.day for line in lines]
     after = list(lines[: plan.first - 2])
     for slot in plan.rows:
@@ -454,25 +389,18 @@ def _moved(lines: Sequence[_Line], plan: MovePlan, fresh: int) -> list[_Line]:
 def _written(
     lines: Sequence[_Line], outcome: ReportsOutcome, fresh: int
 ) -> list[_Line]:
-    """Arkusz po zapisie INTERMAX: komórki z ``changes``, potem wiersze przeniesione i dopisane według planu
-    (``_moved``; Zlecenie dopisane z raportu ``outcome.added[i]`` dostaje tożsamość ``fresh + i``)."""
-
     after = [replace(line) for line in lines]
     for change in outcome.changes:
         after[change.order.row - 2].set(change.column, change.value)
     if not outcome.moves and not outcome.added:
         return after
-    plan = _planned(lines, outcome)
+    plan = _planned_like_write_cells(lines, outcome)
     assert isinstance(plan, MovePlan)
     return _moved(after, plan, fresh)
 
 
 @dataclass
 class _Register:
-    """INTERMAX taty w modelu arkusza i to, czego Excel nie wie: tożsamość wierszy i wiedza wyroczni o nich, oraz
-    skrzynka raportów, pamięć Wpisania raportów (``released``: pamięć z pliku Wydania przed pierwszym kliknięciem),
-    decyzje „Zostaw moją”, dzisiejszy dzień i zegar taty."""
-
     lines: list[_Line] = field(default_factory=list)
     truth: defaultdict[int, _Truth] = field(default_factory=lambda: defaultdict(_Truth))
     released: OwnEntries | None = None
@@ -481,15 +409,10 @@ class _Register:
     kept: frozenset[Kept] = frozenset()
     clock: datetime = FIRST_CLICK
     last: ReportsOutcome | None = None
-    alone: dict[str, int] = field(default_factory=dict)
-    """Wiersz każdego numeru, który odczytane zlecenia miały raz przy poprzednim kliknięciu."""
-    touched: set[str] = field(default_factory=set)
-    """Numery, które Centrum przeniosło albo dopisało: ich dzień sprzed Przeniesień zna tylko pamięć Centrum."""
-    removed: dict[int | None, datetime] = field(default_factory=dict)
-    """Numer jedynego wiersza, który tata usunął, a do którego Centrum wpisało opis maila, z chwilą najświeższego
-    takiego maila (``_Truth.since``)."""
-    changed: bool = False
-    """Tata zmienił Wykonawcę, dzień albo wiersze od poprzedniego kliknięcia, więc arkusz trzeba ułożyć."""
+    alone_at_last_click: dict[str, int] = field(default_factory=dict)
+    moved_or_added_by_centrum: set[str] = field(default_factory=set)
+    removed_by_tata_after_centrum: dict[int | None, datetime] = field(default_factory=dict)
+    to_lay_out: bool = False
 
     def pick(self, which: int) -> _Line | None:
         found = sorted(
@@ -498,8 +421,6 @@ class _Register:
         return found[which % len(found)] if found else None
 
     def add(self, seed: tuple[object, ...]) -> _Line:
-        """Wiersz z ``seed``: rodzaj, numer, dzień, Wykonawca, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE``."""
-
         kind, number, day, worker, successful, completed = seed
         assert (
             isinstance(kind, str)
@@ -513,7 +434,7 @@ class _Register:
         look = {"surowe": _Look.RAW, "z aplikacji": _Look.AMONG}.get(
             kind, _Look.ORDERED
         )
-        name = None if kind == "bez wykonawcy" else SPELLING[Login(worker)]
+        name = None if kind == "bez wykonawcy" else TATA_WORKER_SPELLING[Login(worker)]
         ident = max(self.truth, default=0) + 1
         line = _Line(
             look,
@@ -527,27 +448,22 @@ class _Register:
         )
         self.lines.append(line)
         self.truth[ident] = _Truth()
-        self.changed = True
+        self.to_lay_out = True
         return line
 
     def report_day(self, sent: _Sent, today: date) -> date | None:
-        """Dzień z tematu Raportu wykonawcy od Wykonawcy z dniem od wdrożenia do dziś (dni, z których rdzeń czyta Wpisy,
-        ADR 0028); ``None`` dla innego maila."""
-
         if sent.sender is None:
             return None
         return next(
             (
                 day
                 for day in MAIL_DAYS
-                if ROLLOUT <= day <= today and sent.mail.subject in _subjects(day)[:REPORT_SUBJECTS]
+                if ROLLOUT <= day <= today and sent.mail.subject in _report_subjects(day)
             ),
             None,
         )
 
     def said(self, number: int | None) -> list[tuple[_Sent, str | None, str]]:
-        """Wpisy numeru ``number`` ze wszystkich maili skrzynki: mail, ``tak``/``nie`` i opis."""
-
         return [
             (sent, verdict, text)
             for sent in self.sent
@@ -557,12 +473,6 @@ class _Register:
 
 
 def _start(seeds: Sequence[tuple[object, ...]], released: Iterable[int]) -> _Register:
-    """INTERMAX z wierszy ``seeds`` w układzie Uporządkowania; w wierszach ``released`` niepuste komórki wpisało
-    Wydanie v0.7.0/v0.8.0 i zapisało je w pamięci (plik w wersji 1) pod kluczem wiersza, także gdy numer miał drugie
-    zlecenie, a przy dwóch wierszach z tym samym kluczem tylko w pierwszym, bo plik ma jeden wpis na komórkę. Wydanie
-    pisało tylko do uporządkowanych zleceń z dniem od dnia wdrożenia do dnia pierwszego kliknięcia. Które z tych wartości
-    Centrum liczy jako własne, rozstrzyga dopiero pierwsze kliknięcie (``_carry_identity``)."""
-
     register = _Register()
     lines = [register.add(seed) for seed in seeds]
     entries: dict[tuple[OrderKey, ReportColumn], OwnEntry] = {}
@@ -583,13 +493,11 @@ def _start(seeds: Sequence[tuple[object, ...]], released: Iterable[int]) -> _Reg
             if value is not None and (key, column) not in entries:
                 entries[key, column] = OwnEntry(key, column, value)
     register.released = OwnEntries(frozenset(entries.values())) if entries else None
-    register.lines, register.changed = _laid(register.lines), False
+    register.lines, register.to_lay_out = _laid(register.lines), False
     return register
 
 
 def _alone(orders: Iterable[RegisterOrder], lines: Sequence[_Line]) -> dict[str, int]:
-    """Wiersz każdego numeru, który odczytane zlecenia mają raz."""
-
     found: defaultdict[str, list[int]] = defaultdict(list)
     for order in orders:
         found[order.key.number].append(lines[order.row.row - 2].ident)
@@ -597,11 +505,6 @@ def _alone(orders: Iterable[RegisterOrder], lines: Sequence[_Line]) -> dict[str,
 
 
 def _carry_identity(register: _Register, orders: tuple[RegisterOrder, ...]) -> None:
-    """Tożsamość wiersza, którą Centrum przyjmuje, bo Excel nie odróżnia jej od zmiany Wykonawcy albo dnia (ADR 0029,
-    „Numer w kilku zleceniach się nie przenosi”): numer z jednym zleceniem przy poprzednim kliknięciu i jednym teraz ma
-    ten sam wiersz, także gdy tata usunął go i wkleił numer na nowo. Wpis pamięci z pliku Wydania liczy się tylko przy
-    jedynym zleceniu numeru z tym samym dniem i Wykonawcą."""
-
     now = _alone(orders, register.lines)
     if register.released is not None:
         keys = {
@@ -615,18 +518,13 @@ def _carry_identity(register: _Register, orders: tuple[RegisterOrder, ...]) -> N
                 register.truth[ident].written.setdefault(entry.column, entry.value)
         return
     for number, ident in now.items():
-        before = register.alone.get(number)
+        before = register.alone_at_last_click.get(number)
         if before is not None and before != ident:
             old = register.truth[before]
             register.truth[ident] = replace(old, written=dict(old.written))
 
 
 def _forget_unsure(register: _Register, orders: tuple[RegisterOrder, ...]) -> None:
-    """Druga połowa reguły pamięci (ADR 0029, „Numer w kilku zleceniach się nie przenosi”): wartości, które Centrum
-    wpisało do wierszy numeru, który kliknięcie odczytało w kilku zleceniach albo w żadnym, przestają być własne, bo
-    Excel nie mówi, który wiersz jest którym. Od tego kliknięcia liczą się jak wartość taty, także gdy numer ma potem
-    znów jedno zlecenie."""
-
     counted = Counter(order.key.number for order in orders)
     for line in register.lines:
         if line.ident and counted[OrderNumber(str(line.number))] != 1:
@@ -634,9 +532,6 @@ def _forget_unsure(register: _Register, orders: tuple[RegisterOrder, ...]) -> No
 
 
 def _open(day: date | None, today: date) -> bool:
-    """Dzień otwarty dla Wpisania raportów wprost z ADR 0028: od dnia wdrożenia do dziś, bez okresu z Plikiem
-    zbiorczym."""
-
     return (
         day is not None
         and ROLLOUT <= day <= today
@@ -653,25 +548,18 @@ def _place(line: _Line) -> tuple[Login, date] | None:
 
 
 def _observe(register: _Register, orders: tuple[RegisterOrder, ...]) -> None:
-    """Obserwacja kliknięcia z tabeli przejść #1358 (ADR 0029, „Ręczna zmiana dalej wygrywa”): gdy żadne odczytane
-    zlecenie numeru nie stoi tam, gdzie Centrum postawiło przeniesione zlecenie, tata przeniósł je gdzie indziej."""
-
     for line in register.lines:
         truth = register.truth[line.ident] if line.ident else None
-        if truth is not None and truth.placed is not None and not truth.overridden:
+        if truth is not None and truth.placed_by_centrum is not None and not truth.moved_elsewhere_by_tata:
             places = {
                 (order.key.worker, order.key.day)
                 for order in orders
                 if order.key.number == str(line.number)
             }
-            truth.overridden = truth.placed not in places
+            truth.moved_elsewhere_by_tata = truth.placed_by_centrum not in places
 
 
-def _known(lines: Iterable[_Line]) -> set[int | None]:
-    """Numery, które INTERMAX ma w wierszu, który Wpisanie raportów czyta (ADR 0029, „Numer bez zlecenia to Zlecenie
-    dopisane z raportu”): w Surowym zleceniu i w każdym wierszu z dniem od ``NUMBERS_SINCE``, także bez ``WYKONAWCA``, z
-    datą tekstem, z wyglądem z aplikacji, sprzed dnia wdrożenia i na jutro."""
-
+def _numbers_in_read_rows(lines: Iterable[_Line]) -> set[int | None]:
     return {
         line.number
         for line in lines
@@ -689,28 +577,6 @@ def _faults(
     orders: tuple[RegisterOrder, ...],
     outcome: ReportsOutcome,
 ) -> list[str]:
-    """Niezmienniki kliknięcia przed zapisem, każdy z regułą, z której pochodzi:
-
-    - N0 (ADR 0028, okres z Plikiem zbiorczym; ADR 0029, „Okno mówi, gdzie wolno pisać”): Centrum zmienia komórki,
-      przenosi i dopisuje tylko zlecenia z dni otwartych i tylko na dzień otwarty;
-    - N1 (GLOSSARY: Wpisanie raportów, „ręczna wartość taty zawsze wygrywa”): komórka zmienia się tylko, gdy jest pusta
-      albo ma wartość, którą Centrum wpisało do tego wiersza, a od tamtej pory nikt jej nie zmienił;
-    - N2 (ADR 0029, „Numer w kilku zleceniach się nie przenosi”): Centrum przenosi tylko zlecenie, którego numer
-      odczytane dni (także po dziś i zamknięte) mają raz, a numer, który odczytane dni mają, nie jest nieznany;
-    - N3 (ADR 0029, „Ręczna zmiana dalej wygrywa”): wiersz przenosi tylko mail nowego Wykonawcy z jego numerem,
-      świeższy niż każdy mail, którego opis Centrum wpisało do tego wiersza, więc stary mail nie cofa zmiany taty, a
-      zlecenia, które tata przeniósł gdzie indziej po Przeniesieniu Centrum, Centrum nie przenosi drugi raz;
-    - N6 (zapis INTERMAX): zmiany trafiają tylko w uporządkowane wiersze, każda komórka raz, a Przeniesienie zaczyna się
-      w uporządkowanym wierszu z datą i idzie, tak jak Zlecenie dopisane z raportu, do dnia arkusza zleceń, pod którego
-      zlecenia plan zapisu może je postawić;
-    - N8 (ADR 0029, „Numer bez zlecenia to Zlecenie dopisane z raportu”): Centrum dopisuje tylko numer, którego nie ma
-      w żadnym czytanym wierszu (``_known``), każdy najwyżej raz;
-    - N9 (GLOSSARY: Wpis raportu, Zlecenie dopisane z raportu): wpisana wartość to ``tak``/``nie`` i opis jednego Wpisu z
-      maila o numerze tego wiersza, a pusta komórka zlecenia, któremu Centrum wpisało ten Wpis, dostaje też jego drugą
-      wartość; Zlecenie dopisane z raportu ma ``WYKONAWCA`` nadawcy, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` jednego
-      Wpisu z jego maila z tym numerem.
-    """
-
     lines = register.lines
     faults: list[str] = []
     counted = Counter(order.key.number for order in orders)
@@ -725,12 +591,12 @@ def _faults(
             or cells[change.order.row, change.column] > 1
         ):
             faults.append(
-                f"N6: zmiana poza uporządkowanym wierszem albo dwa razy w komórce: {change}"
+                f"{N6}: zmiana poza uporządkowanym wierszem albo dwa razy w komórce: {change}"
             )
             continue
         if not (line.dated and _open(line.day, today)):
             faults.append(
-                f"N0: zmiana komórki zlecenia z dnia, który nie jest otwarty: {change}, {line}"
+                f"{N0}: zmiana komórki zlecenia z dnia, który nie jest otwarty: {change}, {line}"
             )
         current, written = (
             line.cell(change.column),
@@ -738,7 +604,7 @@ def _faults(
         )
         if current is not None and current != written:
             faults.append(
-                f"N1: Centrum nadpisało ręczną wartość taty {current!r}: {change}, {line}"
+                f"{N1}: Centrum nadpisało ręczną wartość taty {current!r}: {change}, {line}"
             )
     for row, changed in by_row.items():
         line = lines[row - 2]
@@ -755,38 +621,38 @@ def _faults(
             for _, verdict, text in register.said(line.number)
         ):
             faults.append(
-                f"N9: wpisane wartości nie są jednym Wpisem z maila o numerze wiersza: {changed}, {line}"
+                f"{N9}: wpisane wartości nie są jednym Wpisem z maila o numerze wiersza albo pusta komórka nie dostała drugiej wartości tego Wpisu: {changed}, {line}"
             )
     sources = Counter(move.order.row for move in outcome.moves)
     for move in outcome.moves:
         line = lines[move.order.row - 2]
         if not line.dated or sources[move.order.row] > 1:
             faults.append(
-                f"N6: Przeniesienie spoza uporządkowanego wiersza z datą: {move}"
+                f"{N6}: Przeniesienie spoza uporządkowanego wiersza z datą: {move}"
             )
             continue
         if not (_open(line.day, today) and _open(move.day, today)):
             faults.append(
-                f"N0: Przeniesienie z dnia albo na dzień, który nie jest otwarty: {move}, {line}"
+                f"{N0}: Przeniesienie z dnia albo na dzień, który nie jest otwarty: {move}, {line}"
             )
         if counted[OrderNumber(str(line.number))] != 1:
             faults.append(
-                f"N2: Przeniesienie numeru, który odczytane dni mają {counted[OrderNumber(str(line.number))]} razy: {move}"
+                f"{N2}: Przeniesienie numeru, który odczytane dni mają {counted[OrderNumber(str(line.number))]} razy: {move}"
             )
-        since, worker = register.truth[line.ident].since, Login(move.worker.lower())
+        since, worker = register.truth[line.ident].newest_written_mail_at, Login(move.worker.lower())
         if not any(
             sent.sender == worker and (since is None or sent.mail.arrived > since)
             for sent, _, _ in register.said(line.number)
         ):
             faults.append(
-                f"N3: Przeniesienie bez maila nowego Wykonawcy świeższego niż wpisany do wiersza ({since}): {move}"
+                f"{N3}: Przeniesienie bez maila nowego Wykonawcy świeższego niż każdy wpisany do wiersza ({since}), więc stary mail cofa zmianę taty: {move}"
             )
-        if register.truth[line.ident].overridden:
+        if register.truth[line.ident].moved_elsewhere_by_tata:
             faults.append(
-                f"N3: Przeniesienie zlecenia, które tata przeniósł po Przeniesieniu Centrum: {move}, {line}"
+                f"{N3}: Przeniesienie zlecenia, które tata przeniósł po Przeniesieniu Centrum: {move}, {line}"
             )
     faults += [
-        f"N2: numer, który odczytane dni mają, jako nieznany: {problem}"
+        f"{N2}: numer, który odczytane dni mają, jako nieznany: {problem}"
         for problem in outcome.problems
         if isinstance(problem, UnknownNumber) and counted[problem.number]
     ]
@@ -796,37 +662,37 @@ def _faults(
         if counted[order.key.number] == 1
     }
     faults += [
-        f"N1: wartość, którą Centrum wpisało, a nikt jej nie zmienił, pokazana jako ręczna wartość taty: {problem}"
+        f"{N1}: wartość, którą Centrum wpisało, a nikt jej nie zmienił, pokazana jako ręczna wartość taty: {problem}"
         for problem in outcome.problems
         if isinstance(problem, ManualDifference)
         and problem.key in rows
         and register.truth[rows[problem.key].ident].written.get(problem.column)
         == problem.manual
     ]
-    known, added = _known(lines), Counter(order.number for order in outcome.added)
+    known, added = _numbers_in_read_rows(lines), Counter(order.number for order in outcome.added)
     for order in outcome.added:
         if order.sheet != SHEET:
             faults.append(
-                f"N6: Zlecenie dopisane z raportu poza arkuszem zleceń: {order}"
+                f"{N6}: Zlecenie dopisane z raportu poza arkuszem zleceń: {order}"
             )
         if not _open(order.day, today):
             faults.append(
-                f"N0: Zlecenie dopisane z raportu do dnia, który nie jest otwarty: {order}"
+                f"{N0}: Zlecenie dopisane z raportu do dnia, który nie jest otwarty: {order}"
             )
         if (
             int(order.number) in known
             or added[order.number] > 1
-            or len(order.number) != ADDED_DIGITS
+            or len(order.number) != APP_NUMBER_DIGITS
         ):
             faults.append(
-                f"N8: dopisany numer, który INTERMAX ma w czytanym wierszu, dopisany dwa razy albo nie z 8 cyfr: {order}"
+                f"{N8}: dopisany numer, który INTERMAX ma w czytanym wierszu, dopisany dwa razy albo nie z {APP_NUMBER_DIGITS} cyfr numeru z aplikacji firmowej: {order}"
             )
         faults += _added_faults(register, today, orders, order)
     if outcome.moves or outcome.added:
-        plan = _planned(lines, outcome)
+        plan = _planned_like_write_cells(lines, outcome)
         if isinstance(plan, MissingDays):
             faults.append(
-                f"N6: zapis odrzuca Przeniesienie albo dopisanie na dzień bez uporządkowanych zleceń: {plan}, {outcome}"
+                f"{N6}: zapis odrzuca Przeniesienie albo dopisanie na dzień bez uporządkowanych zleceń: {plan}, {outcome}"
             )
     return faults
 
@@ -837,26 +703,6 @@ def _added_faults(
     orders: tuple[RegisterOrder, ...],
     order: OrderAdded,
 ) -> list[str]:
-    """Niezmienniki Zlecenia dopisanego z raportu ``order`` (GLOSSARY: Zlecenie dopisane z raportu; ADR 0029), każdy w
-    postaci ostrożnej: mail, który mógł je dopisać (``sources``), to mail nadawcy z jego numerem i jego wartościami, a
-    zarzut stoi, gdy dotyczy każdego takiego maila.
-
-    - N9: zlecenie ma ``WYKONAWCA`` nadawcy, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` jednego Wpisu z jego maila;
-    - N8 („Nie powstaje, gdy temat raportu jest pomyłką”): mail nie ma co najmniej dwóch Wpisów numerów, które odczytane
-      zlecenia mają tylko u nadawcy i tylko w innym dniu niż dzień dopisania, a których Centrum nie przenosiło ani nie
-      dopisało. GLOSSARY (Wpis raportu) i ADR 0029 liczą do pomylonego tematu zlecenia tego Wykonawcy z innego dnia, a
-      rdzeń (``_matching.Board.match``) zlecenia każdego Wykonawcy z innego dnia; którą regułę chce Maks, jeszcze nie
-      wiadomo (opis #1406). Wyrocznia liczy więc tylko zlecenia nadawcy, przy których obie reguły dają ten sam wynik:
-      wtedy obie mówią „pomylony temat”, a przy mniej niż dwóch takich Wpisach wyrocznia nic nie twierdzi;
-    - N8 („… Wykonawca poprawił raport późniejszym mailem bez tego numeru”): nie ma późniejszego Raportu wykonawcy
-      nadawcy z tym samym dniem, bez tego numeru, z każdym innym numerem maila, który ma Wpis do zlecenia nadawcy z tego
-      dnia;
-    - N8 („… albo najpóźniejszy mail z tym numerem go nie dopisuje”): żaden Raport wykonawcy z tym numerem nie przyszedł
-      później;
-    - N3 („Ręczna zmiana dalej wygrywa”): numer jedynego wiersza, który tata usunął po wpisie Centrum, wraca tylko z
-      mailem świeższym niż każdy, którego opis Centrum wpisało do tego wiersza.
-    """
-
     number, worker = int(order.number), Login(order.worker.lower())
     sources = [
         sent
@@ -867,7 +713,7 @@ def _added_faults(
     ]
     if not sources:
         return [
-            f"N9: Zlecenie dopisane z raportu nie jest jednym Wpisem z maila nadawcy z tym numerem: {order}"
+            f"{N9}: Zlecenie dopisane z raportu nie jest jednym Wpisem z maila nadawcy z tym numerem: {order}"
         ]
     placed: defaultdict[str, list[RegisterOrder]] = defaultdict(list)
     for found in orders:
@@ -884,7 +730,7 @@ def _added_faults(
                     at.key.day != order.day and at.key.worker == worker
                     for at in placed[found]
                 )
-                and found not in register.touched
+                and found not in register.moved_or_added_by_centrum
                 for found in others(sent)
             )
             >= 2
@@ -894,7 +740,7 @@ def _added_faults(
         own = {
             found
             for found in others(sent)
-            if found not in register.touched
+            if found not in register.moved_or_added_by_centrum
             and any(
                 (at.key.worker, at.key.day) == (worker, order.day)
                 for at in placed[found]
@@ -912,31 +758,29 @@ def _added_faults(
     newest = max(sent.mail.arrived for sent in sources)
     faults = []
     if all(mistaken(sent) for sent in sources):
-        faults.append(f"N8: Zlecenie dopisane z raportu z pomylonym tematem: {order}")
+        faults.append(
+            f"N8 (GLOSSARY: Zlecenie dopisane z raportu, „Nie powstaje, gdy temat raportu jest pomyłką”; wyrocznia liczy tylko zlecenia "
+            f"nadawcy z innego dnia, przy których ADR 0029 i rdzeń dają ten sam wynik): Zlecenie dopisane z raportu z pomylonym tematem: {order}"
+        )
     if all(corrected(sent) for sent in sources):
         faults.append(
-            f"N8: Zlecenie dopisane z raportu, który Wykonawca poprawił późniejszym mailem: {order}"
+            f"N8 (GLOSSARY: Zlecenie dopisane z raportu, „Wykonawca poprawił raport późniejszym mailem bez tego numeru”): Zlecenie dopisane z raportu, który Wykonawca poprawił późniejszym mailem: {order}"
         )
     if any(
         later.mail.arrived > newest and register.report_day(later, today) is not None
         for later, _, _ in register.said(number)
     ):
         faults.append(
-            f"N8: Zlecenie dopisane starszym mailem niż najpóźniejszy Raport wykonawcy z tym numerem: {order}"
+            f"N8 (GLOSSARY: Zlecenie dopisane z raportu, „najpóźniejszy mail z tym numerem go nie dopisuje”): Zlecenie dopisane starszym mailem niż najpóźniejszy Raport wykonawcy z tym numerem: {order}"
         )
-    if number in register.removed and newest <= register.removed[number]:
+    if number in register.removed_by_tata_after_centrum and newest <= register.removed_by_tata_after_centrum[number]:
         faults.append(
-            f"N3: tata usunął wiersz numeru po wpisie Centrum, a stary mail dopisał go z powrotem: {order}"
+            f"{N3}: tata usunął wiersz numeru po wpisie Centrum, a stary mail dopisał go z powrotem: {order}"
         )
     return faults
 
 
 def _layout_faults(lines: Sequence[_Line], received: dict[int, str]) -> list[str]:
-    """N7 (GLOSSARY: Przeniesienie zlecenia; ADR 0029, „Wiersz idzie za zleceniem”): po zapisie każdy dzień ma układ
-    Uporządkowania INTERMAX, który miał przed kliknięciem: każdy Wykonawca ma jeden segment, segmenty stoją
-    alfabetycznie z jednym pustym wierszem między nimi, a zlecenie przeniesione do Wykonawcy (``received``: tożsamość →
-    Wykonawca) stoi pod zleceniami, które ten Wykonawca miał w tym dniu."""
-
     faults = []
     for day in sorted(
         {line.day for line in lines if line.dated and line.day is not None}
@@ -951,7 +795,7 @@ def _layout_faults(lines: Sequence[_Line], received: dict[int, str]) -> list[str
                 continue
             if index != previous + 2 or lines[previous + 1].look is not _Look.BLANK:
                 faults.append(
-                    f"N7: dzień {day} rozdzielony wierszami {previous + 3}–{index + 1}"
+                    f"{N7}: dzień {day} rozdzielony wierszami {previous + 3}–{index + 1}"
                 )
             segments.append([lines[index]])
         keys = [
@@ -962,34 +806,22 @@ def _layout_faults(lines: Sequence[_Line], received: dict[int, str]) -> list[str
             found[0] for found in keys
         ] != sorted({found[0] for found in keys}):
             faults.append(
-                f"N7: dzień {day} ma segmenty {keys}, a nie jeden segment każdego Wykonawcy alfabetycznie"
+                f"{N7}: dzień {day} ma segmenty {keys}, a nie jeden segment każdego Wykonawcy alfabetycznie"
             )
         for segment in segments:
             came = [line.ident in received for line in segment]
             if True in came and not all(came[came.index(True) :]):
                 faults.append(
-                    f"N7: zlecenie przeniesione w dniu {day} nie stoi pod zleceniami Wykonawcy: {segment}"
+                    f"{N7}: zlecenie przeniesione w dniu {day} nie stoi pod zleceniami Wykonawcy: {segment}"
                 )
     return faults
 
 
 def _click(register: _Register) -> None:
-    """Kliknięcie taty z wyroczniami N0–N9 (``_faults``, ``_layout_faults``) i zapis do modelu arkusza:
-
-    - N4 (ADR 0028, „Każde kliknięcie liczy od nowa”): drugie kliknięcie bez nowych zdarzeń nic nie zmienia, a pamięć
-      zostaje ta sama;
-    - N5 (docstring ``_operation.enter_reports``): te same maile w odwrotnej kolejności dają ten sam wynik;
-    - N8 (ADR 0029, „Numer bez zlecenia to Zlecenie dopisane z raportu” i „Okno mówi, gdzie wolno pisać”): kliknięcie
-      nie dodaje wiersza numeru, który INTERMAX ma w czytanym wierszu (``_known``), a numerowi Zlecenia dopisanego z
-      raportu dodaje jeden wiersz w dniu i u Wykonawcy z wyniku. To samo N8 pada też na każdym nowym polu
-      ``ReportsOutcome``, którego test jeszcze nie zna, bo nie wie, czy pole zmienia INTERMAX: pole, które je zmienia,
-      idzie do ``APPLIED`` z zapisem w ``_written``, a każde inne do ``NOT_WRITTEN``.
-    """
-
-    if register.changed:
-        register.lines, register.changed = _laid(register.lines), False
+    if register.to_lay_out:
+        register.lines, register.to_lay_out = _laid(register.lines), False
     window = Window.of(register.clock.date(), ROLLOUT, CLOSED)
-    read = _read(register.lines, window)
+    read = _read_like_report_entering(register.lines, window)
     orders = read.orders
     _carry_identity(register, orders)
     _forget_unsure(register, orders)
@@ -1005,17 +837,17 @@ def _click(register: _Register) -> None:
     reversed_outcome = _core(mails[::-1], read, window, memory, register.kept)
     if reversed_outcome != outcome:
         faults.append(
-            f"N5: wynik zależy od kolejności maili: {outcome} wobec {reversed_outcome}"
+            f"{N5}: wynik zależy od kolejności maili: {outcome} wobec {reversed_outcome}"
         )
-    unapplied = {found.name for found in fields(ReportsOutcome)} - APPLIED - NOT_WRITTEN
+    unapplied = {found.name for found in fields(ReportsOutcome)} - OUTCOME_FIELDS_WRITTEN_TO_INTERMAX - OUTCOME_FIELDS_NOT_WRITTEN_TO_INTERMAX
     if unapplied:
         faults.append(
-            f"N8: wynik rdzenia ma nowe pola {sorted(unapplied)}: pole, które zmienia INTERMAX, dopisz do APPLIED i "
-            "zapisz w _written, a inne dopisz do NOT_WRITTEN"
+            f"{N8}: wynik rdzenia ma nowe pola {sorted(unapplied)}: pole, które zmienia INTERMAX, dopisz do OUTCOME_FIELDS_WRITTEN_TO_INTERMAX i "
+            "zapisz w _written, a inne dopisz do OUTCOME_FIELDS_NOT_WRITTEN_TO_INTERMAX"
         )
     assert not faults, "\n".join(faults)
 
-    known = _known(register.lines)
+    known = _numbers_in_read_rows(register.lines)
     before = Counter(line.number for line in register.lines if line.ident)
     received = {
         register.lines[move.order.row - 2].ident: move.worker for move in outcome.moves
@@ -1044,7 +876,7 @@ def _click(register: _Register) -> None:
                 for sent, _, text in register.said(line.number)
                 if text == change.value
             )
-            truth.since = arrived if truth.since is None else max(truth.since, arrived)
+            truth.newest_written_mail_at = arrived if truth.newest_written_mail_at is None else max(truth.newest_written_mail_at, arrived)
     for move in outcome.moves:
         line = register.lines[move.order.row - 2]
         truth, here, target = (
@@ -1053,9 +885,9 @@ def _click(register: _Register) -> None:
             (Login(move.worker.lower()), move.day),
         )
         origin = (
-            truth.origin if truth.placed is not None and truth.placed == here else here
+            truth.before_centrum_moves if truth.placed_by_centrum is not None and truth.placed_by_centrum == here else here
         )
-        truth.origin, truth.placed, truth.overridden = (
+        truth.before_centrum_moves, truth.placed_by_centrum, truth.moved_elsewhere_by_tata = (
             origin,
             None if target == origin else target,
             False,
@@ -1064,7 +896,7 @@ def _click(register: _Register) -> None:
     faults = _layout_faults(register.lines, received)
     after = Counter(line.number for line in register.lines if line.ident)
     faults += [
-        f"N8: numer {number} ma po kliknięciu {after[number]} wierszy, a miał {before[number]}"
+        f"{N8}: numer {number} ma po kliknięciu {after[number]} wierszy, a miał {before[number]}"
         for number in known
         if after[number] > before[number]
     ]
@@ -1077,9 +909,9 @@ def _click(register: _Register) -> None:
             order.worker,
         ):
             faults.append(
-                f"N8: zapis nie dopisał zlecenia {order} w jego dniu i u jego Wykonawcy: {new}"
+                f"{N8}: zapis nie dopisał zlecenia {order} w jego dniu i u jego Wykonawcy: {new}"
             )
-    again_read = _read(register.lines, window)
+    again_read = _read_like_report_entering(register.lines, window)
     again = _core(mails, again_read, window, outcome.memory, register.kept)
     if (again.changes, again.moves, again.added, again.memory) != (
         (),
@@ -1088,7 +920,7 @@ def _click(register: _Register) -> None:
         outcome.memory,
     ):
         faults.append(
-            f"N4: powtórne kliknięcie zmienia INTERMAX albo pamięć: {again.changes}, {again.moves}, {again.added}"
+            f"{N4}: powtórne kliknięcie zmienia INTERMAX albo pamięć: {again.changes}, {again.moves}, {again.added}"
         )
     assert not faults, "\n".join(faults)
 
@@ -1100,26 +932,20 @@ def _click(register: _Register) -> None:
                 for column, value in truth.written.items()
                 if line.cell(column) == value
             }
-    register.alone = _alone(again_read.orders, register.lines)
-    register.touched |= {
+    register.alone_at_last_click = _alone(again_read.orders, register.lines)
+    register.moved_or_added_by_centrum |= {
         str(line.number) for line in register.lines if line.ident in received
     }
     for order in outcome.added:
-        register.removed.pop(int(order.number), None)
+        register.removed_by_tata_after_centrum.pop(int(order.number), None)
     register.memory, register.released, register.last = outcome.memory, None, outcome
     register.clock += timedelta(hours=1)
 
 
 Start = tuple[tuple[tuple[object, ...], ...], frozenset[int]]
-"""Wiersze INTERMAX przed pierwszym kliknięciem (rodzaj, numer, dzień, Wykonawca, ``SKUTECZNE``, ``CZYNNOŚCI
-ZREALIZOWANE``) i numery tych, do których wpisało Wydanie v0.7.0/v0.8.0."""
 
 
 def _play(start: Start, events: Sequence[tuple[object, ...]]) -> _Register:
-    """Zdarzenia po kolei: mail w skrzynce (także poprawiony), ręczne zmiany taty w INTERMAX (komórka, przepisanie Wpisu
-    z maila, Wykonawca, dzień, usunięcie i wklejenie wiersza), „Zostaw moją”, nowy dzień i kliknięcie; daje INTERMAX po
-    ostatnim zdarzeniu."""
-
     register = _start(*start)
     for event in events:
         match event:
@@ -1185,21 +1011,21 @@ def _play(start: Start, events: Sequence[tuple[object, ...]]) -> _Register:
             case ("wykonawca", int(which), str(login)):
                 line = register.pick(which)
                 if line is not None and line.worker is not None:
-                    line.worker, register.changed = SPELLING[Login(login)], True
+                    line.worker, register.to_lay_out = TATA_WORKER_SPELLING[Login(login)], True
             case ("dzień", int(which), date() as day):
                 line = register.pick(which)
                 if line is not None:
-                    line.day, register.changed = day, True
+                    line.day, register.to_lay_out = day, True
             case ("usuwa", int(which)):
                 line = register.pick(which)
                 if line is not None:
                     register.lines.remove(line)
-                    register.changed = True
-                    since = register.truth[line.ident].since
+                    register.to_lay_out = True
+                    since = register.truth[line.ident].newest_written_mail_at
                     if since is not None and all(
                         other.number != line.number for other in register.lines
                     ):
-                        register.removed[line.number] = since
+                        register.removed_by_tata_after_centrum[line.number] = since
             case ("wkleja", tuple(seed)):
                 register.add(seed)
             case ("zostaw",):
@@ -1218,34 +1044,33 @@ def _play(start: Start, events: Sequence[tuple[object, ...]]) -> _Register:
     return register
 
 
+BETWEEN_ENTRIES = ("\n", "\n\n", " ")
+ONLY_LINE_START_BEGINS_ENTRY_WITHOUT_MARK = ("\n", "\n\n")
+ENTRY_PREFIXES = ("", "Zlecenie ", "Nr ", "zl. ")
+
+
 @st.composite
 def _body(
     draw: st.DrawFn, numbers: Sequence[str] = NUMBERS
 ) -> tuple[str, tuple[tuple[str, str | None, str], ...]]:
-    """Treść Raportu wykonawcy tak, jak piszą Wykonawcy, i Wpisy, które Wykonawca miał na myśli: 1–3 Wpisy z ``#`` albo
-    bez, ze znakiem w dowolnej wielkości liter i z interpunkcją albo bez znaku, ze słowem przed numerem (``Zlecenie``,
-    ``Nr``, ``zl.``) albo znacznikiem listy, z opisem łamanym w dowolnym miejscu, w jednej linii albo w kilku, z
-    powitaniem i z podpisem, pożegnaniem, stopką albo cytatem na końcu (``_entries``: granice opisu). Wpis bez znaku
-    zaczyna linię, bo tylko tak numer bez znaku zaczyna Wpis."""
-
     chosen = draw(
         st.lists(st.sampled_from(numbers), min_size=1, max_size=3, unique=True)
     )
     parts = [draw(st.sampled_from(("", "Dzień dobry,\n", "Witam\n\n")))]
     said = []
     for index, number in enumerate(chosen):
-        mark = draw(st.sampled_from(tuple(MARKS)))
+        mark = draw(st.sampled_from(tuple(SUCCESSFUL_BY_MARK)))
         phrase = draw(st.sampled_from(("", *PHRASES)))
         words = [*phrase.split(), draw(st.sampled_from(TAGS))] if phrase else []
         words = [word for word in words if word]
         if index:
             parts.append(
-                draw(st.sampled_from(("\n", "\n\n", " ") if mark else ("\n", "\n\n")))
+                draw(st.sampled_from(BETWEEN_ENTRIES if mark else ONLY_LINE_START_BEGINS_ENTRY_WITHOUT_MARK))
             )
         if mark:
             if not parts[-1] or parts[-1].endswith("\n"):
                 parts.append(draw(st.sampled_from(("", "1. ", "- "))))
-            parts.append(draw(st.sampled_from(("", "Zlecenie ", "Nr ", "zl. "))))
+            parts.append(draw(st.sampled_from(ENTRY_PREFIXES)))
         parts.append(draw(st.sampled_from((number, f"#{number}"))))
         if mark:
             parts.append(draw(st.sampled_from((" ", " - ", ": ", "\n"))) + mark)
@@ -1257,47 +1082,36 @@ def _body(
                     draw(st.sampled_from((" ", ", ", " - ", "\n"))) if mark else " "
                 )
             parts.append(word)
-        said.append((number, MARKS[mark], " ".join(words)))
-    parts.append(draw(st.sampled_from(ENDINGS)))
+        said.append((number, SUCCESSFUL_BY_MARK[mark], " ".join(words)))
+    parts.append(draw(st.sampled_from(MAIL_ENDS_AFTER_LAST_ENTRY)))
     return "".join(parts), tuple(said)
 
 
-def _subjects(day: date) -> tuple[str, ...]:
-    """Tematy maila z dniem ``day``: Raport wykonawcy w kilku zapisach daty, odpowiedź na Przypomnienie o raporcie,
-    poprawka raportu w odpowiedzi (``REPORT_SUBJECTS`` pierwszych), a także odpowiedź na mail o czym innym, która
-    Raportem wykonawcy nie jest."""
-
+def _report_subjects(day: date) -> tuple[str, ...]:
     return (
         f"Raport {day:%d.%m.%Y}",
         f"raport {day.day}.{day.month}.{day:%y}",
         f"RAPORT {day:%d_%m_%Y} r.",
         f"Re: Przypomnienie: raport za dzień {day:%d.%m.%Y}",
         f"Re: Raport {day:%d.%m.%Y} - BŁĘDY PROSZĘ POPRAW",
-        f"Re: Zmiana w raportach {day:%d.%m.%Y}",
     )
 
 
-REPORT_SUBJECTS = 5
-"""Ile pierwszych tematów z ``_subjects`` to tematy Raportu wykonawcy."""
+def _reply_about_something_else(day: date) -> str:
+    return f"Re: Zmiana w raportach {day:%d.%m.%Y}"
 
 
-UNREADABLE = ("Raport", "Raport za wczoraj", "Raport 08.11")
-"""Tematy ze słowem ``raport`` bez dnia zleceń."""
+SUBJECTS_REPORT_DAY_DOES_NOT_DATE = ("Raport", "Raport za wczoraj", "Raport 08.11")
 
 
 @st.composite
 def _mail(draw: st.DrawFn) -> tuple[object, ...]:
-    """Mail w skrzynce, najczęściej Raport wykonawcy z dniem otwartym od Wykonawcy, a też z obcego adresu, z tematem
-    dnia zamkniętego, sprzed wdrożenia i jutra, w innym zapisie daty, odpowiedź albo temat nieczytelny. Minuta
-    przyjścia jest jedną z dwóch, a Message-ID co trzeci mail ma wspólny, więc dwa maile często przychodzą w tej samej
-    chwili albo mają ten sam Message-ID (ustawia go nadawca)."""
-
     who = draw(st.sampled_from((*WORKERS, *WORKERS, *STRANGERS)))
     day = draw(st.sampled_from(MAIL_DAYS))
-    forms = _subjects(day)
-    unreadable = UNREADABLE[draw(st.integers(0, len(UNREADABLE) - 1))]
+    forms = (*_report_subjects(day), _reply_about_something_else(day))
+    undated = SUBJECTS_REPORT_DAY_DOES_NOT_DATE[draw(st.integers(0, len(SUBJECTS_REPORT_DAY_DOES_NOT_DATE) - 1))]
     subject = draw(
-        st.sampled_from((*(forms[0],) * 5, *forms[1:], unreadable, unreadable))
+        st.sampled_from((*(forms[0],) * 5, *forms[1:], undated, undated))
     )
     text, said = draw(_body((*NUMBERS, TYPO)))
     message_id = draw(st.sampled_from(("", "", "<a@przyklad.invalid>")))
@@ -1311,13 +1125,9 @@ _CORRECTION = st.tuples(
     st.integers(0, 2),
     st.sampled_from(("", *NUMBERS)),
 )
-"""Poprawiony mail (GLOSSARY: Zlecenie dopisane z raportu, „Wykonawca poprawił raport późniejszym mailem”): ten sam
-nadawca i temat co jeden z maili w skrzynce, jego Wpisy bez jednego, czasem z innym numerem z ``tak`` zamiast niego."""
 
 
 def _seeds(numbers: Sequence[str]) -> st.SearchStrategy[tuple[object, ...]]:
-    """Wiersz INTERMAX: rodzaj (zwykle uporządkowane zlecenie), numer, dzień, Wykonawca i ręczne wartości taty."""
-
     kinds = (
         "zlecenie",
         "zlecenie",
@@ -1369,7 +1179,6 @@ _EVENTS = st.lists(
         event for tata, mails in rounds for event in (*tata, *mails, ("klik",))
     ]
 )
-"""Rundy: zmiany taty, maile (także poprawione) i kliknięcie."""
 
 
 def _sent(
@@ -1738,8 +1547,8 @@ SAME_ID = "<1@przyklad.invalid>"
 @example(
     (
         (
-            _order("40000011", UNREAD, ADAM),
-            *(_order(f"400000{index}", UNREAD, ADAM) for index in range(12, 22)),
+            _order("40000011", BEFORE_ROLLOUT, ADAM),
+            *(_order(f"400000{index}", BEFORE_ROLLOUT, ADAM) for index in range(12, 22)),
             _order(ONE, EIGHTH, JAN),
         ),
         frozenset(),
@@ -1850,7 +1659,7 @@ SAME_ID = "<1@przyklad.invalid>"
     ],
 ).via("ADR 0029: numer bez 8 cyfr numeru z aplikacji firmowej się nie dopisuje")
 @example(
-    ((_order(ONE, UNREAD, ADAM), _order(THREE, SIXTH, ADAM)), frozenset()),
+    ((_order(ONE, BEFORE_ROLLOUT, ADAM), _order(THREE, SIXTH, ADAM)), frozenset()),
     [
         _sent(
             ADAM,
@@ -1873,8 +1682,8 @@ SAME_ID = "<1@przyklad.invalid>"
 @example(
     (
         (
-            _order(TWO, UNREAD, ADAM),
-            _order(TWO, UNREAD, ADAM),
+            _order(TWO, BEFORE_ROLLOUT, ADAM),
+            _order(TWO, BEFORE_ROLLOUT, ADAM),
             _order(FOUR, SIXTH, ADAM),
             ("z aplikacji", TWO, SIXTH, ADAM, None, None),
             _order(ONE, SIXTH, ADAM),
@@ -1898,7 +1707,7 @@ SAME_ID = "<1@przyklad.invalid>"
         ),
         ("poprawka", 0, 0, 0, ""),
         ("klik",),
-        ("dzień", 0, UNREAD),
+        ("dzień", 0, BEFORE_ROLLOUT),
         ("klik",),
     ],
 ).via(
@@ -1932,12 +1741,6 @@ SAME_ID = "<1@przyklad.invalid>"
 def test_wlasnosc_kazde_klikniecie_wpisania_raportow_trzyma_reguly_adr_0028_i_0029(
     start: Start, events: list[tuple[object, ...]]
 ) -> None:
-    """Cel Maksa (ADR 0028 i 0029, GLOSSARY: Wpisanie raportów): dowolny INTERMAX z dniami okresu z Plikiem zbiorczym,
-    otwartymi, dziś i jutro, z wierszami bez ``WYKONAWCA``, z datą tekstem, z wyglądem z aplikacji i Surowymi
-    zleceniami, z pamięcią z pliku Wydania albo bez niej, dowolne maile Wykonawców i obcych adresów (ten sam Message-ID
-    i ta sama chwila, nieczytelny i pomylony temat, odpowiedź na Przypomnienie) i dowolne ręczne zmiany taty między
-    kliknięciami dają po każdym kliknięciu niezmienniki N0–N9 (``_click``)."""
-
     _play(start, events)
 
 
@@ -1978,16 +1781,12 @@ def test_wlasnosc_kazde_klikniecie_wpisania_raportow_trzyma_reguly_adr_0028_i_00
 def test_wlasnosc_wpisy_raportu_napisane_jak_pisza_wykonawcy_trafiaja_do_swoich_komorek(
     body: tuple[str, tuple[tuple[str, str | None, str], ...]],
 ) -> None:
-    """GLOSSARY: Raport wykonawcy, Wpis raportu (US 19–26): Raport wykonawcy za dzień z jego zleceniami, napisany w
-    dowolnym układzie z ``_body``, wpisuje każdemu zleceniu dokładnie ``tak``/``nie`` i opis Wpisu, który Wykonawca miał
-    na myśli, a Wpis bez ``tak`` ani ``nie`` nie wpisuje niczego."""
-
     text, said = body
     register = _start(
         tuple(_order(number, EIGHTH, JAN) for number in NUMBERS), frozenset()
     )
     window = Window.of(EIGHTH, ROLLOUT, CLOSED)
-    read = _read(register.lines, window)
+    read = _read_like_report_entering(register.lines, window)
     mail = ReportMail(
         MailId.of(SAME_ID),
         _address(ADDRESS[JAN]),
@@ -2021,11 +1820,6 @@ def test_wlasnosc_wpisy_raportu_napisane_jak_pisza_wykonawcy_trafiaja_do_swoich_
 def test_dzien_zlecen_dopisanych_z_raportu_nie_robi_pomylonego_tematu_kolejnego_raportu() -> (
     None
 ):
-    """ADR 0029 (przegląd #1374 r5): dzień Zlecenia dopisanego z raportu dał raport, a nie tata, więc nie liczy się do
-    pomylonego tematu innych raportów. Dwa zlecenia dopisane do 8.11, które Jan potem zgłasza w raporcie za 7.11 obok
-    zlecenia z 7.11, to dwa Przeniesienia na 7.11, a nie pomylony temat. Własność kliknięcia tego nie sprawdza, bo jej
-    wyrocznie mówią tylko, czego Centrum zrobić nie wolno."""
-
     register = _play(
         ((_order(ONE, EIGHTH, JAN), _order(TWO, SEVENTH, JAN)), frozenset()),
         [
@@ -2052,3 +1846,36 @@ def test_dzien_zlecen_dopisanych_z_raportu_nie_robi_pomylonego_tematu_kolejnego_
 
     days = {line.number: line.day for line in register.lines if line.ident}
     assert (days[int(THREE)], days[int(FOUR)]) == (SEVENTH, SEVENTH), register.lines
+
+
+def test_dni_w_przykladach_leza_tam_gdzie_mowia_ich_nazwy() -> None:
+    today = FIRST_CLICK.date()
+
+    assert NUMBERS_SINCE <= BEFORE_ROLLOUT < ROLLOUT, "z dnia przed wdrożeniem proces nie robi zleceń, ale czyta jego numery"
+    assert CLOSED_PERIOD[0].weekday() == 1 and CLOSED_PERIOD[1] == CLOSED_PERIOD[0] + timedelta(days=6)
+    assert CLOSED_PERIOD[0] <= ROLLOUT <= CLOSED_DAY <= CLOSED_PERIOD[1], "okres z Plikiem zbiorczym obejmuje dzień wdrożenia"
+    assert NUMBERS_SINCE == CLOSED_PERIOD[1] + timedelta(days=1) - timedelta(days=7), (
+        "numery czyta się od tygodnia przed pierwszym dniem otwartym, pierwszym po okresie z Plikiem zbiorczym"
+    )
+    assert NEXT_DAY.date() == today + timedelta(days=1) == NINTH, "nowy dzień robi dziś z jutra pierwszego kliknięcia"
+    assert sum(_open(day, today) for day in ORDER_DAYS) > len(ORDER_DAYS) / 2, "wiersze INTERMAX najczęściej w dniach otwartych"
+    assert sum(_open(day, today) for day in MAIL_DAYS) > len(MAIL_DAYS) / 2, "tematy maili najczęściej z dniem otwartym"
+
+
+def test_numery_w_przykladach_maja_postac_numeru_z_aplikacji_firmowej_a_literowka_nie() -> None:
+    assert all(number.isdigit() and len(number) == APP_NUMBER_DIGITS for number in NUMBERS)
+    assert TYPO.isdigit() and len(TYPO) != APP_NUMBER_DIGITS
+
+
+def test_opisy_wpisow_w_przykladach_nie_maja_cyfr_znaku_wpisu_pozegnania_ani_slowa_przed_numerem() -> None:
+    words = {word.casefold() for phrase in PHRASES for word in phrase.split()}
+    marks = {mark.casefold().strip(".,") for mark in SUCCESSFUL_BY_MARK if mark}
+    prefixes = {prefix.strip().casefold() for prefix in ENTRY_PREFIXES if prefix}
+
+    assert not any(character.isdigit() for phrase in PHRASES for character in phrase)
+    assert words.isdisjoint(marks | prefixes | {"pozdrawiam", "pozdrowienia", "dziękuję", "dziekuje", "dzięki"}), words
+
+
+def test_opis_bez_slowa_na_koncu_bywa_w_przykladach_rowny_recznej_wartosci_taty() -> None:
+    assert "" in TAGS
+    assert set(PHRASES) & set(TATA_COMPLETED)

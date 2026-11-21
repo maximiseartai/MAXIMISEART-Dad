@@ -1,12 +1,3 @@
-"""Rdzeń Przypomnień o raporcie (``worker_reports.EnteringMemory.reminders``, ADR 0030, spec #1344 US 31–44): które przypomnienia
-należą się w danej chwili, ich temat i treść.
-
-Testy idą przez operację rdzenia z chwilą na wejściu: zlecenia INTERMAX, maile ze Skrzynki raportów, przypomnienia z
-„Wysłanych”, adresy Wykonawców i Ustawienia przypomnień, a przypomnienia na wyjściu. Pory domyślne (8:00–17:00,
-18:00–22:00), dzień X+1 od 8:00 i treść biorą wartości ze speca #1344 i ADR 0030, a pory, godzina pierwszego
-przypomnienia i treść z Ustawień Centrum (ADR 0032) działają tak samo jak domyślne. Dane są syntetyczne, adresy w domenie ``.invalid``, numery zmyślone.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -63,6 +54,7 @@ NEXT_MORNING = _at(DAY + timedelta(days=1), 8, 0)
 def _address(text: str) -> SenderAddress:
     address = SenderAddress.of(text)
     assert address is not None
+    assert text.endswith(".invalid"), f"adres w teście poza domeną .invalid, czyli być może czyjś prawdziwy: {text}"
     return address
 
 
@@ -127,9 +119,6 @@ def _reports(
     workers: WorkerList | None = None,
     memory: OwnEntries = OwnEntries.EMPTY,
 ) -> Given:
-    """Wejście odczytu okna, to samo dla Wpisania raportów i przypomnień: pamięć Wpisania ``memory`` (domyślnie przed
-    pierwszym kliknięciem) bez decyzji taty, a każde zlecenie w swoim wierszu INTERMAX i w Dniu uporządkowanym."""
-
     return Given(
         mails=mails,
         addresses=(workers or _workers()).addresses(),
@@ -146,9 +135,6 @@ def _reports(
 def _after_click(
     clicked_at: datetime, orders: Sequence[RegisterOrder], mails: Sequence[ReportMail]
 ) -> tuple[tuple[RegisterOrder, ...], OwnEntries]:
-    """Zlecenia INTERMAX i pamięć Wpisania raportów po kliknięciu w chwili ``clicked_at`` z mailami ``mails``:
-    Przeniesienie daje wierszowi nowy dzień i Wykonawcę, a Zlecenie dopisane z raportu staje w nowym wierszu."""
-
     clicked = enter_reports(_reports(clicked_at, orders, mails))
     moved = {move.order: move for move in clicked.moves}
     after = [
@@ -161,8 +147,6 @@ def _after_click(
 
 
 def _workers(*, active: bool = True, reminders: bool = True) -> WorkerList:
-    """Lista Wykonawców z ``ADDRESSES``; ``active`` i ``reminders`` dotyczą Wykonawcy ``jan.testowy``."""
-
     workers = WorkerList.of(
         [
             WorkerEntry(["jan.testowy"], "Jan Testowy", ADDRESSES["jan.testowy"], active=active, reminders=reminders),
@@ -188,9 +172,6 @@ def _days(found: Sequence[Reminder]) -> list[tuple[str, date]]:
 def test_przypomnienie_idzie_tylko_do_aktywnego_wykonawcy_z_wlaczonymi_przypomnieniami(
     active: bool, reminders: bool, expected: set[str]
 ) -> None:
-    """ADR 0032: Przypomnienia o raporcie idą tylko do aktywnych Wykonawców z włączonymi przypomnieniami; Nieaktywny
-    Wykonawca i Wykonawca z wyłączonymi przypomnieniami nie dostają ich, choć mają zlecenie dnia i adres."""
-
     orders = (_order(), _order(worker="ewa.probna", number=40000002, row=121))
 
     found = _due(NEXT_MORNING, orders, workers=_workers(active=active, reminders=reminders))
@@ -225,15 +206,9 @@ def test_przypomnienie_idzie_tylko_do_aktywnego_wykonawcy_z_wlaczonymi_przypomni
 def test_przypomnienie_za_dzien_idzie_od_8_dnia_nastepnego_najwyzej_raz_w_porze_i_nigdy_w_nocy(
     now: datetime, sent: list[datetime], expected: list[tuple[str, date]]
 ) -> None:
-    """Pierwsze przypomnienie za dzień X idzie od 8:00 dnia X+1, kolejne w każdej porze (8:00–17:00, 18:00–22:00), w
-    której jeszcze nie poszło: poranne nadrabia się do 16:59, wieczorne do 21:59, a od 17:00 do 18:00 i w nocy nie
-    idzie żadne (US 32–35, decyzja Maksa 12.11 w ADR 0030)."""
-
     assert _days(_due(now, sent=[_sent(DAY, moment) for moment in sent])) == expected
 
 
-
-# Pory i godzina pierwszego przypomnienia, które tata ustawił inaczej niż ADR 0030 (ADR 0032, US 41–43).
 SHIFTED = replace(
     DEFAULT_REMINDERS,
     enabled=True,
@@ -244,6 +219,14 @@ SHIFTED = replace(
 
 def _shifted(day: date, hour: int, minute: int = 0) -> datetime:
     return _at(day + timedelta(days=1), hour, minute)
+
+
+def test_pory_i_godzina_pierwszego_przypomnienia_taty_w_przykladach_roznia_sie_od_adr_0030() -> None:
+    assert SHIFTED.schedule.first != DEFAULT_REMINDERS.schedule.first
+    assert SHIFTED.schedule.morning.start != DEFAULT_REMINDERS.schedule.morning.start
+    assert SHIFTED.schedule.morning.end != DEFAULT_REMINDERS.schedule.morning.end
+    assert SHIFTED.schedule.evening.start != DEFAULT_REMINDERS.schedule.evening.start
+    assert SHIFTED.schedule.evening.end != DEFAULT_REMINDERS.schedule.evening.end
 
 
 @pytest.mark.parametrize(
@@ -265,20 +248,14 @@ def _shifted(day: date, hour: int, minute: int = 0) -> datetime:
 def test_pory_i_godzina_pierwszego_przypomnienia_z_ustawien_zastepuja_pory_z_adr_0030(
     now: datetime, sent: list[datetime], expected: list[tuple[str, date]]
 ) -> None:
-    """ADR 0032: pory i godzina pierwszego przypomnienia z Ustawień Centrum działają jak dawne stałe. Pierwsze
-    przypomnienie za dzień X idzie od 9:15 dnia X+1, najwyżej jedno w porze 6:30–12:00 i 15:00–19:30, bez końca pory, a
-    poza nimi, także w dawnych porach z ADR 0030, nie idzie żadne. Praca przypomnień sprawdzała tylko przy tych porach,
-    więc wysłane liczą się w nich."""
+    checked_only_at_shifted = SchedulesInEffect(frozenset({SHIFTED.schedule}))
 
-    always = SchedulesInEffect(frozenset({SHIFTED.schedule}))
+    found = _due(now, sent=[_sent(DAY, moment) for moment in sent], settings=SHIFTED, in_effect=checked_only_at_shifted)
 
-    assert _days(_due(now, sent=[_sent(DAY, moment) for moment in sent], settings=SHIFTED, in_effect=always)) == expected
+    assert _days(found) == expected
 
 
 def test_pierwsze_zdanie_taty_ma_dzien_w_kazdym_miejscu_pola_a_wzor_i_przyklad_zostaja() -> None:
-    """D-M1 projektu Ustawień: tata zmienia pierwsze zdanie z polem ``{dzień}`` i stopkę, a stały wzór Raportu wykonawcy
-    z przykładem i temat zostają, bo po nich Wpisanie raportów poznaje odpowiedź (US 46, 48)."""
-
     settings = replace(SHIFTED, text="Raport za {dzień} proszę, bo {dzień} był dniem pracy.", footer="Tata")
 
     [reminder] = _due(_shifted(DAY, 10), settings=settings)
@@ -299,8 +276,6 @@ def test_pierwsze_zdanie_taty_ma_dzien_w_kazdym_miejscu_pola_a_wzor_i_przyklad_z
 
 
 def test_przypomnienie_wyslane_w_utc_liczy_sie_w_porze_taty() -> None:
-    """Chwila z „Wysłanych” w innej strefie liczy się w strefie chwili sprawdzenia: 7:30 UTC to 8:30 u taty, poranna."""
-
     sent = _sent(DAY, datetime(2026, 11, 10, 7, 30, tzinfo=timezone.utc))
 
     assert _due(_at(DAY + timedelta(days=1), 16, 59), sent=[sent]) == ()
@@ -321,9 +296,6 @@ def test_drugie_sprawdzenie_w_tej_samej_chwili_z_wyslanymi_z_pierwszego_nie_daje
     reported: set[tuple[str, int]],
     sent_before: set[tuple[str, int, int]],
 ) -> None:
-    """Własność: przypomnienia z pierwszego wywołania, wysłane w tej chwili, zamykają porę, więc drugie wywołanie w tej
-    samej chwili nie daje żadnego, przy każdych zleceniach, raportach i wcześniejszych przypomnieniach (US 34)."""
-
     start = _at(DAY - timedelta(days=1), 0)
     now = start + timedelta(minutes=minute)
     orders = [
@@ -340,8 +312,6 @@ def test_drugie_sprawdzenie_w_tej_samej_chwili_z_wyslanymi_z_pierwszego_nie_daje
 
 
 def test_przypomnienie_do_drugiego_adresu_wykonawcy_tez_zamyka_pore() -> None:
-    """Wykonawca z dwoma adresami dostaje jedno przypomnienie na oba, a przypomnienie na którykolwiek zamyka porę."""
-
     [reminder] = _due(NEXT_MORNING)
 
     assert reminder.recipients == (_address(JAN_PRYWATNY), _address(JAN))
@@ -355,14 +325,10 @@ def test_przypomnienie_za_inny_dzien_albo_do_innego_wykonawcy_nie_zamyka_pory() 
 
 
 def test_plik_zbiorczy_okresu_dzien_przed_wdrozeniem_dzien_bez_zlecen_i_wykonawca_spoza_listy_nie_dostaja_przypomnien() -> None:
-    """Przypomnienia ustają, gdy okres dnia ma Plik zbiorczy, liczą się dni od wdrożenia przypomnień, dzień bez zleceń
-    Wykonawcy go nie daje, a Wykonawca bez adresu na liście nie dostaje żadnego (US 36, 39, 41)."""
-
     later = _at(DAY + timedelta(days=2), 9)
     orders = [_order(), _order("Obcy.Wykonawca", number=40000002), _order(day=DAY + timedelta(days=1), number=40000003)]
 
     assert _days(_due(later, orders)) == [("jan.testowy", DAY), ("jan.testowy", DAY + timedelta(days=1))]
-    # 9.11 (poniedziałek) kończy okres 03_09_11_2026, a 10.11 zaczyna następny.
     assert _days(_due(later, orders, closed=[period_of(DAY).token])) == [("jan.testowy", DAY + timedelta(days=1))]
     assert _days(_due(later, orders, rollout=DAY + timedelta(days=1))) == [("jan.testowy", DAY + timedelta(days=1))]
     assert _days(_due(later, [_order(day=DAY + timedelta(days=1))])) == [("jan.testowy", DAY + timedelta(days=1))]
@@ -370,8 +336,6 @@ def test_plik_zbiorczy_okresu_dzien_przed_wdrozeniem_dzien_bez_zlecen_i_wykonawc
 
 
 def test_kilka_brakujacych_dni_daje_osobne_przypomnienie_za_kazdy_dzien() -> None:
-    """Brak raportu za kilka dni daje osobny mail za każdy dzień, z jego datą w temacie i treści (US 40)."""
-
     orders = [_order(day=DAY), _order(day=DAY + timedelta(days=1), number=40000002), _order("Ewa.Probna", number=40000003)]
 
     found = _due(_at(DAY + timedelta(days=2), 8), orders)
@@ -404,9 +368,6 @@ PRZYKŁAD:
     ],
 )
 def test_tresc_przypomnienia_ma_temat_wzor_i_przyklad_ze_speca_a_na_koncu_stopke_taty(footer: str, expected: str) -> None:
-    """Temat i treść ustalone przez Maksa (spec #1344, Implementation Decisions) są treścią domyślną, a na końcu stopka
-    z Ustawień albo nic (US 43–44)."""
-
     day = date(2026, 11, 5)
 
     [reminder] = _due(_at(date(2026, 11, 6), 8), [_order(day=day)], footer=footer)
@@ -429,8 +390,6 @@ def test_tresc_przypomnienia_ma_temat_wzor_i_przyklad_ze_speca_a_na_koncu_stopke
     ],
 )
 def test_dzien_z_tematu_przypomnienia_czyta_tylko_postac_ktora_pisze_centrum(subject: str, day: date | None) -> None:
-    """„Wysłane” liczą jako przypomnienie tylko temat, który pisze Centrum; inne postacie to granica, nie przypomnienie."""
-
     assert reminder_day(subject) == day
 
 
@@ -438,9 +397,6 @@ def test_dzien_z_tematu_przypomnienia_czyta_tylko_postac_ktora_pisze_centrum(sub
 @settings(derandomize=True, database=None)
 def test_temat_przypomnienia_czyta_sie_z_powrotem_jako_jego_dzien(day: date) -> None:
     assert reminder_day(reminder_subject(day)) == day
-
-
-# --- Przypomnienie tylko bez raportu: jedna reguła dnia raportu z Wpisaniem raportów (ADR 0041) ---
 
 
 MISTAKEN_ORDERS = (
@@ -465,10 +421,6 @@ MISTAKEN_ORDERS = (
 def test_raport_z_pomylonym_tematem_konczy_przypomnienia_za_dzien_swoich_zlecen_a_nie_za_dzien_z_tematu(
     now: datetime, figures: dict[date, int], due: list[tuple[str, date]]
 ) -> None:
-    """ADR 0041 (historia 4) i ADR 0029: ``Raport 26.11.2026`` z dwoma numerami zleceń Jana z 16.11 to pomylony temat.
-    Wpisanie raportów wpisuje go do zleceń z 16.11 z informacją dla taty, także gdy 26.11 jest jeszcze po dziś, a
-    kafelek liczy go za 16.11; przypomnienia za 16.11 ustają, a za 26.11 idą, bo za ten dzień raportu nie ma."""
-
     mails = [_mail(JAN, "Raport 26.11.2026", "40000001 tak inst20m\n40000002 tak spawpg", _at(date(2026, 11, 16), 21))]
 
     entered = enter_reports(_reports(now, MISTAKEN_ORDERS, mails))
@@ -479,24 +431,28 @@ def test_raport_z_pomylonym_tematem_konczy_przypomnienia_za_dzien_swoich_zlecen_
     assert _days(_due(now, MISTAKEN_ORDERS, mails=mails)) == due
 
 
+NUMBER_IN_TWO_ORDERS = 40000005
 SAME = (
     _order(),
     _order(number=40000002, row=121),
     _order("Ewa.Probna", number=40000003, row=122),
     _order(day=DAY + timedelta(days=1), number=40000004, row=123),
-    _order(day=DAY + timedelta(days=1), number=40000005, row=124),
-    _order("Ewa.Probna", number=40000005, row=125),
+    _order(day=DAY + timedelta(days=1), number=NUMBER_IN_TWO_ORDERS, row=124),
+    _order("Ewa.Probna", number=NUMBER_IN_TWO_ORDERS, row=125),
 )
-"""Zlecenia Jana z 9.11 i 10.11 i Ewy z 9.11, a numer 40000005 u Jana 10.11 i u Ewy 9.11: o 8:00 11.11 należą się
-przypomnienia za oba dni."""
 JAN_9 = ("jan.testowy", DAY)
 JAN_10 = ("jan.testowy", DAY + timedelta(days=1))
 EWA_9 = ("ewa.probna", DAY)
 ADDED_TEXT = "40000007 tak inst20m\n40000008 tak spawpg"
-"""Dwa numery, których INTERMAX nie ma: raport z nimi dopisuje oba Janowi (Zlecenia dopisane z raportu)."""
 TIE = MailId.of("<ten-sam@przyklad.invalid>")
 TIE_FAULTY = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak instutp40m", _at(DAY, 19))
 TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak inst20m", _at(DAY, 19))
+
+
+def test_zlecenia_wspolne_obu_operacji_to_dni_jana_9_i_10_i_ewy_9_z_numerem_w_dwoch_zleceniach_i_bez_numerow_dopisywanych() -> None:
+    assert {(order.key.worker, order.key.day) for order in SAME} == {JAN_9, JAN_10, EWA_9}
+    assert [(order.key.worker, order.key.day) for order in SAME if int(order.key.number) == NUMBER_IN_TWO_ORDERS] == [JAN_10, EWA_9]
+    assert {int(line.split()[0]) for line in ADDED_TEXT.splitlines()}.isdisjoint(int(order.key.number) for order in SAME)
 
 
 @pytest.mark.parametrize(
@@ -625,22 +581,6 @@ TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak ins
 def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_raportem(
     earlier: list[ReportMail], mails: list[ReportMail], reported: set[tuple[str, date]]
 ) -> None:
-    """ADR 0041 (historia 14): dla tych samych maili i zleceń dzień Wykonawcy, za który kafelek Wpisania raportów liczy
-    Raport wykonawcy, to dokładnie dzień, za który przypomnienie nie idzie: Raport z Błędem opisu jest
-    przysłany, mail bez Wpisów nie jest raportem, pomylony temat (dwa numery z innego dnia, także z dniem z tematu po dziś albo sprzed wdrożenia) liczy się za
-    dzień zleceń (bez dni numeru, który INTERMAX ma w kilku zleceniach, bo jego Wpis niczego nie wpisuje), a jeden
-    niezgodny Wpis za dzień z tematu. Mail z tą samą chwilą i tym samym Message-ID daje ten sam
-    wynik w każdej kolejności skrzynki. Raport z błędem tematu (historie 3, 5, 19–20) liczy się za dzień z tematu, gdy
-    da się go przeczytać (inne słowa obok daty, data bez roku), z numerami zleceń, które dalej wygrywają z datą, a bez
-    niego (temat bez daty albo z datą, która nie jest dniem) za ostatni dzień Wykonawcy ze zleceniami, za który nie ma
-    innego raportu, także z błędem tematu z dniem z tematu, nie późniejszy niż dzień przyjścia maila, kolejne takie maile
-    po kolei przyjścia; bez takiego dnia
-    niczego nie kończy. Poprawka raportu w odpowiedzi (historie 6, 26–29) liczy się za dzień z tematu po przedrostkach
-    z Wpisami tylko nad cytatem, a przekazany raport, odpowiedź na mail o czym innym (historie 30–31), mail bez słowa
-    ``Raport`` i adres spoza listy nie są raportem Wykonawcy. Po wcześniejszym kliknięciu (``earlier``) obie operacje biorą tę samą pamięć Wpisania raportów i INTERMAX
-    po nim: numery dopisane przez Centrum nie robią z poprawionego tematu pomylonego, a zlecenie po Przeniesieniu liczy
-    się za dzień sprzed niego, więc ten sam raport z dobrą datą liczy się za dzień z tematu (W1 r1 #2059)."""
-
     now = _at(DAY + timedelta(days=2), 8)
     orders, memory = _after_click(_at(DAY + timedelta(days=1), 7), SAME, earlier)
 
@@ -663,11 +603,6 @@ def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_
 def test_poprawka_w_odpowiedzi_bez_roku_liczy_sie_w_obu_operacjach_za_dzien_w_roku_bliskim_dniu_przyjscia(
     subject: str, arrived: datetime, day: date, reported: bool
 ) -> None:
-    """ADR 0041, „Poprawka raportu w odpowiedzi” (decyzja Maksa 17.11.2026): odpowiedź z tematem raportu bez roku liczy
-    się w Wpisaniu raportów i w Przypomnieniach za ten dzień i miesiąc w roku, w którym leżą w granicach od dnia
-    przyjścia maila (``31.12`` w mailu z 2.01 to poprzedni rok), bez błędu tematu, a odpowiedź bez dnia nie jest
-    raportem."""
-
     orders = (_order(day=day),)
     mails = [_mail(JAN, subject, "40000001 tak inst20m", arrived)]
     now = _at(arrived.date() + timedelta(days=1), 8)
@@ -680,11 +615,6 @@ def test_poprawka_w_odpowiedzi_bez_roku_liczy_sie_w_obu_operacjach_za_dzien_w_ro
 
 
 def test_raport_wolnym_tekstem_z_wpisem_tak_konczy_przypomnienia_a_mail_bez_wpisu_nie() -> None:
-    """Historia 10 speca #2032 (ADR 0041, „Co nie jest raportem”): 13–14.11 Wykonawcy pisali raporty wolnym tekstem.
-    Raport za 13.11 z Wpisem ``tak`` ze zwykłym opisem jest przysłany: Wpisanie raportów wpisuje go bez problemu, bo
-    zwykły opis nie jest Błędem opisu, a po Aktualizacji 17.11 rano przypomnienie za 13.11 nie idzie. Mail za 14.11 bez żadnego numeru zlecenia nie jest
-    raportem, więc przypomnienie za 14.11 idzie."""
-
     day_13, day_14 = date(2026, 11, 13), date(2026, 11, 14)
     orders = (_order(day=day_13, number=40012345, row=120), _order(day=day_14, number=40012346, row=121))
     now = _at(date(2026, 11, 17), 8)
@@ -701,9 +631,6 @@ def test_raport_wolnym_tekstem_z_wpisem_tak_konczy_przypomnienia_a_mail_bez_wpis
 
 
 def test_przyklad_w_przypomnieniu_to_wpis_tak_z_samymi_kodami_legendy_z_wydania_i_wpis_nie_z_powodem() -> None:
-    """ADR 0039: wzór treści i przykład pokazują kody, więc Wykonawca, który przepisze przykład, nie dostanie Błędu
-    opisu przy legendzie z Wydania."""
-
     [reminder] = _due(NEXT_MORNING)
     lines = reminder.text.splitlines()
     example = lines.index("PRZYKŁAD:")
@@ -729,8 +656,4 @@ def test_przyklad_w_przypomnieniu_to_wpis_tak_z_samymi_kodami_legendy_z_wydania_
 def test_przypomnienie_z_wyslanych_to_ten_sam_mail_co_wyslane_w_pracy_przy_tych_samych_adresatach_dniu_i_zegarze_do_2_minut(
     gmail: SentReminder, same: bool
 ) -> None:
-    """Przypomnienie, które praca Centrum pamięta z wysyłki (zegar laptopa taty), i przypomnienie z „Wysłanych” (zegar
-    Gmaila) to ten sam mail przy tych samych adresatach i dniu przypomnienia i chwilach najwyżej zapas zegara
-    (``CLOCK_MARGIN``, 2 minuty) od siebie w obie strony; inny dzień albo inni adresaci to inny mail."""
-
     assert _sent(DAY, NEXT_MORNING).same_mail(gmail) is same
