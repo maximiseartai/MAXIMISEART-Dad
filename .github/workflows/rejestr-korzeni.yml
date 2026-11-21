@@ -1,33 +1,29 @@
 name: Rejestr korzeni
 
 # Every Monday at 6:17 Polish time: the numbers of the root registry since the deployment of the verdict template, the
-# guard firings in the failed CI runs of the last full week, the widenings of the rules, the pairs to audit and the
-# history of weeks go into the body of the one issue "Rejestr korzeni" (label rejestr-korzeni), before the hunt of the
-# skill polowanie at 8:00 reads it, audits the pairs blind and comments the escapes, which the next run reads into the
-# history (tools/rejestr_korzeni_tydzien.py, ADR 0031, ADR 0046). Minute 17, not the full hour: GitHub delays scheduled
-# runs at the start of an hour and drops some under high load. GitHub's cron runs in UTC, so 6:17 in Warsaw is 5:17 UTC
-# in winter time (CET, UTC+1) and 4:17 UTC in summer time (CEST, UTC+2): the workflow has both crons, and the tool gets
-# the cron that started it and goes on only when that cron is in hour 6 in Warsaw on that day (Poland changes the time
-# on a Sunday, so a Monday has one offset). The other cron ends with a line "REJESTR KORZENI POMINIĘTY". A manual run
-# (workflow_dispatch) has no cron and always measures.
+# guard firings in the failed CI runs of the last full week, the widenings of the rules, the pairs to audit, the proof
+# of every merged guard again on the main of the end of that week and the history of weeks go into the body of the one
+# issue "Rejestr korzeni" (label rejestr-korzeni), before the hunt of the skill polowanie at 8:00 reads it, audits the
+# pairs blind and comments the escapes, which the next run reads into the history (tools/rejestr_korzeni_tydzien.py,
+# ADR 0031, ADR 0046). Minute 17, not the full hour: GitHub delays scheduled runs at the start of an hour and drops some
+# under high load. GitHub's cron runs in UTC, so 6:17 in Warsaw is 5:17 UTC in winter time (CET, UTC+1) and 4:17 UTC in
+# summer time (CEST, UTC+2): the workflow has both crons, and the tool gets the cron that started it and goes on only
+# when that cron is in hour 6 in Warsaw on that day (Poland changes the time on a Sunday, so a Monday has one offset).
+# The other cron ends with a line "REJESTR KORZENI POMINIĘTY" and no body. A manual run (workflow_dispatch) has no cron
+# and always measures.
 # Cost: GraphQL pages of the registry scan with the HTML of every body, no render per verdict; the budget of
 # GITHUB_TOKEN (1000 GraphQL points an hour per repository) is in ZASADY of tools/lib/rejestr_korzeni.py. The
 # ast-grep rules on the lines added by the last 20 merged PRs took 144 s on a Mac on 18.11.2026. The guard firings
-# read a REST page of failed CI runs per 100, the jobs of each and the log of each failed job (OPIS of the tool).
+# read a REST page of failed CI runs per 100, the jobs of each and the log of each failed job (OPIS of the tool). The
+# proofs of the merged guards share REPROOF_BUDGET_S of the tool.
 on:
   schedule:
     - cron: '17 5 * * 1'
     - cron: '17 4 * * 1'
   workflow_dispatch:
 
-# issues: write edits or opens the issue and creates its label; pull-requests: read reads the verdicts and bodies of the
-# PRs (GraphQL search); contents: read fetches main, whose first-parent history gives the moment of the deployment and
-# the widenings of the rules; actions: read lists the failed CI runs of the week, their jobs and their logs.
 permissions:
-  actions: read
   contents: read
-  issues: write
-  pull-requests: read
 
 concurrency:
   # Two runs at once could both miss the issue and both open one; a later run waits.
@@ -35,10 +31,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  rejestr:
-    name: Rejestr korzeni
+  pomiar:
+    # The proof of a guard builds the environment of Required CI from main and runs main's tests, build backend and
+    # mypy plugins, so this job has no write permission: it ends with the body of the issue in an artifact, and only
+    # the job zapis, which runs no proof, writes it.
+    name: Pomiar rejestru korzeni
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The proofs end within REPROOF_BUDGET_S (150 min) of the tool, 30 min under this limit, so a late proof is a row
+    # of the section instead of a cancelled job (tests/test_rejestr_korzeni_tydzien.py). The whole measure of the week
+    # of 16.11.2026 with its 38 guards took 1058 s on a boat box with 8 vCPU.
+    timeout-minutes: 180
+    # contents: read fetches main, whose first-parent history gives the moment of the deployment, the widenings of the
+    # rules and the commit of the end of the week; pull-requests: read reads the verdicts and bodies of the PRs
+    # (GraphQL search); issues: read lists the open weed issues and reads the issue "Rejestr korzeni" with its comments
+    # (the audits); actions: read lists the failed CI runs of the week, their jobs and their logs.
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      zmierzony: ${{ steps.tresc.outputs.zmierzony }}
+    # Since Git 2.54 a fetch starts `git maintenance run --auto` detached, and its `git worktree prune` can delete the
+    # worktree that potomne.commit_copy is adding (#312); the job env reaches every git, actions/checkout included.
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: maintenance.auto
+      GIT_CONFIG_VALUE_0: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,16 +74,74 @@ jobs:
         with:
           enable-cache: false
 
-      # The firings of the rules on the last merged PRs need ast-grep. Its pin comes from pyproject.toml (the dev extra,
-      # as in CI), and -r installs only the dependencies, so no build of the project runs.
-      - name: Install ast-grep
+      # The firings of the rules on the last merged PRs need ast-grep, and the proofs of the guards PyYAML and uv. The
+      # pin comes from pyproject.toml (the dev extra, as in CI), and -r installs only the dependencies, so no build of
+      # the project runs; each proof builds the environment of Required CI itself (tools/lib/srodowisko_ci.py).
+      - name: Install the dependencies of the measure
         env:
           PYTHON: ${{ steps.python.outputs.python-path }}
         run: uv pip install --system --python "$PYTHON" -r pyproject.toml --extra dev
 
-      - name: Update the issue "Rejestr korzeni" with the last full week
+      - name: Measure the last full week and prove the merged guards again
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           CRON: ${{ github.event.schedule }}
-        run: python tools/rejestr_korzeni_tydzien.py --cron "$CRON"
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: '"$PYTHON" tools/rejestr_korzeni_tydzien.py --cron "$CRON" --ponowny-dowod --tresc-do "$RUNNER_TEMP/rejestr/tresc.md"'
+
+      - id: tresc
+        name: Mark a measured week
+        run: |
+          if test -f "$RUNNER_TEMP/rejestr/tresc.md"; then echo zmierzony=true >> "$GITHUB_OUTPUT"; fi
+
+      - if: ${{ steps.tresc.outputs.zmierzony == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tresc-rejestru-korzeni
+          path: ${{ runner.temp }}/rejestr/tresc.md
+          retention-days: 7
+          overwrite: true
+
+  zapis:
+    name: Zapis rejestru korzeni
+    needs: pomiar
+    if: ${{ needs.pomiar.outputs.zmierzony == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # issues: write edits or opens the issue and creates its label; contents: read checks out the tool.
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - id: python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      # The tool imports PyYAML; -r installs only the dependencies, so no build of the project runs.
+      - name: Install the dependencies of the tool
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: uv pip install --system --python "$PYTHON" -r pyproject.toml --extra dev
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tresc-rejestru-korzeni
+          path: ${{ runner.temp }}/rejestr
+
+      - name: Update the issue "Rejestr korzeni" with the measured body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: '"$PYTHON" tools/rejestr_korzeni_tydzien.py --tresc-z "$RUNNER_TEMP/rejestr/tresc.md"'
