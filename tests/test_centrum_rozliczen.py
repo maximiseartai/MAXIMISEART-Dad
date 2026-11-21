@@ -4487,6 +4487,10 @@ WORLD_SETTLEMENT_MAIL: Final = {"subject": "Rozliczenie taty za {okres}", "text"
 
 
 def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[str, str]:
+    """Pliki Ustawień, które mają tata i Maks: skrzynka raportów z adresem, Legenda czynności taty bez pierwszego kodu z
+    Wydania i z usuniętym kodem w Historii, przypomnienia ze stopką taty, temat i treść Maila z rozliczeniem taty, usunięta reguła i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
+    usuniętego składnika."""
+
     (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
     (tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes[1:]))
     code = client.post(LEGEND_URL, json=WORLD_CODE).json()["activity_legend"]["codes"][-1]["id"]
@@ -4514,6 +4518,13 @@ def _dad_changed_every_file_outside_centrum(tool: ToolDirectory) -> None:
 
 
 def _settings_world(tmp_path: Path, name: str) -> SettingsWorld:
+    """Świat próbek: Rejestr zleceń i folder okresów bez loginów z Listy Wykonawców (więc usunięcie Wykonawcy przechodzi
+    sprawdzenie okresów), pliki taty i Maksa (``_files_of_dad_and_maks``), wyjątek Kontroli ilości, plik przypomnień,
+    który tata właśnie poprawia (zła treść, a pamięć ma ostatnią dobrą, więc zapis odkłada złą do ``odrzucone``, a bez
+    pamięci zapisałby wartości domyślne), i zmiana każdego pliku poza Centrum (``_dad_changed_every_file_outside_centrum``).
+    Katalog narzędzia to ``tmp_path / name``, a Rejestr, plik taty, a nie Ustawień, leży poza nim, jeden dla wszystkich
+    światów testu. Wątki Centrum w tle kończą się przed powrotem, więc nie czytają ani nie piszą w czasie próbki."""
+
     register = tmp_path / "Rejestr" / REGISTER_NAME
     if not register.exists():
         register.parent.mkdir(parents=True)
@@ -5212,6 +5223,12 @@ def test_znane_luki_zmian_z_wydania_przechodza_przez_probe_pliku_bez_odczytu(tmp
 
 @pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
 def test_zmiana_z_wydania_nie_nadpisuje_zlego_pliku_taty(tmp_path: Path, change: ReleaseChange[Any]) -> None:
+    """Zły plik zmiany z Wydania zostaje bajt w bajt i bez wiersza ``zapisano``: zmiana nie pisze ostatniej dobrej
+    wartości na plik, który tata albo Maks właśnie poprawia (ADR 0032). Start bez zmian z Wydania najpierw zapamiętuje
+    dobry plik, więc właściciel ma ostatnią dobrą wartość, którą zmiana mogłaby nadpisać zły plik.
+
+    Granica: zła treść dotyczy tylko pliku samej zmiany z Wydania, nie plików czytanych przez operację taty."""
+
     tool = _release_world(tmp_path, change)
     remembering = started(tool, ())
     assert remembering.get("/api/settings").status_code == 200
