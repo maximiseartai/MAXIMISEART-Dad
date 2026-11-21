@@ -1,8 +1,27 @@
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+import sys
+from types import ModuleType
+
 import pytest
 
-import slowa_powloki
+ROOT = Path(__file__).resolve().parents[1]
+CIEZKIE = ROOT / "tools" / "hooks" / "ciezkie.py"
+CZEKANIE = ROOT / "tools" / "hooks" / "czekanie.py"
+
+
+def _load(path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(f"slowa_{path.stem}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+HOOKS = {"ciezkie": _load(CIEZKIE), "czekanie": _load(CZEKANIE)}
 
 SLOWA = [
     pytest.param("szybko", "szybko", id="bez-cudzyslowu"),
@@ -26,5 +45,7 @@ SLOWA = [
 
 
 @pytest.mark.parametrize(("slowo", "jak_bash"), SLOWA)
-def test_slowo_polecenia_bez_cudzyslowow_jest_takie_jak_po_rozwinieciu_basha(slowo: str, jak_bash: str) -> None:
-    assert slowa_powloki.unquoted(slowo) == jak_bash
+def test_oba_hooki_czytaja_slowo_polecenia_tak_jak_bash_po_rozwinieciu(slowo: str, jak_bash: str) -> None:
+    read = {name: hook._words(f"echo {slowo}") for name, hook in HOOKS.items()}
+
+    assert read == {name: ["echo", jak_bash] for name in HOOKS}

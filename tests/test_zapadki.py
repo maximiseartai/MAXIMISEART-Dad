@@ -734,7 +734,6 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komunikat-boxa-podlancuchem": "bierz własność box_boat.WLASNOSC z junit",
-    "cudzyslow-powloki-poza-slowami-powloki": "wzorzec słowa składaj z QUOTED",
     "dyrektywa-mypy-recznie": "użyj mypy.util.get_mypy_comments",
     "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
     "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
@@ -812,7 +811,6 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
 # linie dodane przez zmianę, i folder, od którego liczy je ``whole_tree_rules``.
 REGULY_CALEGO_DRZEWA: Final = (
-    "cudzyslow-powloki-poza-slowami-powloki",
     "dyrektywa-mypy-recznie",
     "follow-symlinks-tylko-posix",
     "historia-w-docstringu",
@@ -2376,7 +2374,6 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
     "znak-powloki-jako-test-literalu": (("tools", "hooks"), ".py"),
     "shlex-czyta-polecenie-agenta": (("tools", "hooks"), ".py"),
-    "cudzyslow-powloki-poza-slowami-powloki": (("tools", "hooks"), ".py"),
     "program-wzorcem-ze-sciezka": (("tools", "hooks"), ".py"),
     "break-skryptu-pythona-to-czekanie": (("tools", "hooks"), ".py"),
     "reszta-tekstu-od-kazdego-trafienia": (("tools",), ".py"),
@@ -2397,7 +2394,6 @@ _LINIA = "def komentarz(linia: str) -> bool:\n    return "
 _PATTERN = "import re\n\nLINE = "
 _LITERAL = "def literal(word: str) -> bool:\n"
 _SHLEX = "import shlex\n\n\ndef words(command: str) -> list[str]:\n"
-_RE = "import re\n\nWORD = re.compile("
 _PROGRAM = "def python(word: str) -> bool:\n"
 _AST_STOP = "import ast\n\n\ndef stops(tree: ast.AST) -> bool:\n"
 _WORDS = "import re\n\nWORD = re.compile(r'[a-z]+')\n\n\ndef rests(text: str) -> list[str]:\n"
@@ -2519,25 +2515,6 @@ _PROBKI_REGUL_POWROTOW: Final = [
         [],
         id="shlex-quote-przechodzi",
     ),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"\\\\([\\s\\S])|'([^']*)'\")\n", [3], id="slowo-w-apostrofach-w-grupie"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'(?:[^']*)'|[^ ]\")\n", [3], id="slowo-w-apostrofach-bez-przechwytu"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}\"'[^']+'\")\n", [3], id="slowo-w-apostrofach-bez-grupy"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'(?P<single>[^']*)'\")\n", [3], id="slowo-w-apostrofach-w-grupie-nazwanej"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^']*?)'\")\n", [3], id="slowo-w-apostrofach-leniwie"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'((?:[^'])*)'\")\n", [3], id="slowo-w-apostrofach-w-grupie-zagniezdzonej"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r'\\\\([\\s\\S])|\\'([^\\']*)\\'')\n", [3], id="slowo-w-apostrofach-po-ukosniku"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^']{{0,}})'\")\n", [3], id="slowo-w-apostrofach-z-klamra"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}\"'\" + \"([^']*)\" + \"'\")\n", [3], id="wzorzec-sklejony-z-kilku-literalow"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^'\\n]*)'\")\n", [3], id="klasa-z-dodatkowym-znakiem"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"'([^\\n']*)'\")\n", [3], id="apostrof-nie-na-poczatku-klasy"),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r\"[^ \\t'\\\"\\\\]+\")\n", [], id="zwykla-czesc-slowa-bez-obu-cudzyslowow-przechodzi"),
-    pytest.param(
-        "cudzyslow-powloki-poza-slowami-powloki",
-        f"from slowa_powloki import QUOTED\n{_RE}rf\"(?:[^ ]|{{QUOTED}})+\")\n",
-        [],
-        id="wzorzec-z-quoted-przechodzi",
-    ),
-    pytest.param("cudzyslow-powloki-poza-slowami-powloki", f"{_RE}r'\"[^\"]*\"')\n", [], id="napis-w-cudzyslowie-bez-apostrofow-przechodzi"),
     pytest.param(
         "program-wzorcem-ze-sciezka",
         "import re\n\nPYTHON = re.compile(r'(?:[\\w.~/-]*/)?python3?(?![\\w.-])')\n",
@@ -2843,11 +2820,6 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "znak powłoki w nazwanej stałej": f'SUBSTITUTION = "$"\n\n\n{_LITERAL}    return SUBSTITUTION not in word\n',
         "metoda napisu zamiast operatora in": _LITERAL + '    return word.find("$") < 0\n',
         "napis ze znakiem powłoki i zwykłym znakiem": _LITERAL + '    return "a$" not in word\n',
-    },
-    "cudzyslow-powloki-poza-slowami-powloki": {
-        "apostrof zapisany kodem znaku": f"{_RE}r\"'([^\\x27]*)'\")\n",
-        "apostrof i cudzysłów w jednej klasie": f"{_RE}r\"'([^'\\\"]*)'\")\n",
-        "czytnik znak po znaku bez wzorca": "def quoted(word: str) -> str:\n    return word[1:-1] if word[:1] == \"'\" == word[-1:] else word\n",
     },
     "shlex-czyta-polecenie-agenta": {
         "funkcja zaimportowana z modułu shlex": "from shlex import split\n\n\ndef words(command: str) -> list[str]:\n    return split(command)\n",

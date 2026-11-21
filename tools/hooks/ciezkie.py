@@ -20,7 +20,7 @@ from slowa_powloki import QUOTED, unquoted
 SEPARATORS = frozenset({"&&", "&"})
 SEPARATOR_CHARACTERS = ";|()\n"
 TOKEN = re.compile(
-    rf"[ \t\r]+|#[^\n]*|(?P<separator>[{re.escape(SEPARATOR_CHARACTERS)}]+)"
+    rf"(?:[ \t\r]|\\\n)+|#[^\n]*|(?P<separator>[{re.escape(SEPARATOR_CHARACTERS)}]+)"
     rf"|(?P<word>(?:[^ \t\r'\"\\{re.escape(SEPARATOR_CHARACTERS)}]|{QUOTED})+)"
 )
 KEYWORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "{"})
@@ -78,9 +78,10 @@ class _Heavy:
 
 
 def _words(command: str) -> Optional[list[str]]:
-    text, words, index = command.replace("\\\n", ""), [], 0
-    while index < len(text):
-        token = TOKEN.match(text, index)
+    words: list[str] = []
+    index = 0
+    while index < len(command):
+        token = TOKEN.match(command, index)
         if token is None:
             return None
         index = token.end()
