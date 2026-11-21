@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import final
+
 import straznik
 from straznik import Guard, Kind
 from szablon_werdyktu import Mechanism
@@ -45,17 +48,23 @@ def applies(pull: Pull) -> bool:
     return werdykt_pr.rule_applies(pull, werdykt_pr.deployment(pull.base, MARKER))
 
 
-def owner_applies(pull: Pull) -> bool:
-    return werdykt_pr.rule_applies(pull, werdykt_pr.deployment(pull.base, OWNER_MARKER))
+@final
+@dataclass(frozen=True)
+class Ruling:
+    thread: Pull
+    mechanism: Mechanism | None
+    guard: Guard
+
+    @property
+    def refusal(self) -> str | None:
+        return _refusal(self.mechanism, self.guard) if applies(self.thread) else None
+
+    @property
+    def owner(self) -> bool:
+        return werdykt_pr.rule_applies(self.thread, werdykt_pr.deployment(self.thread.base, OWNER_MARKER)) and self.mechanism is Mechanism.TEST and self.guard.kind is Kind.PYTEST
 
 
-def needs_owner(mechanism: Mechanism | None, guard: Guard) -> bool:
-    return mechanism is Mechanism.TEST and guard.kind is Kind.PYTEST
-
-
-def refusal(mechanism: Mechanism | None, guard: Guard) -> str | None:
-    """Przyczyna, dla której szczebel ``mechanism`` nie przyjmuje strażnika ``guard``; ``None``, gdy go przyjmuje."""
-
+def _refusal(mechanism: Mechanism | None, guard: Guard) -> str | None:
     allowed = ALLOWED.get(mechanism) if mechanism is not None else None
     if allowed is None or guard.kind in allowed:
         return None

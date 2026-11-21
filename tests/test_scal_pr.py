@@ -3326,6 +3326,7 @@ def _entry(selector: str, key: str = "1480/W1/r1") -> dict[str, str]:
 
 
 MOVED_PYTEST = "pytest tests/test_x.py::test_y"
+OWNER_BETWEEN = "2026-10-22T00:00:00Z"
 ENTRY_REFUSAL = f"strażnik: wpis {{case}} w {strazniki_przeniesione.PLIK}: "
 
 
@@ -3342,16 +3343,17 @@ ENTRY_REFUSAL = f"strażnik: wpis {{case}} w {strazniki_przeniesione.PLIK}: "
         pytest.param({}, _entry(MOVED_PYTEST), (_fail_with("lint"), "MERGED"), PROOF_OK, None, ENTRY_REFUSAL.format(case="1480/W1/r1") + "Mechanizm: lint przyjmuje tylko Strażnik: mypy, ruff albo ast-grep <id reguły>", id="szczebel-lint-odmawia-testu-we-wpisie"),
         pytest.param({}, _entry(GUARD), (_fail_with("lint"), "MERGED"), PROOF_OK, (GUARD,), None, id="szczebel-lint-przyjmuje-mypy-we-wpisie"),
         pytest.param({}, _entry(MOVED_PYTEST), (_fail_with("test"), "MERGED"), PROOF_OK, (MOVED_PYTEST, "--chroniony-wlasciciel"), None, id="szczebel-test-dowodzi-wpisu-z-chronionym-wlascicielem"),
+        pytest.param({}, _entry(MOVED_PYTEST), (_fail_with("test"), "MERGED", OWNER_BETWEEN), PROOF_OK, (MOVED_PYTEST,), None, id="watek-waznego-sprzed-wdrozenia-chronionego-wlasciciela"),
         pytest.param({}, _entry(GUARD, "1/W1/r1"), (FAIL_W1, "MERGED"), PROOF_OK, None, ENTRY_REFUSAL.format(case="1/W1/r1") + "wpis przenosi strażnika Ważnego scalonego PR", id="wpis-dla-waznego-tego-pr"),
         pytest.param({}, _entry(GUARD), (FAIL_W1, "OPEN"), PROOF_OK, None, ENTRY_REFUSAL.format(case="1480/W1/r1") + "PR #1480 nie jest scalony (OPEN)", id="wpis-dla-pr-niescalonego"),
         pytest.param({}, _entry(GUARD, "1480/W2/r1"), (FAIL_W1, "MERGED"), PROOF_OK, None, ENTRY_REFUSAL.format(case="1480/W2/r1") + "PR #1480 nie ma Ważnego W2 r1 w werdyktach FAIL", id="wpis-dla-waznego-ktorego-pr-nie-ma"),
     ],
 )
 def test_wpis_straznika_przeniesionego_scala_sie_tylko_z_dowodem_ok_i_szczeblem_waznego_scalonego_pr(
-    tmp_path: Path, base: dict[str, str], changed: dict[str, str], cited: tuple[str, str], proof: tuple[int, str], proved: tuple[str, ...] | None, refusal: str | None
+    tmp_path: Path, base: dict[str, str], changed: dict[str, str], cited: tuple[str, ...], proof: tuple[int, str], proved: tuple[str, ...] | None, refusal: str | None
 ) -> None:
-    github, head = _guard_pull(tmp_path, "bez-sekcji", PASS_ON_OLD, proof=proof, base=base, changed=changed, owner=GATE_BEFORE_VERDICTS)
-    verdict, state = cited
+    verdict, state, owner = (*cited, GATE_BEFORE_VERDICTS)[:3]
+    github, head = _guard_pull(tmp_path, "bez-sekcji", PASS_ON_OLD, proof=proof, base=base, changed=changed, owner=owner)
     github.pulls["1480"] = _pr_view(1480, OLD, state=state, comments=[_verdict("comment", verdict.format(commit=OLD), when="2026-10-20T01:00:00Z")])
     github._save()
 
