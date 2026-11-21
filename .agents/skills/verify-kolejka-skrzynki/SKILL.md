@@ -466,6 +466,9 @@ Checked only with the bounds in the configurations. Assumed and not checked:
   `tests/test_centrum_logi_w_skrzynce.py` runs two Stanowiska on one Skrzynka, and
   `test_uwaga_taty_z_tytulem_od_prefiksu_andrzeja_dostaje_odnosnik_do_logow_ktore_dotarly_po_niej` in
   `tests/test_centrum_uwaga_do_uruchomienia.py` an Uwaga of Dad whose title starts with the prefix.
+  `KeyedBox.open_issue` of a Stanowisko with a prefix adds the stamp of its Stanowisko as the last line of the body
+  (`box_prefix.stamped`, for Maks's tools) and remembers the body with it; no step of the queue reads that line, since
+  `_marks` takes the mark of a wysyłka from any line, so the model's bodies leave it out.
 - NAJNOWSZA_WERSJA is the checker's: the model checks that marking and removing a superseded file loses nothing
   (DokladnieRaz, Zbieganie), not that the older version stays out of the Skrzynka. `postep` has one progress before the
   Logi (`Wysylek = 2`); the checker's scope `postep` has two.
