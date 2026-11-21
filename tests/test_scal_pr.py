@@ -45,6 +45,7 @@ import repo
 import rozjazd_modelu
 import scal_pr
 import stan_pr
+import strazniki_przeniesione
 import szablon_werdyktu
 import szczebel_straznika
 import werdykt_pr
@@ -3276,6 +3277,36 @@ def test_straznik_bez_dowodu_ok_nie_scala_sie(tmp_path: Path, proof: tuple[int, 
         f"SCAL ODMOWA | #1 {head[:7]} | strażnik: Ważne 1/W1/r1 ma Strażnik: {GUARD}, a jego dowód nie przeszedł (kod {proof[0]}): {proof[1]}; "
         f"popraw strażnika albo wybierz inny z listy i sprawdź go poleceniem tools/na_scalonych_pr.py {arguments}"
     ), last
+
+
+MOVED_ENTRY = f'["1480/W1/r1"]\nstraznik = "{GUARD}"\n'
+PASS_ON_OLD = SPRAWDZONE_PASS.replace("{head}", "{commit}")
+
+
+@pytest.mark.parametrize(
+    ("base", "changed", "proof", "proved", "refusal"),
+    [
+        ({}, {strazniki_przeniesione.PLIK: MOVED_ENTRY}, PROOF_OK, True, None),
+        ({strazniki_przeniesione.PLIK: MOVED_ENTRY.replace(GUARD, "ruff")}, {strazniki_przeniesione.PLIK: MOVED_ENTRY}, PROOF_OK, True, None),
+        ({}, {strazniki_przeniesione.PLIK: MOVED_ENTRY}, PROOF_REFUSED, True, f"strażnik: Ważne 1480/W1/r1 ma Strażnik: {GUARD}, a jego dowód nie przeszedł (kod 1): {PROOF_REFUSED[1]}"),
+        ({strazniki_przeniesione.PLIK: MOVED_ENTRY}, {"kod/inne.py": "INNE: int = 1\n"}, PROOF_REFUSED, False, None),
+        ({}, {strazniki_przeniesione.PLIK: MOVED_ENTRY.replace("1480/W1/r1", "1480/W1")}, PROOF_OK, False, f"strażnik: {strazniki_przeniesione.PLIK}: wpis '1480/W1': klucz to Ważne PR/W<n>/r<k>"),
+    ],
+    ids=["nowy-wpis-ma-dowod", "zmieniony-wpis-ma-dowod", "wpis-bez-dowodu-ok-nie-scala-sie", "wpis-z-bazy-bez-zmiany-bez-dowodu", "wpis-spoza-postaci-to-odmowa-bez-dowodu"],
+)
+def test_wpis_straznika_przeniesionego_scala_sie_tylko_z_dowodem_ok_takze_w_pr_bez_waznego(
+    tmp_path: Path, base: dict[str, str], changed: dict[str, str], proof: tuple[int, str], proved: bool, refusal: str | None
+) -> None:
+    github, head = _guard_pull(tmp_path, "bez-sekcji", PASS_ON_OLD, proof=proof, base=base, changed=changed)
+
+    answered = github.run("1", "--bez-merge")
+
+    last = _last_line(answered)
+    assert _proofs(github) == ([_proof_arguments(head, "1480/W1/r1")] if proved else []), answered.stdout + answered.stderr
+    if refusal is None:
+        assert answered.returncode == 0 and last.startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    else:
+        assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {refusal}"), last
 
 
 def test_wazne_z_tym_samym_straznikiem_maja_jeden_dowod(tmp_path: Path) -> None:

@@ -8,9 +8,11 @@ import time
 import github
 import potomne
 import rejestr_korzeni
-from repo import ROOT
+from repo import REMOTE, ROOT
+import repo
 from stan_pr import Pull, Waiting
 import straznik
+import strazniki_przeniesione
 import szablon_werdyktu
 import szczebel_straznika
 import werdykt_pr
@@ -20,6 +22,10 @@ ZASADY = """Warunek 5 merge'a ([ADR 0042](../../docs/adr/0042-straznik-przy-pier
 strażnika przechodzi: ``tools/na_scalonych_pr.py --straznik <selektor> --z-commita <HEAD PR> --wazne <PR>/W<n>/r<k>``
 z kodu bazy PR, tym samym Pythonem, jedno wywołanie na selektor ze wszystkimi jego Ważnymi. Przechodzi tylko kod 0
 z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``, a w jakim środowisku, ``srodowisko_ci``.
+
+Wpis ``strazniki_przeniesione.PLIK``, który PR dodaje albo zmienia (strażnik przeniesiony Ważnego scalonego PR,
+``strazniki_przeniesione.ZASADY``), dostaje ten sam dowód ze swoim selektorem i Ważnym, także w PR bez werdyktu
+``FAIL``, a wpis, którego narzędzie nie wczyta, to odmowa.
 
 Selektor wybiera autor tylko spośród tych, które przyjmuje szczebel z pola ``Mechanizm:`` Ważnego
 (``szczebel_straznika``, ADR 0046); selektor, którego szczebel nie przyjmuje, to odmowa bez dowodu, a ``pytest
@@ -55,18 +61,43 @@ def applies(pull: Pull) -> bool:
 
 
 def needed(pull: Pull) -> bool:
-    """Czy warunek 5 ma czego dowodzić: PR ma werdykt ``FAIL``, a warunek obowiązuje w jego wątku (``applies``)."""
+    """Czy warunek 5 ma czego dowodzić: PR ma werdykt ``FAIL``, a warunek obowiązuje w jego wątku (``applies``), albo
+    PR dodaje lub zmienia wpis strażnika przeniesionego (``moved``)."""
 
+    try:
+        entries = moved(pull)
+    except ValueError:
+        return True
+    return _own(pull) or bool(entries)
+
+
+def moved(pull: Pull) -> list[strazniki_przeniesione.Moved]:
+    if not (after := strazniki_przeniesione.at(ROOT, pull.head)):
+        return []
+    try:
+        fork = repo.merge_base(ROOT, f"{REMOTE}/{pull.base}", pull.head)
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"{strazniki_przeniesione.PLIK}: bez merge-base HEAD {pull.head[:7]} z {REMOTE}/{pull.base} nie wiem, które wpisy PR zmienia ({error.stderr or error})") from None
+    before = strazniki_przeniesione.at(ROOT, fork)
+    return [entry for key, entry in after.items() if before.get(key) != entry]
+
+
+def _own(pull: Pull) -> bool:
     return any(str(verdict.get("body") or "").lstrip().startswith("WERDYKT: FAIL") for verdict in pull.verdicts) and applies(pull)
 
 
 def problems(pull: Pull) -> list[str]:
     """Przyczyny odmowy merge'a ``pull`` z warunku 5; HEAD i baza PR są już pobrane z ``origin``."""
 
-    if not needed(pull):
+    try:
+        entries = moved(pull)
+    except ValueError as error:
+        return [f"strażnik: {error}"]
+    own = _own(pull)
+    if not own and not entries:
         return []
     try:
-        majors = rejestr_korzeni.majors(werdykt_pr.rounds(pull, werdykt_pr.rendered(pull)))[0]
+        majors = rejestr_korzeni.majors(werdykt_pr.rounds(pull, werdykt_pr.rendered(pull)))[0] if own else {}
         section = rejestr_korzeni.section(szablon_werdyktu.items(github.html_markdownu(pull.body, pull.repository))) if majors else None
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to oczekiwanie z przyczyną
         return [Waiting(f"strażnik: GitHub nie wyrenderował werdyktów albo opisu PR ({error}), uruchom ponownie")]
@@ -87,6 +118,8 @@ def problems(pull: Pull) -> list[str]:
             )
         else:
             wanted.setdefault((guard, owned and szczebel_straznika.needs_owner(major.mechanism, guard)), []).append(case)
+    for entry in entries:
+        wanted.setdefault((entry.guard, False), []).append(f"{entry.pull}/{entry.major.replace(' ', '/')}")
     deadline = time.monotonic() + PROOF_TIMEOUT_S
     return [*refused, *(reason for (guard, owner), cases in wanted.items() for reason in _proved(pull, guard, cases, deadline - time.monotonic(), owner=owner))]
 

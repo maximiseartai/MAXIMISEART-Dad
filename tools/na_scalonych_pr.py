@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 import json
 import os
@@ -30,6 +30,7 @@ from repo import REMOTE, ROOT
 import repo
 import srodowisko_ci
 import straznik
+import strazniki_przeniesione
 import szablon_werdyktu
 import werdykt_pr
 
@@ -116,7 +117,8 @@ gdy reguła na HEAD ma to Ważne w polu ``metadata.przypadki``, jedynej liście 
 dowodem ``straznik.prove`` albo warunkiem wyjątku ``straznik.exempt``, które opisuje ``ZASADY`` ``tools/lib/straznik.py``,
 z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyktu; ``pytest <węzeł>`` idzie dowodem
 ``straznik.prove_test`` z najnowszym blokiem ``### Mutacja W<n> r<k>`` tego Ważnego we wszystkich werdyktach PR
-(``mutacja_recenzenta``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``),
+(``mutacja_recenzenta``), a gdy wpis Ważnego z tym selektorem w ``tools/lib/strazniki_przeniesione.toml`` drzewa
+``--z-commita`` ma mutację, z nią (``strazniki_przeniesione``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``),
 także dla Ważnego z ``Gdzie`` bez miejsca ``plik:linia`` w repo (plik spoza repo), którego inne selektory odmawiają.
 ``--przed-dowodem-testu`` (wątek sprzed wdrożenia dowodu testu, ``bramka_straznika.TEST_MARKER``) przepuszcza
 ``brak - test``, którego poza takim wątkiem dowód odmawia. ``--chroniony-wlasciciel`` (Ważne szczebla ``test``,
@@ -434,7 +436,8 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]], *, bef
         if guard.kind is straznik.Kind.AST_GREP:
             return _rule_guard(head, target, guard, majors)
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
-        cases = [_case(guard, major_probe(repository, *one)) for one in majors]
+        moved = strazniki_przeniesione.at(ROOT, head)
+        cases = [_case(guard, _moved(major_probe(repository, *one), guard, moved.get((one[0], f"{one[1]} r{one[2]}")))) for one in majors]
         if owner and (refused := _outside_owners(head, target, cases)):
             print(f"DOWÓD ODMOWA | {guard} | {refused}")
             return 1
@@ -454,6 +457,10 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]], *, bef
     ok = detected == len(found)
     print(f"DOWÓD {'OK' if ok else 'ODMOWA'} | {guard} | {'wyjątek' if guard.kind in straznik.EXEMPT else 'wykryte'} {detected}/{len(found)}")
     return 0 if ok else 1
+
+
+def _moved(probe: Probe, guard: straznik.Guard, entry: strazniki_przeniesione.Moved | None) -> Probe:
+    return replace(probe, mutation=entry.mutation) if entry is not None and entry.guard == guard and entry.mutation is not None else probe
 
 
 def _outside_owners(head: str, target: str, cases: list[straznik.Case]) -> str:
