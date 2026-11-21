@@ -14,7 +14,7 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.register_file import OrderSheets
 from rozliczenia.settlement_period import period_of
 from rozliczenia.workbook_files import WorkbookError
-from rozliczenia.workbook_parts import UnsupportedShape
+from rozliczenia.workbook_parts import UnsupportedShape, rows_dated_between
 
 from atrapy.intermax import WORKER, Intermax, Order, like_excel
 from atrapy.workbooks import rewrite_parts
@@ -66,12 +66,11 @@ def test_drugi_odczyt_wierszy_okresu_z_tych_samych_bajtow_rejestru_nie_zaweza_sk
     path = tmp_path / "INTERMAX.xlsx"
     Intermax(ordered=(Order(datetime(2026, 10, 20, 8), "drugi.odczyt", 7),)).write(path)
     period = period_of(date(2026, 10, 20))
-    narrowed = register_file.rows_dated_between
     calls: list[object] = []
 
     def counted(*args: Any) -> Any:
         calls.append(args)
-        return narrowed(*args)
+        return rows_dated_between(*args)
 
     monkeypatch.setattr(register_file, "rows_dated_between", counted)
     first = _order_sheets(path).period_rows(period)
