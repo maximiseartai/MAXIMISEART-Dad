@@ -1,36 +1,3 @@
-"""Legenda czynności (ADR 0038, 0039): Ilości usług, kwota w ``AS`` i Wyróżnienia z Kodów czynności w ``CZYNNOŚCI ZREALIZOWANE``.
-
-Jedyną operacją jest ``ActivityLegend.read(text, fault=...)``, czysta funkcja bez plików i bez Centrum rozliczeń; liczą nią
-Przygotowanie pliku zbiorczego, Ilości do uzupełnienia, Kontrola ilości, podgląd zmiany legendy i brama. Niezmienniki
-legendy sprawdza sam typ ``ActivityLegend`` przy tworzeniu, więc legenda z błędem nie powstaje (``LegendRefused`` z
-polem i zdaniem), także legenda z dwoma zapisami, do których może pasować to samo słowo: każde słowo opisu pasuje
-najwyżej do jednego zapisu, a ``tak`` i ``nie`` do żadnego, bo zapis tych słów nigdy niczego by nie wpisał. Plik
-legendy ↔ typy: ``activity_legend_file``.
-
-Zapis Kodu czynności to małe litery, cyfry i ``/`` bez spacji, od litery, z co najwyżej jednym miejscem na liczbę
-``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Obok Kodów czynności w opisie technika stoi zwykły opis,
-który nie jest błędem i niczego nie wyznacza (ADR 0041). Rachunek tekstu:
-
-1. Słowo to ciąg liter, cyfr i ``/`` z co najmniej jedną literą albo cyfrą; słowa rozdziela każdy inny znak (spacja,
-   przecinek, kropka, nowy wiersz), a sam ``/`` między słowami też.
-2. Słowo jest Kodem czynności, gdy małymi literami (``casefold``) jest w całości zapisem kodu, a ``{n}`` to ciąg cyfr.
-   Każde inne słowo to zwykły opis: ``tak`` i ``nie``, własny zapis pracownika (``utp18m``, ``instmdic``, bez
-   dopasowania po podobieństwie), kod ze spacją w środku (``inst 20m``), kody sklejone (``spawpgspawez``) i kod w
-   dłuższym słowie (``xinst20m``).
-3. Kod z przedziałami wybiera kolumnę liczbą z zapisu, a kod z liczbą spoza przedziałów to Błąd opisu (``NumberOutOfRange``).
-   Kod bez przedziałów liczby nie czyta.
-4. W kolumnę Ilości usług wpisuje najwyżej jeden kod: drugi, także ten sam kod drugi raz, to Błąd opisu
-   (``ColumnTwice``). Kwoty w ``AS`` się sumują. Kolumna, którą kody wypełniają dwoma różnymi kolorami, to Błąd opisu
-   (``TwoColours``); ten sam kolor z dwóch kodów nie.
-5. W usterce (``fault``: zlecenie z Ilością usług w ``AI``) kod, który w usterce się nie liczy (``counts_in_fault``,
-   ``rt2``, ADR 0044), jest Kodem czynności (stoi w ``found`` i ``spelled``), ale niczego nie wyznacza i nie bierze
-   udziału w punktach 3 i 4, więc opis z samym takim kodem to ``WithCodes`` bez Ilości, kwoty i kolorów.
-6. Wynik to ``NoCodes`` (opis bez żadnego Kodu czynności), ``WithCodes`` (poprawne kody z tym, co wyznaczają, obok
-   zwykłego opisu albo bez niego) albo ``DescriptionError`` z każdym powodem: najpierw kody z liczbą spoza przedziałów
-   w kolejności z opisu, potem kolumny w kolejności arkusza. Błąd opisu niczego nie wyznacza w wierszu, nawet za
-   poprawne kody obok. Każdy wynik ma kody z opisu w zapisie legendy (``spelled``), w kolejności z opisu.
-"""
-
 from __future__ import annotations
 
 from collections import deque
@@ -40,25 +7,20 @@ from enum import StrEnum
 from itertools import pairwise, product
 import re
 from types import MappingProxyType
-from typing import ClassVar, Final
+from typing import ClassVar, Final, NamedTuple
 
 from .collective_layout import QUANTITY_LETTERS, REMARKS_AMOUNT, letter
 from .quantity_engine import BUILT_IN_COLUMNS, MAX_VALUE, Quantities
 
 NUMBER: Final = "{n}"
 SHOWN_NUMBER: Final = "#"
-"""Miejsce na liczbę w zapisie pokazanym tacie: w zdaniach kodów, w odmowach i w formularzu kodu."""
 AMOUNT_COLUMN: Final = letter(REMARKS_AMOUNT)
-"""``AS`` (Uwagi - kwota): kolumna kwoty Kodu czynności, nigdy kolumna jego Ilości usług."""
 COLUMNS: Final = tuple(column for column in QUANTITY_LETTERS if column not in BUILT_IN_COLUMNS)
-"""Kolumny, w które kod wpisuje Ilość usług: ``N:AP`` bez wbudowanych rachunków P, Q i S."""
 FILL_COLUMNS: Final = (*COLUMNS, AMOUNT_COLUMN)
 YES_NO: Final = frozenset({"tak", "nie"})
 
 
 class FillColour(StrEnum):
-    """Kolor wypełnienia z plików taty; ``argb`` to zapis koloru w skoroszycie."""
-
     GREEN = "zielony"
     RED = "czerwony"
 
@@ -95,21 +57,16 @@ ColumnChoice = FixedColumn | ColumnByNumber
 
 @dataclass(frozen=True)
 class CellFill:
-    """Wypełnienie kolumny kolorem: Wyróżnienie, także bez wartości w komórce."""
-
     column: str
     colour: FillColour
 
 
 @dataclass(frozen=True)
 class ActivityCode:
-    """Kod czynności: stały identyfikator, zapisy tej samej rzeczy i to, co wyznacza w Pliku zbiorczym."""
-
     id: str
     spellings: tuple[str, ...]
     column: ColumnChoice | None = None
     value: int = 1
-    """Ilość usług w kolumnie ``column`` za jedno wystąpienie; bez kolumny 1."""
     amount: int | None = None
     fills: tuple[CellFill, ...] = ()
     counts_in_fault: bool = True
@@ -117,8 +74,6 @@ class ActivityCode:
 
 @dataclass(frozen=True)
 class LegendProblem:
-    """Pierwsza rzecz, przez którą Legenda czynności nie może powstać: pole pliku i zdanie dla taty."""
-
     field: str
     message: str
 
@@ -140,7 +95,6 @@ class ActivityLegend:
     codes: tuple[ActivityCode, ...]
     _patterns: tuple[_Pattern, ...] = field(init=False, repr=False, compare=False)
     _spellings: re.Pattern[str] = field(init=False, repr=False, compare=False)
-    """Zapisy kodów w kolejności legendy, każdy w swojej grupie."""
 
     def __post_init__(self) -> None:
         ids: set[str] = set()
@@ -202,9 +156,6 @@ class ActivityLegend:
 
 @dataclass(frozen=True)
 class FoundCode:
-    """Kod czynności w opisie: identyfikator kodu, zapis, którym pasuje, liczba z zapisu (``None``: zapis bez ``{n}``) i
-    kolumna Ilości usług, w którą wpisuje (``None``: kod bez kolumny)."""
-
     code: str
     spelling: str
     number: int | None
@@ -217,21 +168,11 @@ class FoundCode:
 
 @dataclass(frozen=True)
 class NoCodes:
-    """Opis bez żadnego Kodu czynności (pusty albo sam zwykły opis): bez Błędu opisu, ale legenda nic w nim nie wpisuje,
-    więc wiersz zostaje tacie, a przy zleceniu ``tak`` tata widzi „BRAK KODU”."""
-
     spelled: ClassVar[tuple[str, ...]] = ()
 
 
 @dataclass(frozen=True)
 class WithCodes:
-    """Opis z poprawnymi Kodami czynności, obok zwykłego opisu albo bez niego, więc legenda wpisuje w wierszu swoje, a
-    wiersz nie czeka na tatę w kolumnach z opisu technika.
-
-    ``found``: kody w kolejności z opisu. ``quantities``: kolumna → Ilość usług, w kolejności kolumn. ``amount``: suma
-    kwot w ``AS`` (0: bez kwoty). ``fills``: kolumna → kolor wypełnienia, w kolejności arkusza.
-    """
-
     found: tuple[FoundCode, ...]
     quantities: Quantities
     amount: int
@@ -251,8 +192,6 @@ class NumberOutOfRange:
 
     @property
     def detail(self) -> str:
-        """Kod z liczbą w miejscu ``{n}`` (``instutp40m``): z zapisu legendy, nie z tekstu technika."""
-
         return self.spelling.replace(NUMBER, str(self.number))
 
 
@@ -279,17 +218,11 @@ class TwoColours:
 
 
 DescriptionProblem = NumberOutOfRange | ColumnTwice | TwoColours
-"""Powód Błędu opisu: ``reason`` to rodzaj powodu, a ``detail`` kod z liczbą albo kolumna z identyfikatorami kodów, bez
-tekstu technika."""
 REASONS: Final = tuple(kind.reason for kind in (NumberOutOfRange, ColumnTwice, TwoColours))
 
 
 @dataclass(frozen=True)
 class DescriptionError:
-    """Błąd opisu: Kody czynności opisu technika, których legenda nie może przyjąć, więc legenda nic w wierszu nie
-    wpisuje, a wiersz zostaje tacie. ``problems``: każdy powód raz (zob. opis modułu, punkt 6); ``spelled``: kody z opisu
-    w zapisie legendy, także z liczbą spoza przedziałów."""
-
     problems: tuple[DescriptionProblem, ...]
     spelled: tuple[str, ...]
 
@@ -300,9 +233,6 @@ NO_CODES: Final = NoCodes()
 
 
 def problem_text(problem: DescriptionProblem) -> str:
-    """Powód Błędu opisu słowami, ten sam dla taty i Maksa (``kod z liczbą spoza przedziałów (instutp40m)``), bez tekstu
-    technika."""
-
     return f"{problem.reason} ({problem.detail})"
 
 
@@ -332,8 +262,7 @@ def _alternative(index: int, spelling: str) -> str:
 
 
 def _index(match: re.Match[str]) -> int:
-    """Numer zapisu, który pasuje: grupa zapisu zamyka się po grupie liczby, więc jest ostatnią (``lastgroup``)."""
-
+    # ZEWNĘTRZNE: lastgroup to nazwa grupy, która domknęła się ostatnia, więc przy grupie liczby w środku grupy zapisu to nazwa grupy zapisu (dokumentacja Pythona, re.Match.lastindex i re.Match.lastgroup)
     assert match.lastgroup is not None, "każdy zapis legendy ma swoją grupę"
     return int(match.lastgroup.removeprefix(_SPELLING_GROUP))
 
@@ -344,8 +273,6 @@ def _require(holds: bool, path: str, message: str) -> None:
 
 
 def _is_number(value: object) -> bool:
-    """Liczba całkowita, ale nie ``True`` ani ``False``, które Python liczy jako 1 i 0."""
-
     return isinstance(value, int) and not isinstance(value, bool)
 
 
@@ -370,7 +297,7 @@ def _check_code(code: ActivityCode, ids: set[str], earlier: list[_Pattern]) -> N
         )
         pattern = _Pattern(code, spelling)
         for before in earlier:
-            if (word := _common_word(before.spelling, spelling)) is not None:
+            if (word := _shortest_common_word(before.spelling, spelling)) is not None:
                 raise LegendRefused(LegendProblem(f"{path}.zapisy[{index}]", _shared_word(before, pattern, word)))
         earlier.append(pattern)
     _require(
@@ -409,17 +336,17 @@ def _shared_word(before: _Pattern, pattern: _Pattern, word: str) -> str:
     )
 
 
-_State = tuple[int, bool]
-"""Miejsce w zapisie (numer elementu z ``_atoms``) i to, czy liczba ``{n}`` w tym miejscu ma już cyfrę."""
+class _State(NamedTuple):
+    atom: int
+    has_digit: bool
+
+
 _DIGITS: Final = "1234567890"
 
 
-def _common_word(first: str, second: str) -> str | None:
-    """Najkrótsze słowo, które pasuje w całości do obu zapisów, albo ``None``, gdy takiego nie ma: przeszukanie wszerz par
-    stanów obu zapisów, od początku obu naraz, znak po znaku."""
-
+def _shortest_common_word(first: str, second: str) -> str | None:
     atoms = (_atoms(first), _atoms(second))
-    start: tuple[_State, _State] = ((0, False), (0, False))
+    start = (_State(0, False), _State(0, False))
     words = {start: ""}
     queue = deque([start])
     while queue:
@@ -439,27 +366,25 @@ def _atoms(spelling: str) -> tuple[str, ...]:
 
 
 def _closure(state: _State) -> tuple[_State, ...]:
-    place, in_number = state
-    return (state, (place + 1, False)) if in_number else (state,)
+    return (state, _State(state.atom + 1, False)) if state.has_digit else (state,)
 
 
 def _readable(atoms: tuple[str, ...], state: _State) -> str:
-    place, _ = state
-    if place == len(atoms):
+    if state.atom == len(atoms):
         return ""
-    return _DIGITS if atoms[place] == NUMBER else atoms[place]
+    return _DIGITS if atoms[state.atom] == NUMBER else atoms[state.atom]
 
 
 def _after(atoms: tuple[str, ...], state: _State, char: str) -> tuple[_State, ...]:
     return tuple(
-        (place, True) if atoms[place] == NUMBER else (place + 1, False)
+        _State(place, True) if atoms[place] == NUMBER else _State(place + 1, False)
         for place, _ in _closure(state)
-        if char in _readable(atoms, (place, False))
+        if char in _readable(atoms, _State(place, False))
     )
 
 
 def _ends(atoms: tuple[str, ...], state: _State) -> bool:
-    return (len(atoms), False) in _closure(state)
+    return _State(len(atoms), False) in _closure(state)
 
 
 def _check_column(code: ActivityCode, path: str) -> None:

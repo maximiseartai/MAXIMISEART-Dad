@@ -1,24 +1,3 @@
-"""Wpis narzędzia: to, co narzędzie wyznacza w Wierszu danych Pliku zbiorczego z Reguł ilości i Legendy czynności.
-
-Jedyna operacja ``tool_entry`` to czysta funkcja bez plików: z treści zlecenia, opisu technika (``CZYNNOŚCI
-ZREALIZOWANE``), Reguł ilości i Legendy czynności daje Ilości usług w ``N:AP`` (reguły i legenda razem, legenda tylko w
-wierszu z Kodami czynności bez Błędu opisu, także ze zwykłym opisem obok), kwotę w ``AS``, Wyróżnienia legendy, kolumny
-narzędzia i rodzaj Ilości do uzupełnienia. Tekst opisu technika z komórki daje tylko ``description``, ta sama droga dla
-Przygotowania i dla odczytu Pliku zbiorczego (``order_facts``), z którego liczą Kontrola i Ilości do uzupełnienia. Liczą nią Przygotowanie pliku zbiorczego (zapis i ostrzeżenia), Kontrola ilości (oczekiwane wartości) i
-Ilości do uzupełnienia, więc to, co Przygotowanie wpisuje, i to, czego oczekuje Kontrola, liczy jeden rachunek.
-
-Wiersz, którego ``DATA`` nie jest datą, nie ma wyniku Reguł ilości (``rules`` ``None``): jego wpis to sama legenda, a
-wiersz nie ma rodzaju. Treść bez pory (``OrderContent.started`` ``None``) liczy się tak samo jak brak treści, bo typ
-``OrderContent`` ją dopuszcza, choć ``order_facts`` daje wtedy ``None``, a Przygotowanie zawsze ma datę. Kolumny
-narzędzia to kolumny, które narzędzie w tym wierszu wpisało albo porównuje Regułami ilości: wpis taty obok nich robi
-wiersz zrobionym. Kontrola ilości porównuje szerzej (każdą kolumnę legendy i ``AS`` w wierszu z kodami bez Błędu opisu, ADR
-0038); ten zakres należy do niej (``quantity_check.legend_row_check``).
-
-Właścicielem nie jest ``quantity_check``, bo Przygotowanie (pisarz) zależałoby wtedy od Kontroli (sprawdzającego), a
-rodzaj Ilości do uzupełnienia i odczyt reguł z legendą zostałyby w dwóch i trzech miejscach: suma w jednym miejscu nie
-wystarcza, gdy wołający dalej składa wiersz z surowych wyników.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -45,8 +24,6 @@ from .workbook_files import is_blank
 
 
 class FillKind(StrEnum):
-    """Rodzaj Ilości do uzupełnienia, który ma listę wierszy."""
-
     WITHOUT_RULE = "without_rule"
     FROM_DESCRIPTION = "from_description"
 
@@ -62,16 +39,12 @@ class ToolEntry:
     rules: RuleResult | None
     read: DescriptionRead
     quantities: Quantities
-    """Kolumna ``N:AP`` → Ilość usług reguł i legendy razem, w kolejności kolumn."""
     amount: int
     fills: Mapping[str, FillColour]
     columns: frozenset[str]
-    """Kolumny narzędzia (``N:AP`` i ``AS``): porównywane Regułami ilości, wpisane legendą, ``AS`` przy kwocie."""
 
     @property
     def closed(self) -> bool:
-        """Opis ma Kody czynności bez Błędu opisu, więc wiersz nie czeka na tatę w kolumnach z opisu technika (ADR 0041)."""
-
         return isinstance(self.read, WithCodes)
 
     @property
@@ -110,8 +83,6 @@ def tool_entry(content: OrderContent | None, completed: str, rules: QuantityRule
 
 
 def compared_columns(rule: RuleResult, rules: QuantityRules) -> tuple[str, ...]:
-    """Kolumny Reguł ilości ``rules``, w których Kontrola porównuje wynik reguł z wpisami taty (decyzje 9 i 10)."""
-
     if isinstance(rule, FromDescription):
         return ()
     if isinstance(rule, WithoutRule):

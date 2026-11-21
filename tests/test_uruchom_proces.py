@@ -1,5 +1,3 @@
-"""Skrypt dla maszyn ``tools/uruchom_proces.py`` jako osobny proces Pythona: kod wyjścia, wynik JSON i pliki."""
-
 from __future__ import annotations
 
 import argparse
@@ -142,8 +140,6 @@ def _preparation_arguments(fixture: PreparationFixture, *extra: str) -> list[str
 
 
 def _run_logs() -> set[str]:
-    """Logi Uruchomienia w katalogu Logów narzędzia, gdzie leżą u taty."""
-
     directory = ToolDirectory(TOOL_ROOT).run_logs
     return {path.name for path in directory.iterdir()} if directory.is_dir() else set()
 
@@ -323,7 +319,6 @@ def test_podsumowanie_i_ostrzezenia_w_kolejnosci_etapow_sa_te_same_w_skrypcie_na
     ]
     assert (exit_code, result["result"]) == (2, card["result"])
     assert result["summary"] == card["summary"]
-    # Karta ma przy Komunikacie link do sekcji Ustawień (``setting``), którego wynik Skryptu dla maszyn nie potrzebuje.
     assert [{key: value for key, value in warning.items() if key != "code"} for warning in result["warnings"]] == [
         {key: value for key, value in warning.items() if key != "setting"} for warning in card["warnings"]
     ]
@@ -388,16 +383,16 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_wymaga_sprawdzenia_bez
     tmp_path: Path,
 ) -> None:
     au = float(amount_of({"012": 2}))
-    orders = [
-        EfenixOrder("#94001", cells={"O": 2}, amount=au),  # wiersz 18: gotowe po dopisaniu
-        EfenixOrder("#94002"),  # 19: inny status
-        EfenixOrder("#94003", cells={"O": 2}, amount=au + 10),  # 20: kwota inna niż AU
-        EfenixOrder("#94004", cells={"O": 2}, amount=au, emmett={"012": 3}),  # 21: Ostrzeżenie Emmetta, O większe niż w pliku
-    ]
+    ready_after_entering = EfenixOrder("#94001", cells={"O": 2}, amount=au)
+    other_status = EfenixOrder("#94002")
+    amount_other_than_au = EfenixOrder("#94003", cells={"O": 2}, amount=au + 10)
+    emmett_warning_with_more_o_than_file = EfenixOrder("#94004", cells={"O": 2}, amount=au, emmett={"012": 3})
+    orders = [ready_after_entering, other_status, amount_other_than_au, emmett_warning_with_more_o_than_file]
     source = write_collective_file(tmp_path, orders)
     metrics = tmp_path / "metrics.jsonl"
-    efenix = [order.in_efenix(f"90{index}") for index, order in enumerate(orders)]
-    with atrapa_efenix([efenix[0], replace(efenix[1], status="Anulowane"), *efenix[2:]]) as atrapa:
+    efenix = {order.number: order.in_efenix(f"90{index}") for index, order in enumerate(orders)}
+    efenix[other_status.number] = replace(efenix[other_status.number], status="Anulowane")
+    with atrapa_efenix(list(efenix.values())) as atrapa:
         exit_code, result = _run(
             "efenix", "--source", source, "--efenix-url", atrapa.url, "--metrics", metrics
         )
@@ -462,11 +457,6 @@ def test_zla_lista_wykonawcow_konczy_skrypt_kodem_1_ze_zdaniem_wlasciciela_ustaw
 
 
 def test_wpisanie_raportow_ze_skryptu_dla_maszyn_wpisuje_raport_z_pliku_eml_folderu_maili_do_intermax(tmp_path: Path) -> None:
-    """``--maile`` to Skrzynka raportów Skryptu dla maszyn: Raport wykonawcy z pliku ``.eml`` trafia do obu komórek
-    zlecenia z dnia z tematu. Pamięć wpisów żyje tylko w tym Uruchomieniu, więc jego okno zaczyna się dziś, jak przy
-    pierwszym kliknięciu w Centrum, i zlecenie oraz raport są z dzisiaj; zapis tej pamięci się udaje, więc wynik nie ma
-    ostrzeżenia o niezapisanej pamięci."""
-
     now = datetime.now().astimezone()
     register = tmp_path / "INTERMAX.xlsx"
     order = IntermaxOrder(now.replace(hour=9, minute=0, second=0, microsecond=0, tzinfo=None), "jan.testowy", 40000001, cells=((NUMBER, 40000001),))
@@ -518,9 +508,6 @@ def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa_w_kolejnosci_katalogu_pr
 
 _METRICS = "Plik metryk JSONL."
 _DRY_RUN = ("--dry-run", False, False, "Podgląd bez zapisu.")
-# Flagi Skryptu dla maszyn zamrożone z f981e7c6e, ostatniego commitu z podparserami pisanymi ręcznie: kolejność,
-# wymagalność, wartość domyślna i pomoc, na których stoją E2E, benchmark, skille i tools/rownowaznosc.py; Listę
-# Wykonawców (--wykonawcy) w miejscu --config i --adresy-wykonawcow wprowadził #1473, a Bazę zleceń (--baza) #2080.
 _FLAGS = {
     "settlement": [
         ("--source", True, None, "Plik zbiorczy."),
@@ -577,12 +564,9 @@ def test_kazdy_proces_ma_te_same_flagi_wymagalnosc_domyslne_i_pomoc_co_przed_kat
 
 
 def _tool_copy(tmp_path: Path) -> Path:
-    """Skrypt dla maszyn w kopii narzędzia pod ``tmp_path / "narzedzie"``, żeby domyślne pliki nie trafiały do repozytorium."""
-
     tool = tmp_path / "narzedzie"
     ignored = shutil.ignore_patterns("__pycache__")
     shutil.copytree(SCRIPT.parents[1] / "src", tool / "src", ignore=ignored)
-    # Skrzynka raportów z folderu .eml (``atrapy.skrzynka_raportow.FolderInbox``) leży w tools/lib klonu narzędzia.
     shutil.copytree(SCRIPT.parent / "lib" / "atrapy", tool / "tools" / "lib" / "atrapy", ignore=ignored)
     return Path(shutil.copy(SCRIPT, tool / "tools"))
 

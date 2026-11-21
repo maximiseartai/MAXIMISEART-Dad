@@ -1,11 +1,3 @@
-"""Czerwone pole i Zielone pole w Rozliczeniu pracownika (ADR 0039, GLOSSARY): czerwone puste, zielone z 1, oba białe.
-
-Plik zbiorczy powstaje z Przygotowania pliku zbiorczego z legendą z Wydania na syntetycznym Rejestrze i Wzorcach w
-kształcie Wzorców taty, a potem „tata” koloruje w nim pola ręcznie. Oczekiwane wartości pochodzą z odpowiedzi taty z
-16.11.2026 (ADR 0039): pole z czerwonym wypełnieniem traci liczbę, w pole z zielonym idzie 1, a oba są białe; kolory
-spoza legendy i pola spoza Ilości usług i ``AS`` przechodzą jak każde Wyróżnienie.
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -31,13 +23,9 @@ from atrapy.settlement import worker_list
 from atrapy.workbooks import active_worksheet, hyperlinks, marked_for_copy, refused_by_copy, written_by_copy
 
 RED, GREEN = "FFFF0000", "FF92D050"
-"""Kolory Czerwonego pola i Zielonego pola z GLOSSARY: czerwony i jasnozielony ze standardowych kolorów Excela."""
 DARK_RED, OTHER_GREEN = "FFC00000", "FF99FF66"
 LINK, GREEN_LINK = "https://przyklad.invalid/pole", "https://przyklad.invalid/zielone"
 ORDERS = [("spawpg rt2", "dekoder"), ("inst20m", "gniazdo"), ("montaż", "technicolor"), ("montaż", "dekoder")]
-"""``CZYNNOŚCI ZREALIZOWANE`` i ``URZĄDZENIA`` zleceń w wierszach 18–21: ``spawpg rt2`` daje z legendy 1 w AB, 70 w
-czerwonym AS, 1 w czerwonym AM i zielone AF; ``gniazdo`` daje z Reguł ilości 1 w AP, a ``technicolor`` 1 w AK, oba
-Ilości tylko dla INEA."""
 BY_HAND: dict[str, tuple[str | int | None, PatternFill]] = {
     "Y19": (1, PatternFill("solid", fgColor=GREEN)),
     "AP19": (1, PatternFill("solid", fgColor=GREEN)),
@@ -53,7 +41,6 @@ BY_HAND: dict[str, tuple[str | int | None, PatternFill]] = {
     "AR21": (40, PatternFill("solid", fgColor=GREEN)),
     "AC21": (3, PatternFill("solid", fgColor=GREEN)),
 }
-"""Pola pokolorowane przez tatę: komórka → (wartość, wypełnienie). Indeks 2 palety Excela to ten sam czerwony."""
 FOR_WORKER = {
     "AS18": None,
     "AM18": None,
@@ -66,13 +53,10 @@ FOR_WORKER = {
     "AN21": None,
     "AC21": 1,
 }
-"""Czerwone pole i Zielone pole → wartość w Rozliczeniu pracownika: Zielone pole AP przy ``gniazdo`` ma 1, choć Reguła
-ilości zostawia tę komórkę pustą, bo zielony kolor taty mówi, że Wykonawca dostaje tę pozycję w tym zleceniu, a Zielone
-pole AC z 3 ma 1, bo tata „wstawia cyfrę 1”."""
 KEPT_FILLS = {"AL21": DARK_RED, "AJ21": OTHER_GREEN, "B21": RED, "D21": RED, "AT21": RED, "AR21": GREEN}
 
 
-def _collective_file(tmp_path: Path) -> tuple[Path, Path]:
+def _collective_file(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
     start = datetime(2026, 9, 8, 8, 0)
     rows: list[dict[str, object] | None] = [
         register_order(number, start + timedelta(minutes=number)) | {"URZĄDZENIA": devices, "CZYNNOŚCI ZREALIZOWANE": completed}
@@ -89,6 +73,7 @@ def _collective_file(tmp_path: Path) -> tuple[Path, Path]:
     workbook = load_workbook(fixture.collective_file_path)
     try:
         sheet = active_worksheet(workbook)
+        prepared = {reference: sheet[reference].value for reference in BY_HAND}
         for reference, (value, fill) in BY_HAND.items():
             sheet[reference] = value
             sheet[reference].fill = fill
@@ -98,12 +83,10 @@ def _collective_file(tmp_path: Path) -> tuple[Path, Path]:
         workbook.save(fixture.collective_file_path)
     finally:
         workbook.close()
-    return fixture.collective_file_path, templates / WORKER_TEMPLATE
+    return fixture.collective_file_path, templates / WORKER_TEMPLATE, prepared
 
 
 def _cells(path: Path) -> dict[str, tuple[object, str | None, str | None]]:
-    """Komórki A:AT wierszy 18–21: wartość, rodzaj wypełnienia i kolor wypełnienia (RGB albo ``theme``)."""
-
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
@@ -128,7 +111,8 @@ def _colour(fill: StyleProxy) -> str | None:
 def test_czerwone_pole_jest_puste_a_zielone_ma_1_i_oba_sa_biale_w_rozliczeniu_pracownika_a_plik_zbiorczy_bez_zmian(
     tmp_path: Path, route: str
 ) -> None:
-    collective, worker_template = _collective_file(tmp_path)
+    collective, worker_template, prepared = _collective_file(tmp_path)
+    assert (prepared["AP19"], prepared["AK20"]) == (1, 1), "warunek: gniazdo i technicolor dają z Reguł ilości Ilość tylko dla INEA"
     if route == "kopia":
         marked_for_copy(worker_template)
     else:

@@ -93,3 +93,19 @@ allowed_importers =
 broken_contract_guidance =
     Kopia Wzorca (template_copy) jest szczegółem TemplateFile: plik z Wzorca twórz przez TemplateFile.worker_settlement,
     collective_file albo internal_settlement, który sam wybiera kopię albo drogę przez openpyxl (ADR 0008).
+
+[importlinter:contract:wpis-narzedzia-bez-kontroli]
+name = Przygotowanie pliku zbiorczego i Wpis narzędzia nie zależą od Kontroli ilości
+type = forbidden
+source_modules =
+    rozliczenia.tool_entry
+    rozliczenia.collective_preparation
+    rozliczenia.preparation_files
+    rozliczenia.preparation_plan
+    rozliczenia.preparation_process
+forbidden_modules =
+    rozliczenia.quantity_check
+allow_indirect_imports = False
+broken_contract_guidance =
+    Kontrola ilości sprawdza to, co wpisuje Przygotowanie pliku zbiorczego, więc Przygotowanie i Wpis narzędzia
+    (tool_entry), z którego liczą obie, nie zależą od Kontroli: rachunek wiersza wspólny dla obu przenieś do tool_entry.

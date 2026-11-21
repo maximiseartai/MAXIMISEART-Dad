@@ -1,11 +1,3 @@
-"""Brama Legendy czynności na Pliku zbiorczym wypełnionym przez tatę: zgodność wierszy z kodem, Błędy opisu według
-powodu, same liczby i kody.
-
-Plik zbiorczy powstaje z Przygotowania pliku zbiorczego z legendą z Wydania na syntetycznym Rejestrze i Wzorcach w
-kształcie Wzorców taty, a potem „tata” zmienia w nim kilka komórek. Oczekiwane wartości legendy pochodzą z maila taty z
-15.11.2026 (ADR 0038), z ADR 0039 i z ADR 0041 (zwykły opis obok kodu nie jest Błędem opisu), a plik Logów Wyceny w efenix z prawdziwej Kopii wejścia tego Pliku zbiorczego.
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -24,6 +16,7 @@ from rozliczenia.activity_legend import ActivityLegend, CellFill, FillColour
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum.logged_input_copy import LoggedInputFile
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
+from rozliczenia.collective_layout import FIRST_DATA_ROW, QUANTITY_LETTERS
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.input_copy import InputCopy
@@ -50,9 +43,19 @@ ORDERS = [
     ("", "technicolor"),
     ("instmdik inst20m", "dekoder"),
 ]
-"""``CZYNNOŚCI ZREALIZOWANE`` i ``URZĄDZENIA`` zleceń; ``dekoder`` daje z Reguł ilości z Wydania tylko V, a
-``technicolor`` także 1 w AK, do którego legenda dodaje swoje 1 z ``instwewrg65m``, a bez kodu to 1 nie jest wpisem
-taty."""
+
+
+def _row_of(completed: str) -> int:
+    return FIRST_DATA_ROW + [text for text, _ in ORDERS].index(completed)
+
+
+def _quantities(collective: Path, row: int) -> dict[str, object]:
+    workbook = load_workbook(collective)
+    try:
+        sheet = active_worksheet(workbook)
+        return {column: value for column in QUANTITY_LETTERS if (value := sheet[f"{column}{row}"].value) not in (None, 0)}
+    finally:
+        workbook.close()
 
 
 def _filled_by_dad(tmp_path: Path, legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND) -> PreparationFixture:
@@ -89,9 +92,6 @@ def _filled_by_dad(tmp_path: Path, legend: ActivityLegend = DEFAULT_ACTIVITY_LEG
 
 
 def _efenix_logs(collective: Path, target: Path) -> Path:
-    """Plik Logów Wyceny w efenix z polami, które brama czyta (proces i Kopia wejścia ``collective``, jak ją pisze
-    Centrum), spakowany jak w Archiwum Logów okresu."""
-
     files = DadFiles(copy=InputCopy())
     read_computed_rows(collective, files)
     assert files.copy is not None
@@ -115,6 +115,11 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
 
     lines = _gate(collective, logs, "--opisy", described)
 
+    assert _quantities(collective, _row_of("inst20m")) == {"V": 1, "Y": 1}, "warunek: dekoder daje z Reguł ilości tylko V"
+    assert (_quantities(collective, _row_of("")).get("AK"), _quantities(collective, _row_of("instwewrg65m")).get("AK")) == (
+        1,
+        2,
+    ), "warunek: technicolor daje z Reguł ilości 1 w AK, także bez kodu, a instwewrg65m dodaje do niego swoje 1"
     disk = lines.index(f"== {collective.name} | porównane: Y AB AC AD AJ AK AL AM, AS, kolory AF AM AS")
     errors = [
         "-- Błędy opisu (powód → wiersze): kod z liczbą spoza przedziałów=1 | kolumna Ilości usług trafiona drugi raz=1",
@@ -155,8 +160,6 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
 
 
 def test_brama_i_kontrola_ilosci_licza_te_same_zgodne_wiersze_z_kodem_na_tle_wzorca_taty(tmp_path: Path) -> None:
-    # Wzorzec pliku zbiorczego taty ma w X każdego Wiersza danych tło motywu, którego żaden kod nie wpisze. ``spawpg``
-    # koloruje tu też X, więc w pozostałych wierszach z kodem X ma tylko to tło, a tata zdjął zielony X w wierszu ``spawpg``.
     legend = ActivityLegend(
         tuple(
             replace(code, fills=(*code.fills, CellFill("X", FillColour.GREEN))) if code.id == "spawpg" else code
@@ -169,7 +172,7 @@ def test_brama_i_kontrola_ilosci_licza_te_same_zgodne_wiersze_z_kodem_na_tle_wzo
     try:
         sheet = active_worksheet(workbook)
         background = (sheet["X18"].fill.patternType, sheet["X18"].fill.fgColor.type)
-        sheet["X19"].fill = PatternFill()
+        sheet[f"X{_row_of('spawpg')}"].fill = PatternFill()
         workbook.save(collective)
     finally:
         workbook.close()
