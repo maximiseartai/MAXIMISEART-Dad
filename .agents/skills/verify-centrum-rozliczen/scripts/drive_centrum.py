@@ -78,7 +78,7 @@ class FeatureWindows:
 
     Whatever a feature leaves in the browser (an open or closing window or dialog, a route or listener of its tab or of
     its window, the window's clock, a narrow size, another tab or window it opened) ends with the feature, so every
-    feature finds the window the fixture gives, whichever feature ran before it (#1589). Only what Dad's browser keeps
+    feature finds the window the fixture gives, whichever feature ran before it. Only what Dad's browser keeps
     between visits, the window's cookies and ``localStorage``, carries to the next window. A failure leaves
     ``zz-failure.png`` of the feature's page and ends the drive, which closes the browser.
     """

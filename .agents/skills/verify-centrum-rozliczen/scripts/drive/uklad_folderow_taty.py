@@ -1,5 +1,3 @@
-"""Drive features/uklad-folderow-taty.md."""
-
 from __future__ import annotations
 
 from pathlib import Path
