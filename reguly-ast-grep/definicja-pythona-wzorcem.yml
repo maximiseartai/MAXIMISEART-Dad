@@ -17,10 +17,12 @@ metadata:
     - 2524/W1/r1
 rule:
   kind: string
-  regex: '(^|[^A-Za-z0-9_]|\\[A-Za-z])(def|class)([^A-Za-z0-9_]|$)'
+  regex: '(^|[^A-Za-z0-9_]|\\[A-Za-z]|\\x[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}|\\U[0-9A-Fa-f]{8}|\\[0-9]{1,3})(def|class)([^A-Za-z0-9_]|$)'
+  nthChild: 1
   inside:
-    kind: call
-    stopBy: end
-    has:
-      field: function
-      regex: '^re\.(compile|search|match|fullmatch|finditer|findall|sub|subn|split)$'
+    kind: argument_list
+    inside:
+      kind: call
+      has:
+        field: function
+        regex: '^re\.(compile|search|match|fullmatch|finditer|findall|sub|subn|split)$'
