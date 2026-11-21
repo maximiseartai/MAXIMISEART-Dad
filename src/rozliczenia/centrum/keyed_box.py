@@ -62,7 +62,7 @@ from pathlib import Path
 from typing import Final, Literal, TypeVar
 
 from rozliczenia.centrum.atomic_file import replace_atomically
-from rozliczenia.centrum.box_prefix import owns
+from rozliczenia.centrum.box_prefix import owns, stamped
 from rozliczenia.centrum.github import ANSWER_KEPT_S, NO_ANSWER_KEPT_S, sendable
 from rozliczenia.centrum.report_box import (
     Archive,
@@ -305,14 +305,15 @@ class KeyedBox:
         if ready is None:
             return Unreachable()
         asked_at, write, before = ready
-        outcome = self._box.open_issue(label, title, body, key=key)
+        sent_body = stamped(self._prefix, body)
+        outcome = self._box.open_issue(label, title, sent_body, key=key)
         self._observe(key, asked_at, outcome)
         sent = outcome.number if isinstance(outcome, Sent) else None
         self._settled(
             label,
             write,
             before,
-            None if sent is None else lambda notes, at: notes.opened.append((at, label, Issue(sent, body))),
+            None if sent is None else lambda notes, at: notes.opened.append((at, label, Issue(sent, sent_body))),
             refused=isinstance(outcome, Refused | Rejected),
         )
         return outcome

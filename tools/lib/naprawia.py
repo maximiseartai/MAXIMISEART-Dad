@@ -44,9 +44,11 @@ kodu, przekreślenia (także takich, które zaczęły się przed końcem poprzed
 
 Odwołania do Skrzynki Zgłoszeń na tej samej liście (``Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#12``, według
 tych samych reguł, ale z linkami do repozytorium Zgłoszeń zamiast tego) nic nie zamykają, tylko linia podaje, z którego
-Stanowiska przyszła każda sprawa: ``Skrzynka Zgłoszeń zostaje otwarta: #12 ze Stanowiska Andrzeja``, z prefiksu jej
-tytułu (``BOX_PREFIXES``, te same co ``rozliczenia.centrum.scope.BoxPrefix``), bez samego tytułu, bo to dane taty. Sprawa, której ``gh`` nie poda, daje
-``UWAGA: nie odczytano #N ze Skrzynki Zgłoszeń``.
+Stanowiska przyszła każda sprawa: ``Skrzynka Zgłoszeń zostaje otwarta: #12 (Stanowisko Andrzeja)``. Stanowisko daje
+znak Stanowiska, który Centrum Andrzeja dopisuje jako ostatnią linię treści issue, po znaku wysyłki
+(``rozliczenia.centrum.box_prefix.stamped``), więc tekst taty go nie poda, a treść bez niego to ``Stanowisko taty``;
+tytułu narzędzie nie czyta, bo tytuł Uwagi pisze tata, i nie pokazuje treści ani tytułu, bo to dane taty. Sprawa,
+której ``gh`` nie poda (także bez treści), daje ``UWAGA: nie odczytano #N ze Skrzynki Zgłoszeń``.
 
 Tą samą drogą zamyka issues chwastów (ADR 0031, Q15): linia akapitu albo punkt listy ``Korzeń z #N: R-KOD``
 (``rejestr_korzeni.root_lines``) z linkiem do issue tego repozytorium zamyka #N, gdy jest otwarte i ma tytuł
@@ -67,7 +69,8 @@ zamyka, a linia podaje ``po merge'u zamknie: #N`` (a zamiast „nie zamknięto �
 """
 
 REPORT_BOX: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia"
-BOX_PREFIXES: Final = {"ANDRZEJ": "Andrzeja"}
+DAD_WORKSTATION: Final = "Stanowisko taty"
+_WORKSTATION_STAMP: Final = re.compile(r"<!-- (Stanowisko \w+(?: \w+)*) -->")
 LINK = "\x01"
 NOT_TEXT = "\x00"
 _REFERENCE = rf"(?:{LINK}|(?:[\w.-]+/[\w.-]+)?#\d+)"
@@ -214,16 +217,17 @@ def _box_cases(html: str) -> list[str]:
     found, failed = [], []
     for number in listed_issues(html, REPORT_BOX, (FIXES,)):
         try:
-            title = json.loads(github.gh("api", f"repos/{REPORT_BOX}/issues/{number}"))["title"]
+            body = json.loads(github.gh("api", f"repos/{REPORT_BOX}/issues/{number}"))["body"]
         except (subprocess.SubprocessError, OSError, ValueError, LookupError, TypeError):
-            title = None
-        if isinstance(title, str):
-            found.append(f"#{number} ze Stanowiska {workstation_of(title)}")
+            body = None
+        if isinstance(body, str):
+            found.append(f"#{number} ({workstation_of(body)})")
         else:
             failed.append(f"#{number}")
     parts = [f"Skrzynka Zgłoszeń zostaje otwarta: {', '.join(found)}"] if found else []
     return parts + ([f"UWAGA: nie odczytano {', '.join(failed)} ze Skrzynki Zgłoszeń"] if failed else [])
 
 
-def workstation_of(title: str) -> str:
-    return next((name for prefix, name in BOX_PREFIXES.items() if title.startswith(f"{prefix} ")), "taty")
+def workstation_of(body: str) -> str:
+    stamp = _WORKSTATION_STAMP.fullmatch((body.splitlines() or [""])[-1])
+    return DAD_WORKSTATION if stamp is None else stamp[1]

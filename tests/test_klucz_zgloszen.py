@@ -676,3 +676,28 @@ def test_sprawa_znana_z_numeru_jest_sprawa_stanowiska_jakikolwiek_ma_tytul(
     listed = keyed.labelled_issues(etykieta, include_closed=True)
 
     assert (keyed.known_issue(etykieta, 7), listed) == (Issue(7, "treść"), (Issue(7, "treść"),))
+
+
+TRESC_WYSYLKI: Final = "Treść Uwagi.\n\nUwaga ogólna · wersja narzędzia 3c1d0a9\n<!-- wysyłka uwaga-taty d12c34b5 część 1 wersja 20261120T234532657484Z-0001 -->"
+
+
+@pytest.mark.parametrize(
+    ("prefix", "wyslana"),
+    [
+        pytest.param(None, TRESC_WYSYLKI, id="stanowisko-taty-bez-zmian"),
+        pytest.param(BoxPrefix.ANDRZEJ, f"{TRESC_WYSYLKI}\n<!-- Stanowisko Andrzeja -->", id="stanowisko-andrzeja-ze-znakiem-na-koncu"),
+    ],
+)
+def test_zakladane_issue_ma_znak_stanowiska_w_ostatniej_linii_tresci_tylko_ze_stanowiska_z_prefiksem(
+    prefix: BoxPrefix | None, wyslana: str
+) -> None:
+    box = FakeReportBox()
+    keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(), prefix=prefix)
+
+    opened = keyed.open_issue("uwaga-taty", "Nie działa przycisk", TRESC_WYSYLKI)
+
+    assert isinstance(opened, Sent), opened
+    assert ([issue.text for issue in box.issues], keyed.known_issue("uwaga-taty", opened.number)) == (
+        [wyslana],
+        Issue(opened.number, wyslana),
+    )

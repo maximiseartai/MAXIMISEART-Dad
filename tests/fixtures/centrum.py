@@ -52,7 +52,7 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
 )
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
-from rozliczenia.centrum.scope import SCOPES, BoxPrefix, Scope, Workstation
+from rozliczenia.centrum.scope import SCOPES, Scope, Workstation
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -105,7 +105,7 @@ ONLINE_ONLY_FILE = 0x400000
 BACKGROUND_NUMBERS = 1001
 # Logi Uruchomienia idą do skrzynki po każdym Uruchomieniu; testy innych wysyłek ich nie oglądają.
 RUN_LOGS_IN_BACKGROUND: frozenset[Label] = frozenset({"logi-uruchomienia"})
-ANDRZEJ_PREFIX_SCOPE: Final = replace(SCOPES[Workstation.DAD], box_prefix=BoxPrefix.ANDRZEJ)
+ANDRZEJ_PREFIX_SCOPE: Final = replace(SCOPES[Workstation.DAD], box_prefix=SCOPES[Workstation.ANDRZEJ].box_prefix)
 # Najdłuższe czekanie zatrzymania Centrum na koniec jego wątków w tle; tyle, co skrzynka czeka na wysyłkę w tle.
 STOP_S = 30.0
 

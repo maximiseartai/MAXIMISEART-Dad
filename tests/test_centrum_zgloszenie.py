@@ -19,7 +19,7 @@ from rozliczenia.centrum.notifications import CHECK_INTERVAL_S
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.centrum.reports import REPORT_THREAD, SEARCH_DEADLINE_S
-from rozliczenia.centrum.scope import Scope
+from rozliczenia.centrum.scope import SCOPES, Scope, Workstation
 
 from tests.fixtures.centrum import (
     ANDRZEJ_PREFIX_SCOPE,
@@ -56,6 +56,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for, wait_for_value
 from atrapy.preparation import PERIOD
+import naprawia
 from atrapy.settlement import write_quantity_source
 
 
@@ -796,13 +797,14 @@ def test_dwa_klikniecia_w_trakcie_wysylki_daja_jedno_zgloszenie_a_centrum_odpowi
 
 
 STANOWISKA: Final[dict[str, Scope | None]] = {"tata": None, "andrzej": ANDRZEJ_PREFIX_SCOPE}
+STANOWISKA_UWAG: Final[dict[str, Scope]] = {"tata": SCOPES[Workstation.DAD], "andrzej": SCOPES[Workstation.ANDRZEJ]}
 
 
-def _uwaga_stanowiska(tmp_path: Path, stanowisko: str, box: FakeReportBox) -> CentrumClient:
+def _uwaga_stanowiska(tmp_path: Path, stanowisko: str, box: FakeReportBox, title: str = "Nie działa przycisk") -> CentrumClient:
     tool = ToolDirectory(tmp_path / stanowisko)
     write_report_key(tool)
-    client = CentrumClient(centrum_app(tool, report_box=box, scope=STANOWISKA[stanowisko]))
-    sent = client.post("/api/dad-notes", json={"title": "Nie działa przycisk", "body": "Treść Uwagi."})
+    client = CentrumClient(centrum_app(tool, report_box=box, scope=STANOWISKA_UWAG[stanowisko]))
+    sent = client.post("/api/dad-notes", json={"title": title, "body": "Treść Uwagi."})
     assert (sent.status_code, sent.json()) == (200, SENT)
     return client
 
@@ -824,6 +826,20 @@ def test_uwaga_ze_stanowiska_andrzeja_ma_w_skrzynce_prefiks_a_w_jego_powiadomien
         ("uwaga-taty", "ANDRZEJ Nie działa przycisk"),
     ]
     assert (_tytuly_uwag(tata), _tytuly_uwag(andrzej)) == (["Nie działa przycisk"], ["Nie działa przycisk"])
+
+
+def test_uwaga_taty_od_prefiksu_andrzeja_ma_tytul_jak_uwaga_andrzeja_a_narzedzie_maksa_zna_stanowisko_kazdej_ze_znaku_w_tresci(
+    tmp_path: Path,
+) -> None:
+    box = FakeReportBox()
+
+    _uwaga_stanowiska(tmp_path, "tata", box, "ANDRZEJ nie może otworzyć INTERMAX")
+    _uwaga_stanowiska(tmp_path, "andrzej", box, "nie może otworzyć INTERMAX")
+
+    assert [(issue.title, issue.body, naprawia.workstation_of(issue.text)) for issue in box.issues] == [
+        ("ANDRZEJ nie może otworzyć INTERMAX", f"Treść Uwagi.\n\nUwaga ogólna · wersja narzędzia {TOOL_COMMIT[:7]}", "Stanowisko taty"),
+        ("ANDRZEJ nie może otworzyć INTERMAX", f"Treść Uwagi.\n\nUwaga ogólna · wersja narzędzia {TOOL_COMMIT[:7]}", "Stanowisko Andrzeja"),
+    ]
 
 
 def _zgloszenie_stanowiska(tmp_path: Path, stanowisko: str, box: FakeReportBox) -> SettlingCentrum:
