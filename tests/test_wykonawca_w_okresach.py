@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from rozliczenia import worker_periods, workbook_files
+from rozliczenia import worker_periods
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible
 from rozliczenia.settlement_period import parse_period_token
@@ -60,26 +60,23 @@ def test_okres_bez_pliku_zbiorczego_nie_zatrzymuje_szukania_a_login_spoza_okreso
     assert WorkerPeriods(DadFiles()).find(["jan.testowy"], rejestr(tmp_path, "ewa.przykladowa"), periods) == NotInPeriods()
 
 
-def test_drugie_szukanie_nie_czyta_plikow_zbiorczych_niezmienionych_od_pierwszego(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_drugie_szukanie_nie_czyta_plikow_zbiorczych_niezmienionych_od_pierwszego(tmp_path: Path) -> None:
     periods = tmp_path / "okresy"
     nowszy, starszy = okres(periods, NOWSZY, "ewa.przykladowa"), okres(periods, STARSZY, "ewa.przykladowa")
     register = rejestr(tmp_path, "ewa.przykladowa")
     read: list[Path] = []
-    collective_workers = workbook_files.collective_workers
 
-    def counted(path: Path, files: DadFiles) -> frozenset[str]:
+    def counted(path: Path) -> bytes:
         read.append(path)
-        return collective_workers(path, files)
+        return path.read_bytes()
 
-    monkeypatch.setattr(workbook_files, "collective_workers", counted)
-    search = WorkerPeriods(DadFiles())
+    search = WorkerPeriods(DadFiles(source=counted))
     first = search.find(["jan.testowy"], register, periods)
     second = search.find(["jan.testowy"], register, periods)
 
     assert (first, second) == (NotInPeriods(), NotInPeriods())
-    assert read == [nowszy.collective_file, starszy.collective_file]
+    assert [path for path in read if path != register] == [nowszy.collective_file, starszy.collective_file]
+    assert read.count(register) == 2
 
 
 def rozliczenie(periods: Path, token: str, nazwa: str) -> None:
