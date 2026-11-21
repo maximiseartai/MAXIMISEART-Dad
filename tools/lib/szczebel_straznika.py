@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import final
-
 import straznik
 from straznik import Guard, Kind
 from szablon_werdyktu import Mechanism
@@ -39,6 +36,7 @@ scalonego z bazą, więc PR, który dopisuje właścicielowi zakaz albo regułę
 
 MARKER = "tools/lib/szczebel_straznika.py"
 OWNER_MARKER = "tools/lib/chroniony_wlasciciel.py"
+OWNER_FLAG = "--chroniony-wlasciciel"
 BYPASS = frozenset({Kind.MYPY, Kind.RUFF, Kind.AST_GREP})
 ALLOWED = {Mechanism.ARCHITEKTURA: BYPASS, Mechanism.REFAKTOR: BYPASS, Mechanism.LINT: BYPASS}
 BYPASS_FORMS = f"{Kind.MYPY.value}, {Kind.RUFF.value} albo {Kind.AST_GREP.value} <id reguły>"
@@ -48,18 +46,11 @@ def applies(pull: Pull) -> bool:
     return werdykt_pr.rule_applies(pull, werdykt_pr.deployment(pull.base, MARKER))
 
 
-@final
-@dataclass(frozen=True)
-class Accepted:
-    guard: Guard
-    owner: bool
-
-
-def rule(thread: Pull, mechanism: Mechanism | None, guard: Guard) -> Accepted | str:
+def proof_flags(thread: Pull, mechanism: Mechanism | None, guard: Guard) -> tuple[str, ...] | str:
     if applies(thread) and (reason := _refusal(mechanism, guard)):
         return reason
     owned = werdykt_pr.rule_applies(thread, werdykt_pr.deployment(thread.base, OWNER_MARKER))
-    return Accepted(guard, owned and mechanism is Mechanism.TEST and guard.kind is Kind.PYTEST)
+    return (OWNER_FLAG,) if owned and mechanism is Mechanism.TEST and guard.kind is Kind.PYTEST else ()
 
 
 def _refusal(mechanism: Mechanism | None, guard: Guard) -> str | None:
