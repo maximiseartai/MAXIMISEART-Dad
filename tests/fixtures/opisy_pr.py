@@ -188,6 +188,7 @@ SCALENIE = {
     "dwa": wzor("Naprawia #3, #4"),
     "porazki": wzor("Naprawia #14, #3, #10, #11, #12, #13"),
     "bez-commitu-merge": wzor("Naprawia #3, #5, #15"),
+    "skrzynka": wzor(f"Naprawia #3\nNaprawia {ZGLOSZENIE}"),
 }
 
 

@@ -50,8 +50,8 @@ def logs_comment(centrum: SettlingCentrum, run_id: str) -> str:
     return f"https://github.com/{REPOSITORY}/issues/{thread.number}#issuecomment-{position}"
 
 
-def note(run_id: str) -> dict[str, str]:
-    return {"title": TITLE, "body": BODY, "run_id": run_id}
+def note(run_id: str, title: str = TITLE) -> dict[str, str]:
+    return {"title": title, "body": BODY, "run_id": run_id}
 
 
 def rejected_logs_line(run_id: str) -> str:
@@ -66,14 +66,14 @@ def logs_rejections(centrum: SettlingCentrum) -> int:
     return log.count(f"etykieta=logi-uruchomienia okres={PERIOD} przyczyna=odmowa-tresci")
 
 
-def pinned_after_rejected_logs(tmp_path: Path, *, rejected_starts: int) -> tuple[SettlingCentrum, str]:
+def pinned_after_rejected_logs(tmp_path: Path, *, rejected_starts: int, title: str = TITLE) -> tuple[SettlingCentrum, str]:
     centrum = settling_centrum(tmp_path)
     box(centrum).background_comment_outcomes.extend([Rejected()] * rejected_starts)
     write_report_key(centrum.tool)
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
     assert wait_for(lambda: logs_rejections(centrum) == 1), "Skrzynka nie odrzuciła Logów"
 
-    sent = centrum.client.post("/api/dad-notes", json=note(run_id))
+    sent = centrum.client.post("/api/dad-notes", json=note(run_id, title))
 
     assert sent.json() == {"state": "sent"}
     return centrum, run_id
@@ -247,6 +247,22 @@ def test_uwaga_wyslana_przed_logami_dostaje_odnosnik_w_komentarzu_gdy_logi_dotra
         logs = logs_comment(centrum, run_id)
 
     assert issue.comments == [f"[Logi Uruchomienia]({logs}) dotarły do Skrzynki po tej Uwadze (Uruchomienie {run_id})."]
+
+
+def test_uwaga_taty_z_tytulem_od_prefiksu_andrzeja_dostaje_odnosnik_do_logow_ktore_dotarly_po_niej(tmp_path: Path) -> None:
+    title = "ANDRZEJ nie może otworzyć INTERMAX"
+    centrum, run_id = pinned_after_rejected_logs(tmp_path, rejected_starts=1, title=title)
+    [issue] = box(centrum).issues_with("uwaga-taty")
+
+    centrum.restart()
+    with centrum.client:
+        assert box(centrum).wait_until(lambda fake: issue.comments != [])
+        logs = logs_comment(centrum, run_id)
+
+    assert (issue.title, issue.comments) == (
+        title,
+        [f"[Logi Uruchomienia]({logs}) dotarły do Skrzynki po tej Uwadze (Uruchomienie {run_id})."],
+    )
 
 
 def test_dwie_uwagi_przypiete_do_roznych_uruchomien_dostaja_odnosniki_do_swoich_logow(tmp_path: Path) -> None:

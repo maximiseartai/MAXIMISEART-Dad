@@ -212,7 +212,7 @@ def test_atrapa_skrzynki_daje_w_issue_te_skutki_ktore_nagral_prawdziwy_github() 
     assert [report.number, note.number, logs.number] == opened
     assert issues.listed("uwaga-taty", include_closed=False) == ()
     issues.caught_up()
-    assert [issue.number for issue in issues.listed("uwaga-taty", include_closed=False)] == [note.number]
+    assert [entry.issue.number for entry in issues.listed("uwaga-taty", include_closed=False)] == [note.number]
     assert issues.open("kontrola-ilosci", "tytuł", "treść").number == cases["komentarze-strony"]["fakty"]["numer"]
     comments = [issues.comment(number, "komentarz") for number in (report.number, logs.number, logs.number)]
     ids = [found[1] for found in comments if isinstance(found, tuple)]
@@ -223,8 +223,8 @@ def test_atrapa_skrzynki_daje_w_issue_te_skutki_ktore_nagral_prawdziwy_github() 
     not_planned, done = issues.open("zgloszenie", "tytuł", "treść"), issues.open("zgloszenie", "tytuł", "treść")
     not_planned.closure, done.closure = Closure("not_planned", None), Closure("completed", None)
     issues.caught_up()
-    assert [issue.number for issue in issues.listed("zgloszenie", include_closed=False)] == [report.number]
-    assert [issue.number for issue in issues.listed("zgloszenie", include_closed=True)] == [
+    assert [entry.issue.number for entry in issues.listed("zgloszenie", include_closed=False)] == [report.number]
+    assert [entry.issue.number for entry in issues.listed("zgloszenie", include_closed=True)] == [
         report.number,
         not_planned.number,
         done.number,

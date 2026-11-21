@@ -1,14 +1,8 @@
-"""Uzupełnienie pliku zbiorczego na żywo (#419, ADR 0016), przez HTTP API jak przeglądarka.
-
-Strona pyta co kilka sekund o znacznik zapisu Pliku zbiorczego i pobiera widok dopiero po jego zmianie. Gdy odczyt
-się nie uda, widok przez minutę niesie ostatni dobry stan z godziną odczytu, a potem Komunikat. Minutę odmierza
-zegar Centrum testu, nigdy uśpienie.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import shutil
 from typing import Any
 
@@ -18,7 +12,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import workbook_files
 from rozliczenia.centrum.live_file import LastGoodReads
-from tests.fixtures.centrum import FakeOneDrive
+from tests.fixtures.centrum import ROOT, FakeOneDrive
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, filling_centrum, run_to_end
 from atrapy.preparation import PERIOD
@@ -26,12 +20,12 @@ from atrapy.preparation import PERIOD
 VIEW = f"/api/periods/{PERIOD}/quantities-to-fill"
 VERSION = f"/api/periods/{PERIOD}/collective-file-version"
 LOG_EVENT = "uzupelnienie-odczyt-nieudany"
-# Odstęp, co który strona ponawia nieudany odczyt (frontend/src/lib/use-live-file.ts).
-POLL_S = 3
+_PAGE_POLL_MS = re.search(r"^const POLL_MS = (\d+)$", (ROOT / "frontend/src/lib/use-live-file.ts").read_text("utf-8"), re.M)
+assert _PAGE_POLL_MS is not None
+POLL_S = int(_PAGE_POLL_MS[1]) // 1000
 
 
 def _prepared(tmp_path: Path, *, surroundings: Surroundings | None = None) -> PreparingCentrum:
-    # Wiersz 18 z URZĄDZENIAMI, których Reguły ilości nie znają (bez reguły).
     return filling_centrum(tmp_path, {18: "przeniesienie", 19: ""}, surroundings=surroundings)
 
 
@@ -49,8 +43,6 @@ def _type_in_excel(path: Path, cell: str, value: int) -> None:
 
 
 def _polled(centrum: PreparingCentrum, seconds: int) -> dict[str, Any]:
-    """Strona ponawia odczyt co 3 s przez ``seconds`` sekund zegara Centrum; ostatni widok."""
-
     view: dict[str, Any] = {}
     for _ in range(seconds // POLL_S):
         centrum.surroundings.clock.advance(minutes=POLL_S / 60)
@@ -59,15 +51,11 @@ def _polled(centrum: PreparingCentrum, seconds: int) -> dict[str, Any]:
 
 
 def _hidden_for(centrum: PreparingCentrum, seconds: float) -> None:
-    """Karta ukryta (albo Excel zasłania przeglądarkę): strona przez ``seconds`` sekund nie pyta serwera."""
-
     centrum.surroundings.clock.advance(minutes=seconds / 60)
 
 
 @dataclass
 class _SlowOneDrive(FakeOneDrive):
-    """OneDrive, który przez ``seconds`` sekund zegara Centrum próbuje pobrać plik tylko w chmurze, zanim odczyt padnie."""
-
     clock: ManualClock | None = None
     seconds: float = 0
 
@@ -135,7 +123,6 @@ def test_nieudany_odczyt_przez_minute_pokazuje_ostatni_dobry_stan_potem_komunika
     assert still_kept == kept
     assert shown["state"] == "problem"
     assert shown["message"]["what"] == "Plik zbiorczy jest uszkodzony albo nie jest skoroszytem Excela."
-    # Strona po Komunikacie czyta plik znów dopiero po zmianie tego znacznika.
     assert failing_version is not None
     assert shown["version"] == failing_version
     assert back["state"] == "ready"
@@ -167,13 +154,12 @@ def test_blokada_excela_bez_odpowiedzi_systemu_jest_nieznana(tmp_path: Path, mon
     path.with_name(f"~${path.name}").write_bytes(b"blokada Excela")
     stat = Path.stat
 
-    def denied(self: Path, *, follow_symlinks: bool = True) -> Any:
-        # Jak ACL w Windows, której os.access nie widzi: system odmawia odpowiedzi o pliku blokady.
+    def lock_file_stat_denied(self: Path, *, follow_symlinks: bool = True) -> Any:
         if self.name.startswith("~$"):
             raise PermissionError(13, "Odmowa dostępu", str(self))
         return stat(self, follow_symlinks=follow_symlinks)
 
-    monkeypatch.setattr(Path, "stat", denied)
+    monkeypatch.setattr(Path, "stat", lock_file_stat_denied)
 
     assert centrum.view(VIEW)["state"] == "problem"
     [line] = centrum.log_lines(LOG_EVENT)
@@ -183,7 +169,6 @@ def test_blokada_excela_bez_odpowiedzi_systemu_jest_nieznana(tmp_path: Path, mon
 def test_porazka_po_przerwie_i_zapisie_zaczyna_nowa_serie_bez_drugiego_wpisu_tej_samej_przyczyny(
     tmp_path: Path,
 ) -> None:
-    # Tata chowa kartę (albo Excel zasłania przeglądarkę) w trakcie zapisu Excela; plik wraca, ale nikt go nie czyta.
     centrum = _prepared(tmp_path)
     path = centrum.fixture.collective_file_path
     good = centrum.view(VIEW)
@@ -201,7 +186,6 @@ def test_porazka_po_przerwie_i_zapisie_zaczyna_nowa_serie_bez_drugiego_wpisu_tej
 
 
 def test_inna_przyczyna_po_przerwie_trafia_do_dziennika(tmp_path: Path) -> None:
-    # Obie przyczyny bez typu błędu (``typ=-``): dziennik rozróżnia je po kodzie Komunikatu.
     centrum = _prepared(tmp_path)
     path = centrum.fixture.collective_file_path
     centrum.view(VIEW)
@@ -219,17 +203,23 @@ def test_inna_przyczyna_po_przerwie_trafia_do_dziennika(tmp_path: Path) -> None:
     workbook.save(path)
     centrum.view(VIEW)
 
-    assert [line.split(" przyczyna=")[1].split()[0] for line in centrum.log_lines(LOG_EVENT)] == [
+    lines = centrum.log_lines(LOG_EVENT)
+    assert [line.split(" przyczyna=")[1].split()[0] for line in lines] == [
         "BRAK_PLIKU_ZBIORCZEGO", "BRAK_NAGLOWKA_PLIKU_ZBIORCZEGO",
     ]
+    assert [line.endswith(" typ=-") for line in lines] == [True, True]
 
 
-@pytest.mark.parametrize(("silence", "message"), [(15, True), (16, False)])
+@pytest.mark.parametrize(
+    ("silence", "message"),
+    [
+        pytest.param(15, True, id="cisza-15-s-ta-sama-seria-ponad-minute-od-pierwszej-porazki"),
+        pytest.param(16, False, id="cisza-16-s-nowa-seria-mniej-niz-minute-od-drugiej-porazki"),
+    ],
+)
 def test_cisza_dluzsza_niz_kilka_odstepow_po_zmianie_pliku_zaczyna_nowa_minute(
     tmp_path: Path, silence: int, message: bool
 ) -> None:
-    # Pierwsza porażka w 0 s, druga po ciszy i zapisie, potem strona ponawia co 3 s przez 48 s: ponad minutę od
-    # pierwszej porażki, a mniej niż minutę od drugiej.
     centrum = _prepared(tmp_path)
     path = centrum.fixture.collective_file_path
     centrum.view(VIEW)
@@ -245,13 +235,11 @@ def test_cisza_dluzsza_niz_kilka_odstepow_po_zmianie_pliku_zaczyna_nowa_minute(
 
 
 def test_trwala_porazka_ogladana_zrywami_daje_komunikat_po_minucie(tmp_path: Path) -> None:
-    # Tata patrzy na stronę 30 s, potem 2 min pisze w Excelu, który zasłania przeglądarkę; plik się nie zmienia.
     centrum = _prepared(tmp_path)
     path = centrum.fixture.collective_file_path
     centrum.view(VIEW)
     path.write_bytes(b"zepsuty na stale")
     states = [centrum.view(VIEW)["state"]]
-    # Autozapis zapisuje dalej zepsuty plik raz, gdy tata jeszcze patrzy: później znacznik już się nie zmienia.
     centrum.surroundings.clock.advance(minutes=POLL_S / 60)
     path.write_bytes(b"zepsuty na stale po Autozapisie")
     centrum.view(VIEW)
@@ -264,8 +252,6 @@ def test_trwala_porazka_ogladana_zrywami_daje_komunikat_po_minucie(tmp_path: Pat
 
 
 def test_wolny_nieudany_odczyt_daje_komunikat_po_minucie_i_jeden_wpis(tmp_path: Path) -> None:
-    # OneDrive przez 13 s pobiera plik tylko w chmurze i nie zdąży, a synchronizacja zmienia jego znacznik między
-    # próbami; strona ponawia 3 s po każdej odpowiedzi.
     onedrive = _SlowOneDrive(seconds=13)
     centrum = _prepared(tmp_path, surroundings=Surroundings(onedrive=onedrive))
     path = centrum.fixture.collective_file_path
@@ -279,13 +265,11 @@ def test_wolny_nieudany_odczyt_daje_komunikat_po_minucie_i_jeden_wpis(tmp_path: 
         states.append(centrum.view(VIEW)["state"])
         centrum.surroundings.clock.advance(minutes=POLL_S / 60)
 
-    # Próby zaczynają się w 0, 16, 32 i 48 s; czwarta kończy się w 61 s, minutę po początku pierwszej.
     assert states == ["ready", "ready", "ready", "problem"]
     assert len(centrum.log_lines(LOG_EVENT)) == 1
 
 
 def test_trwaly_problem_po_komunikacie_zostaje_jedna_seria(tmp_path: Path) -> None:
-    # Po Komunikacie strona nie ponawia odczytu, dopóki znacznik się nie zmieni; zapis taty bez naprawy to ta sama seria.
     centrum = _prepared(tmp_path)
     path = centrum.fixture.collective_file_path
     centrum.view(VIEW)
@@ -310,7 +294,6 @@ def test_po_uruchomieniu_ktore_zmienilo_pliki_okresu_nieudany_odczyt_nie_pokazuj
     path.write_bytes(b"Excel zapisuje")
     assert centrum.view(VIEW)["state"] == "ready"
     assert len(centrum.log_lines(LOG_EVENT)) == 1
-    # Tata usuwa Folder okresu i przygotowuje Plik zbiorczy od nowa; zaraz po zapisie OneDrive go jeszcze trzyma.
     shutil.rmtree(path.parent)
     assert run_to_end(centrum, dry_run=False)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
     path.write_bytes(b"OneDrive synchronizuje")
@@ -334,7 +317,6 @@ def test_podglad_bez_zapisu_zostawia_ostatni_dobry_odczyt(tmp_path: Path) -> Non
 
 def test_po_uruchomieniu_z_zapisem_zaden_plik_zbiorczy_nie_pokazuje_odczytu_sprzed_niego(tmp_path: Path) -> None:
     reads: LastGoodReads[str] = LastGoodReads(clock=lambda: 0.0)
-    # Tata ogląda Uzupełnienie okresu A, potem okresu B, a potem przygotowuje okres A od nowa.
     files = [tmp_path / "A.xlsx", tmp_path / "B.xlsx"]
     for path in files:
         path.write_bytes(b"zapisany")

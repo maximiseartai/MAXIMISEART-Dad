@@ -180,11 +180,12 @@ jobs:
       # Ruff exempts an owner file from all of TID251, so the last test reports there every banned name outside its row
       # of OWNERS in tests/test_zakazy_ruff.py.
       # The step runs after ruff and mypy, so before them no code of the PR runs but its install, as in the guard proof
-      # (tools/lib/srodowisko_ci.py).
+      # (tools/lib/srodowisko_ci.py). -rfE prints a FAILED line for each failed test, from which the weekly report
+      # tells a ruff guard from an ast-grep one (WEED_TESTS of tools/lib/srodowisko_ci.py).
       - name: Weed rules of the whole tree
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: >-
-          python -m pytest -q -rs -n 0 -p no:cacheprovider
+          python -m pytest -q -rfEs -n 0 -p no:cacheprovider
           tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
           tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
           tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep
@@ -196,7 +197,7 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           MAXIMISEART_ZAPADKA_BAZA: HEAD^1
-        run: python -m pytest -q -rs -n 0 -p no:cacheprovider tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
+        run: python -m pytest -q -rfEs -n 0 -p no:cacheprovider tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
 
   plan:
     # Decides the pytest and Mutation checks jobs of this run (tools/plan_ci.py), from the unit times of the last green

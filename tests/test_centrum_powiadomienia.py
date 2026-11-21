@@ -139,6 +139,23 @@ def test_powod_zamkniecia_issue_rozstrzyga_stan_sprawy(
     assert rows(centrum) == [("uwaga", NOTE_TITLE, state, True)]
 
 
+@pytest.mark.parametrize(
+    "title",
+    ["Andrzej nie może otworzyć INTERMAX", "ANDRZEJ nie może otworzyć INTERMAX"],
+    ids=["imie-andrzeja-w-tytule", "tytul-zaczety-od-prefiksu-andrzeja"],
+)
+def test_zamknieta_uwaga_taty_jest_zalatwiona_w_jego_powiadomieniach_jakkolwiek_zaczyna_sie_jej_tytul(
+    tmp_path: Path, title: str
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    write_report_key(centrum.tool)
+    sent_note(centrum, title)
+    centrum.surroundings.report_box.close(number_of(centrum, title), "completed")
+    centrum.surroundings.clock.advance(minutes=10)
+
+    assert rows(centrum) == [("uwaga", title, RESOLVED, True)]
+
+
 def test_uwaga_bez_tokenu_czeka_na_token_bez_kropki_a_skrzynka_nie_jest_pytana(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
 

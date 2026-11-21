@@ -793,6 +793,7 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), feedback, komentarz
 
 Miejsce, do którego trafiają Zgłoszenia, Kontrole ilości, Logi Uruchomienia i Uwagi taty i w którym Maks je zamyka: prywatne repozytorium Zgłoszeń.
 Jedno dla obu Stanowisk: to, co przyszło ze Stanowiska Andrzeja, ma w tytule prefiks `ANDRZEJ`, a jego Archiwum Logów okresu tag `andrzej-logi-<okres>`, więc ma własne issue i nie miesza się z tym, co przysłał tata.
+Z którego Stanowiska jest sprawa, narzędzia Maksa wiedzą ze znaku Stanowiska, który Centrum Andrzeja dopisuje na końcu treści issue (`box_prefix.stamped`), a nie z tytułu, bo tytuł Uwagi pisze tata i może go zacząć od `ANDRZEJ`.
 _Avoid_: issue tracker, publiczne issue
 
 ## Reguła danych

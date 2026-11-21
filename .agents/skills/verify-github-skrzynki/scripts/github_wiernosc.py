@@ -61,7 +61,7 @@ FIELDS: Final[Mapping[str, frozenset[str]]] = {
     "komentarz": frozenset({"id", "html_url"}),
     "poprawka": frozenset({"id", "html_url"}),
     "komentarze": frozenset({"[].id", "[].html_url", "[].body"}),
-    "lista": frozenset({"[].number", "[].body", "[].state", "[].state_reason", "[].closed_at"}),
+    "lista": frozenset({"[].number", "[].title", "[].body", "[].state", "[].state_reason", "[].closed_at"}),
     "zalozenie-archiwum": frozenset({"id"}),
     "archiwa": frozenset({"[].id", "[].tag_name"}),
     "pliki-archiwum": frozenset({"[].id", "[].name", "[].label", "[].state"}),

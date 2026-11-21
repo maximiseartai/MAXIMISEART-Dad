@@ -32,8 +32,8 @@ Użycie (z katalogu repozytorium):
         [--efenix-dzis RRRR-MM-DD] [--zachowaj FOLDER]
 
 ``LOGI`` to plik Logów z dysku taty (``.json``) albo z Archiwum Logów okresu (``.json.gz``), albo odnośnik do pliku w
-Archiwum z komentarza Logów w issue okresu (``https://github.com/<repo>/releases/download/logi-<okres>/<plik>.json.gz``),
-który narzędzie pobiera przez ``gh release download`` (tylko odczyt), a z nim z tego samego Archiwum każdy Wzorzec, którego
+Archiwum z komentarza Logów w issue okresu (``https://github.com/<repo>/releases/download/logi-<okres>/<plik>.json.gz``,
+ze Stanowiska Andrzeja z tagiem ``andrzej-logi-<okres>``), który narzędzie pobiera przez ``gh release download`` (tylko odczyt), a z nim z tego samego Archiwum każdy Wzorzec, którego
 skrót mają Logi (``wzorzec-<SHA-256>.xlsx``). Przy pliku z dysku Wzorców szuka obok niego, pod tymi samymi nazwami.
 
 Bez ``--na-tym-drzewie`` narzędzie robi odłączoną kopię commitu z Logów (``tool.commit``) w katalogu tymczasowym

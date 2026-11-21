@@ -3,6 +3,8 @@ from __future__ import annotations
 from html.parser import HTMLParser
 import json
 import re
+import subprocess
+from typing import Final
 
 import github
 from github import LinkGithuba
@@ -40,6 +42,14 @@ kodu, przekreślenia (także takich, które zaczęły się przed końcem poprzed
 (fragmentu, bloku i ``<pre>``), przekreślenia, PR-a, issue już zamkniętego ani issues, które GitHub zamyka sam
 (``closingIssuesReferences``: ``Closes``, ``Fixes``, ``Resolves``).
 
+Odwołania do Skrzynki Zgłoszeń na tej samej liście (``Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#12``, według
+tych samych reguł, ale z linkami do repozytorium Zgłoszeń zamiast tego) nic nie zamykają, tylko linia podaje, z którego
+Stanowiska przyszła każda sprawa: ``Skrzynka Zgłoszeń zostaje otwarta: #12 (Stanowisko Andrzeja)``. Stanowisko daje
+znak Stanowiska, który Centrum Andrzeja dopisuje jako ostatnią linię treści issue, po znaku wysyłki
+(``rozliczenia.centrum.box_prefix.stamped``), więc tekst taty go nie poda, a treść bez niego to ``Stanowisko taty``;
+tytułu narzędzie nie czyta, bo tytuł Uwagi pisze tata, i nie pokazuje treści ani tytułu, bo to dane taty. Sprawa,
+której ``gh`` nie poda (także bez treści), daje ``UWAGA: nie odczytano #N ze Skrzynki Zgłoszeń``.
+
 Tą samą drogą zamyka issues chwastów (ADR 0031, Q15): linia akapitu albo punkt listy ``Korzeń z #N: R-KOD``
 (``rejestr_korzeni.root_lines``) z linkiem do issue tego repozytorium zamyka #N, gdy jest otwarte i ma tytuł
 ``Chwast: R-KOD`` z tym kodem, z tym samym komentarzem o PR i commicie merge'a; inne issue zostaje otwarte
@@ -58,6 +68,9 @@ ostrzeżeń stoi w linii ``SCAL OK`` z kodem 0, bo PR jest już scalony. Z ``--b
 zamyka, a linia podaje ``po merge'u zamknie: #N`` (a zamiast „nie zamknięto …” ostrzeżenia ``nie sprawdzono …``).
 """
 
+REPORT_BOX: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia"
+DAD_WORKSTATION: Final = "Stanowisko taty"
+_WORKSTATION_STAMP: Final = re.compile(r"<!-- (Stanowisko \w+(?: \w+)*) -->")
 LINK = "\x01"
 NOT_TEXT = "\x00"
 _REFERENCE = rf"(?:{LINK}|(?:[\w.-]+/[\w.-]+)?#\d+)"
@@ -170,6 +183,7 @@ def close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
     fixes: dict[int, str | None] = {number: None for number in listed_issues(html, pull.repository, (FIXES,)) if number not in pull.closed_by_github}
     weeds = rejestr_korzeni.root_lines(szablon_werdyktu.items(html), pull.repository)
     fixes.update({link.numer: rejestr_korzeni.TITLE.format(code=code) for link, code in weeds if link.rodzaj == "issue" and link.numer not in fixes})
+    box = _box_cases(html)
     closes = merged and merge_commit is not None
     open_issues, failed, other = [], [], []
     for number, title in fixes.items():
@@ -188,11 +202,32 @@ def close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
             failed.append(f"#{number}")
     if merged and not closes:
         missed = [*open_issues, *failed]
-        return f" | UWAGA: GitHub nie podał commitu merge'a, nie zamknięto {', '.join(missed)}, zamknij ręcznie" if missed else ""
+        unclosed = [f"UWAGA: GitHub nie podał commitu merge'a, nie zamknięto {', '.join(missed)}, zamknij ręcznie"] if missed else []
+        return "".join(f" | {part}" for part in (*unclosed, *box))
     done, warning = ("zamknięte", "UWAGA: nie zamknięto {}, zamknij ręcznie") if merged else (
         "po merge'u zamknie", "UWAGA: nie sprawdzono {}"
     )
     parts = [f"{done}: {', '.join(open_issues)}"] if open_issues else []
     parts += [warning.format(", ".join(failed))] if failed else []
     parts += [f"UWAGA: {', '.join(other)} z „{rejestr_korzeni.ROOT_WORDS}” to nie otwarte issue „Chwast: R-KOD” z tym kodem, nie zamknięte"] if other else []
-    return "".join(f" | {part}" for part in parts)
+    return "".join(f" | {part}" for part in (*parts, *box))
+
+
+def _box_cases(html: str) -> list[str]:
+    found, failed = [], []
+    for number in listed_issues(html, REPORT_BOX, (FIXES,)):
+        try:
+            body = json.loads(github.gh("api", f"repos/{REPORT_BOX}/issues/{number}"))["body"]
+        except (subprocess.SubprocessError, OSError, ValueError, LookupError, TypeError):
+            body = None
+        if isinstance(body, str):
+            found.append(f"#{number} ({workstation_of(body)})")
+        else:
+            failed.append(f"#{number}")
+    parts = [f"Skrzynka Zgłoszeń zostaje otwarta: {', '.join(found)}"] if found else []
+    return parts + ([f"UWAGA: nie odczytano {', '.join(failed)} ze Skrzynki Zgłoszeń"] if failed else [])
+
+
+def workstation_of(body: str) -> str:
+    stamp = _WORKSTATION_STAMP.fullmatch((body.splitlines() or [""])[-1])
+    return DAD_WORKSTATION if stamp is None else stamp[1]
