@@ -3455,6 +3455,10 @@ def test_wpis_pod_linia_cytatu_sie_nie_liczy() -> None:
     ],
 )
 def test_numery_z_przykladu_nie_daja_wpisu_ani_problemu_nawet_gdy_sa_zleceniami(subject: str, text: str) -> None:
+    """US 50: numery z przykładu w przypomnieniu (``12345678``, ``12345679``) nie dają Wpisu ani problemu numeru, z którego
+    powstałoby Zlecenie dopisane z raportu, także bez znaku cytatu i gdy INTERMAX ma zlecenie o tym numerze, a linia
+    przykładu kończy opis Wpisu nad nią."""
+
     example = _order(OrderRow("Zlecenia", 125), number="12345678")
     mail = _mail(JAN, subject, text)
 
@@ -5198,6 +5202,9 @@ def test_nowy_numer_w_raporcie_z_dwoma_zleceniami_z_jutra_nie_jest_dopisany_ani_
     assert today.changes == ()
 
 def test_drugie_klikniecie_nie_dubluje_dopisanego_zlecenia_a_informacja_stoi_do_wpisania_adresu() -> None:
+    """Kryteria #1354 (US 22, 24): kolejne kliknięcie z tym samym mailem widzi dopisane zlecenie w INTERMAX, więc nic
+    nie dopisuje ani nie zmienia; informacja „dopisane z raportu” stoi, dopóki tata nie wpisze ``ADRES``."""
+
     orders = [_order()]
     mail = _mail(JAN, SUBJECT, ADDED_TEXT)
     first = enter_reports(_inputs([mail], orders, ordered=[DAY]))
@@ -5398,6 +5405,9 @@ def test_raport_za_inny_dzien_z_numerem_zlecenia_z_tamtego_dnia_nie_poprawia_rap
 
 
 def test_dopisanie_idzie_do_arkusza_z_zleceniem_nadawcy_w_dniu_z_tematu() -> None:
+    """Dzień z tematu jest Dniem uporządkowanym w dwóch arkuszach zleceń: dopisanie idzie do arkusza, w którym nadawca ma
+    zlecenie tego dnia."""
+
     other = OrderRow("Zlecenia 2026", 40)
     inputs = _inputs([_mail(JAN, SUBJECT, ADDED_TEXT)], [_order(other)], ordered=[DAY])
 
