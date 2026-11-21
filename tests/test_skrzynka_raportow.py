@@ -359,8 +359,16 @@ def test_pamiec_odczytu_jednej_skrzynki_nie_oddaje_maili_innej_skrzynce_ani_inne
     przed = w_skrzynce(7, surowy(tresc="40000001 tak", message_id=b"<przed@x.invalid>"))
     po = w_skrzynce(7, surowy(tresc="40000002 nie", message_id=b"<po@x.invalid>"))
     config = dostep(tmp_path)
+    uidvalidity: list[bytes | tuple[bytes, bytes]] = []
+
+    class ZapisujeUidvalidity(imaplib.IMAP4):
+        def select(self, mailbox: str = "INBOX", readonly: bool = False) -> tuple[str, list[bytes | None]]:
+            reply = super().select(mailbox, readonly)
+            uidvalidity.extend(self.untagged_responses.get("UIDVALIDITY", []))
+            return reply
+
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[przed]) as atrapa:
-        inbox = port(config, atrapa)
+        inbox = ImapInbox(z_pliku(config), connect=lambda: ZapisujeUidvalidity("127.0.0.1", atrapa.port))
         first = inbox.mails_since(date(2026, 11, 8))
         atrapa.mails, atrapa.address = (po,), inna
         dostep(config, f"{inna}\nabcd efgh ijkl mnop\n".encode())
@@ -368,6 +376,7 @@ def test_pamiec_odczytu_jednej_skrzynki_nie_oddaje_maili_innej_skrzynce_ani_inne
         atrapa.mails, atrapa.all_folder = (przed,), False
         po_folderze = inbox.mails_since(date(2026, 11, 8))
 
+    assert len(uidvalidity) == 3 and len(set(uidvalidity)) == 1, uidvalidity
     assert [mail.text for mail in maile(first)] == ["40000001 tak"]
     assert [mail.text for mail in maile(po_adresie)] == ["40000002 nie"]
     assert [mail.text for mail in maile(po_folderze)] == ["40000001 tak"]

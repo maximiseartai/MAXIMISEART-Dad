@@ -120,7 +120,7 @@ _Stamp = tuple[int, int]
 
 
 def _stamp(entry: os.DirEntry[str]) -> _Stamp | None:
-    # ZEWNĘTRZNE: os.DirEntry.stat w Windows daje rozmiar i chwilę zmiany z listowania folderu, bez wywołania systemowego na samym pliku (dokumentacja Pythona, os.DirEntry.stat)
+    # ZEWNĘTRZNE: os.DirEntry.stat w Windows daje rozmiar i chwilę zmiany z listowania folderu, bez wywołania systemowego na samym pliku, chyba że follow_symlinks=True, a wpis to reparse point, np. dowiązanie symboliczne albo złącze katalogu (dokumentacja Pythona, os.DirEntry.stat)
     try:
         status = entry.stat()
     except OSError:
