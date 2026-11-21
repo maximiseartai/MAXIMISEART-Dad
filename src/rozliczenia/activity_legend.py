@@ -262,7 +262,6 @@ def _alternative(index: int, spelling: str) -> str:
 
 
 def _index(match: re.Match[str]) -> int:
-    # ZEWNĘTRZNE: lastgroup to nazwa grupy, która domknęła się ostatnia, więc przy grupie liczby w środku grupy zapisu to nazwa grupy zapisu (dokumentacja Pythona, re.Match.lastindex i re.Match.lastgroup)
     assert match.lastgroup is not None, "każdy zapis legendy ma swoją grupę"
     return int(match.lastgroup.removeprefix(_SPELLING_GROUP))
 

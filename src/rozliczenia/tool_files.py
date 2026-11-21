@@ -74,7 +74,6 @@ def port_free(port: int) -> bool:
 def _bound(port: int) -> socket.socket:
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        # ZEWNĘTRZNE: na Windows dwa gniazda z SO_REUSEADDR wiążą ten sam port, więc drugie Centrum zajęłoby port, na którym słucha już działające Centrum (Microsoft Learn, Using SO_REUSEADDR and SO_EXCLUSIVEADDRUSE)
         if sys.platform != "win32":
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind((HOST, port))

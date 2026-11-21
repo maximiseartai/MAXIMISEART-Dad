@@ -436,6 +436,12 @@ def test_kod_w_srodku_albo_na_koncu_dluzszego_slowa_nie_jest_kodem(word: str, co
     assert _read(code + word) == NO_CODES
 
 
+def test_grupa_zapisu_z_grupa_liczby_w_srodku_jest_ostatnia_grupa_dopasowania() -> None:
+    match = re.fullmatch(r"(?P<zapis0>inst(?P<liczba0>[0-9]+)m)", "inst20m")
+
+    assert match is not None and match.lastgroup == "zapis0"
+
+
 def test_legenda_z_wydania_czyta_sie_z_powrotem_w_ten_sam_typ() -> None:
     assert parse_activity_legend(dump_activity_legend(DEFAULT_ACTIVITY_LEGEND)) == DEFAULT_ACTIVITY_LEGEND
 
