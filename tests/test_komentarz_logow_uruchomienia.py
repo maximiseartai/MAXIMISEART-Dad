@@ -387,7 +387,9 @@ def _guarded(kind: str) -> Any:
 def _slot(value: object) -> str:
     kind = type(value)
     slots: tuple[str, ...] = getattr(kind, "__slots__")
-    return f"_{kind.__name__}{slots[0]}"
+    name = f"_{kind.__name__}{slots[0]}"
+    assert hasattr(value, name), f"{name} nie jest slotem {kind.__name__}, więc zmiana slotu odmawia z innej przyczyny"
+    return name
 
 
 @pytest.mark.parametrize("make", NOT_FROM_GUARD.values(), ids=NOT_FROM_GUARD.keys())
@@ -1371,6 +1373,7 @@ def test_start_centrum_zamyka_dziennik_wyceny_wersja_zastepcza_po_strazniku_z_te
         sent = post_of(closing)
         assert sent == post_of(wanted)
         archived = "" if sent.archive is None else gzip.decompress(sent.archive.packed()).decode("utf-8")
+        assert any("[adres]" in text for text in (*sent.parts, archived)), "wersja ma wartość z kolumny ADRES, którą strażnik maskuje"
         assert [text for text in (*sent.parts, archived) if ADDRESS in text] == [], "wartość z kolumny ADRES po strażniku"
     assert asked == ([read] if built else [])
 
