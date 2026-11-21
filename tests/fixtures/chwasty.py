@@ -52,14 +52,10 @@ def _saved() -> dict[str, str]:
 
 
 def rendered() -> dict[str, str]:
-    """HTML z renderera GitHuba dla każdej treści z ``chwasty.json``."""
-
     return dict(_saved())
 
 
 def bodies() -> list[str]:
-    """Treści, których HTML muszą mieć testy."""
-
     return [*WERDYKTY.values(), *OPISY.values()]
 
 

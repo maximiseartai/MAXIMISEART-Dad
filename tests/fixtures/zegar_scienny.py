@@ -15,7 +15,6 @@ from rozliczenia import wall_clock
 MOMENTS = 10_000
 """Najwięcej pytań o zegar w jednym teście; chwile zegara to ``start + k µs`` dla ``k < MOMENTS``."""
 STEP = timedelta(microseconds=1)
-"""O tyle rośnie zegar przy każdym pytaniu."""
 
 
 def wall_clock_from(monkeypatch: pytest.MonkeyPatch, start: datetime) -> None:
@@ -60,8 +59,6 @@ def _clock_readings() -> list[tuple[str, Callable[[], object]]]:
 
 
 def _outside(name: str, read: Callable[[], object], start: datetime) -> str | None:
-    """Opis odczytu ``name`` spoza chwil zegara od ``start``; ``None``, gdy odczyt jest jedną z nich."""
-
     last = start + MOMENTS * STEP
     try:
         value = read()

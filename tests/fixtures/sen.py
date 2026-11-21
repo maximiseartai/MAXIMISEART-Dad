@@ -1,5 +1,3 @@
-"""Sen kodu pod testem bez prawdziwego czekania i bez snów innych wątków procesu workera pytest."""
-
 from __future__ import annotations
 
 import threading
