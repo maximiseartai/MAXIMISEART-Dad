@@ -5271,21 +5271,26 @@ def test_numer_z_aplikacji_spoza_dni_otwartych_ze_sprzecznymi_wpisami_w_mailu_to
 def test_drugie_klikniecie_nie_dubluje_dopisanego_zlecenia_a_informacja_stoi_do_wpisania_adresu() -> None:
     """Kryteria #1354 (US 22, 24): kolejne kliknięcie z tym samym mailem widzi dopisane zlecenie w INTERMAX, więc nic
     nie dopisuje ani nie zmienia; informacja „dopisane z raportu” stoi, dopóki tata nie wpisze ``ADRES``, i tylko przy
-    zleceniu, które Centrum dopisało, nie przy wierszu taty bez ``ADRES``."""
+    zleceniu, które Centrum dopisało, nie przy wierszu taty bez ``ADRES``, także takim, który Centrum przeniosło."""
 
-    orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002", address=None)]
-    mail = _mail(JAN, SUBJECT, ADDED_TEXT)
-    first = enter_reports(_inputs([mail], orders, ordered=[DAY]))
+    orders = [
+        _order(),
+        _order(OrderRow("Zlecenia", 121), number="40000002", address=None),
+        _order(OrderRow("Zlecenia", 122), number="40000003", address=None),
+    ]
+    mails = [_mail(JAN, SUBJECT, ADDED_TEXT), _mail(EWA, SUBJECT, "40000003 tak montaż")]
+    first = enter_reports(_inputs(mails, orders, ordered=[DAY]))
     after = _after(orders, first)
 
-    second = enter_reports(_inputs([mail], after, ordered=[DAY], memory=first.memory))
+    second = enter_reports(_inputs(mails, after, ordered=[DAY], memory=first.memory))
     addressed = [replace(order, addressed=True) if order.key.number == ADDED else order for order in after]
-    third = enter_reports(_inputs([mail], addressed, ordered=[DAY], memory=second.memory))
+    third = enter_reports(_inputs(mails, addressed, ordered=[DAY], memory=second.memory))
 
+    assert [(move.number, move.added) for move in first.memory.moves if move.number == "40000003"] == [("40000003", False)]
     assert (second.added, second.changes, second.moves, _problems(second)) == ((), (), (), ())
-    assert second.notes == (_added_note(),)
+    assert [found for found in second.notes if isinstance(found, Added)] == [_added_note()]
     assert second.memory == first.memory
-    assert (third.added, third.changes, third.notes) == ((), (), ())
+    assert (third.added, third.changes, [found for found in third.notes if isinstance(found, Added)]) == ((), (), [])
 
 
 @pytest.mark.parametrize(
