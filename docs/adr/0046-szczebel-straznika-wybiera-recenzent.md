@@ -53,6 +53,7 @@ Decyzje autora PR ticketu #2461:
 Decyzje autora PR poprawek po #2461 (spec #2448):
 
 - **Luka w samej regule lint to `test`.** Ważne, którego `Gdzie` to plik reguły ast-grep albo `ruff.toml` z `banned-api` (luka we wzorcu albo w zasięgu zakazu), ma szczebel `test`, bo `mypy`, `ruff` ani `ast-grep <id>` nie udowodni luki w regule: dowód przywraca plik reguły z drzewa `FAIL` i nie ma złego kodu, który by odpalił. Plik reguły i `ruff.toml` z zakazami są więc chronionymi właścicielami: test ich próbek (`tests/test_zapadki.py`, `tests/test_zakazy_ruff.py`) pada na mutacji recenzenta, a słabszą regułę ast-grep odrzuca też warunek 6 `tools/scal_pr.py`. Wątek, który już ma `lint`, zmienia szczebel punktem `Mechanizm W<n> r<k>:`.
+- **Moduł nazwy z `banned-api` to właściciel z parsera, nie ze wzorca.** Klucz `banned-api` (`pakiet.modul.NAZWA`) kieruje resztę kodu do modułu przed ostatnią kropką, więc ten moduł jest chronionym właścicielem, gdy plik tego modułu w drzewie HEAD scalonym z bazą wiąże tę nazwę według tablicy symboli kompilatora Pythona (`symtable`), a nie według wzorca `re` na `def` albo `class`, który w #2524 dał cztery rundy z `FAIL`, każdą na nowej postaci. Plik modułu szuka katalog tego `ruff.toml`, a potem katalogi importu repo (`src`, `repo.IMPORT_ROOTS`), więc klucz zagnieżdżonego `ruff.toml` sięga modułu obok niego, a klucz korzenia nie. Wiązanie importem pod tą nazwą też się liczy, bo zakaz chroni nazwę `pakiet.modul.NAZWA`, którą wtedy daje tylko ten moduł; klucz, który sam jest modułem, nie daje właściciela.
 
 ## Wdrożenie
 
