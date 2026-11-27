@@ -92,11 +92,11 @@ from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, EXCEPTIONS_FILE, QuantityException
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL, SETTLEMENT_MAIL_FILE
-from rozliczenia.centrum.mailing_messages import mail_refused, mailbox_unreachable, sent_unread
+from rozliczenia.centrum.mailing_messages import file_open_in_excel, mail_refused, mailbox_unreachable, sent_unread
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, WorkerEntry, WorkerList
-from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxUnreachable, MailRefused, SentAttachment
+from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxUnreachable, MailRefused, MailSent, SentAttachment
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE, set_codes
@@ -8987,6 +8987,11 @@ class Wysylka:
     tool: ToolDirectory
     periods: Path
     mailbox: FakeMailbox
+    rebuild: Callable[[], FastAPI]
+
+    def restart(self) -> None:
+        self.client.stop()
+        self.client = CentrumClient(self.rebuild(), since=self.client.since)
 
     def file(self, token: str, worker: str) -> Path:
         return PeriodFolder(self.periods, parse_period_token(token)).worker_settlement(worker)
@@ -9028,20 +9033,23 @@ def wysylka_centrum(tmp_path: Path, mailbox: FakeMailbox | None = None, **app: A
             else:
                 write_source_rows(path, [SourceRow("Miasto", "ul. Syntetyczna 1", login, "40000001")])
             os.utime(path, (WYSYLKA_ROZLICZONE.timestamp(), WYSYLKA_ROZLICZONE.timestamp()))
-    platform = FakePlatform(chosen_folders=[periods])
     box = mailbox if mailbox is not None else FakeMailbox()
-    built = centrum_app(
-        tool,
-        platform=platform,
-        autostart=FakeAutostart(tmp_path / "autostart"),
-        today=WYSYLKA_DZIEN,
-        now=lambda: WYSYLKA_CHWILA,
-        settlement_mailbox=app.pop("settlement_mailbox", box),
-        **app,
-    )
-    client = CentrumClient(built)
+    settlement_mailbox = app.pop("settlement_mailbox", box)
+
+    def build() -> FastAPI:
+        return centrum_app(
+            tool,
+            platform=FakePlatform(chosen_folders=[periods]),
+            autostart=FakeAutostart(tmp_path / "autostart"),
+            today=WYSYLKA_DZIEN,
+            now=lambda: WYSYLKA_CHWILA,
+            settlement_mailbox=settlement_mailbox,
+            **app,
+        )
+
+    client = CentrumClient(build())
     assert client.post("/api/settings/periods-directory/choose").status_code == 200
-    return Wysylka(client, tool, periods, box)
+    return Wysylka(client, tool, periods, box, build)
 
 
 def w_wyslanych(name: str, to: Sequence[str], at: datetime, *, by_centrum: bool = True) -> SentAttachment:
@@ -9123,6 +9131,79 @@ def test_ponowienie_wysylki_zanim_gmail_polozy_mail_w_wyslanych_niczego_nie_wysy
     assert app.mailbox.attachments == []
 
 
+@pytest.mark.parametrize(
+    "filed_after", [pytest.param(None, id="gmail-kladzie-od-razu"), pytest.param(1, id="gmail-kladzie-przed-drugim-odczytem")]
+)
+def test_rozliczenie_wyslane_przed_ponownym_otwarciem_centrum_jest_wyslane_z_wyslanych_i_nie_idzie_drugi_raz(
+    tmp_path: Path, filed_after: int | None
+) -> None:
+    app = wysylka_centrum(tmp_path, FakeMailbox(filed_after=filed_after))
+    assert app.send("Anna Łącka")["sent_now"] is True
+
+    app.restart()
+    app.view()
+    row = app.rows(WYSYLKA_OKRES)["Anna Łącka"]
+    again = app.send("Anna Łącka")
+
+    assert row["state"] == {"state": "sent", "at": "2026-11-16T09:00:00Z"}
+    assert again["sent_now"] is False
+    assert [mail.name for mail, _ in app.mailbox.mailed] == [f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"]
+
+
+def test_rozliczenie_otwarte_w_excelu_nie_idzie_a_wiersz_mowi_zeby_je_zapisac_i_zamknac(tmp_path: Path) -> None:
+    app = wysylka_centrum(tmp_path)
+    excel_lock_file(app.file(WYSYLKA_OKRES, "Anna Łącka")).write_bytes(b"\x00" * 165)
+
+    sent = app.send("Anna Łącka")
+
+    assert (sent["sent_now"], sent["row"]["state"]) == (False, {"state": "not_sent", "message": file_open_in_excel()})
+    assert app.mailbox.mailed == []
+    assert f"rozliczenie-niewyslane okres={WYSYLKA_OKRES} przyczyna=plik typ=OPEN_IN_EXCEL" in app.log()
+
+
+def test_plik_zmieniony_po_wysylce_udanej_po_porazce_jest_zmieniony_a_nie_niewyslany(tmp_path: Path) -> None:
+    box = FakeMailbox(send_outcome=MailRefused("SMTPRecipientsRefused"))
+    app = wysylka_centrum(tmp_path, box)
+    assert app.send("Anna Łącka")["sent_now"] is False
+    box.send_outcome = MailSent()
+    assert app.send("Anna Łącka")["sent_now"] is True
+    changed = WYSYLKA_CHWILA + timedelta(hours=3)
+    os.utime(app.file(WYSYLKA_OKRES, "Anna Łącka"), (changed.timestamp(), changed.timestamp()))
+
+    row = app.rows(WYSYLKA_OKRES)["Anna Łącka"]
+
+    assert (row["state"], row["preselected"], row["resend"]) == ({"state": "changed", "at": "2026-11-16T09:00:00Z"}, False, True)
+
+
+def test_wysylka_pliku_wykonawcy_bez_adresu_przy_skrzynce_bez_odczytu_jest_bez_adresu_bez_wpisu_porazki(tmp_path: Path) -> None:
+    app = wysylka_centrum(tmp_path, FakeMailbox(attachments=InboxUnreachable("OSError")))
+
+    sent = app.send("Bartek Fikcyjny")
+
+    assert (sent["sent_now"], sent["row"]["state"]["state"]) == (False, "no_address")
+    assert "rozliczenie-niewyslane" not in app.log()
+
+
+def test_strona_wysylki_czyta_rozliczenie_bez_zlecen_raz_dopoki_tata_go_nie_zmieni(tmp_path: Path) -> None:
+    reads: list[str] = []
+
+    def source(path: Path) -> bytes:
+        reads.append(path.name)
+        return file_bytes(path)
+
+    app = wysylka_centrum(tmp_path, source=source)
+    celina = app.file(WYSYLKA_OKRES, "Celina Pusta")
+
+    app.view()
+    app.view()
+    unchanged = reads.count(celina.name)
+    later = WYSYLKA_ROZLICZONE + timedelta(hours=1)
+    os.utime(celina, (later.timestamp(), later.timestamp()))
+    states = [app.rows(WYSYLKA_OKRES)["Celina Pusta"]["state"]["state"] for _ in range(2)]
+
+    assert (unchanged, reads.count(celina.name), states) == (1, 2, ["without_orders", "without_orders"])
+
+
 def test_wysylka_odmawia_pliku_ktory_nie_idzie_bez_maila(tmp_path: Path) -> None:
     app = wysylka_centrum(tmp_path)
 
@@ -9174,6 +9255,7 @@ def test_skrzynka_bez_odczytu_wylacza_wysylke_i_mowi_o_tym_jednym_zdaniem(tmp_pa
     assert view["mailbox"] == {"state": "unreadable", "message": mailbox_unreachable()}
     rows = {row["worker"]: row for row in view["periods"][0]["rows"]}
     assert stany_wysylki(rows)["Anna Łącka"] == ("unknown", False, False)
+    assert rows["Anna Łącka"]["resend"] is False
     assert stany_wysylki(rows)["Bartek Fikcyjny"] == ("no_address", False, False)
     assert (sent["sent_now"], sent["row"]["state"]) == (False, {"state": "not_sent", "message": sent_unread()})
     assert app.mailbox.mailed == []

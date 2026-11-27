@@ -786,6 +786,20 @@ def test_zerwane_polaczenie_i_brak_sieci_daja_wynik_niedostepnej_skrzynki_z_sama
     assert ImapInbox(z_pliku(config), connect=no_network).mails_since(date(2026, 11, 8)) == InboxUnreachable("ConnectionRefusedError")
 
 
+def test_atrapa_imap_konczy_wylogowanie_pozegnaniem_a_z_zerwaniem_przy_wylogowaniu_zrywa_polaczenie_bez_niego() -> None:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO) as atrapa:
+        farewell = imaplib.IMAP4("127.0.0.1", atrapa.port).logout()
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, cut="logout") as atrapa:
+        cut = imaplib.IMAP4("127.0.0.1", atrapa.port)
+        try:
+            with pytest.raises(imaplib.IMAP4.abort, match="EOF"):
+                cut.logout()
+        finally:
+            cut.shutdown()
+
+    assert farewell == ("BYE", [b"AtrapaImap"])
+
+
 def test_polaczenie_zerwane_przy_wylogowaniu_oddaje_przeczytane_maile_i_zamyka_gniazdo(tmp_path: Path) -> None:
     sessions: list[imaplib.IMAP4] = []
 
