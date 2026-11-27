@@ -199,6 +199,52 @@ def test_folder_rozliczen_pracownikow_przy_pliku_zbiorczym_to_rozliczenia_pracow
     assert (observed.status, observed.settled) == ("worker_settlements_ready", True)
 
 
+def _stat_denied_for(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``stat`` ścieżki ``path`` odmawia dostępu jak plik trzymany przez OneDrive; listowanie folderu działa dalej."""
+
+    real = Path.stat
+
+    def stat(self: Path, *args: Any, **kwargs: Any) -> os.stat_result:
+        if self == path:
+            raise PermissionError(13, "Odmowa dostępu")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+
+
+def test_plik_zbiorczy_z_listowania_folderu_okresu_jest_bez_osobnego_stat_pliku(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Folder okresu wie o Pliku zbiorczym z samego listowania, bo osobny ``stat`` pliku w OneDrive taty otwiera go
+    (komentarz ``_listing``): plik, którego ``stat`` odmawia, a listowanie go podaje, jest, a folder nie jest niedostępny."""
+
+    folder = PeriodFolder(tmp_path, PERIOD)
+    folder.directory.mkdir()
+    folder.collective_file.write_bytes(b"syntetyczny plik zbiorczy")
+    _stat_denied_for(folder.collective_file, monkeypatch)
+
+    observed = folder.observe()
+
+    assert (observed.collective_file_exists, observed.internal_settlement_exists) == (True, False)
+
+
+def test_plik_spoza_listowania_z_odmowa_dostepu_to_folder_okresu_niedostepny_a_nie_brak_pliku(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nazwy, której listowanie nie podaje dokładnie (inna wielkość liter albo postać Unicode), Folder okresu pyta o
+    stan ścieżki (``file_state``): odmowa dostępu to Folder okresu niedostępny, o którym tata dostaje inny Komunikat
+    niż o braku Rozliczenia wewnętrznego."""
+
+    folder = PeriodFolder(tmp_path, PERIOD)
+    folder.directory.mkdir()
+    _stat_denied_for(folder.internal_settlement, monkeypatch)
+
+    with pytest.raises(period_folder.PeriodFolderInaccessible) as raised:
+        folder.observe()
+
+    assert raised.value.folder == folder.directory
+
+
 def test_nazwy_statusow_okresu_to_nazwy_z_glossary() -> None:
     glossary = GLOSSARY.read_text(encoding="utf-8")
     entry = glossary.split("## Status okresu\n", 1)[1].split("\n## ", 1)[0]

@@ -313,6 +313,18 @@ def test_komorka_spoza_raportu_uporzadkowanego_wiersza_jest_odrzucona_przed_zapi
     assert outcome == Rejected(((change, problem),))
 
 
+def test_tekst_najdluzszy_jaki_przyjmuje_komorka_excela_jest_wpisany(tmp_path: Path) -> None:
+    """Excel przyjmuje w komórce 32767 znaków: tekst tej długości jest wpisany, a dłuższy odrzucony
+    (``test_komorka_spoza_raportu_uporzadkowanego_wiersza_jest_odrzucona_przed_zapisem``)."""
+
+    path = _register(tmp_path)
+
+    outcome = _write(path, [_change(3, ReportColumn.COMPLETED, "x" * 32767)])
+
+    assert outcome == CellsWritten(1)
+    assert load_workbook(path)[ORDER_SHEET].cell(3, COMPLETED).value == "x" * 32767
+
+
 def test_komorka_z_formula_to_ksztalt_nieobslugiwany_bez_zapisu(tmp_path: Path) -> None:
     intermax = Intermax()
     intermax.ordered = (Order(datetime(2026, 10, 19, 9), "anna.kowalska", 1, cells=((SUCCESSFUL, "=1+1"),)),)
@@ -585,6 +597,63 @@ def test_inny_wykonawca_w_odczycie_kontrolnym_przeniesienia_nie_podmienia_interm
     assert outcome == Refusal.WRITE_MISMATCH
 
 
+def test_drugie_przeniesienie_tego_samego_wiersza_w_kliknieciu_jest_odrzucone_przed_zapisem(tmp_path: Path) -> None:
+    """Jeden wiersz przenosi najwyżej jedno Przeniesienie kliknięcia: drugie do innego Wykonawcy jest odrzucone, zamiast
+    nadpisać pierwsze, a INTERMAX zostaje nietknięty."""
+
+    path = _register(tmp_path, Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "anna.kowalska", 40000002))))
+    first, second = _move(2, "anna.kowalska"), _move(2, "zofia.nowa")
+
+    with _untouched(path):
+        outcome = _write(path, [], moves=[first, second])
+
+    assert outcome == Rejected(((second, CellProblem.MOVE_NOT_ORDERED),))
+
+
+def test_scalenie_pod_przesuwanymi_wierszami_to_ksztalt_nieobslugiwany_bez_zapisu(tmp_path: Path) -> None:
+    """Przeniesienie przesuwa wiersze pod sobą, a zakres (tu scalenie) w nich zostałby na starych numerach, więc zakres,
+    który sięga przesuwanych wierszy, to kształt nieobsługiwany, a INTERMAX zostaje nietknięty."""
+
+    path = _register(tmp_path, Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "anna.kowalska", 40000002))))
+    merged = b'<mergeCells count="1"><mergeCell ref="Q12:R12"/></mergeCells><hyperlinks>'
+    rewrite_parts(path, lambda name, data: data.replace(b"<hyperlinks>", merged, 1) if name == SHEET_PART else data)
+
+    with _untouched(path), pytest.raises(UnsupportedShape, match="zakres"):
+        _write(path, [], moves=[_move(2, "anna.kowalska")])
+
+
+def test_hiperlacze_w_pustym_wierszu_ktory_znika_to_ksztalt_nieobslugiwany_bez_zapisu(tmp_path: Path) -> None:
+    """Pusty wiersz pod jedynym zleceniem segmentu znika z Przeniesieniem (ADR 0029), więc Hiperłącze w nim nie miałoby
+    wiersza: to kształt nieobsługiwany z Komunikatem, a INTERMAX zostaje nietknięty."""
+
+    intermax = Intermax(ordered=(_on(9, "jan.testowy", 40000001), _on(10, "anna.kowalska", 40000002)), raw=())
+    path = _register(tmp_path, intermax)
+    link = b'<hyperlinks><hyperlink ref="E3" location="komentarze!B1"/>'
+    rewrite_parts(path, lambda name, data: data.replace(b"<hyperlinks>", link, 1) if name == SHEET_PART else data)
+
+    with _untouched(path), pytest.raises(UnsupportedShape, match="Hiperłącze"):
+        _write(path, [], moves=[_move(2, "anna.kowalska")])
+
+
+def test_przeniesienie_ostatniego_wiersza_arkusza_bez_zoltego_wiersza_staje_pod_zleceniem_nowego_wykonawcy(
+    tmp_path: Path,
+) -> None:
+    """Arkusz bez żółtego wiersza i bez żadnego wiersza pod ostatnim zleceniem: przeniesione ostatnie zlecenie staje pod
+    zleceniem Anny, a jego segment znika z pustym wierszem nad sobą."""
+
+    intermax = Intermax(ordered=(_on(9, "anna.kowalska", 40000001), _on(10, "jan.testowy", 40000002)), raw=(), yellow=None, grid=False)
+    path = _register(tmp_path, intermax)
+
+    outcome = _write(path, [], moves=[_move(4, "anna.kowalska")])
+
+    assert outcome == CellsWritten(0, 1)
+    assert _sheet_rows(path, 4) == [
+        (40000001, "anna.kowalska", _link(40000001)),
+        (40000002, "anna.kowalska", _link(40000002)),
+        "pusty",
+    ]
+
+
 EIGHTH = date(2026, 11, 8)
 
 
@@ -712,6 +781,66 @@ def test_inna_data_w_odczycie_kontrolnym_przeniesienia_na_inny_dzien_nie_podmien
         outcome = _write(path, [], moves=[_move(8, "jan.testowy", EIGHTH)], disk=disk)
 
     assert outcome == Refusal.WRITE_MISMATCH
+
+
+def _sheet_spoil(pattern: bytes, replacement: bytes) -> Callable[[bytes], bytes]:
+    def spoil(data: bytes) -> bytes:
+        spoiled, count = re.subn(pattern, replacement, data, count=1)
+        assert count == 1, pattern
+        return spoiled
+
+    return spoil
+
+
+MOVED_DIFFERENTLY: dict[str, Callable[[bytes], bytes]] = {
+    "naglowek-arkusza": _sheet_spoil(rb'<sheetFormatPr baseColWidth="\d+"', b'<sheetFormatPr baseColWidth="20"'),
+    "wartosc-w-nowym-pustym-wierszu": _sheet_spoil(rb'(<c r="J5"[^>]*?)\s*/>', rb"\1><v>1</v></c>"),
+    "wiersz-za-planem": _sheet_spoil(rb"</sheetData>", b'<row r="99"><c r="B99"><v>1</v></c></row></sheetData>'),
+    "ogon-arkusza": _sheet_spoil(rb'<pageMargins left="[^"]*"', b'<pageMargins left="0.5"'),
+}
+
+
+@pytest.mark.parametrize("spoil", MOVED_DIFFERENTLY.values(), ids=MOVED_DIFFERENTLY.keys())
+def test_arkusz_przeniesienia_rozny_od_planu_poza_wierszami_zlecen_w_odczycie_kontrolnym_nie_podmienia_intermax(
+    tmp_path: Path, spoil: Callable[[bytes], bytes]
+) -> None:
+    """Kontrola zapisu Przeniesienia sprawdza cały arkusz, nie tylko przesunięte zlecenia: inny początek arkusza przed
+    wierszami, wartość w nowym pustym wierszu między segmentami (wiersz 5, nowy segment Jana 8.11), wiersz spoza planu i
+    inny ogon arkusza za wierszami to odmowa."""
+
+    path = _register(tmp_path, Intermax(ordered=TWO_DAYS, raw=()))
+
+    def spoiled(content: bytes) -> bytes:
+        return _zip_changed(content, lambda name, data: spoil(data) if name == SHEET_PART else data)
+
+    disk = FaultyDisk(read=lambda temporary: spoiled(LOCAL_DISK.read(temporary)))
+
+    with _untouched(path):
+        outcome = _write(path, [], moves=[_move(8, "jan.testowy", EIGHTH)], disk=disk)
+
+    assert outcome == Refusal.WRITE_MISMATCH
+
+
+def test_zlecenie_uporzadkowane_przez_uporzadkowanie_intermax_przeniesione_na_inny_dzien_dostaje_nowy_dzien(
+    tmp_path: Path,
+) -> None:
+    """Uporządkowanie INTERMAX daje wierszowi dnia komórki od kolumny A (ADR 0029, glosariusz), więc data nie jest
+    pierwszą komórką wiersza: Przeniesienie takiego zlecenia z 9.11 na 8.11 zmienia dzień w ``DATA GODZ. POCZ.``, a
+    komórki przed nią zostają."""
+
+    raw = (Order(datetime(2026, 11, 9, 14), "jan.testowy", 40000011, cells=((NUMBER, 40000011),)),)
+    path = _register(tmp_path, Intermax(ordered=(_at(EIGHTH, 9, "anna.kowalska", 40000001),), raw=raw))
+    order_register(OrderingInputs(path, tmp_path / "Kopie", now=lambda: NOW), RunContext())
+    moved = next(row for row in range(2, 40) if load_workbook(path)[ORDER_SHEET].cell(row, NUMBER).value == 40000011)
+    before = {column: load_workbook(path)[ORDER_SHEET].cell(moved, column).value for column in range(1, DATE)}
+
+    outcome = _write(path, [], moves=[_move(moved, "jan.testowy", EIGHTH)])
+
+    assert outcome == CellsWritten(0, 1)
+    sheet = load_workbook(path)[ORDER_SHEET]
+    row = next(row for row in range(2, 40) if sheet.cell(row, NUMBER).value == 40000011)
+    assert sheet.cell(row, DATE).value == datetime(2026, 11, 8, 14)
+    assert {column: sheet.cell(row, column).value for column in range(1, DATE)} == before
 
 
 def test_przeniesienie_na_inny_dzien_z_pierwszego_wiersza_segmentu_do_ktorego_idzie_inne_przeniesienie_zostawia_segmenty_ciagle(
@@ -857,6 +986,17 @@ def _expected_rows(
         (),
     )
 ).via("przeniesienie na późniejszy dzień staje pod ostatnim zleceniem segmentu nadawcy")
+@example(
+    (
+        ((SEVENTH, "ewa.probna", 40000000), (EIGHTH, "ewa.probna", 40000100), (EIGHTH, "ewa.probna", 40000101)),
+        {
+            40000000: ("zofia.nowa", EIGHTH),
+            40000100: ("zofia.nowa", SEVENTH),
+            40000101: ("ewa.probna", SEVENTH),
+        },
+        (),
+    )
+).via("na miejsce opróżnionego dnia przychodzi zlecenie Zofii, a pod nie zlecenie Ewy, które staje przed nim")
 def test_dowolne_przeniesienia_miedzy_dniami_jednego_klikniecia_zapis_przyjmuje_i_zostawia_uklad_uporzadkowania(
     planned: _Planned,
 ) -> None:
