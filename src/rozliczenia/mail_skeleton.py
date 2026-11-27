@@ -94,7 +94,7 @@ def _tokens(data: Sequence[object]) -> Iterator[_Bracket | FetchValue]:
         position, ends_with_literal = 0, False
         while position < len(line):
             found = _TOKEN.match(line, position)
-            if found is None or found.end() == position:
+            if found is None:
                 if line[position:].strip(b" \r\n"):
                     raise UnknownReply
                 break
@@ -221,7 +221,7 @@ def skeleton(structure: Structure, header: bytes, parts: Mapping[str, bytes]) ->
 
 
 def _part(structure: Structure, header: bytes, parts: Mapping[str, bytes], name: str) -> bytes | None:
-    head = header if header.endswith(b"\r\n\r\n") else header.rstrip(b"\r\n") + b"\r\n\r\n"
+    head = header.rstrip(b"\r\n") + b"\r\n\r\n"
     message = email.message_from_bytes(head, policy=email.policy.default)
     assert isinstance(message, EmailMessage)
     maintype = message.get_content_maintype()
@@ -241,8 +241,6 @@ def _part(structure: Structure, header: bytes, parts: Mapping[str, bytes], name:
         return head + body + delimiter + b"--\r\n"
     if maintype == "multipart" or (maintype == "text") != structure.text:
         return None
-    if not structure.text:
-        return head
     return head + parts.get(name or "TEXT", b"")
 
 
@@ -254,8 +252,6 @@ def chosen(structure: Structure, raw: bytes, preference: tuple[str, ...]) -> str
     message = email.message_from_bytes(raw, policy=email.policy.default)
     assert isinstance(message, EmailMessage)
     body = message.get_body(preferencelist=preference)
-    if body is None:
-        return None
     return next((name for part, name in _named(message, structure, "") if part is body), None)
 
 

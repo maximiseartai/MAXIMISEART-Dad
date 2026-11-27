@@ -529,8 +529,12 @@ def _sent(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> SentRemin
     if folder is None:
         raise UnexpectedReply
     _ok(imap.select(_quoted(folder), readonly=True))
+    uids = _since(imap, day)
+    fetched = _fetched(imap, uids, _SENT_ITEMS)
+    if fetched.keys() != set(uids):
+        raise UnexpectedReply
     reminders = []
-    for prefix, header in _fetched(imap, _since(imap, day), _SENT_ITEMS).values():
+    for prefix, header in fetched.values():
         moment = imaplib.Internaldate2tuple(prefix)
         if moment is None:
             raise UnexpectedReply
@@ -558,15 +562,19 @@ def _sent_attachments(imap: imaplib.IMAP4, access: InboxCredentials, day: date) 
         raise UnexpectedReply
     _ok(imap.select(_quoted(folder), readonly=True))
     described: dict[str, tuple[datetime, tuple[str, ...]]] = {}
-    for sequence, _ in _batches(_since(imap, day)):
+    for sequence, batch in _batches(_since(imap, day)):
+        answered: set[str] = set()
         for response in _strict(imap.uid("FETCH", sequence, _SENT_STRUCTURE_ITEMS)):
             number, internal = response.get(b"UID"), response.get(b"INTERNALDATE")
             if not (isinstance(number, bytes) and isinstance(internal, bytes)):
                 raise UnexpectedReply
+            answered.add(number.decode("ascii"))
             structure = Structure.of(response.get(b"BODYSTRUCTURE"))
             names = () if structure is None else attachment_sections(structure)
             if names:
                 described[number.decode("ascii")] = (_internal_moment(b'INTERNALDATE "' + internal + b'"'), names)
+        if answered != set(batch):
+            raise UnexpectedReply
     groups: dict[tuple[str, ...], list[str]] = {}
     for uid, (_, names) in described.items():
         groups.setdefault(("HEADER", *names), []).append(uid)
@@ -580,6 +588,8 @@ def _sent_attachments(imap: imaplib.IMAP4, access: InboxCredentials, day: date) 
                 if uid not in described:
                     raise UnexpectedReply
                 found[uid] = _attachments(response, names, described[uid][0])
+    if found.keys() != described.keys():
+        raise UnexpectedReply
     return SentAttachments(tuple(attachment for uid in described for attachment in found.get(uid, ())))
 
 

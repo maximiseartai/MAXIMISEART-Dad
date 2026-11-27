@@ -420,6 +420,101 @@ def test_gdy_serwer_opisuje_maile_w_postaci_spoza_rfc_port_pobiera_je_w_calosci(
     assert any("BODY.PEEK[]" in command for command in atrapa.commands)
 
 
+def _raport(czesc: Message) -> bytes:
+    czesc["From"] = "Jan Testowy <jan.testowy@przyklad.invalid>"
+    czesc["Subject"] = "Raport 08.11.2026"
+    czesc["Message-ID"] = "<7@x.invalid>"
+    return czesc.as_bytes(policy=email.policy.SMTP)
+
+
+def _tekst_ze_zdjeciem() -> bytes:
+    return _raport(MIMEMultipart("mixed", _subparts=[MIMEText("40000001 tak", "plain", "utf-8"), MIMEImage(b"\xff\xd8\xff", "jpeg")]))
+
+
+@pytest.mark.parametrize(
+    ("status", "dane"),
+    [
+        pytest.param("OK", [b"7 (UID 7 BODY[TEXT] NIL)"], id="tresc-nil"),
+        pytest.param("NO", [b'7 (UID 7 BODY[TEXT] "40000009 nie")'], id="odmowa-z-tekstem-w-postaci-odpowiedzi"),
+    ],
+)
+def test_tresc_raportu_bez_bajtow_od_serwera_port_bierze_z_calego_maila(tmp_path: Path, status: str, dane: list[Any]) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowy())]) as atrapa:
+        inbox = z_odpowiedzia(dostep(tmp_path), atrapa, "BODY.PEEK[TEXT]", lambda reply: (status, dane))
+        found = maile(inbox.mails_since(date(2026, 11, 8)))
+
+    assert [mail.text for mail in found] == ["40000001 tak wymiana routera"]
+    assert any("BODY.PEEK[]" in command for command in atrapa.commands)
+
+
+@pytest.mark.parametrize(
+    "struktura",
+    [
+        pytest.param(b'(("TEXT" "PLAIN" NIL NIL NIL "7BIT" 10 1) ("IMAGE" "JPEG" NIL NIL NIL "BASE64" 4 NIL NIL NIL))', id="multipart-bez-podtypu"),
+        pytest.param(b'(("TEXT" "PLAIN" NIL NIL NIL "7BIT" 10 1) ("X") "MIXED")', id="czesc-spoza-rfc-obok-tekstu"),
+    ],
+)
+def test_gdy_serwer_opisuje_strukture_maila_spoza_rfc_port_pobiera_mail_w_calosci(tmp_path: Path, struktura: bytes) -> None:
+    mail = AtrapaMail(7, datetime(2026, 11, 8, 18, 5, tzinfo=TATA), _tekst_ze_zdjeciem(), structure=struktura)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [mail.text for mail in found] == ["40000001 tak"]
+    assert any("BODY.PEEK[]" in command for command in atrapa.commands)
+
+
+def test_multipart_z_jedna_czescia_bez_danych_rozszerzenia_z_rfc_port_czyta_bez_pobierania_calego_maila(tmp_path: Path) -> None:
+    surowe = _raport(MIMEMultipart("mixed", _subparts=[MIMEText("40000001 tak", "plain", "utf-8")]))
+    struktura = b'(("TEXT" "PLAIN" ("CHARSET" "utf-8") NIL NIL "BASE64" 18 1) "MIXED")'
+    mail = AtrapaMail(7, datetime(2026, 11, 8, 18, 5, tzinfo=TATA), surowe, structure=struktura)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [mail.text for mail in found] == ["40000001 tak"]
+    assert not any("BODY.PEEK[]" in command for command in atrapa.commands)
+
+
+@pytest.mark.parametrize(
+    ("surowe", "tresc"),
+    [
+        pytest.param(surowy(), "40000001 tak wymiana routera", id="jedna-czesc-tekstu"),
+        pytest.param(
+            _raport(MIMEMultipart("alternative", _subparts=[MIMEText("40000001 tak", "plain", "utf-8"), MIMEText("<p>40000002 nie</p>", "html", "utf-8")])),
+            "40000001 tak",
+            id="tekst-i-html",
+        ),
+        pytest.param(
+            _raport(MIMEMultipart("mixed", _subparts=[MIMEText("<p>40000001 tak</p>", "html", "utf-8"), MIMEImage(b"\xff\xd8\xff", "jpeg")])),
+            "40000001 tak",
+            id="html-ze-zdjeciem",
+        ),
+    ],
+)
+def test_tresc_raportu_port_pobiera_w_tym_samym_poleceniu_co_naglowki_czesci(tmp_path: Path, surowe: bytes, tresc: str) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowe)]) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [mail.text for mail in found] == [tresc]
+    fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
+    assert len(fetches) == 3, "tematy, struktura z nagłówkiem, a potem nagłówki części z treścią jednym poleceniem"
+    assert not any("BODY.PEEK[]" in command for command in fetches)
+
+
+def test_kolejne_uid_port_podaje_serwerowi_jednym_zakresem_w_kazdym_pobraniu_przegladu_i_odczytu(tmp_path: Path) -> None:
+    uids = range(1, FETCH_BATCH + 2)
+    mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in uids]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
+        inbox = port(dostep(tmp_path), atrapa)
+        survey = inbox.survey(date(2026, 11, 8))
+        found = maile(inbox.mails_since(date(2026, 11, 8)))
+
+    assert isinstance(survey, InboxSurvey) and survey.searched == len(uids)
+    assert len(found) == len(uids)
+    zakresy = [command.split(" ")[2] for command in atrapa.commands if command.startswith("UID FETCH")]
+    assert any("FLAGS" in command for command in atrapa.commands)
+    assert zakresy and set(zakresy) == {f"1:{FETCH_BATCH + 1}"}
+
+
 def test_przyklady_szkieletu_to_maile_z_trescia_poza_pierwsza_czescia_tekstu() -> None:
     def rozebrany(czesc: Message) -> EmailMessage:
         message = email.message_from_bytes(czesc.as_bytes(policy=email.policy.SMTP), policy=email.policy.default)
@@ -1079,6 +1174,16 @@ def z_obrazkiem_bez_nazwy(uid: int) -> AtrapaMail:
         pytest.param("BODY.PEEK[HEADER]", lambda reply: ("NO", [b"odmowa"]), id="odmowa-naglowkow"),
         pytest.param("BODY.PEEK[HEADER]", lambda reply: ("OK", [b"101 (UID 101"]), id="naglowki-spoza-rfc"),
         pytest.param("BODYSTRUCTURE", lambda reply: ("OK", [b"101 (UID 101"]), id="struktura-spoza-rfc"),
+        pytest.param("BODYSTRUCTURE", lambda reply: ("OK", [*reply[1], b")"]), id="nawias-zamykajacy-bez-otwierajacego"),
+        pytest.param("BODYSTRUCTURE", lambda reply: ("OK", [*reply[1], b"102"]), id="slowo-poza-nawiasem-odpowiedzi"),
+        pytest.param("BODYSTRUCTURE", lambda reply: ("OK", [*reply[1], b"]"]), id="znak-spoza-rfc-po-odpowiedzi"),
+        pytest.param(
+            "BODYSTRUCTURE", lambda reply: ("OK", [(b"101 (UID 101 INTERNALDATE x BODYSTRUCTURE {3}", "abc"), b")"]), id="literal-nie-z-bajtow"
+        ),
+        pytest.param(
+            "BODYSTRUCTURE", lambda reply: ("OK", [(b"101 (UID 101 INTERNALDATE x BODYSTRUCTURE", b"abc"), b")"]), id="literal-bez-zapowiedzi"
+        ),
+        pytest.param("BODYSTRUCTURE", lambda reply: ("OK", [b"101 (UID 101 INTERNALDATE x NIL NIL)"]), id="nazwa-elementu-nil"),
     ],
 )
 def test_wyslane_w_odpowiedzi_spoza_rfc_albo_z_odmowa_nie_daja_pustej_listy_zalacznikow(
@@ -1098,6 +1203,32 @@ def test_mail_z_wyslanych_ze_struktura_spoza_rfc_nie_ma_zalacznikow_a_reszta_zos
     assert outcome == SentAttachments(
         (SentAttachment(ROZLICZENIE, frozenset({SenderAddress(WYKONAWCA)}), WYSLANE_O.astimezone(), by_centrum=False),)
     )
+
+
+@pytest.mark.parametrize(
+    "odczyt",
+    [
+        pytest.param(lambda inbox: inbox.sent_attachments(date(2026, 11, 8)), id="zalaczniki"),
+        pytest.param(lambda inbox: inbox.sent_reminders(date(2026, 11, 8)), id="przypomnienia"),
+    ],
+)
+def test_mail_z_wyslanych_bez_odpowiedzi_serwera_daje_wynik_niedostepnej_skrzynki_a_nie_liste_bez_niego(
+    tmp_path: Path, odczyt: Callable[[ImapInbox], object]
+) -> None:
+    przypomnienie = "Przypomnienie: raport za dzień 09.11.2026"
+    sent = [z_zalacznikiem(101, ROZLICZENIE), wyslany(102, przypomnienie), z_zalacznikiem(103, ROZLICZENIE), wyslany(104, przypomnienie)]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=sent, unanswered={103: "content", 104: "content"}) as atrapa:
+        outcome = odczyt(port(dostep(tmp_path), atrapa))
+
+    assert outcome == InboxUnreachable("UnexpectedReply")
+
+
+def test_wyslane_bez_odpowiedzi_o_naglowki_maila_z_zalacznikiem_nie_daja_pustej_listy_zalacznikow(tmp_path: Path) -> None:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=[z_zalacznikiem(101, ROZLICZENIE)]) as atrapa:
+        inbox = z_odpowiedzia(dostep(tmp_path), atrapa, "BODY.PEEK[HEADER]", lambda reply: (reply[0], [None]))
+        outcome = inbox.sent_attachments(date(2026, 11, 8))
+
+    assert outcome == InboxUnreachable("UnexpectedReply")
 
 
 def test_zalacznik_wyslany_w_kopii_albo_ukrytej_kopii_ma_tez_tych_adresatow(tmp_path: Path) -> None:
