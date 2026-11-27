@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -169,14 +169,23 @@ def _zapisz_zapas(kopia: Path, pozostalo: int, odczyt: float) -> None:
     plik.write_text(json.dumps({"odczyt": odczyt, "pozostalo": pozostalo, "reset": RESET}), encoding="utf-8")
 
 
-def test_scalanie_ponizej_swojej_rezerwy_odmawia_z_zapasu_zapisanego_przez_inny_watek_bez_pytania_githuba(kopia: Path, capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize(
+    ("narzedzie", "odmowa"),
+    [
+        pytest.param(lambda: scal_pr.main(["1", "--bez-merge"]), "SCAL ODMOWA", id="scal_pr"),
+        pytest.param(lambda: ponow_ci.main(["--run", "7"]), "PONÓW ODMOWA", id="ponow_ci"),
+    ],
+)
+def test_scalanie_i_ponowienie_ponizej_swojej_rezerwy_odmawiaja_z_zapasu_zapisanego_przez_inny_watek_bez_pytania_githuba(
+    kopia: Path, capsys: pytest.CaptureFixture[str], narzedzie: Callable[[], int], odmowa: str
+) -> None:
     _zapisz_zapas(kopia, REZERWA_SCALANIA - 1, time.time())
 
-    kod = scal_pr.main(["1", "--bez-merge"])
+    kod = narzedzie()
 
     assert (kod, capsys.readouterr().out.splitlines()) == (
         1,
-        [f"SCAL ODMOWA | zapas GitHub API {REZERWA_SCALANIA - 1} zapytań poniżej rezerwy {REZERWA_SCALANIA}: ponów po resecie limitu o {GODZINA_RESETU}"],
+        [f"{odmowa} | zapas GitHub API {REZERWA_SCALANIA - 1} zapytań poniżej rezerwy {REZERWA_SCALANIA}: ponów po resecie limitu o {GODZINA_RESETU}"],
     )
 
 

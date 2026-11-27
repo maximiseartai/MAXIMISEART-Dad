@@ -89,15 +89,18 @@ def test_ponowienie_ci_odsyla_do_zadan_narzedzia_ktore_odtwarzaja_padle_zadanie_
     tool = {str(job): str(ci) for job, ci in answered.items()}
     jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
     wrong = []
+    reached = set()
     for start, only in ponow_ci.LOKALNIE:
         listed = only.split()[0].split(",")
         targets = {tool.get(job) for job in listed}
         target = next(iter(targets))
+        reached |= targets
         named = str(jobs.get(target, {}).get("name", ""))
         if len(targets) != 1 or sorted(listed) != sorted(job for job, ci in tool.items() if ci == target) or ("${{" not in named and not named.startswith(start)):
             wrong.append((start, only, sorted(map(str, targets))))
 
     assert wrong == []
+    assert reached == set(tool.values())
 
 
 @pytest.mark.parametrize("fail_fast", [False, True])
