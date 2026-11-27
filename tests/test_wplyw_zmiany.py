@@ -10,7 +10,7 @@ import pytest
 
 from tests.fixtures.git_repo import commit, git
 
-from wplyw_zmiany import Context, Repository, changed_since, run_all
+from wplyw_zmiany import Context, Repository, changed_since, run_all, unchanged_tests
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -480,3 +480,31 @@ def test_zmiana_od_bazy_to_pliki_od_rozgalezienia_z_niezacommitowanymi_nowymi_i_
     changed = changed_since(repo, moved)
 
     assert changed == {"docs/dane/wpis.md", "docs/dane/przeniesiony.md", "src/pakiet/b.py", "src/pakiet/nowy.py", "tools/narzedzie.py"}
+
+
+OLD_TESTS = (
+    "def test_staly():\n    assert True\n\n\nasync def test_async():\n    assert True\n\n\ndef test_zmieniony():\n    assert 1\n\n\n"
+    "class TestKlasa:\n    def test_w_klasie(self):\n        assert True\n\n\nclass Pomocnik:\n    def test_pomocnika(self):\n        assert True\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("at_base", "current", "unchanged"),
+    [
+        (OLD_TESTS, OLD_TESTS.replace("assert 1", "assert 2") + "\n\ndef test_nowy():\n    assert True\n", {"test_staly", "test_async", "TestKlasa::test_w_klasie"}),
+        (None, OLD_TESTS, set()),
+        (OLD_TESTS, OLD_TESTS + "\ndef test_bez_konca(:\n", set()),
+    ],
+    ids=["testy-z-tym-samym-kodem", "plik-ktorego-baza-nie-ma", "plik-ktorego-nie-da-sie-sparsowac"],
+)
+def test_testy_sprzed_zmiany_to_testy_pytest_z_tym_samym_kodem_na_bazie(tmp_path: Path, at_base: str | None, current: str, unchanged: set[str]) -> None:
+    """``unchanged_tests`` daje id pytest bez parametrów testów, które baza ma z tym samym kodem: także test ``async``
+    i test w klasie ``Test…``, bez testu zmienionego i dodanego i bez metody klasy, której pytest nie zbiera. Plik,
+    którego baza nie ma albo którego nie da się sparsować, nie ma żadnego."""
+
+    repo = _repo(tmp_path, {"tests/test_x.py": at_base} if at_base is not None else {"README.md": ""})
+    base = git(repo, "rev-parse", "HEAD")
+    (repo / "tests").mkdir(exist_ok=True)
+    (repo / "tests" / "test_x.py").write_text(current, encoding="utf-8")
+
+    assert unchanged_tests(repo, base, "tests/test_x.py") == unchanged

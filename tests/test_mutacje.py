@@ -994,6 +994,7 @@ def test_znane_luki_odmowy_na_czerwonym_tescie_sprzed_zmiany_koncza_sie_mutacje_
 
 # Kolekcja (``--collect-only``) dłuższa niż limit sprawdzenia w teście, a przebiegi testów bez czekania.
 SLOW_COLLECTION = {"tests/conftest.py": "import sys, time\n\nif '--collect-only' in sys.argv:\n    time.sleep(20)\n"}
+FAILING_COLLECTION = {"tests/conftest.py": "import sys\n\nif '--collect-only' in sys.argv:\n    raise RuntimeError('kolekcja')\n"}
 SETS_TRACE = {"tests/test_a.py": "import rozliczenia\n\n\ndef test_ustawia():\n    rozliczenia.SLAD = rozliczenia.WARTOSC\n"}
 
 
@@ -1009,8 +1010,14 @@ SETS_TRACE = {"tests/test_a.py": "import rozliczenia\n\n\ndef test_ustawia():\n 
             SLOW_COLLECTION,
             ["JUŻ ŁAPIE NIESPRAWDZONE: m1-ujemna: kolekcja testów polecenia nie skończyła się w limicie", "JUŻ ŁAPIE NIESPRAWDZONE: m2-duza: minął limit sprawdzenia 5 s"],
         ),
+        (
+            ASSERTING_NEW_TEST.format(condition="0 <= rozliczenia.WARTOSC < 5"),
+            (),
+            FAILING_COLLECTION,
+            [f"JUŻ ŁAPIE NIESPRAWDZONE: {name}: kolekcja testów polecenia padła" for name in ("m1-ujemna", "m2-duza")],
+        ),
     ],
-    ids=["nowy-test-nie-lapie-mutacji-starego", "nowy-test-lapie-tylko-za-sasiadem", "limit-calego-sprawdzenia", "kolekcja-w-limicie-sprawdzenia"],
+    ids=["nowy-test-nie-lapie-mutacji-starego", "nowy-test-lapie-tylko-za-sasiadem", "limit-calego-sprawdzenia", "kolekcja-w-limicie-sprawdzenia", "kolekcja-pada"],
 )
 def test_juz_lapie_mowi_tylko_o_mutacji_ktora_sam_lapie_test_sprzed_zmiany(
     tmp_path: Path, new: str, arguments: tuple[str, ...], files: dict[str, str], lines: list[str]
@@ -1020,7 +1027,7 @@ def test_juz_lapie_mowi_tylko_o_mutacji_ktora_sam_lapie_test_sprzed_zmiany(
     i r2).
 
     Linię faktu dostaje tylko „m2-duza”, a żadna linia nie radzi usunąć nowego testu, który jako jedyny łapie
-    „m1-ujemna”. Limit obejmuje całe sprawdzenie, z kolekcją.
+    „m1-ujemna”. Limit obejmuje całe sprawdzenie, z kolekcją, a kolekcja, która pada, daje swoją przyczynę.
     """
 
     repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, new, files=files)
@@ -1168,6 +1175,43 @@ def test_mutacja_z_oczekiwana_linia_nie_dostaje_juz_lapie(tmp_path: Path) -> Non
     answered = _in_repository(repo, "--baza", "glowna", "--juz-lapie", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER)
 
     assert _already_lines(answered, ["z linia"]) == [], answered.stderr
+
+
+NO_FAILED_TEST = "import rozliczenia\n\nassert rozliczenia.WARTOSC < 5\n\n\ndef test_stary():\n    pass\n"
+NOT_XML_JUNIT = {
+    "tests/conftest.py": "def pytest_unconfigure(config):\n    if config.option.xmlpath:\n        open(config.option.xmlpath, 'w', encoding='utf-8').write('nie xml')\n"
+}
+SLOW_OLD_TEST = "import time, rozliczenia\n\n\ndef test_stary():\n    if rozliczenia.WARTOSC == 7:\n        time.sleep(30)\n"
+SLOW_ALONE_OLD_TEST = (
+    "import time, rozliczenia\n\n\ndef test_stary(request):\n    if rozliczenia.WARTOSC == 7 and not hasattr(request.config, 'workerinput'):\n"
+    "        time.sleep(20)\n    assert rozliczenia.WARTOSC < 5\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("old", "files", "arguments", "line"),
+    [
+        (NO_FAILED_TEST, {}, (), r"testy sprzed zmiany dały WYKRYTA bez testu, który padł \(.+\)"),
+        (LOOSE_OLD_TEST, NOT_XML_JUNIT, (), r"testy sprzed zmiany dały WYKRYTA bez testu, który padł \(.+\)"),
+        (SLOW_OLD_TEST, {}, ("--limit-s", "4"), r"testy sprzed zmiany nie skończyły się w limicie sprawdzenia \(.+\)"),
+        (SLOW_ALONE_OLD_TEST, {}, ("--juz-lapie-s", "8"), r"tests/test_stary\.py::test_stary sam daje z mutacją .+, bez niej .+, więc niczego nie dowodzi"),
+    ],
+    ids=["kolekcja-pada-po-mutacji", "junit-nie-jest-xml", "ponad-limit-polecenia", "test-sam-ponad-limit-calego-sprawdzenia"],
+)
+def test_juz_lapie_bez_testu_ktory_sam_lapie_mutacje_mowi_dlaczego(tmp_path: Path, old: str, files: dict[str, str], arguments: tuple[str, ...], line: str) -> None:
+    """Testy sprzed zmiany padają po mutacji, ale nie wskazują testu, który sam ją łapie w limicie: pada ich kolekcja,
+    zapis junit nie jest XML, nie kończą się w ``--limit-s`` albo test, który padł, sam nie kończy się przed końcem
+    ``--juz-lapie-s`` (``SLOW_ALONE_OLD_TEST`` pada od razu w workerze xdist przebiegu testów sprzed zmiany, a sam, z
+    ``-n 0``, dopiero po 20 s). Linia ``JUŻ ŁAPIE NIESPRAWDZONE`` mówi dlaczego, a werdykt i kod zostają."""
+
+    repo, _ = _branch_with_new_test(tmp_path, old, old, STRICT_NEW_TEST.format(value=0), files=files)
+
+    answered = _in_repository(
+        repo, "--baza", "glowna", "--juz-lapie", *arguments, "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 7", "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER
+    )
+
+    found = _already_lines(answered, ["mutacja"])
+    assert len(found) == 1 and re.fullmatch(f"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: {line}", found[0]), answered.stderr
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGINT do jednego procesu jest sygnałem POSIX")
