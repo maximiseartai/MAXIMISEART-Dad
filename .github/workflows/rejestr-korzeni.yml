@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     # The proofs end within REPROOF_BUDGET_S (150 min) of the tool, 30 min under this limit, so a late proof is a row
     # of the section instead of a cancelled job (tests/test_rejestr_korzeni_tydzien.py). The whole measure of the week
-    # of 16.11.2026 with its 38 guards took 1058 s on a boat box with 8 vCPU.
+    # of 16.11.2026 with its 38 guards took 1058 s on a machine with 8 vCPU.
     timeout-minutes: 180
     # contents: read fetches main, whose first-parent history gives the moment of the deployment, the widenings of the
     # rules and the commit of the end of the week; pull-requests: read reads the verdicts and bodies of the PRs

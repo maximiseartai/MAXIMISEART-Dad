@@ -27,7 +27,7 @@ def _load() -> ModuleType:
 
 hook = _load()
 
-PUSTE_PODSTAWIENIE = 'pkill -f "boatbox fan" -P $(pgrep -f "tee .*fan1.log" | head -1)'
+PUSTE_PODSTAWIENIE = 'pkill -f "pytest -n auto" -P $(pgrep -f "tee .*szybko1.log" | head -1)'
 BEZ_SCIEZKI = 'pkill -f "tools/szybko.py"'
 
 ODMOWY = [
@@ -35,7 +35,7 @@ ODMOWY = [
         PUSTE_PODSTAWIENIE, "z podstawieniem $(…)", id="pusty-pgrep-w-pkill-z-incydentu"
     ),
     pytest.param(
-        f'pkill -f "{WORKTREE}/boatbox" -P $(pgrep -f "{WORKTREE}/tee")',
+        f'pkill -f "{WORKTREE}/.venv/bin/python" -P $(pgrep -f "{WORKTREE}/tee")',
         "z podstawieniem $(…)",
         id="pusty-pgrep-w-pkill-ze-sciezka",
     ),
@@ -233,7 +233,6 @@ PRZECHODZI = [
     ),
     pytest.param("ls # potem: ; pkill -f x", id="komentarz"),
     pytest.param("kill -1 4321", id="kill-sygnalem-1"),
-    pytest.param("boatbox run 'pkill -f pytest; true'", id="boatbox-na-boxie"),
     pytest.param("ssh box 'pkill -f pytest'", id="ssh-na-innej-maszynie"),
 ]
 

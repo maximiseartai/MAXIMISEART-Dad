@@ -133,7 +133,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Zadanie k uruchamia k-ty, a potem co 4. z posortowanych plików testów dotkniętych plikami mutacji nocy (`ZakresMutacji.pliki_testow`, ta sama lista mutacji co plan i części), ze wszystkimi zmienionymi liniami nocy, i wgrywa zapis pokrycia (`ZapisPokrycia` w `tools/mutacje_zmiany.py`): pokrycie, czasy testów z junit i testy, które padły także po ponowieniu.
   Każda część pobiera zapisy wszystkich zadań i bierze z nich pokrycie swoich plików testów, jakby biegły same, więc testów bez mutacji nie uruchamia.
   W nocy 43692461864 38 części uruchomiło w swoich pokryciach pliki testów 3028 razy, ale tylko 157 różnych, a pokrycia trwały razem 30 832 s (8,6 h runnera), 20–25% czasu mutacji każdej nocy.
-  Na HEAD tej nocy 4 zadania pokrycia na boxie boat z 4 vCPU, jak runner, liczyły pokrycie 161–316 s, razem 821 s, a części 10/38 i 36/38 z ich zapisami dały każdej mutacji ten sam werdykt co z własnym pokryciem.
+  Na HEAD tej nocy 4 zadania pokrycia na maszynie z 4 vCPU, jak runner, liczyły pokrycie 161–316 s, razem 821 s, a części 10/38 i 36/38 z ich zapisami dały każdej mutacji ten sam werdykt co z własnym pokryciem.
   Test, który padł w pokryciu także po ponowieniu, czerwieni tylko części, których pliki testów go mają, a zadanie pokrycia, które nie wgrało zapisu, tylko części, których pliku testów nie ma żaden zapis; pozostałe części mutują.
   Odtworzenie części na Macu (`--odtwarzam`) liczy pokrycie samo, na testach jej plików.
 - Skrypty mutacji skilli też nie biegną na PR: Mutation checks na PR to same podstawy `ci:` skilli, których `pilnuje:` albo folder trafia zmiana.
