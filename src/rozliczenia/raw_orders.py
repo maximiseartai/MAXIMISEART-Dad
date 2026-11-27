@@ -723,7 +723,7 @@ def plan_moves(
             return slot.day == day
         if isinstance(slot, NewOrder):
             return added[slot.added].day == day
-        if isinstance(slot, NewSeparator) or (found := facts.get(slot)) is None or found.blank:
+        if isinstance(slot, NewSeparator) or (found := facts.get(slot)) is None:
             return False
         return look(found, columns) is RowLook.ORDERED and placed.get(slot, _day_of(found, columns)) == day
 

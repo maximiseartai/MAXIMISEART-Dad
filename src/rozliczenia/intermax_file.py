@@ -449,7 +449,7 @@ def _added_row(number: int, columns: OrderColumns, looks: _Looks, row_look: byte
     written: list[bytes] = []
     for column in sorted({*range(1, columns.last + 1), *cells}):
         cell = cells.get(column, SheetCell(column, b"", None))
-        if column == columns.date and column in cells:
+        if column == columns.date:
             written.append(cell.xml(column, number))
         else:
             style = looks.style(columns, column, 0, None)

@@ -72,6 +72,7 @@ from rozliczenia.worker_reports import (
 from rozliczenia.worker_reports.reasons import reason
 
 from atrapy.intermax import ADDRESS, DATE, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
+from atrapy.pliki_taty import PASTE_SHIFT
 from atrapy.preparation import COMPLETED_WITHOUT_CODES, PERIOD, incomplete_period_rows
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeMailbox
@@ -1641,6 +1642,12 @@ _ORDERLESS_ROWS = {
     "przesuniety-wiersz-z-aplikacji": (
         _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000069, cells=((NUMBER, 40000069),), shifted=True, app_look=True)),
         (40000069,),
+    ),
+    "pierwszy-wiersz-bloku-z-data-pod-data-i-dwie-kolumny-przed-nia": (
+        _day_with(
+            Order(_NINTH_AT_TEN, "jan.testowy", 40000070, cells=((NUMBER, 40000070), (DATE - PASTE_SHIFT, _NINTH_AT_TEN)), app_look=True)
+        ),
+        (40000070,),
     ),
     "dwa-wklejenia-dolny-przesuniety": (
         Intermax(
