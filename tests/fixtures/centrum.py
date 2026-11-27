@@ -638,7 +638,7 @@ def centrum_app(
     intermax_disk: Disk = LOCAL_DISK,
     window: EfenixWindow | None | Fake = FAKE,
     inbox_connect: ImapConnect | Fake = FAKE,
-    worker_report_inbox: WorkerReportInbox | Fake = FAKE,
+    worker_report_inbox: WorkerReportInbox | None | Fake = FAKE,
     reminder_mailbox: ReminderMailbox | Fake = FAKE,
     reminder_rhythm: ReminderRhythm | Fake = FAKE,
     settlement_mailbox: SettlementMailbox | Fake = FAKE,

@@ -527,6 +527,19 @@ def test_zgloszenie_przy_historii_ustawien_bez_dostepu_mowi_to_zamiast_bez_zmian
     assert lines[start : start + 4] == ["## Zmiany Ustawień (30 dni)", "", "- Historii Ustawień nie dało się przeczytać", ""]
 
 
+def test_zgloszenie_bez_zmian_ustawien_z_30_dni_mowi_bez_zmian(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    (centrum.tool.config / HISTORY_FILE).write_text(
+        _history_row(local_now() - timedelta(days=31), "wyglad.motyw", "dark", "light"), encoding="utf-8"
+    )
+
+    lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    start = lines.index("## Zmiany Ustawień (30 dni)")
+    assert lines[start : start + 4] == ["## Zmiany Ustawień (30 dni)", "", "- bez zmian", ""]
+
+
 def _history(centrum: PreparingCentrum) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = centrum.client.get("/api/settings/history").json()["rows"]
     return rows

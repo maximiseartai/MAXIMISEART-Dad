@@ -577,6 +577,25 @@ def test_krok_instalacji_po_porazce_podaje_tacie_komunikat_a_na_stderr_sam_typ_p
     assert printed.err == f"Przyczyna techniczna: rozliczenia.centrum.shortcut.{kind.__name__}\n"
 
 
+def test_krok_instalacji_bez_pythonw_nie_tworzy_skrotu_ani_stanowiska_i_kaze_zainstalowac_python(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    written: list[object] = []
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(shortcut, "_windowless_python", lambda: tmp_path / "Python" / "pythonw.exe")
+    monkeypatch.setattr(shortcut, "_write", lambda *arguments: written.append(arguments))
+    monkeypatch.setattr(shortcut, "write_workstation", lambda *arguments: written.append(arguments))
+
+    assert shortcut.main(["--folder", str(tmp_path), "--stanowisko", "tata"]) == 1
+
+    assert capsys.readouterr().out.splitlines() == [
+        "Co się stało: Nie utworzono skrótu, bo ten Python nie ma programu pythonw.exe.",
+        f"Gdzie: folder {tmp_path / 'Python'}",
+        "Co zrobić: Zainstaluj Python ze strony python.org i uruchom ten krok ponownie.",
+    ]
+    assert written == []
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="The desktop shortcut and pythonw.exe are Windows-only.")
 def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchamiaja_centrum_przez_pythonw(
     tmp_path: Path,

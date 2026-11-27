@@ -92,8 +92,7 @@ def dad_rules(
         return rules
     if isinstance(changed, FieldProblem):
         return changed
-    rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(rules, changed)
-    return form_problem(changed, rule_id) or changed
+    return form_problem(changed, edited_id(rules, changed)) or changed
 
 
 def edited_id(before: tuple[QuantityRule, ...], after: tuple[QuantityRule, ...]) -> str | None:

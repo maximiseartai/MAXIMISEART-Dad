@@ -2784,6 +2784,22 @@ def test_regula_dodana_w_edytorze_ma_zdanie_wiersz_historii_ze_zdaniem_a_cofniec
     assert _tools_rules(app.tool.config).rules == DEFAULT_QUANTITY_RULES.rules
 
 
+def test_regula_z_dwiema_wartosciami_ma_w_zdaniu_kazda_wartosc_z_jej_kolumnami_polaczone_oraz(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    writes = [
+        {"column": "Z", "value": 1, "multiplier": "once", "component": None},
+        {"column": "AA", "value": 2, "multiplier": "once", "component": None},
+        {"column": "AB", "value": 1, "multiplier": "once", "component": None},
+    ]
+
+    saved = app.client.post(QUANTITY_RULES_URL, json={**EDITOR_RULE, "action": {"kind": "fill", "writes": writes}})
+
+    assert saved.status_code == 200, saved.text
+    assert rule_sentences(app)[saved.json()["quantity_rules"]["rules"][-1]["id"]] == (
+        "Jeśli URZĄDZENIA zawierają „gniazdo” i CZYNNOŚCI zawierają „montaż”, to wpisz 1 w Z i AB oraz 2 w AA."
+    )
+
+
 def _text(parts: list[dict[str, Any]] | None) -> str | None:
     if parts is None:
         return None
@@ -5178,6 +5194,8 @@ def test_przeniesienie_laczy_konfiguracje_i_adresy_w_liste_wykonawcow_a_adres_sp
         pytest.param(f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{JAN}, {JAN}]\n", "ten sam adres stoi dwa razy", id="adres-dwa-razy"),
         pytest.param(b"\xff\xfe nie UTF-8", "plik nie jest zapisany w UTF-8", id="spoza-utf-8"),
         pytest.param(f"schema_version: 1\nwykonawcy:\n  jan.testowy: ['Jan Testowy <{JAN}>']\n", "któryś wpis nie jest adresem", id="nazwa-przed-adresem"),
+        pytest.param(f"schema_version: 2\nwykonawcy:\n  jan.testowy: [{JAN}]\n", "plik nie ma schema_version: 1", id="inna-wersja"),
+        pytest.param("schema_version: 1\nwykonawcy: {}\n", "plik nie ma Wykonawców pod wykonawcy", id="bez-wykonawcow"),
     ],
 )
 def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
@@ -5200,6 +5218,8 @@ def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
         pytest.param("workers: [", "plik nie jest poprawnym YAML", id="zly-yaml"),
         pytest.param("schema_version: 2\nworkers:\n  a: A\n", "plik nie ma schema_version: 1", id="inna-wersja"),
         pytest.param("schema_version: 1\nworkers:\n  a: A\n  A: B\n", "identyfikator Wykonawcy stoi dwa razy", id="login-dwa-razy"),
+        pytest.param("schema_version: 1\nworkers: {}\n", "plik nie ma Wykonawców pod workers", id="bez-wykonawcow"),
+        pytest.param("schema_version: 1\nworkers:\n  a: 1\n", "identyfikator albo nazwa Wykonawcy nie jest tekstem", id="nazwa-liczba"),
     ],
 )
 def test_zly_stary_plik_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia(
@@ -5760,6 +5780,18 @@ def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_z
     assert listed_after_read == listed_before, "podpowiedzi niczego nie zapisują"
     assert added.status_code == 200, added.json()
     assert second.json()["suggestions"] == [{"login": "brzeg.okna", "orders": 1}]
+
+
+def test_podpowiedzi_wykonawcow_z_ta_sama_liczba_zlecen_ida_po_loginie_alfabetycznie(tmp_path: Path) -> None:
+    centrum_ = settling_with_register(tmp_path, ["adam.nowy", "zenon.nowy", "maria.nowa", "zenon.nowy"])
+
+    answer = centrum_.client.get(WORKER_SUGGESTIONS_API).json()
+
+    assert [(found["login"], found["orders"]) for found in answer["suggestions"]] == [
+        ("zenon.nowy", 2),
+        ("adam.nowy", 1),
+        ("maria.nowa", 1),
+    ]
 
 
 def test_podpowiedzi_czytaja_rejestr_otwarty_w_excelu_z_jego_ostatniej_zapisanej_wersji(tmp_path: Path) -> None:
@@ -7256,6 +7288,18 @@ def test_zly_plik_skrzynki_ma_zdanie_w_ustawieniach_a_nowe_haslo_taty_naprawia_t
         assert access.read_bytes() == zapis
         assert [change["key"] for row in rows for change in row["changes"]] == ["skrzynka.haslo"]
     assert _files_with_password(tool, ["starehasło", STARE_HASLO, NOWE_HASLO]) == []
+
+
+def test_zly_plik_skrzynki_ma_zdanie_w_ustawieniach_takze_przy_pliku_folderow_bez_odczytu(tmp_path: Path) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    assert client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
+    (tool.config / INBOX_ACCESS_FILE).write_bytes(f"Skrzynka <{SKRZYNKA}>\r\n{STARE_HASLO}\r\n".encode())
+
+    with without_reading(tool.config / SETTINGS_FILE):
+        shown = client.get("/api/settings").json()
+
+    assert shown["order_register"] == UNREADABLE
+    assert (shown["inbox"], shown["inbox_problem"]) == ({"address": None, "password": True}, {"field": "adres", "message": ZLE_ADRES})
 
 
 @pytest.mark.parametrize(
