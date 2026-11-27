@@ -860,7 +860,6 @@ CONTRACTS = (
     (re.compile(r".*MUTACJE_CZESC", re.DOTALL), TOOLS / "lib" / "jednostka.py"),
     (re.compile(r"MUTACJE OK|SKILLE VERIFY|AKTUALIZACJA:|CI LOKALNIE (?:OK|FAIL)"), TOOLS / "lib" / "ostatnie_linie.py"),
     (re.compile(r"MUTACJE ZMIANY OK"), TOOLS / "mutacje_zmiany.py"),
-    (re.compile(r"BOX: "), TOOLS / "lib" / "box_boat.py"),
 )
 
 

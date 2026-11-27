@@ -8,7 +8,6 @@ from types import ModuleType
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-CIEZKIE = ROOT / "tools" / "hooks" / "ciezkie.py"
 CZEKANIE = ROOT / "tools" / "hooks" / "czekanie.py"
 
 
@@ -21,7 +20,7 @@ def _load(path: Path) -> ModuleType:
     return module
 
 
-HOOKS = {"ciezkie": _load(CIEZKIE), "czekanie": _load(CZEKANIE)}
+HOOKS = {"czekanie": _load(CZEKANIE)}
 
 SLOWA = [
     pytest.param("szybko", "szybko", id="bez-cudzyslowu"),
@@ -45,7 +44,7 @@ SLOWA = [
 
 
 @pytest.mark.parametrize(("slowo", "jak_bash"), SLOWA)
-def test_oba_hooki_czytaja_slowo_polecenia_tak_jak_bash_po_rozwinieciu(slowo: str, jak_bash: str) -> None:
+def test_hook_czyta_slowo_polecenia_tak_jak_bash_po_rozwinieciu(slowo: str, jak_bash: str) -> None:
     read = {name: hook._words(f"echo {slowo}") for name, hook in HOOKS.items()}
 
     assert read == {name: ["echo", jak_bash] for name in HOOKS}

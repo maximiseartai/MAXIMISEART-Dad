@@ -91,7 +91,7 @@ zmiany albo nieznana baza.
 
     .venv/bin/python tools/inwentarz_komentarzy.py tools/hooks tools/lib/atrapy      # wpisy fali
     .venv/bin/python tools/inwentarz_komentarzy.py --json .github                     # pełny tekst
-    .venv/bin/python tools/inwentarz_komentarzy.py --dowod-fali                       # dowód fali, przez boatbox job
+    .venv/bin/python tools/inwentarz_komentarzy.py --dowod-fali                       # dowód fali
 """
 
 MODUL: Final = "moduł"

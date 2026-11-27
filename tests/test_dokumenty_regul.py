@@ -12,7 +12,7 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCUMENTS = ("AGENTS.md", "CODING_STANDARDS.md", "docs/agents/pr-i-ci.md", "docs/agents/issue-tracker.md", "docs/agents/skrzynka-zgloszen.md", "docs/agents/komputer-taty.md", ".agents/skills/przeglad/SKILL.md", ".agents/skills/przeglad/recenzent.md", ".agents/skills/przeglad/autor.md", ".agents/skills/przeglad/korzen.md", ".agents/skills/przeglad/rundy.md", ".agents/skills/przeglad/porazka-adr.md", ".agents/skills/boat/SKILL.md", "docs/agents/skille.md", "GLOSSARY.md")
+DOCUMENTS = ("AGENTS.md", "CODING_STANDARDS.md", "docs/agents/pr-i-ci.md", "docs/agents/issue-tracker.md", "docs/agents/skrzynka-zgloszen.md", "docs/agents/komputer-taty.md", ".agents/skills/przeglad/SKILL.md", ".agents/skills/przeglad/recenzent.md", ".agents/skills/przeglad/autor.md", ".agents/skills/przeglad/korzen.md", ".agents/skills/przeglad/rundy.md", ".agents/skills/przeglad/porazka-adr.md", "docs/agents/skille.md", "GLOSSARY.md")
 FENCE = "```"
 NOT_PROSE = re.compile(r"\s*(?:#+\s|\||```)")
 LIST_ITEM = re.compile(r"\s*(?:-|\d+\.)\s")
