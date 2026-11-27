@@ -154,6 +154,10 @@ extend-select = [
 # Strumieniowy lekser shlex.shlex w hooku czekania (#2295 W3 r2) obcinał polecenie za # w słowie i za cudzysłowem bez
 # pary, więc dalsze polecenia proste hook przepuszczał; kod usunięto z PR, a zakaz trzyma go przed powrotem.
 "shlex.shlex".msg = "nie czytaj polecenia powłoki strumieniowym lekserem shlex.shlex: jego komentarz (#) i ValueError cudzysłowu bez pary obcinają resztę polecenia inaczej niż bash; słowa polecenia w hooku czytaj z cudzysłowami przez QUOTED i unquoted z tools/lib/slowa_powloki.py, a gdzie indziej shlex.split"
+# Tablica symboli kompilatora dała chronionego właściciela modułowi, który nazwy nie zapisuje (adnotacja, del,
+# zmienna listy składanej, #2615 W1 r1), więc o tym, czy moduł daje nazwę, mówi bajtkod modułu.
+"symtable".msg = "nie pytaj symtable, czy moduł daje nazwę: Symbol.is_assigned() liczy też samą adnotację, del i zmienną listy składanej; czy kod modułu zapisuje nazwę, mówią instrukcje STORES jego bajtkodu, jak w tools/lib/chroniony_wlasciciel.py"
+"symtable.symtable".msg = "nie pytaj symtable, czy moduł daje nazwę: Symbol.is_assigned() liczy też samą adnotację, del i zmienną listy składanej; czy kod modułu zapisuje nazwę, mówią instrukcje STORES jego bajtkodu, jak w tools/lib/chroniony_wlasciciel.py"
 # Prywatny dowód modułu w konstruktorze typu (wzór run_logs_guard._MINTED) i fabryka, która go wkłada (refusal._refused):
 # bez dowodu mypy odrzuca wywołanie, a ruff odrzuca ich import i atrybut modułu poza modułem, który je zna (getattr
 # z napisem nie).

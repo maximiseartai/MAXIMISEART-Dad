@@ -4,8 +4,8 @@ from collections.abc import Iterator, Sequence
 import configparser
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+import dis
 import re
-import symtable
 import tomllib
 from typing import Any
 
@@ -19,7 +19,7 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 | Źródło | Właściciel |
 |---|---|
 | zakaz ``TID251`` | plik z ``TID251`` w ``[lint.per-file-ignores]`` ``ruff.toml`` korzenia; że ma wiersz ``OWNERS`` z nazwami, których jest właścicielem, pilnuje ``tests/test_zakazy_ruff.py`` w Required CI tego drzewa |
-| nazwa w ``banned-api`` | moduł, który klucz nazywa przed ostatnią kropką (``pakiet.modul`` w ``pakiet.modul.NAZWA``), jako ``<katalog>/pakiet/modul/__init__.py`` albo ``…/modul.py`` z pierwszego katalogu, który go ma (katalog tego ``ruff.toml``, potem ``src`` i ``repo.IMPORT_ROOTS`` od korzenia), gdy tablica symboli kompilatora Pythona (``symtable``) wiąże tę nazwę w zasięgu modułu (przypisanie, ``def``, ``class``, import pod tą nazwą), bo zakaz nazwy kieruje do niego resztę kodu; klucz, który sam jest modułem, nie daje właściciela |
+| nazwa w ``banned-api`` | moduł, który klucz nazywa przed ostatnią kropką (``pakiet.modul`` w ``pakiet.modul.NAZWA``), jako ``<katalog>/pakiet/modul/__init__.py`` albo ``…/modul.py`` z pierwszego katalogu, który go ma (katalog tego ``ruff.toml``, potem ``src`` i ``repo.IMPORT_ROOTS`` od korzenia), gdy kod modułu skompilowany przez Pythona zapisuje tę nazwę w przestrzeni nazw modułu (``STORES``: przypisanie, ``def``, ``class``, import pod tą nazwą) i jej nie usuwa (``DELETES``: ``del``, koniec bloku ``except … as``), bo zakaz tej nazwy poza prawem właściciela zostawia jej kod tylko w tym module; sama adnotacja, ``del``, zmienna listy składanej i nazwa w funkcji albo klasie nie zapisują nazwy modułu, a klucz, który sam jest modułem, nie daje właściciela |
 | sama reguła | każdy ``ruff.toml`` z ``banned-api`` (korzenia i katalogu, który go rozszerza) i każdy plik reguły ast-grep z ``ruleDirs``, który ma ``id``: lukę we wzorcu albo zasięgu zamyka test jego próbek (``tests/test_zakazy_ruff.py``, ``tests/test_zapadki.py``), a słabszą regułę ast-grep odrzuca też warunek 6 ``tools/scal_pr.py`` |
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
@@ -36,6 +36,8 @@ CONTRACT = "importlinter:contract:"
 ALLOWED = "allowed_importers"
 PACKAGES = "src"
 AST_GREP = "sgconfig.yml"
+STORES = frozenset({"STORE_NAME", "STORE_GLOBAL"})
+DELETES = frozenset({"DELETE_NAME", "DELETE_GLOBAL"})
 SOURCES = (
     f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, moduł klucza banned-api, który wiąże jego nazwę, {ALLOWED} kontraktu w {IMPORT_CONTRACTS}, "
     f"ignores: reguły ast-grep z ruleDirs {AST_GREP}, sam plik takiej reguły albo {RUFF} z banned-api, także katalogu"
@@ -93,10 +95,11 @@ def _binding(tree: _Tree, config: str, key: str) -> str | None:
     if path is None or _module(tree, config, key) is not None:
         return None
     try:
-        symbol = symtable.symtable(tree.read(path) or "", path, "exec").lookup(name)
-    except (SyntaxError, ValueError, KeyError):
+        code = compile(tree.read(path) or "", path, "exec", dont_inherit=True)
+    except (SyntaxError, ValueError):
         return None
-    return path if symbol.is_assigned() or symbol.is_imported() else None
+    steps = {step.opname for step in dis.get_instructions(code) if step.argval == name}
+    return path if steps & STORES and not steps & DELETES else None
 
 
 def _module(tree: _Tree, config: str, module: str) -> str | None:
