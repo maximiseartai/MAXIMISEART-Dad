@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
 
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import git
@@ -260,3 +261,38 @@ def test_publikacja_ustawia_tylko_werdykt_scalenia_na_head_otwartego_pr_z_tego_r
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert answered.stdout.splitlines()[-1] == "SCALENIA OK | main | wysłane 1, pominięte 5"
     assert github.statuses_by_head() == {head: [{"state": "success", "context": "scalenie z main", "description": "main abc1234: scala się"}]}
+
+
+def test_bez_otwartych_pr_narzedzie_konczy_sie_ok_bez_statusow(tmp_path: Path) -> None:
+    github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})
+    (github.bin / "pulls.json").write_text("[]", encoding="utf-8")
+
+    written = github.run("--zapisz", str(tmp_path / "scalenia.json"))
+    answered = github.run("--publikuj-z", str(tmp_path / "scalenia.json"))
+
+    assert written.returncode == 0, written.stdout + written.stderr
+    assert written.stdout.splitlines()[-1].startswith(f"SCALENIA OK | main {github.start[:7]} | 0 PR (brak) | "), written.stdout
+    assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SCALENIA OK | main | wysłane 0, pominięte 0"), answered.stdout + answered.stderr
+    assert github.statuses_by_head() == {}
+
+
+@pytest.mark.parametrize(
+    "verdicts",
+    [
+        pytest.param("{", id="nie-json"),
+        pytest.param('{"werdykty": []}', id="bez-bazy"),
+        pytest.param('{"baza": "main", "werdykty": [1]}', id="wpis-nie-obiekt"),
+        pytest.param('{"baza": "main", "werdykty": 1}', id="werdykty-nie-lista"),
+    ],
+)
+def test_zepsuty_plik_werdyktow_konczy_publikacje_linia_fail_bez_statusow(tmp_path: Path, verdicts: str) -> None:
+    github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    written = tmp_path / "scalenia.json"
+    written.write_text(verdicts, encoding="utf-8")
+
+    answered = github.run("--publikuj-z", str(written))
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1].startswith("SCALENIA FAIL | "), answered.stdout + answered.stderr
+    assert github.statuses_by_head() == {}
