@@ -1,6 +1,6 @@
 """API GitHuba narzędzi CI: jedna kopia odpowiedzi na komputerze i rezerwa wspólnego limitu zapytań.
 
-``Api`` pyta po jednym, a odpowiedź 5xx (502, 503) dostaje ``PROBY_API`` prób z przerwą ``PRZERWA_API_S``.
+``Api`` pyta po jednym, a chwilowy błąd (5xx, brak odpowiedzi) ponawia ``github.z_ponowieniem``.
 Odpowiedź, która już się nie zmieni (lista runów zamkniętego dnia, zadania zakończonego runu, log), zapisuje się
 w ``api`` kopii komputera (``kopia_komputera``: ``~/.cache/maximiseart``, albo katalog ze zmiennej ``MAXIMISEART_KOPIA``,
 którą testy ustawiają na katalog tymczasowy, także dla podprocesów), wspólnej dla każdego checkoutu, wątku i biegu,
@@ -28,13 +28,11 @@ import time
 from typing import Any
 import urllib.parse
 
-from github import REPO, BladApi, GitHub, gh
+from github import REPO, BladApi, GitHub, gh, z_ponowieniem
 
 __all__ = [
     "KOPIA",
     "ODSWIEZ_ZAPAS_S",
-    "PROBY_API",
-    "PRZERWA_API_S",
     "REZERWA_POMIARU",
     "REZERWA_SCALANIA",
     "STRONA",
@@ -50,9 +48,6 @@ __all__ = [
 ]
 
 STRONA = 100
-# Odpowiedź 5xx API Actions (502, 503) mija po chwili: tyle prób z przerwą.
-PROBY_API = 5
-PRZERWA_API_S = 20.0
 KOPIA = Path(".cache") / "maximiseart"
 ZMIENNA_KOPII = "MAXIMISEART_KOPIA"
 REZERWA_POMIARU = 1500
@@ -172,15 +167,11 @@ class Api:
         return self.katalog / f"{urllib.parse.quote(sciezka, safe='')}{rozszerzenie}"
 
     def _zapytaj(self, zapytanie: Callable[[], Any]) -> Any:
-        for proba in range(1, PROBY_API + 1):
+        def proba() -> Any:
             self.zapytania += 1
-            try:
-                return zapytanie()
-            except (BladApi, subprocess.TimeoutExpired) as blad:
-                if proba == PROBY_API or (isinstance(blad, BladApi) and "HTTP 5" not in blad.stderr):
-                    raise
-                time.sleep(PRZERWA_API_S)
-        raise AssertionError("pętla prób kończy się odpowiedzią albo wyjątkiem")
+            return zapytanie()
+
+        return z_ponowieniem(proba)
 
 
 def runy(api: Api, od: date, do: date, dzis: date) -> list[dict[str, Any]]:

@@ -3,7 +3,9 @@
 ``gh`` i ``gh_bajty`` to jedyne miejsce, które uruchamia ``gh`` w narzędziach: w katalogu checkoutu, z limitem czasu
 ``LIMIT_S`` (``None`` bez limitu), a porażka to ``subprocess.CalledProcessError`` z wyjściem błędów programu.
 ``GhApi`` pyta ``gh api`` o repozytorium checkoutu (``REPO``), a ``strony`` czyta listę API po ``STRONA`` wpisów do
-ostatniej niepełnej strony, więc lista dłuższa od strony nie gubi wpisów. Akcje issue (``Zaloz``, ``Skomentuj``,
+ostatniej niepełnej strony, więc lista dłuższa od strony nie gubi wpisów. Chwilowy błąd zapytania API (``chwilowy``:
+odpowiedź 5xx albo brak odpowiedzi w limicie czasu) ``z_ponowieniem`` ponawia po przerwach ``PRZERWY_S``, a
+``ZPonowieniem`` daje to ponowienie każdemu odczytowi ``GitHub`` (zapis idzie raz). Akcje issue (``Zaloz``, ``Skomentuj``,
 ``Zamknij``, ``Edytuj``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję;
 brakującą etykietę issue zakłada ``zaloz_etykiety``.
 ``ustaw_status`` to jedyne miejsce, które ustawia status commita.
@@ -14,7 +16,7 @@ bo Zgłoszenia CI biegną systemowym ``python3`` runnera.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 import itertools
@@ -24,7 +26,8 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Any, Protocol
+import time
+from typing import Any, Protocol, TypeVar
 import urllib.parse
 
 from repo import ROOT
@@ -46,6 +49,10 @@ WERDYKT_I_BRAMKA = "Werdykt i bramka"
 OPIS_STATUSU_LIMIT = 140  # GitHub odrzuca dłuższy opis statusu commita
 LIMIT_S = 60
 STRONA = 100
+PRZERWY_S = (5.0, 10.0, 20.0, 40.0)
+_HTTP_5XX = re.compile(r"\bHTTP 5[0-9]{2}\b")
+
+T = TypeVar("T")
 
 
 def _run(argumenty: Sequence[str], wejscie: str | bytes | None, limit_s: float | None, cwd: Path, *, tekst: bool) -> Any:
@@ -179,6 +186,47 @@ class GhApi:
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
         odpowiedz = self._api("--method", metoda, sciezka, "--input", "-", wejscie=json.dumps(tresc).encode("utf-8"))
         return json.loads(odpowiedz) if odpowiedz.strip() else None
+
+
+BLEDY_API = (BladApi, subprocess.TimeoutExpired)
+
+
+def chwilowy(blad: BladApi | subprocess.TimeoutExpired) -> bool:
+    """Czy błąd zapytania API może minąć po chwili: odpowiedź 5xx albo brak odpowiedzi w limicie czasu."""
+
+    return isinstance(blad, subprocess.TimeoutExpired) or _HTTP_5XX.search(blad.stderr) is not None
+
+
+def z_ponowieniem(zapytanie: Callable[[], T], czekaj: Callable[[float], None] = time.sleep) -> T:
+    """Wynik ``zapytanie``, które po chwilowym błędzie (``chwilowy``) ponawia po każdej z przerw ``PRZERWY_S``; inny
+    błąd i chwilowy błąd ostatniej próby lecą do wołającego."""
+
+    for przerwa in PRZERWY_S:
+        try:
+            return zapytanie()
+        except BLEDY_API as blad:
+            if not chwilowy(blad):
+                raise
+        czekaj(przerwa)
+    return zapytanie()
+
+
+@dataclass(frozen=True)
+class ZPonowieniem:
+    """``github``, którego odczyt (``json``, ``bajty``) idzie przez ``z_ponowieniem``, a zapis (``wyslij``) raz, bo 5xx
+    po zapisie nie mówi, czy GitHub go już wykonał."""
+
+    github: GitHub
+    czekaj: Callable[[float], None] = time.sleep
+
+    def json(self, sciezka: str) -> Any:
+        return z_ponowieniem(lambda: self.github.json(sciezka), self.czekaj)
+
+    def bajty(self, sciezka: str) -> bytes:
+        return z_ponowieniem(lambda: self.github.bajty(sciezka), self.czekaj)
+
+    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
+        return self.github.wyslij(metoda, sciezka, tresc)
 
 
 def strony(github: GitHub, sciezka: str, pole: str | None = None) -> Iterator[dict[str, Any]]:
