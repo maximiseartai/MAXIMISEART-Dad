@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 import configparser
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import dis
 import re
 import tomllib
 from typing import Any
@@ -18,6 +19,7 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 | Źródło | Właściciel |
 |---|---|
 | zakaz ``TID251`` | plik z ``TID251`` w ``[lint.per-file-ignores]`` ``ruff.toml`` korzenia; że ma wiersz ``OWNERS`` z nazwami, których jest właścicielem, pilnuje ``tests/test_zakazy_ruff.py`` w Required CI tego drzewa |
+| nazwa w ``banned-api`` | moduł, który klucz nazywa przed ostatnią kropką (``pakiet.modul`` w ``pakiet.modul.NAZWA``), jako ``<katalog>/pakiet/modul/__init__.py`` albo ``…/modul.py`` z pierwszego katalogu, który go ma (katalog tego ``ruff.toml``, potem ``src`` i ``repo.IMPORT_ROOTS`` od korzenia), gdy kod modułu skompilowany przez Pythona zapisuje tę nazwę w przestrzeni nazw modułu (``STORES``: przypisanie, ``def``, ``class``, import pod tą nazwą) i jej nie usuwa (``DELETES``: ``del``, koniec bloku ``except … as``), bo zakaz tej nazwy poza prawem właściciela zostawia jej kod tylko w tym module; sama adnotacja, ``del``, zmienna listy składanej i nazwa w funkcji albo klasie nie zapisują nazwy modułu, a klucz, który sam jest modułem, nie daje właściciela |
 | sama reguła | każdy ``ruff.toml`` z ``banned-api`` (korzenia i katalogu, który go rozszerza) i każdy plik reguły ast-grep z ``ruleDirs``, który ma ``id``: lukę we wzorcu albo zasięgu zamyka test jego próbek (``tests/test_zakazy_ruff.py``, ``tests/test_zapadki.py``), a słabszą regułę ast-grep odrzuca też warunek 6 ``tools/scal_pr.py`` |
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
@@ -34,8 +36,10 @@ CONTRACT = "importlinter:contract:"
 ALLOWED = "allowed_importers"
 PACKAGES = "src"
 AST_GREP = "sgconfig.yml"
+STORES = frozenset({"STORE_NAME", "STORE_GLOBAL"})
+DELETES = frozenset({"DELETE_NAME", "DELETE_GLOBAL"})
 SOURCES = (
-    f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, {ALLOWED} kontraktu w {IMPORT_CONTRACTS}, "
+    f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, moduł klucza banned-api, który wiąże jego nazwę, {ALLOWED} kontraktu w {IMPORT_CONTRACTS}, "
     f"ignores: reguły ast-grep z ruleDirs {AST_GREP}, sam plik takiej reguły albo {RUFF} z banned-api, także katalogu"
 )
 _BRACES = re.compile(r"\{([^{}]*)\}")
@@ -81,7 +85,30 @@ def _banned(tree: _Tree) -> set[str]:
         names = lint.get("flake8-tidy-imports", {}).get("banned-api", {})
         found |= {path for pattern, codes in ignores.items() if isinstance(codes, list) and BAN in codes for path in _paths(pattern)}
         found |= {config} if names else set()
+        found |= {path for key in names if (path := _binding(tree, config, key)) is not None}
     return found
+
+
+def _binding(tree: _Tree, config: str, key: str) -> str | None:
+    module, _, name = key.rpartition(".")
+    path = _module(tree, config, module)
+    if path is None or _module(tree, config, key) is not None:
+        return None
+    try:
+        code = compile(tree.read(path) or "", path, "exec", dont_inherit=True)
+    except (SyntaxError, ValueError):
+        return None
+    steps = {step.opname for step in dis.get_instructions(code) if step.argval == name}
+    return path if steps & STORES and not steps & DELETES else None
+
+
+def _module(tree: _Tree, config: str, module: str) -> str | None:
+    parts = module.split(".")
+    if not all(part.isidentifier() for part in parts):
+        return None
+    roots = dict.fromkeys((str(PurePosixPath(config).parent), PACKAGES, *repo.IMPORT_ROOTS))
+    candidates = (str(PurePosixPath(root, *parts[:-1], last)) for root in roots for last in (f"{parts[-1]}/__init__.py", f"{parts[-1]}.py"))
+    return next((path for path in candidates if path in tree.files), None)
 
 
 def _importers(tree: _Tree) -> set[str]:

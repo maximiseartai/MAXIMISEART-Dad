@@ -626,6 +626,57 @@ def test_chroniony_wlasciciel_to_tez_sama_regula_lint(tmp_path: Path, config: di
     assert (path in protected) is owned, sorted(protected)
 
 
+BANNED_NAME = "pakiet.modul.WARTOSC"
+
+
+@pytest.mark.parametrize(
+    ("files", "path", "owned"),
+    [
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "WARTOSC = 1\n"}, OWNER, True, id="modul-celu-klucza-ktory-przypisuje-nazwe"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "def WARTOSC() -> int:\n    return 1\n"}, OWNER, True, id="modul-celu-klucza-z-def-nazwy"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "class WARTOSC:\n    pass\n"}, OWNER, True, id="modul-celu-klucza-z-class-nazwy"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "from pakiet.inny import JEDEN as WARTOSC\n"}, OWNER, True, id="modul-celu-klucza-z-importem-pod-nazwa"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "import sys\nif sys.platform == 'win32':\n    WARTOSC, INNA = 1, 2\n"}, OWNER, True, id="modul-celu-klucza-z-nazwa-w-galezi-i-krotce"),
+        pytest.param({"ruff.toml": BANNED.format(name="pakiet.WARTOSC"), "src/pakiet/__init__.py": "WARTOSC = 1\n"}, "src/pakiet/__init__.py", True, id="modul-celu-klucza-to-init-pakietu"),
+        pytest.param({"ruff.toml": BANNED.format(name="narzedzie.WARTOSC"), "tools/lib/narzedzie.py": "WARTOSC = 1\n"}, "tools/lib/narzedzie.py", True, id="modul-celu-klucza-w-katalogu-importu-narzedzi"),
+        pytest.param(
+            {"ruff.toml": BANNED.format(name="narzedzie.WARTOSC"), "tools/ci/narzedzie.py": "INNA = 1\n", "tools/lib/narzedzie.py": "WARTOSC = 1\n"},
+            "tools/lib/narzedzie.py",
+            False,
+            id="modul-zasloniety-wczesniejszym-katalogiem-importu",
+        ),
+        pytest.param({"ruff.toml": BANNED.format(name="pakiet..modul.WARTOSC"), OWNER: "WARTOSC = 1\n"}, OWNER, False, id="klucz-z-pusta-czescia-sciezki-modulu"),
+        pytest.param({"src/ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "WARTOSC = 1\n"}, OWNER, True, id="klucz-zagniezdzonego-ruff-toml-wzgledem-jego-katalogu"),
+        pytest.param({"skrypty/ruff.toml": BANNED.format(name="pomocnik.WARTOSC"), "skrypty/pomocnik.py": "WARTOSC = 1\n"}, "skrypty/pomocnik.py", True, id="klucz-zagniezdzonego-ruff-toml-na-modul-obok-niego"),
+        pytest.param({"ruff.toml": BANNED.format(name="pomocnik.WARTOSC"), "skrypty/pomocnik.py": "WARTOSC = 1\n"}, "skrypty/pomocnik.py", False, id="klucz-korzenia-nie-siega-modulu-obok-zagniezdzonego-ruff-toml"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: '"""WARTOSC daje pakiet.inny."""\nfrom pakiet.inny import JEDEN\nJEDEN.update(WARTOSC)\nWARTOSC[0] = 2\n'}, OWNER, False, id="modul-celu-ktory-nazwy-nie-wiaze-a-tylko-jej-uzywa"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "def f() -> None:\n    WARTOSC = 1\n\n\nclass C:\n    WARTOSC = 2\n"}, OWNER, False, id="modul-celu-z-nazwa-tylko-w-funkcji-i-klasie"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "WARTOSC = (\n"}, OWNER, False, id="modul-celu-z-bledem-skladni"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "WARTOSC: int\n"}, OWNER, False, id="modul-celu-z-sama-adnotacja-nazwy"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "NAZWY = [WARTOSC for WARTOSC in ('a', 'b')]\n"}, OWNER, False, id="modul-celu-ze-zmienna-listy-skladanej"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "NAZWY = [(WARTOSC := x) for x in (1, 2)]\n"}, OWNER, True, id="modul-celu-z-walrusem-w-liscie-skladanej"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "try:\n    del WARTOSC\nexcept NameError:\n    pass\n"}, OWNER, False, id="modul-celu-z-samym-del-nazwy"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "WARTOSC = 1\ndel WARTOSC\n"}, OWNER, False, id="modul-celu-ktory-nazwe-zapisuje-i-usuwa"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "try:\n    pass\nexcept OSError as WARTOSC:\n    pass\n"}, OWNER, False, id="modul-celu-z-nazwa-z-except-as"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "def f() -> None:\n    global WARTOSC\n    WARTOSC = 1\n"}, OWNER, False, id="modul-celu-z-nazwa-z-global-w-funkcji"),
+        pytest.param({"ruff.toml": BANNED.format(name="pakiet.modul"), OWNER: "WARTOSC = 1\n", "src/pakiet/__init__.py": "from pakiet import modul\n"}, OWNER, False, id="klucz-na-sam-modul-bez-nazwy"),
+        pytest.param({"ruff.toml": BANNED.format(name="pakiet.modul"), OWNER: "WARTOSC = 1\n", "src/pakiet/__init__.py": "from pakiet import modul\n"}, "src/pakiet/__init__.py", False, id="klucz-na-sam-modul-nie-daje-pakietu-ktory-go-importuje"),
+        pytest.param({"ruff.toml": BANNED.format(name="pakiet.mod.WARTOSC"), OWNER: "WARTOSC = 1\n"}, OWNER, False, id="klucz-na-modul-o-nazwie-przedrostka-modulu"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), OWNER: "WARTOSC = 1\n", "src/pakiet/inny.py": "WARTOSC = 1\n"}, "src/pakiet/inny.py", False, id="plik-spoza-kluczy-ktory-wiaze-te-nazwe"),
+        pytest.param({"ruff.toml": BANNED.format(name=BANNED_NAME), "kod/pakiet/modul.py": "WARTOSC = 1\n"}, "kod/pakiet/modul.py", False, id="modul-poza-katalogami-importu"),
+    ],
+)
+def test_modul_celu_klucza_banned_api_to_chroniony_wlasciciel_tylko_gdy_parser_pythona_widzi_w_nim_wiazanie_tej_nazwy(
+    tmp_path: Path, files: dict[str, str], path: str, owned: bool
+) -> None:
+    root = repository(tmp_path / "repo", {"src/pakiet/__init__.py": "", **files}, tools=())
+    commit(root, "drzewo")
+
+    protected = chroniony_wlasciciel.owners(root, git(root, "rev-parse", "HEAD^{tree}"))
+
+    assert (path in protected) is owned, sorted(protected)
+
+
 @pytest.mark.parametrize(
     ("base", "fixed", "meanwhile", "where", "named"),
     [
