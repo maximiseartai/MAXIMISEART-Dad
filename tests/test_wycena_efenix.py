@@ -3204,7 +3204,7 @@ def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_cze
         pytest.param((850.0, 882.0, 914.0), EfenixUnreachable, 3, id="efenix-wisi-a-ostatnie-pytanie-konczy-sie-po-limicie"),
     ],
 )
-def test_po_limicie_czekania_na_logowanie_niedostepny_efenix_tylko_gdy_efenix_milczal_przez_dwa_czasy_okna(
+def test_po_limicie_czekania_na_logowanie_niedostepny_efenix_z_bledem_przegladarki_tylko_gdy_efenix_milczal_przez_dwa_czasy_okna(
     page: Page, unanswered: tuple[float, ...], stop: type[Exception], questions: int
 ) -> None:
     with atrapa_efenix([]) as atrapa:
@@ -3217,11 +3217,11 @@ def test_po_limicie_czekania_na_logowanie_niedostepny_efenix_tylko_gdy_efenix_mi
                 atrapa.outage = Outage.CUT
             return reading
 
-        with pytest.raises(stop), efenix_browser.window(page, atrapa.url, login=nullcontext, clock=clock):
+        with pytest.raises(stop) as stopped, efenix_browser.window(page, atrapa.url, login=nullcontext, clock=clock):
             pass
         asked = _session_questions(atrapa)
 
-    assert asked == questions
+    assert (asked, isinstance(stopped.value.__cause__, PlaywrightError)) == (questions, stop is EfenixUnreachable)
 
 
 def test_przegladarka_zamknieta_przed_pytaniem_o_sesje_na_granicy_limitu_to_zamkniete_okno(page: Page) -> None:
