@@ -161,7 +161,7 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     "mutacja-z-poleceniem": (
         _with_mutation(*_mutation('[{"nazwa": "x", "zmiany": [["a.py", "b", "c"]], "polecenie": ["-c", "pass"]}]')),
         (1, 1),
-        "blok ### Mutacja W1 r1: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika pytest",
+        "blok ### Mutacja W1 r1: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika (pytest <węzeł> albo mypy)",
     ),
     "mutacja-dwa-bloki-tego-samego-waznego": (_with_mutation(*_mutation(), *_mutation()), (1, 1), "Mutacja W1 r1: drugi blok tego Ważnego w werdykcie"),
     "mutacja-bez-rundy": (_with_mutation("### Mutacja W1", "```", MUTATION, "```"), (1, 1), "„### Mutacja W<n> r<k>”"),

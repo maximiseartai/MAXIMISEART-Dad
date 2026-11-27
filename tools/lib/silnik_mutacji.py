@@ -281,16 +281,36 @@ def _remove(copy: Path, path: Path) -> None:
         parent.rmdir()
 
 
-def _apply(copy: Path, edits: Sequence[Edit]) -> str | None:
+def edited(texts: Mapping[Path, str], edits: Sequence[Edit]) -> dict[Path, str] | str:
+    """Treść każdego pliku ``edits`` po tych zmianach po kolei, od treści ``texts`` (każdy plik ``edits``; zmiana pliku
+    widzi poprzednią zmianę tego pliku), bez zapisu, albo powód, czemu mutacja nie pasuje: kotwicy nie ma w pliku
+    dokładnie raz."""
+
+    result = dict(texts)
     for edit in edits:
-        path = copy / edit.file
-        if path.is_dir():
-            return f"{edit.file.as_posix()} to katalog, a nie plik"
-        code = path.read_text(encoding="utf-8") if path.is_file() else ""
+        code = result[edit.file]
         if code.count(edit.anchor) != 1:
             return f"kotwicy nie ma dokładnie raz w {edit.file.as_posix()}: {edit.anchor.strip()[:60]!r}"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(code.replace(edit.anchor, edit.replacement), encoding="utf-8")
+        result[edit.file] = code.replace(edit.anchor, edit.replacement)
+    return {edit.file: result[edit.file] for edit in edits}
+
+
+def current(copy: Path, edits: Sequence[Edit]) -> dict[Path, str] | str:
+    """Treść plików ``edits`` w kopii ``copy`` (plik, którego nie ma, jest pusty) albo powód, gdy któryś to katalog."""
+
+    if folder := next((edit.file for edit in edits if (copy / edit.file).is_dir()), None):
+        return f"{folder.as_posix()} to katalog, a nie plik"
+    return {edit.file: (copy / edit.file).read_text(encoding="utf-8") if (copy / edit.file).is_file() else "" for edit in edits}
+
+
+def _apply(copy: Path, edits: Sequence[Edit]) -> str | None:
+    found = current(copy, edits)
+    texts = found if isinstance(found, str) else edited(found, edits)
+    if isinstance(texts, str):
+        return texts
+    for file, code in texts.items():
+        (copy / file).parent.mkdir(parents=True, exist_ok=True)
+        (copy / file).write_text(code, encoding="utf-8")
     return None
 
 

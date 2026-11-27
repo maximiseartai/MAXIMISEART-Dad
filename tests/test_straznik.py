@@ -278,6 +278,89 @@ def test_znalezisko_w_calym_przywroconym_pliku_liczy_sie_gdy_kod_funkcji_z_gdzie
     assert outcome.detected and "kod/uzycie.py:5 [union-attr]" in outcome.line, outcome.line
 
 
+def _block(*edits: tuple[str, str, str], name: str = "x * 3 z FAIL") -> str:
+    return json.dumps([{"nazwa": name, "zmiany": [list(edit) for edit in edits]}])
+
+
+FINAL_FAIL = {
+    "kod/pamiec.py": "class Pamiec:\n    def __init__(self, dni: int) -> None:\n        self.dni = dni\n",
+    "kod/uzycie.py": "from kod.pamiec import Pamiec\n\n\ndef pusta() -> Pamiec:\n    return Pamiec(0)\n",
+}
+FINAL_FIX = {
+    "kod/pamiec.py": (
+        "from typing import final\n\n\n@final\nclass Pamiec:\n    def __init__(self, dni: int) -> None:\n        self.dni = dni\n\n\n"
+        "def z_pliku() -> Pamiec:\n    return Pamiec(1)\n"
+    ),
+    "kod/uzycie.py": "from kod.pamiec import Pamiec, z_pliku\n\n\ndef pusta() -> Pamiec:\n    return z_pliku()\n",
+}
+DEFINITION: Places = (("kod/pamiec.py", 1, 1),)
+CALLER = "def pusta() -> Pamiec:\n"
+DRIFT = "znaleziska poza funkcją z Gdzie: kod/uzycie.py:1 [attr-defined]"
+
+
+SUBCLASS = _block(("kod/uzycie.py", CALLER, "class _Pusta(Pamiec):\n    pass\n\n\n" + CALLER), name="podklasa")
+WRITES = {"pyproject.toml": PYPROJECT.format(mypy="", ruff="fix = true", banned="")}
+
+
+@wymaga_ruff_i_mypy
+@pytest.mark.parametrize(
+    ("guard", "mutation", "head", "state"),
+    [
+        ("mypy", SUBCLASS, {}, "| WYKRYTA | z bloku ### Mutacja W1 r1: podklasa → kod/uzycie.py:4 [misc]"),
+        ("mypy", _block(("kod/uzycie.py", CALLER, "class _Pusta(Pamiec):\n    x = 0\n\n\n" + CALLER), ("kod/uzycie.py", "    x = 0\n", "    pass\n"), name="dwie zmiany"), {}, "| WYKRYTA | z bloku ### Mutacja W1 r1: dwie zmiany → kod/uzycie.py:4 [misc]"),
+        ("mypy", _block(("kod/pamiec.py", "@final\nclass Pamiec:", "class Pamiec:"), name="bez final"), {}, f"| NIEWYKRYTA | z bloku ### Mutacja W1 r1: bez final: bez znaleziska (kod 0); przywrócenie z FAIL: kod/pamiec.py: {DRIFT}"),
+        ("mypy", _block(("kod/pamiec.py", "def z_pliku() -> Pamiec:\n    return Pamiec(1)", "def z_pliku(dni: int) -> Pamiec:\n    return Pamiec(dni)"), name="sygnatura"), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: sygnatura: znaleziska poza liniami bloku albo bez odrzucenia typu: kod/uzycie.py:5 [call-arg]"),
+        ("mypy", _block(("kod/pamiec.py", "dni: int) -> None:", "dni: str) -> None:"), name="pole napisem"), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: pole napisem: znaleziska poza liniami bloku albo bez odrzucenia typu: kod/pamiec.py:11 [arg-type]"),
+        ("mypy", _block(("kod/uzycie.py", CALLER, "def _zla() -> None:\n    Pamiecc(0)\n\n\n" + CALLER), name="literówka"), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: literówka: znaleziska poza liniami bloku albo bez odrzucenia typu: kod/uzycie.py:5 [name-defined]"),
+        ("mypy", _block(("kod/uzycie.py", "class Pamiec(", "class _Pusta(Pamiec):"), name="stara kotwica"), {}, "| ODMOWA | stara kotwica: kotwicy nie ma dokładnie raz w kod/uzycie.py"),
+        ("mypy", _block(("kod/uzycie.py", CALLER, "def _zla() -> Pamiec:\n    return Pamiec('a')\n\n\n" + CALLER), name="napis"), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: napis: mypy odrzuca ją też z plikami Gdzie z FAIL (kod/uzycie.py:5 [arg-type]"),
+        ("mypy", _block(("kod/pamiec.py", "def z_pliku() -> Pamiec:\n", "class _Pusta(Pamiec):\n    pass\n\n\ndef z_pliku() -> Pamiec:\n"), name="kotwica z HEAD"), {}, "| ODMOWA | kotwica z HEAD: kotwicy nie ma dokładnie raz w kod/pamiec.py: 'def z_pliku() -> Pamiec:' z plikami Gdzie z FAIL"),
+        ("mypy", _block(("kod/uzycie.py", CALLER, "import os\n\n\nclass _Pusta(Pamiec):\n    pass\n\n\n" + CALLER), name="podklasa z importem"), WRITES, "| KROK PISZE PLIKI | po kroku ruff: kod/uzycie.py"),
+        ("mypy", json.dumps([*json.loads(SUBCLASS), {"nazwa": "bez final", "zmiany": [["kod/pamiec.py", "@final\nclass Pamiec:", "class Pamiec:"]]}]), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: bez final: bez znaleziska (kod 0)"),
+        ("ruff", _block(("kod/uzycie.py", CALLER, "import os\n\n\n" + CALLER), name="nieużyty import"), {}, "| NIEWYKRYTA | kod/pamiec.py: bez znaleziska (kod 0)"),
+    ],
+    ids=[
+        "podklasa-typu-final",
+        "druga-zmiana-pliku-widzi-pierwsza",
+        "oslabienie-typu-to-dryf-u-wolajacych",
+        "znalezisko-u-wolajacego",
+        "znalezisko-w-pliku-bloku-poza-jego-liniami",
+        "kod-ktorego-nie-ma",
+        "kotwica-nie-raz",
+        "odrzucona-tez-przy-slabym-typie",
+        "kotwica-tylko-na-head",
+        "krok-pisze-pliki",
+        "kazda-mutacja-bloku",
+        "ruff-bez-bloku",
+    ],
+)
+def test_dowod_mypy_slabego_typu_w_pliku_definicji_liczy_odrzucenie_zlej_postaci_z_bloku_recenzenta_w_jej_liniach(
+    tmp_path: Path, guard: str, mutation: str, head: dict[str, str], state: str
+) -> None:
+    """Słaby typ w pliku definicji (9 z 12 Ważnych ``typ`` z #2466): FAIL ma ``Pamiec`` bez ``@final``, a HEAD ją domyka
+    i dodaje ``z_pliku``, której używa ``uzycie.py``.
+    Przywrócenie ``pamiec.py`` z FAIL daje tylko ``attr-defined`` u wołającego (dryf), więc dowód ``mypy`` bierze blok
+    recenzenta: wykryciem jest odrzucenie typu w linii, którą blok wstawił, gdy z ``pamiec.py`` z FAIL (słaby typ) ta
+    sama linia przechodzi, a nie znalezisko poza nią po osłabieniu typu, nazwa, której nie ma, postać odrzucana też
+    przy słabym typie ani zakaz ruff (blok czyta tylko ``mypy``)."""
+
+    pull = _pull(tmp_path, FINAL_FAIL, {**FINAL_FIX, **head})
+
+    outcome = pull.prove(guard, DEFINITION, scopes=DEFINITION, mutation=mutation)
+
+    assert state in outcome.line, outcome.line
+    assert outcome.detected is ("| WYKRYTA |" in state), outcome.line
+
+
+@wymaga_ruff_i_mypy
+def test_wykrycie_z_przywrocenia_nie_bierze_bloku_recenzenta(tmp_path: Path) -> None:
+    pull = _pull(tmp_path, TYPED, TYPED_FIX)
+
+    outcome = pull.prove("mypy", (("kod/uzycie.py", 5, 5),), scopes=(("kod/uzycie.py", 4, 5),), mutation=_block(("kod/uzycie.py", "nie ma", ""), name="stara kotwica"))
+
+    assert outcome.detected and "| WYKRYTA | z FAIL: kod/uzycie.py | kod/uzycie.py:5 [union-attr]" in outcome.line, outcome.line
+
+
 BANNED = '"os.system".msg = "użyj subprocess.run"'
 SHELL = "import os\n\n\ndef uruchom() -> int:\n    return os.system('true')\n"
 SHELL_FIX = "import subprocess\n\n\ndef uruchom() -> int:\n    return subprocess.run(['true'], check=False).returncode\n"
@@ -411,10 +494,6 @@ NODE = "tests/test_g.py::test_g"
 TEST_G = "from kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    assert podwojona(3) == 6\n"
 
 
-def _block(*edits: tuple[str, str, str], name: str = "x * 3 z FAIL") -> str:
-    return json.dumps([{"nazwa": name, "zmiany": [list(edit) for edit in edits]}])
-
-
 def _with_trace(text: str, trace: str) -> str:
     """Źródło próbki z ``{slad}`` zastąpionym literałem Pythona ścieżki ``trace`` (``repr``), a nie samym tekstem
     ścieżki w cudzysłowie: ścieżka Windows ``C:\\Users\\…`` w cudzysłowie to ``SyntaxError`` (``\\U``), więc podstawa
@@ -502,14 +581,14 @@ PROBKI_TESTU = {
     "blok-zmienia-test": Sample(
         {"tests/test_g.py": TEST_G},
         _block(("tests/test_g.py", "== 6", "== 7")),
-        "ODMOWA | blok ### Mutacja W1 r1: zmiana w tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test",
+        "ODMOWA | blok ### Mutacja W1 r1: zmiana w tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które strażnik ma złapać, a nie test",
     ),
     # Sonda #2197 r6 D1: APFS macOS nanosi ``Tests/test_g.py`` na test, a Linux nie ma takiego pliku; odmowa ta sama
     # na każdym systemie.
     "blok-zmienia-test-pod-inna-wielkoscia-liter": Sample(
         {"tests/test_g.py": TEST_G},
         _block(("Tests/test_g.py", "== 6", "== 7")),
-        "ODMOWA | blok ### Mutacja W1 r1: zmiana w Tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test",
+        "ODMOWA | blok ### Mutacja W1 r1: zmiana w Tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które strażnik ma złapać, a nie test",
     ),
     "blok-z-pusta-sciezka": Sample(
         {"tests/test_g.py": TEST_G},
@@ -536,7 +615,7 @@ PROBKI_TESTU = {
     "blok-z-poleceniem": Sample(
         {"tests/test_g.py": TEST_G},
         json.dumps([{"nazwa": "m", "zmiany": [["kod/liczby.py", "return x * 2", "return x * 3"]], "polecenie": ["-c", "raise SystemExit(1)"]}]),
-        "ODMOWA | blok ### Mutacja W1 r1: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika pytest: recenzent następnej rundy odnawia blok",
+        "ODMOWA | blok ### Mutacja W1 r1: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika (pytest <węzeł> albo mypy): recenzent następnej rundy odnawia blok",
     ),
     "blok-nie-json": Sample({"tests/test_g.py": TEST_G}, "[{nazwa: m}]", "ODMOWA | blok ### Mutacja W1 r1: to nie JSON"),
 }
@@ -830,6 +909,11 @@ ZNANE_LUKI_STRAZNIKA = {
         f"pytest {NODE}",
         _block(("kod/zapis.py", "(folder / 'wynik.txt')", "pathlib.Path({slad})"), name="zapis poza folderem z FAIL"),
     ),
+    "mypy: blok łapie inną zmianę typu tej samej poprawki w pliku z Gdzie": Gap(
+        {"kod/liczby.py": GOOD.replace("def nastepna(x: int)", "def nastepna(x: bool)")},
+        "mypy",
+        _block(("kod/liczby.py", "def nastepna(", "def _zla() -> int:\n    return nastepna(2)\n\n\ndef nastepna("), name="liczba zamiast flagi"),
+    ),
     "pytest: stan usługi systemu poza plikami sprawdza błąd dopiero przy śladzie poprzedniego biegu": Gap(
         {"tests/test_g.py": SYSV + "def test_g() -> None:\n    if _LIBC.shmget(KLUCZ, 1, 0o600) >= 0:\n        assert podwojona(3) == 6\n    _LIBC.shmget(KLUCZ, 1, 0o1600)\n"},
         f"pytest {NODE}",
@@ -851,9 +935,15 @@ ZNANE_LUKI_STRAZNIKA = {
 }
 
 
+def _tools(guard: str) -> list[pytest.MarkDecorator]:
+    """Narzędzia luki: dowód testu biegnie w piaskownicy systemu, a dowód mypy prawdziwym mypy z dodatku dev."""
+
+    return [wymaga_piaskownicy] if guard.startswith(Kind.PYTEST.value) else [wymaga_ruff_i_mypy] if guard == Kind.MYPY.value else []
+
+
 @pytest.mark.parametrize(
     "name",
-    [pytest.param(name, marks=[*_platform(gap.platform), *([wymaga_piaskownicy] if gap.guard.startswith(Kind.PYTEST.value) else [])]) for name, gap in ZNANE_LUKI_STRAZNIKA.items()],
+    [pytest.param(name, marks=[*_platform(gap.platform), *_tools(gap.guard)]) for name, gap in ZNANE_LUKI_STRAZNIKA.items()],
 )
 def test_znane_luki_straznika_przechodza_przez_dowod(tmp_path: Path, name: str) -> None:
     gap = ZNANE_LUKI_STRAZNIKA[name]
