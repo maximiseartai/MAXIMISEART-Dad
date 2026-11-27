@@ -584,9 +584,19 @@ arguments = sys.argv[1:]
 state = json.loads((here / "state.json").read_text(encoding="utf-8"))
 with (here / "calls.jsonl").open("a", encoding="utf-8") as log:
     log.write(json.dumps([argument for argument in arguments if not argument.startswith("query=")]) + "\\n")
-if arguments[:2] == ["repo", "view"]:
-    print(json.dumps({"nameWithOwner": state["repo"]}))
+def fail_first(name):
+    asked = here / f"{name}.count"
+    count = int(asked.read_text(encoding="utf-8")) if asked.exists() else 0
+    asked.write_text(str(count + 1), encoding="utf-8")
+    failures = state["failures"].get(name, [])
+    if count < len(failures):
+        sys.exit(failures[count])
+
+if arguments[:2] == ["api", "repos/{owner}/{repo}"]:
+    fail_first("repo")
+    print(json.dumps({"full_name": state["repo"]}))
 elif arguments[:2] == ["api", "graphql"]:
+    fail_first("graphql")
     variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value in {"-f", "-F"})
     since = [term.removeprefix("created:>=") for term in variables["q"].split() if term.startswith("created:>=")]
     nodes = sorted((node for node in state["pulls"] if all(node["createdAt"] >= moment for moment in since)), key=lambda node: (node["createdAt"], node["number"]))
@@ -607,12 +617,7 @@ elif arguments[0] == "api" and arguments[1].startswith("repos/{owner}/{repo}/act
     print(json.dumps({"jobs": state["jobs"][arguments[1].split("/")[5]]}))
 elif arguments[0] == "api" and arguments[1].startswith("repos/{owner}/{repo}/actions/jobs/"):
     job = arguments[1].split("/")[5]
-    asked = here / f"log-{job}.count"
-    count = int(asked.read_text(encoding="utf-8")) if asked.exists() else 0
-    asked.write_text(str(count + 1), encoding="utf-8")
-    failures = state["failures"].get(job, [])
-    if count < len(failures):
-        sys.exit(failures[count])
+    fail_first(job)
     sys.stdout.write(state["logs"][job])
 elif arguments[:2] == ["api", "--method"]:
     with (here / "writes.jsonl").open("a", encoding="utf-8") as log:
@@ -866,8 +871,9 @@ OLD_BODY = """\
 class RegistryGitHub(FakeGitHub):
     """Checkout z narzędziem pomiaru, ``origin`` z ADR 0031 wdrożonym 1.10.2026 i atrapa ``gh`` z PR-ami ``pulls``,
     otwartymi issues chwastów ``WEEDS``, otwartymi issues z etykietą ``rejestr-korzeni`` ``own``, komentarzami
-    najstarszego z nich ``comments``, etykietami repozytorium ``labels`` i runami CI ``actions``, których log zadania
-    odpowiada najpierw kolejnymi wyjściami błędu ``gh`` z ``failures`` (kod 1), a potem logiem."""
+    najstarszego z nich ``comments``, etykietami repozytorium ``labels`` i runami CI ``actions``. Log zadania
+    (klucz ``failures`` to numer zadania), zapytanie GraphQL (klucz ``"graphql"``) i zapytanie o repozytorium (klucz
+    ``"repo"``) odpowiadają najpierw kolejnymi wyjściami błędu ``gh`` z ``failures`` (kod 1), a potem wynikiem."""
 
     def __init__(
         self,
@@ -880,7 +886,7 @@ class RegistryGitHub(FakeGitHub):
         started: str | None = None,
         actions: _Actions | None = None,
         comments: Sequence[dict[str, object]] = (),
-        failures: Mapping[int, Sequence[str]] | None = None,
+        failures: Mapping[int | str, Sequence[str]] | None = None,
     ) -> None:
         tmp_path.mkdir()
         super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n", **(files or {})}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH, started=started)
@@ -973,7 +979,7 @@ def test_przebieg_czyta_werdykty_z_tej_samej_strony_graphql_bez_renderowania_kaz
     issues = "repos/{owner}/{repo}/issues?labels={label}&state=open&per_page=100&page=1"
     rest = [issues.format(owner="{owner}", repo="{repo}", label=label) for label in ("chwast", "rejestr-korzeni")]
     runs = f"{tydzien.CI_RUNS}&created=2026-10-18T22:00:00Z..2026-10-25T23:00:00Z&per_page=100&page=1"
-    assert github.calls() == ["repo view", *["graphql"] * pages, runs, *rest, "repos/{owner}/{repo}/labels?per_page=100&page=1"]
+    assert github.calls() == ["repos/{owner}/{repo}", *["graphql"] * pages, runs, *rest, "repos/{owner}/{repo}/labels?per_page=100&page=1"]
 
 
 @pytest.mark.parametrize("sample", ["fail", "pass"])
@@ -1196,6 +1202,23 @@ def test_pomiar_ponawia_log_zadania_po_chwilowym_bledzie_githuba_a_404_konczy_po
     assert _rows("\n".join(lines[2:-1]), "Odpalenia strażników") == ["| #1490 | mypy | - |"], lines
     assert passing.calls().count(f"{github.REPO}/actions/jobs/11/logs") == 2, passing.calls()
     assert (refused.returncode, refused.stdout.splitlines()) == (1, [f"REJESTR KORZENI FAIL | gh api {github.REPO}/actions/jobs/11/logs --allow-escape-sequences: gh: Not Found (HTTP 404)"])
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_pomiar_ponawia_skan_graphql_i_repozytorium_po_chwilowym_bledzie_githuba_a_401_konczy_pomiar_z_przyczyna(tmp_path: Path) -> None:
+    """Skan PR-ów rejestru i zapytanie o repozytorium tylko czytają, więc jedno 502 albo 503 nie kończy pomiaru jak
+    503 logu zadania; 401 nie mija."""
+
+    pulls = [_pull(1000, [(FAIL_W1, "2026-10-20T10:00:00Z")])]
+    passing = RegistryGitHub(tmp_path / "502", [], pulls=pulls, failures={"graphql": ["gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)"], "repo": ["gh: HTTP 503"]})
+    refused = RegistryGitHub(tmp_path / "401", [], pulls=pulls, failures={"graphql": ["gh: Bad credentials (HTTP 401)"]})
+
+    lines = _measure(passing, "--tydzien", "2026-10-19", "--bez-zapisu")
+    failed = refused.run("--tydzien", "2026-10-19", "--bez-zapisu")
+
+    assert lines[-1].startswith("REJESTR KORZENI OK | tydzień 2026-10-19: 1 wystąpień"), lines
+    assert (passing.calls().count("graphql"), passing.calls().count(github.REPO)) == (2, 2), passing.calls()
+    assert (failed.returncode, failed.stdout.splitlines(), refused.calls().count("graphql")) == (1, ["REJESTR KORZENI FAIL | GraphQL: gh: Bad credentials (HTTP 401)"], 1)
 
 
 FAIL_LINT = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 1, Drobne 1)\n" + werdykty_szablonu.PRZECHODZA["mechanizm-lint"]

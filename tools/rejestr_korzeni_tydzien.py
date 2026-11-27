@@ -5,7 +5,6 @@ from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
-import json
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -143,12 +142,12 @@ lista chwastów miała same chwasty) i tytułem ``TITLE``; gdy go nie ma, pomiar
 a gdy jest kilka, zmienia najstarsze z ostrzeżeniem. Pomiar zmienia tylko treść i nigdy nie komentuje, bo konto ma
 secondary rate limit.
 
-Każde zapytanie REST odczytu ponawia chwilowy błąd GitHuba (5xx, brak odpowiedzi) po przerwach ``github.PRZERWY_S``
-(``github.ZPonowieniem``), bo jeden HTTP 503 przy logu jednego zadania kończył cały pomiar (run 45211050422); zapis
-issue idzie raz.
+Każde zapytanie odczytu ponawia chwilowy błąd GitHuba (5xx, brak odpowiedzi) po przerwach ``github.PRZERWY_S``:
+REST przez ``github.ZPonowieniem``, a skan GraphQL rejestru w ``rejestr_korzeni``, bo jeden HTTP 503 przy logu jednego
+zadania kończył cały pomiar (run 45211050422); zapis issue idzie raz.
 
 Koszt przebiegu to skan rejestru (``rejestr_korzeni`` podaje budżet: strona GraphQL na każde 19 PR-ów od wdrożenia,
-1 punkt z 1000 na godzinę ``GITHUB_TOKEN``, bez renderowania treści), stała liczba żądań (``gh repo view``, lista
+1 punkt z 1000 na godzinę ``GITHUB_TOKEN``, bez renderowania treści), stała liczba żądań (repozytorium, lista
 issues ``chwast`` i ``rejestr-korzeni``, strona komentarzy issue na każde 100 oraz zapis issue, z etykietą przy pierwszym), żądania REST odpaleń (strona
 padniętych runów tygodnia na każde 100, lista zadań każdego i log każdego padniętego zadania poza ``Required CI
 status``, z 1000 żądań na godzinę ``GITHUB_TOKEN``), ``ALARM_PRS`` kopii commitów z biegiem
@@ -686,7 +685,7 @@ def main(argv: list[str] | None = None) -> int:
             week = last_full_week(now) if args.tydzien is None else week_of(midnight(args.tydzien))
             start, end = midnight(week), midnight(week + timedelta(days=7))
             repo.run_git(ROOT, "fetch", "--quiet", "--no-tags", REMOTE, f"+refs/heads/{MAIN}:refs/remotes/{REMOTE}/{MAIN}", timeout=github.LIMIT_S).check_returncode()
-            repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
+            repository = str(api.json(github.REPO)["full_name"])
             deployed, guarded = (werdykt_pr.deployment(MAIN, marker) for marker in (szablon_werdyktu.ADR, bramka_straznika.MARKER))
             if deployed is None or guarded is None:
                 raise ValueError(f"{szablon_werdyktu.ADR} albo {bramka_straznika.MARKER} nie wszedł jeszcze do {MAIN}, więc rejestru korzeni albo strażników nie ma")

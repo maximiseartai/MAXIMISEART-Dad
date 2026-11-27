@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import json
 import re
+import subprocess
 from typing import Any
 
 import github
@@ -43,6 +44,8 @@ po ostatniej zmianie tego nie daje: kursor GitHuba przy ``UPDATED_AT`` to para (
 między stronami przeskakuje przed kursor i znika ze skanu. Nowe wyszukiwanie zamiast kursora wyszukiwarki omija też
 jej limit 1000 wyników. Granica: indeks wyszukiwarki ma kilka sekund opóźnienia, a ``updatedAt`` tylko rośnie, więc
 brakuje najwyżej PR-u, którego pierwsza zmiana od wdrożenia jest sprzed kilku sekund.
+Każde zapytanie tylko czyta, więc chwilowy błąd GitHuba (5xx, brak odpowiedzi) ponawia ``github.z_ponowieniem``, a inny
+błąd kończy skan.
 
 Treść skanu to HTML z GitHuba z tej samej strony GraphQL (``bodyHTML`` opisu, komentarza i recenzji, ``FIELDS``),
 więc rejestr nie woła renderera ``POST /markdown`` ani razu: werdykt czyta ``werdykt_pr.from_graphql``, a opis PR
@@ -361,12 +364,18 @@ def _complete(node: dict[str, Any]) -> bool:
 
 
 def _graphql(query: str, **variables: str | int | None) -> dict[str, Any]:
-    """Pole ``data`` odpowiedzi GraphQL; błąd z odpowiedzi to ``ValueError``."""
+    """Pole ``data`` odpowiedzi GraphQL, które po chwilowym błędzie GitHuba ponawia ``github.z_ponowieniem``, bo
+    zapytanie tylko czyta; inny błąd i chwilowy po ponowieniach to ``ValueError`` z przyczyną, bez treści zapytania."""
 
     arguments = ["api", "graphql", "-f", f"query={query}"]
     for key, value in variables.items():
         arguments += ["-F", f"{key}=null"] if value is None else ["-F", f"{key}={value}"] if isinstance(value, int) else ["-f", f"{key}={value}"]
-    answer = json.loads(github.gh(*arguments))
+    try:
+        answer = json.loads(github.z_ponowieniem(lambda: github.gh(*arguments)))
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"GraphQL: {error.stderr.strip() or f'gh api graphql: kod {error.returncode}'}") from None
+    except subprocess.TimeoutExpired as error:
+        raise ValueError(f"GraphQL: gh api graphql bez odpowiedzi przez {error.timeout:g} s") from None
     if answer.get("errors"):
         raise ValueError(f"GraphQL: {answer['errors']}")
     data: dict[str, Any] = answer["data"]

@@ -3,9 +3,10 @@
 ``gh`` i ``gh_bajty`` to jedyne miejsce, które uruchamia ``gh`` w narzędziach: w katalogu checkoutu, z limitem czasu
 ``LIMIT_S`` (``None`` bez limitu), a porażka to ``subprocess.CalledProcessError`` z wyjściem błędów programu.
 ``GhApi`` pyta ``gh api`` o repozytorium checkoutu (``REPO``), a ``strony`` czyta listę API po ``STRONA`` wpisów do
-ostatniej niepełnej strony, więc lista dłuższa od strony nie gubi wpisów. Chwilowy błąd zapytania API (``chwilowy``:
-odpowiedź 5xx albo brak odpowiedzi w limicie czasu) ``z_ponowieniem`` ponawia po przerwach ``PRZERWY_S``, a
-``ZPonowieniem`` daje to ponowienie każdemu odczytowi ``GitHub`` (zapis idzie raz). Akcje issue (``Zaloz``, ``Skomentuj``,
+ostatniej niepełnej strony, więc lista dłuższa od strony nie gubi wpisów. Chwilowy błąd zapytania GitHuba
+(``chwilowy``: odpowiedź 5xx albo brak odpowiedzi w limicie czasu, z ``GhApi`` albo z ``gh``) ``z_ponowieniem``
+ponawia po przerwach ``PRZERWY_S``, a ``ZPonowieniem`` daje to ponowienie każdemu odczytowi ``GitHub`` (zapis idzie
+raz). Akcje issue (``Zaloz``, ``Skomentuj``,
 ``Zamknij``, ``Edytuj``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję;
 brakującą etykietę issue zakłada ``zaloz_etykiety``.
 ``ustaw_status`` to jedyne miejsce, które ustawia status commita.
@@ -191,20 +192,24 @@ class GhApi:
 BLEDY_API = (BladApi, subprocess.TimeoutExpired)
 
 
-def chwilowy(blad: BladApi | subprocess.TimeoutExpired) -> bool:
-    """Czy błąd zapytania API może minąć po chwili: odpowiedź 5xx albo brak odpowiedzi w limicie czasu."""
+def chwilowy(blad: BladApi | subprocess.CalledProcessError | subprocess.TimeoutExpired) -> bool:
+    """Czy błąd zapytania GitHuba (``GhApi`` albo ``gh``) może minąć po chwili: odpowiedź 5xx albo brak odpowiedzi
+    w limicie czasu."""
 
-    return isinstance(blad, subprocess.TimeoutExpired) or _HTTP_5XX.search(blad.stderr) is not None
+    if isinstance(blad, subprocess.TimeoutExpired):
+        return True
+    stderr = blad.stderr.decode("utf-8", errors="replace") if isinstance(blad.stderr, bytes) else blad.stderr or ""
+    return _HTTP_5XX.search(stderr) is not None
 
 
 def z_ponowieniem(zapytanie: Callable[[], T], czekaj: Callable[[float], None] = time.sleep) -> T:
-    """Wynik ``zapytanie``, które po chwilowym błędzie (``chwilowy``) ponawia po każdej z przerw ``PRZERWY_S``; inny
-    błąd i chwilowy błąd ostatniej próby lecą do wołającego."""
+    """Wynik ``zapytanie``, które tylko czyta GitHuba, a po chwilowym błędzie (``chwilowy``) ponawia po każdej
+    z przerw ``PRZERWY_S``; inny błąd i chwilowy błąd ostatniej próby lecą do wołającego."""
 
     for przerwa in PRZERWY_S:
         try:
             return zapytanie()
-        except BLEDY_API as blad:
+        except (BladApi, subprocess.CalledProcessError, subprocess.TimeoutExpired) as blad:
             if not chwilowy(blad):
                 raise
         czekaj(przerwa)
