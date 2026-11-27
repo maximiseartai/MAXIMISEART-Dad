@@ -726,14 +726,14 @@ def wystapienia(issues_json: Sequence[Any]) -> tuple[list[Wystapienie], int]:
         if not isinstance(issue, dict) or any(pole not in issue for pole in ("number", "title", "body", "comments")):
             raise ValueError(f"issue bez pól number, title, body i comments (gh issue list --json number,title,body,comments): {str(issue)[:200]}")
         komentarze = issue["comments"]
-        nocne = [issue["body"] or "", *(k["body"] or "" for k in komentarze if k["author"]["login"] in _NOC)]
+        nocne = [issue["body"], *(k["body"] for k in komentarze if k["author"]["login"] in _NOC)]
         pelne: dict[str, set[str]] = {}
         for linia in (linia.strip() for tekst in nocne for linia in tekst.splitlines()):
             if r := rdzen(linia):
                 pelne.setdefault(r, set()).add(linia)
         if not pelne:
             raise ValueError(f"issue #{issue['number']} nie ma linii nocy w postaci, którą zna rdzen()")
-        agenta = [linia for k in komentarze if k["author"]["login"] not in _NOC for linia in (k["body"] or "").splitlines()]
+        agenta = [linia for k in komentarze if k["author"]["login"] not in _NOC for linia in k["body"].splitlines()]
         otwarte = tuple(r for r, linie in pelne.items() if not _ostatnia_odpowiedz(agenta, (*sorted(linie, key=len, reverse=True), r)).startswith(BEZ_LUKI))
         if otwarte:
             wynik.append(Wystapienie(int(issue["number"]), str(issue["title"]), otwarte))

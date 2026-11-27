@@ -118,7 +118,7 @@ class GitHubNocy:
         if run := re.fullmatch(rf"{re.escape(REPO)}/actions/runs/(\d+)", adres):
             return self.runy[int(run[1])]
         if run := re.fullmatch(
-            rf"{re.escape(REPO)}/actions/runs/(\d+)/attempts/1/jobs", adres
+            rf"{re.escape(REPO)}/actions/runs/(\d+)/attempts/\d+/jobs", adres
         ):
             return {
                 "jobs": self.zadania[int(run[1])] if parametry["page"] == "1" else []
@@ -248,6 +248,64 @@ def test_odczyt_nocy_liczy_sciane_od_utworzenia_runu_godziny_runnerow_zaleglosc_
     )
     assert f"- {Verdict.NO_VERDICT} 3: `Change mutations (2/2)` 3" in linie
     assert github.wyslane == []
+
+
+def test_najdluzsza_czesc_to_najdluzszy_krok_a_czesci_bez_werdyktu_ida_od_najwiekszej_liczby_nie_po_nazwie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Część 1/2 ma dłuższy krok (600 s wobec 300 s), a część 2/2 więcej mutacji ``BEZ WERDYKTU`` (2 wobec 1), więc
+    kolejność nazw części daje w obu miejscach złą odpowiedź."""
+
+    github = GitHubNocy()
+    _noc(github, capsys, 17, krok_s=300.0, bez_werdyktu=2)
+    github.logi[1702] = _log([f"{Verdict.NO_VERDICT}: tools/a.py:5 `x` → `None` → brak wyniku po 900 s (testy pliku)"])
+
+    _, linie = _odczyt(github, 17, tmp_path, capsys)
+
+    assert "| najdłuższa część 600 s z " in linie[-1], linie[-1]
+    assert f"| najdłuższa część | `Change mutations (1/2)` 600 s z `PART_LIMIT_S` {mutacje_zmiany.PART_LIMIT_S} s |" in linie
+    assert f"- {Verdict.NO_VERDICT} 3: `Change mutations (2/2)` 2, `Change mutations (1/2)` 1" in linie
+
+
+@pytest.mark.parametrize("bez_konca", ["krok", "zadanie"])
+def test_krok_albo_zadanie_czesci_bez_chwili_konca_nie_liczy_sie_do_odczytu_i_go_nie_przerywa(
+    bez_konca: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Zakończone zadanie części 2/2 (krok 3600 s, 1.05 h) bez ``completed_at`` kroku nie daje czasu części, a bez
+    ``completed_at`` zadania nie liczy się do godzin runnerów; odczyt liczy resztę nocy."""
+
+    github = GitHubNocy()
+    _noc(github, capsys, 18)
+    czesc = github.zadania[18][2]
+    if bez_konca == "krok":
+        czesc["steps"][0]["completed_at"] = None
+    else:
+        czesc["completed_at"] = None
+
+    kod, linie = _odczyt(github, 18, tmp_path, capsys)
+
+    assert kod == 0, linie
+    if bez_konca == "krok":
+        assert f"| runnery {(0.1 + 1.0 + 1.05 + 0.5 + 0.1):.1f} h |" in linie[-1] and "| najdłuższa część 600 s z " in linie[-1], linie[-1]
+    else:
+        assert f"| runnery {(0.1 + 1.0 + 0.5 + 0.1):.1f} h |" in linie[-1] and "| najdłuższa część 3600 s z " in linie[-1], linie[-1]
+
+
+def test_odczyt_runu_ponowionego_po_pierwszym_odczycie_czyta_zadania_ostatniej_proby_mimo_kopii_odpowiedzi(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kopia odpowiedzi API trzyma zadania zakończonej próby, ale run dostaje nową próbę, więc odczyt pyta o run od nowa."""
+
+    github = GitHubNocy()
+    _noc(github, capsys, 19)
+    _, pierwszy = _odczyt(github, 19, tmp_path, capsys)
+    _noc(github, capsys, 19, krok_s=7200.0)
+    github.runy[19]["run_attempt"] = 2
+
+    _, ponowiony = _odczyt(github, 19, tmp_path, capsys)
+
+    assert "| najdłuższa część 3600 s z " in pierwszy[-1], pierwszy[-1]
+    assert "| najdłuższa część 7200 s z " in ponowiony[-1], ponowiony[-1]
 
 
 def test_noc_bez_zaleglosci_ma_zaleglosc_zero(

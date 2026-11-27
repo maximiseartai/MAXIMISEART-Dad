@@ -658,6 +658,18 @@ def test_push_na_main_po_0130_utc_uruchamia_noc_doby_raz_a_przed_0130_nic(
     assert capsys.readouterr().out.startswith("MUTACJE NOCNE START | ")
 
 
+def test_polecenie_start_z_workflow_startu_nocy_nie_uruchamia_drugiej_nocy_doby(capsys: pytest.CaptureFixture[str]) -> None:
+    """``mutacje-nocne-start.yml`` woła ``tools/mutacje_nocne.py start``: z runem nocy utworzonym przed chwilą (albo przed
+    01:30 UTC, gdy nocy doby jeszcze nie ma) polecenie kończy się linią startu bez drugiego runu."""
+
+    github = GitHubWPamieci(utworzone=[_run_doby(50, datetime.now(UTC).isoformat(), None)])
+
+    kod = mutacje_nocne.main(["start"], github=github)
+
+    assert (kod, github.wyslane) == (0, [])
+    assert capsys.readouterr().out.startswith("MUTACJE NOCNE START | ")
+
+
 @pytest.mark.parametrize(
     ("zdarzenie", "start", "wczesniejszy", "pominieta"),
     [
@@ -671,7 +683,7 @@ def test_push_na_main_po_0130_utc_uruchamia_noc_doby_raz_a_przed_0130_nic(
     ids=["cron-po-nocy-doby", "start-z-pushu-po-nocy-doby", "reczny-run-czlowieka", "po-anulowanym-runie", "tylko-wlasny-i-pozniejszy-run"],
 )
 def test_noc_doby_po_wczesniejszym_runie_doby_nic_nie_mutuje_a_zakres_zostawia_baze(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, zdarzenie: str, start: str, wczesniejszy: str | None, pominieta: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], zdarzenie: str, start: str, wczesniejszy: str | None, pominieta: bool
 ) -> None:
     repo, baza = _main_z_zalegloscia(tmp_path, 1)
     head = _dopisz(repo, 1)
@@ -687,7 +699,9 @@ def test_noc_doby_po_wczesniejszym_runie_doby_nic_nie_mutuje_a_zakres_zostawia_b
     kod = mutacje_nocne.main(["plan", "--zdarzenie", zdarzenie, "--start", start, "--zakres", str(zakres), "--czasy", str(tmp_path / "czasy")], root=repo, github=github)
 
     output = _wyjscie_planu(tmp_path / "output")
+    powod = "MUTACJE NOCNE | noc doby biegła już w runie 50: ten run nic nie mutuje, a następna noc zacznie od tej samej bazy"
     assert kod == 0
+    assert (powod in capsys.readouterr().out.splitlines()) is pominieta
     if pominieta:
         assert output == {"baza": baza, "do": baza, "czesci": "[]", "liczba": "0", "pokrycie": "[]", "pominieta": "true"}
     else:
@@ -920,6 +934,43 @@ def test_noc_bez_wstrzyknietego_githuba_pobiera_czasy_klientem_czasy_ci(tmp_path
     assert mutacje_nocne.main(["plan", "--od", baza], root=repo) == 0
     output = _wyjscie_planu(tmp_path / "output")
     assert [wpis["czesc"] for wpis in json.loads(output["czesci"])] == [2, 1]
+
+
+def test_plan_z_katalogiem_czasow_pobiera_je_od_nowa_choc_katalog_ma_swieze_pobranie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--czasy`` to katalog artefaktów pobieranych od nowa: znacznik pobrania sprzed chwili nie zostawia planu bez czasów
+    zielonego runu main, który waży część 2 (``test_okno.py``) ponad część 1."""
+
+    repo, baza, artefakt = _noc_z_czasami(tmp_path, monkeypatch)
+    czasy = tmp_path / "czasy"
+    czasy.mkdir()
+    (czasy / "pobrane").touch()
+    monkeypatch.setattr(mutacje_nocne, "GITHUB", GitHubWPamieci())
+    monkeypatch.setattr(czasy_ci, "GITHUB", _GitHubCzasow(artefakt))
+
+    assert mutacje_nocne.main(["plan", "--od", baza, "--czasy", str(czasy)], root=repo) == 0
+    output = _wyjscie_planu(tmp_path / "output")
+    assert [wpis["czesc"] for wpis in json.loads(output["czesci"])] == [2, 1]
+
+
+def test_plan_bez_czasow_ci_mowi_dlaczego_i_zostawia_czesci_w_kolejnosci_numerow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, baza, artefakt = _noc_z_czasami(tmp_path, monkeypatch)
+    czasy_github = _GitHubCzasow(artefakt)
+
+    def bez_api(sciezka: str) -> dict[str, object]:
+        raise RuntimeError("gh: HTTP 502")
+
+    monkeypatch.setattr(czasy_github, "json", bez_api)
+    monkeypatch.setattr(mutacje_nocne, "GITHUB", GitHubWPamieci())
+    monkeypatch.setattr(czasy_ci, "GITHUB", czasy_github)
+
+    assert mutacje_nocne.main(["plan", "--od", baza, "--czasy", str(tmp_path / "czasy")], root=repo) == 0
+    output = _wyjscie_planu(tmp_path / "output")
+    assert [wpis["czesc"] for wpis in json.loads(output["czesci"])] == [1, 2]
+    assert [linia for linia in capsys.readouterr().out.splitlines() if linia.startswith("CZASY CI | ")] == [
+        f"CZASY CI | pobranie {czasy_ci.ARTEFAKT} z GitHuba: gh: HTTP 502; część bez zmierzonej pracy testów zostaje na miejscu swojego numeru"
+    ]
 
 
 FUNKCJA = "def a(x: int) -> bool:\n    return x > 1\n"
@@ -1241,6 +1292,23 @@ def test_przezyte_mutacje_czerwonego_runu_ktorego_zgloszenie_padlo_trafiaja_do_i
     assert {issue["title"]: sorted(linia.split(" | klucz ")[0] for linia in issue["body"].splitlines() if linia.startswith("MUTACJA")) for issue in github.issues} == {
         "Przeżyte mutacje z #1": ["MUTACJA src/rozliczenia/a.py:2 granica `x > 2` → `>=`", "MUTACJA src/rozliczenia/a.py:2 zmiana linii 2 cofnięta do bazy"]
     }
+
+
+def test_plan_z_polecenia_workflow_zapisuje_pod_osadzone_tozsamosci_ktorym_czerwony_run_tej_bazy_dal_werdykt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Krok planu w ``mutacje-nocne.yml`` podaje ``--osadzone``, a zadania pokrycia i części czytają ten plik, więc plan z
+    polecenia zapisuje w nim obie mutacje PR #1, którym część 1 czerwonego runu 2 dała werdykt."""
+
+    repo, github, _, _ = _czerwona_noc(tmp_path, monkeypatch, capsys)
+    osadzone = tmp_path / "plan" / "osadzone.json"
+    czesc_1 = json.loads(github.zapisy_czesci[2][1])
+
+    kod = mutacje_nocne.main(["plan", "--osadzone", str(osadzone), "--czasy", str(tmp_path / "czasy")], root=repo, github=github)
+
+    assert kod == 0, capsys.readouterr().out
+    zapisane = mutacje_zmiany.wczytaj_osadzone(json.loads(osadzone.read_text(encoding="utf-8")))
+    assert (zapisane, len(zapisane)) == (mutacje_zmiany.wczytaj_osadzone(czesc_1[mutacje_zmiany.OSADZONE]), 2)
 
 
 @pytest.mark.parametrize(
@@ -2066,7 +2134,7 @@ def _jak_gh_issue_list(github: GitHubWPamieci, odpowiedzi: Mapping[str, list[str
     ]
 
 
-def _wystapienia(tmp_path: Path, issues: list[dict[str, Any]], capsys: pytest.CaptureFixture[str]) -> tuple[int, list[str]]:
+def _wystapienia(tmp_path: Path, issues: object, capsys: pytest.CaptureFixture[str]) -> tuple[int, list[str]]:
     plik = tmp_path / "mutanty.json"
     plik.write_text(json.dumps(issues, ensure_ascii=False), encoding="utf-8")
     kod = mutacje_nocne.main(["wystapienia", str(plik)])
@@ -2179,10 +2247,11 @@ def test_mutacja_z_odpowiedzia_wykryta_albo_nie_warto_nie_jest_wystapieniem_a_mu
     [
         pytest.param([{"number": 3, "title": "Przeżyte mutacje z #1", "body": "MUTACJA src/a.py:1 stała | klucz abcdef123456"}], "--json number,title,body,comments", id="bez-komentarzy"),
         pytest.param([{"number": 3, "title": "Przeżyte mutacje z #1", "body": "Nowa postać linii nocy", "comments": []}], "#3", id="bez-linii-nocy"),
+        pytest.param({}, "plik issues to nie lista JSON z gh issue list", id="pusty-obiekt-zamiast-listy-to-nie-zero-wystapien"),
     ],
 )
-def test_wystapienia_z_pliku_bez_komentarzy_albo_bez_linii_nocy_koncza_sie_porazka(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], issues: list[dict[str, Any]], przyczyna: str
+def test_wystapienia_z_pliku_nie_listy_bez_komentarzy_albo_bez_linii_nocy_koncza_sie_porazka(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], issues: object, przyczyna: str
 ) -> None:
     kod, wyjscie = _wystapienia(tmp_path, issues, capsys)
 
