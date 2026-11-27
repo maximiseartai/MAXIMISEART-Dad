@@ -332,7 +332,7 @@ def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
     for name in filter(_code, repo.git(root, "ls-files", "--others", "--exclude-standard").splitlines()):
         found[name] = [Hunk(1, len(_rows((root / name).read_text(encoding="utf-8"))), ())]
     code = ("src/", *szopa.przepuszczajace(root))
-    return {path: hunks for path, hunks in found.items() if path.startswith(code) and (root / path).is_file()}
+    return {path: hunks for path, hunks in found.items() if path.startswith(code)}
 
 
 def _overlay(fork: str, root: Path) -> tuple[frozenset[str], tuple[str, ...]]:

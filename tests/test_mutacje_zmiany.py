@@ -1759,10 +1759,16 @@ def test_kod_innego_systemu_w_kazdej_postaci_jest_oznaczony(code: str) -> None:
     assert flagged(runs_on) == set()
 
 
-def test_cofniecie_fragmentu_gałęzi_windows_z_komentarzem_jest_oznaczone() -> None:
-    code = "if sys.platform == 'win32':\n    # tylko Windows\n    x = 2\n"
-
-    found = mutants("m.py", code, [Hunk(2, 2, ("    x = 1",))], "linux")
+@pytest.mark.parametrize(
+    ("code", "hunk"),
+    [
+        ("if sys.platform == 'win32':\n    # tylko Windows\n    x = 2\n", Hunk(2, 2, ("    x = 1",))),
+        ("if sys.platform == 'win32':\n    x = 2\n", Hunk(1, 2, ("if sys.platform == 'win32' and True:", "    x = 1"))),
+    ],
+    ids=["cialo-z-komentarzem", "cala-galaz-z-warunkiem"],
+)
+def test_cofniecie_fragmentu_gałęzi_windows_jest_oznaczone(code: str, hunk: Hunk) -> None:
+    found = mutants("m.py", code, [hunk], "linux")
 
     assert [m.other_system for m in found if "cofnięta" in m.description] == [True]
 
