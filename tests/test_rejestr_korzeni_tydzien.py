@@ -13,8 +13,9 @@ GraphQL (W1 r1 #1525: limit ``GITHUB_TOKEN`` workflowu).
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, date, datetime
+import itertools
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import git
 
 import bramka_straznika
+import github
 import odpalenia_ast_grep
 from odpalenia_ast_grep import Finding
 import rejestr_korzeni
@@ -48,6 +50,7 @@ CI = ROOT / ".github" / "workflows" / "ci.yml"
 DEPLOYED = datetime(2026, 10, 1, tzinfo=UTC)
 GUARDED = datetime(2026, 10, 15, tzinfo=UTC)
 NO_ALARMS = tydzien.Alarms(0, {}, 0)
+NO_FIRINGS = tydzien.Firings((), ())
 
 
 def _at(text: str) -> datetime:
@@ -83,8 +86,15 @@ def _pull_of(
     )
 
 
-def _body(pulls: Sequence[Reviewed], week: date, alarms: tydzien.Alarms = NO_ALARMS, widened: Sequence[tydzien.Widening] = (), audited: Mapping[str, int] | None = None) -> str:
-    return tydzien.body(pulls, [], week, DEPLOYED, GUARDED, alarms, [], widened, audited or {})
+def _body(
+    pulls: Sequence[Reviewed],
+    week: date,
+    alarms: tydzien.Alarms = NO_ALARMS,
+    widened: Sequence[tydzien.Widening] = (),
+    audited: Mapping[str, int] | None = None,
+    fired: tydzien.Firings = NO_FIRINGS,
+) -> str:
+    return tydzien.body(pulls, [], week, DEPLOYED, GUARDED, alarms, fired, widened, audited or {})
 
 
 def _rows(text: str, section: str) -> list[str]:
@@ -139,8 +149,8 @@ def _ruff_mypy_job(job: int, failed: Mapping[str, str]) -> tuple[dict[str, objec
     return _job(job, tydzien.RUFF_MYPY, [(step, "failure" if step in failed else "success", failed.get(step, "")) for step in tydzien.STEP_GUARDS])
 
 
-def _rows_of(firings: Sequence[tydzien.Firing]) -> list[str]:
-    return [firing.row() for firing in firings]
+def _rows_of(firings: tydzien.Firings) -> list[str]:
+    return [firing.row() for firing in firings.fired]
 
 
 @pytest.mark.parametrize(
@@ -439,6 +449,88 @@ def test_odpalenia_regul_chwastow_czyta_kazda_regule_z_prawdziwego_wydruku_pytes
     assert _rows_of(tydzien.firings(_actions(runs), FIRING_PULLS, WEEK_START, WEEK_END)) == ["| #41 | ast-grep komentarz-poza-src | - |", "| #41 | ast-grep regula-w-trasie | - |"], printed.stdout
 
 
+class _Failing:
+    """Atrapa ``_Actions``, która na każde zapytanie o ścieżkę z ``fragment`` odpowiada najpierw kolejnym błędem
+    ``errors`` (tak jak ``github.GhApi``: ``BladApi`` z wyjściem błędów ``gh`` albo brak odpowiedzi w limicie)."""
+
+    def __init__(self, actions: _Actions, fragment: str, errors: Iterable[github.BladApi | subprocess.TimeoutExpired]) -> None:
+        self.actions, self.fragment, self.errors = actions, fragment, iter(errors)
+
+    def _fail(self, path: str) -> None:
+        if self.fragment in path and (error := next(self.errors, None)) is not None:
+            raise error
+
+    def json(self, path: str) -> Any:
+        self._fail(path)
+        return self.actions.json(path)
+
+    def bajty(self, path: str) -> bytes:
+        self._fail(path)
+        return self.actions.bajty(path)
+
+    def wyslij(self, method: str, path: str, content: Mapping[str, object]) -> Any:
+        return self.actions.wyslij(method, path, content)
+
+
+def _http(path: str, status: str) -> github.BladApi:
+    return github.BladApi(f"gh api {path} --allow-escape-sequences", f"gh: {status}")
+
+
+RUFF_RUN = (1, "c", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {"Lint Python code": ""})])
+MYPY_RUN = (2, "b", "2026-10-21T10:00:00Z", [_ruff_mypy_job(21, {"Typecheck Python code (Linux)": ""})])
+RUFF_LOG = f"{github.REPO}/actions/jobs/11/logs"
+
+
+@pytest.mark.parametrize(
+    "fragment",
+    [tydzien.CI_RUNS, f"{github.REPO}/actions/runs/1/jobs", RUFF_LOG],
+    ids=["strona-listy-runów", "strona-listy-zadań", "log-zadania"],
+)
+def test_chwilowy_blad_githuba_przy_odpaleniach_ponawia_sie_po_przerwie_i_daje_ten_sam_wiersz(fragment: str) -> None:
+    """Run 45211050422 Rejestru korzeni padł na jednym HTTP 503 przy logu jednego zadania."""
+
+    pauses: list[float] = []
+    failing = _Failing(_actions([RUFF_RUN]), fragment, [_http(fragment, "HTTP 503")])
+
+    found = tydzien.firings(github.ZPonowieniem(failing, pauses.append), FIRING_PULLS, WEEK_START, WEEK_END)
+
+    assert (_rows_of(found), found.unread, pauses) == (["| #42 | ruff | - |"], (), [github.PRZERWY_S[0]])
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [(_http(RUFF_LOG, "HTTP 503"), "gh: HTTP 503"), (subprocess.TimeoutExpired(["gh", "api", RUFF_LOG], 120), "gh api bez odpowiedzi przez 120 s")],
+    ids=["503-bez-końca", "bez-odpowiedzi-bez-końca"],
+)
+def test_log_zadania_bez_odpowiedzi_po_ponowieniach_to_nieprzeczytany_log_w_sekcji_odpalen_a_reszta_raportu_powstaje(
+    error: github.BladApi | subprocess.TimeoutExpired, reason: str
+) -> None:
+    """Zero odpaleń z logu, którego GitHub nie podał, nie może czytać się jako „nic nie odpaliło”, a jeden taki log
+    nie kończy pomiaru tygodnia (CODING_STANDARDS: krok best-effort zapisuje swoją porażkę)."""
+
+    pauses: list[float] = []
+    failing = _Failing(_actions([RUFF_RUN, MYPY_RUN]), RUFF_LOG, itertools.repeat(error))
+
+    found = tydzien.firings(github.ZPonowieniem(failing, pauses.append), FIRING_PULLS, WEEK_START, WEEK_END)
+    text = _body([], date(2026, 10, 19), fired=found)
+
+    assert pauses == list(github.PRZERWY_S)
+    assert found.unread == (tydzien.Unread("#42", tydzien.RUFF_MYPY, 1, reason),)
+    section = text.split("## Odpalenia strażników\n", 1)[1].split("\n## ", 1)[0].splitlines()
+    assert section[1:6] == [tydzien.GRANICE, "", tydzien.UNREAD, "", f"- #42: zadanie „{tydzien.RUFF_MYPY}” runu 1 ({reason})"], text
+    assert _rows(text, "Odpalenia strażników") == ["| #41 | mypy | - |"], text
+    assert "## Historia" in text
+
+
+def test_blad_githuba_inny_niz_chwilowy_przy_logu_zadania_konczy_odpalenia_z_przyczyna_bez_ponowienia() -> None:
+    pauses: list[float] = []
+    failing = _Failing(_actions([RUFF_RUN]), RUFF_LOG, [_http(RUFF_LOG, "Not Found (HTTP 404)")])
+
+    with pytest.raises(github.BladApi, match=r"HTTP 404"):
+        tydzien.firings(github.ZPonowieniem(failing, pauses.append), FIRING_PULLS, WEEK_START, WEEK_END)
+    assert pauses == []
+
+
 def test_kroki_straznikow_odpalen_to_kroki_ruff_mypy_i_regul_chwastow_zadania_ruff_mypy_w_ci() -> None:
     job = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["ruff-mypy"]
     markers = {straznik.Kind.RUFF: "-m ruff check", straznik.Kind.MYPY: "-m mypy", straznik.Kind.AST_GREP: "-m pytest"}
@@ -514,7 +606,14 @@ elif arguments[0] == "api" and arguments[1].startswith("repos/{owner}/{repo}/act
 elif arguments[0] == "api" and arguments[1].startswith("repos/{owner}/{repo}/actions/runs/"):
     print(json.dumps({"jobs": state["jobs"][arguments[1].split("/")[5]]}))
 elif arguments[0] == "api" and arguments[1].startswith("repos/{owner}/{repo}/actions/jobs/"):
-    sys.stdout.write(state["logs"][arguments[1].split("/")[5]])
+    job = arguments[1].split("/")[5]
+    asked = here / f"log-{job}.count"
+    count = int(asked.read_text(encoding="utf-8")) if asked.exists() else 0
+    asked.write_text(str(count + 1), encoding="utf-8")
+    failures = state["failures"].get(job, [])
+    if count < len(failures):
+        sys.exit(failures[count])
+    sys.stdout.write(state["logs"][job])
 elif arguments[:2] == ["api", "--method"]:
     with (here / "writes.jsonl").open("a", encoding="utf-8") as log:
         log.write(json.dumps([arguments[2], arguments[3], json.loads(sys.stdin.read())]) + "\\n")
@@ -767,7 +866,8 @@ OLD_BODY = """\
 class RegistryGitHub(FakeGitHub):
     """Checkout z narzędziem pomiaru, ``origin`` z ADR 0031 wdrożonym 1.10.2026 i atrapa ``gh`` z PR-ami ``pulls``,
     otwartymi issues chwastów ``WEEDS``, otwartymi issues z etykietą ``rejestr-korzeni`` ``own``, komentarzami
-    najstarszego z nich ``comments`` i etykietami repozytorium ``labels``."""
+    najstarszego z nich ``comments``, etykietami repozytorium ``labels`` i runami CI ``actions``, których log zadania
+    odpowiada najpierw kolejnymi wyjściami błędu ``gh`` z ``failures`` (kod 1), a potem logiem."""
 
     def __init__(
         self,
@@ -780,6 +880,7 @@ class RegistryGitHub(FakeGitHub):
         started: str | None = None,
         actions: _Actions | None = None,
         comments: Sequence[dict[str, object]] = (),
+        failures: Mapping[int, Sequence[str]] | None = None,
     ) -> None:
         tmp_path.mkdir()
         super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n", **(files or {})}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH, started=started)
@@ -788,7 +889,12 @@ class RegistryGitHub(FakeGitHub):
                 patch.setenv("GIT_COMMITTER_DATE", moment.isoformat())
                 self.push_main({marker: "# ADR\n"})
         actions = actions or _Actions([], {}, {})
-        runs = {"runs": actions.runs, "jobs": {str(run): jobs for run, jobs in actions.jobs.items()}, "logs": {str(job): log for job, log in actions.logs.items()}}
+        runs = {
+            "runs": actions.runs,
+            "jobs": {str(run): jobs for run, jobs in actions.jobs.items()},
+            "logs": {str(job): log for job, log in actions.logs.items()},
+            "failures": {str(job): list(errors) for job, errors in (failures or {}).items()},
+        }
         state = {"repo": opisy_pr.REPO, "pulls": pulls, "weeds": WEEDS, "own": own, "comments": list(comments), "labels": list(labels), **runs}
         (self.bin / "state.json").write_text(json.dumps(state), encoding="utf-8")
 
@@ -1073,6 +1179,23 @@ def test_odpalenia_strażnikow_z_runow_ci_tygodnia_trafiaja_do_tresci_issue_z_li
     section = text.split("## Odpalenia strażników\n", 1)[1].split("\n## ", 1)[0]
     assert section.splitlines()[1] == tydzien.GRANICE, text
     assert _rows(text, "Odpalenia strażników") == ["| #1490 | mypy | - |"], text
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_pomiar_ponawia_log_zadania_po_chwilowym_bledzie_githuba_a_404_konczy_pomiar_z_przyczyna(tmp_path: Path) -> None:
+    """Run 45211050422 Rejestru korzeni padł na jednym HTTP 503 przy logu jednego zadania; 404 nie mija po chwili."""
+
+    pulls = [_pull(1490, [], created="2026-10-20T08:00:00Z", branch="feat/praca")]
+    actions = _actions([(1, "feat/praca", "2026-10-21T10:00:00Z", [_ruff_mypy_job(11, {"Typecheck Python code (Linux)": "kod/a.py:3: error"})])])
+    passing = RegistryGitHub(tmp_path / "503", [], pulls=pulls, actions=actions, failures={11: ["gh: HTTP 503"]})
+    missing = RegistryGitHub(tmp_path / "404", [], pulls=pulls, actions=actions, failures={11: ["gh: Not Found (HTTP 404)"]})
+
+    lines = _measure(passing, "--tydzien", "2026-10-19", "--bez-zapisu")
+    refused = missing.run("--tydzien", "2026-10-19", "--bez-zapisu")
+
+    assert _rows("\n".join(lines[2:-1]), "Odpalenia strażników") == ["| #1490 | mypy | - |"], lines
+    assert passing.calls().count(f"{github.REPO}/actions/jobs/11/logs") == 2, passing.calls()
+    assert (refused.returncode, refused.stdout.splitlines()) == (1, [f"REJESTR KORZENI FAIL | gh api {github.REPO}/actions/jobs/11/logs --allow-escape-sequences: gh: Not Found (HTTP 404)"])
 
 
 FAIL_LINT = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 1, Drobne 1)\n" + werdykty_szablonu.PRZECHODZA["mechanizm-lint"]

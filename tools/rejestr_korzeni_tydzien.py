@@ -65,7 +65,10 @@ obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze z jednego
   strażników” to każda para PR i strażnika tygodnia z Ważnymi, których selektor to ten strażnik (``-`` przy
   ``ruff``, ``mypy`` i samym ``ast-grep``: porażka kroku nie mówi, które Ważne wróciło). Licznik nie widzi prób
   złapanych lokalnie przed pushem (``tools/szybko.py``, brama pre-push) ani błędów bez strażnika (``GRANICE``), a logi
-  runów GitHub trzyma przez czas retencji repozytorium, więc odpalenia są tylko dla tygodnia pomiaru, bez historii;
+  runów GitHub trzyma przez czas retencji repozytorium, więc odpalenia są tylko dla tygodnia pomiaru, bez historii.
+  Log zadania, którego GitHub nie podał po ponowieniach chwilowego błędu (``github.chwilowy``), sekcja wypisuje pod
+  ``GRANICE`` jako nieprzeczytany (``UNREAD``: PR, zadanie, run i błąd), bo zero odpaleń z niego nie znaczy, że nic
+  nie odpaliło; inny błąd logu kończy pomiar;
 - poszerzenie reguły to zmiana zasięgu reguły, którą miała już baza merge'a PR-u na ``origin/main``
   (``widenings``): w pliku reguły ``RULES`` reguła z tym samym ``id`` przed i po merge'u z innym polem spoza
   ``META`` (``rule``, ``files``, ``ignores``, ``constraints``, ``utils``…), a w każdym ``ruff.toml`` grupa wpisów
@@ -140,6 +143,10 @@ lista chwastów miała same chwasty) i tytułem ``TITLE``; gdy go nie ma, pomiar
 a gdy jest kilka, zmienia najstarsze z ostrzeżeniem. Pomiar zmienia tylko treść i nigdy nie komentuje, bo konto ma
 secondary rate limit.
 
+Każde zapytanie REST odczytu ponawia chwilowy błąd GitHuba (5xx, brak odpowiedzi) po przerwach ``github.PRZERWY_S``
+(``github.ZPonowieniem``), bo jeden HTTP 503 przy logu jednego zadania kończył cały pomiar (run 45211050422); zapis
+issue idzie raz.
+
 Koszt przebiegu to skan rejestru (``rejestr_korzeni`` podaje budżet: strona GraphQL na każde 19 PR-ów od wdrożenia,
 1 punkt z 1000 na godzinę ``GITHUB_TOKEN``, bez renderowania treści), stała liczba żądań (``gh repo view``, lista
 issues ``chwast`` i ``rejestr-korzeni``, strona komentarzy issue na każde 100 oraz zapis issue, z etykietą przy pierwszym), żądania REST odpaleń (strona
@@ -154,8 +161,9 @@ którego godzina jest dziś 6 w Warszawie (``on_time``), a drugi kończy się li
 Pusty ``--cron`` (``workflow_dispatch``) biegnie zawsze.
 
 Linie wyniku: ``REJESTR KORZENI | …`` na każdą akcję albo ostrzeżenie, z ``--bez-zapisu`` po nich treść issue, a na
-końcu ``REJESTR KORZENI OK | tydzień RRRR-MM-DD: …`` (z ``--tresc-z`` ``REJESTR KORZENI OK | treść z PLIK``). Błąd GitHuba, Gita, ast-grep, pliku reguły albo zły cron
-kończy się linią ``REJESTR KORZENI FAIL`` i kodem 1.
+końcu ``REJESTR KORZENI OK | tydzień RRRR-MM-DD: …`` (z ``--tresc-z`` ``REJESTR KORZENI OK | treść z PLIK``), z liczbą nieprzeczytanych logów zadań, gdy są. Błąd
+GitHuba (poza chwilowym błędem logu zadania po ponowieniach), Gita, ast-grep, pliku reguły albo zły cron kończy się
+linią ``REJESTR KORZENI FAIL`` i kodem 1.
 """
 
 TITLE = "Rejestr korzeni"
@@ -176,6 +184,7 @@ GUARD_COLUMNS = ("Ważne", *(kind.value for kind in Kind), "Bez strażnika", "Ud
 WAIT_COLUMNS = ("Merge'e", "Bez PASS na HEAD", "Mediana PASS → merge", "Najdłużej", "Ponad 1 h")
 HOUR_LONG = timedelta(hours=1)
 GRANICE = "Licznik nie widzi prób złapanych lokalnie przed pushem ani błędów bez strażnika."
+UNREAD = "Logi zadań, których GitHub nie podał mimo ponowień, więc ich odpaleń w tabeli nie ma:"
 CI_RUNS = f"{github.REPO}/actions/workflows/ci.yml/runs?event=pull_request&status=failure"
 RUFF_MYPY = "Ruff, mypy"
 STEP_GUARDS = {
@@ -225,6 +234,28 @@ class Firing:
 
     def row(self) -> str:
         return f"| {self.owner} | {self.guard} | {', '.join(f'#{case.pull} {case.major}' for case in self.majors) or '-'} |"
+
+
+@dataclass(frozen=True)
+class Unread:
+    owner: str
+    job: str
+    run: int
+    error: str
+
+    def line(self) -> str:
+        return f"- {self.owner}: zadanie „{self.job}” runu {self.run} ({self.error})"
+
+
+@dataclass(frozen=True)
+class Firings:
+    """Odpalenia strażników tygodnia ``fired`` i logi zadań ``unread``, których GitHub nie podał po ponowieniach."""
+
+    fired: tuple[Firing, ...]
+    unread: tuple[Unread, ...]
+
+    def lead(self) -> tuple[str, ...]:
+        return (GRANICE, "", UNREAD, "", *(unread.line() for unread in self.unread)) if self.unread else (GRANICE,)
 
 
 @dataclass(frozen=True)
@@ -379,7 +410,7 @@ def body(
     deployed: datetime,
     guarded: datetime,
     alarms: Alarms,
-    fired: Sequence[Firing],
+    fired: Firings,
     widened: Sequence[Widening],
     audited: Mapping[str, int],
     reproved: Reproofs | None = None,
@@ -396,7 +427,7 @@ def body(
     share = f" ({_share(alarms.any_rule, alarms.prs)})" if alarms.prs else ""
     rules = [f"| {name} | {count} |" for name, count in sorted(alarms.by_rule.items(), key=lambda item: (-item[1], item[0]))]
     lines += _table("Reguły", ("Reguła", f"PR-y z odpaleniem z {alarms.prs} ostatnich"), [*rules, f"| Każda reguła | {alarms.any_rule}{share} |"])
-    lines += _table("Odpalenia strażników", ("PR", "Strażnik", "Ważne strażnika"), (firing.row() for firing in fired), GRANICE)
+    lines += _table("Odpalenia strażników", ("PR", "Strażnik", "Ważne strażnika"), (firing.row() for firing in fired.fired), *fired.lead())
     lines += _table("Poszerzenia reguł", ("PR", "Reguła", "Pola"), (widening.row() for widening in widened if _inside(widening.when, start, end)))
     lines += _table("Pary do audytu", PAIR_COLUMNS, (pair.row() for pair in pairs(pulls, start, end)))
     rows = (reproof.row() for reproof in reproved.proved if reproof.failure is not None) if reproved is not None else ()
@@ -441,10 +472,11 @@ def alarms(end: datetime) -> Alarms:
     return Alarms(len(merges), dict(by_rule), any_rule)
 
 
-def firings(api: github.GitHub, pulls: Sequence[Reviewed], start: datetime, end: datetime) -> list[Firing]:
+def firings(api: github.GitHub, pulls: Sequence[Reviewed], start: datetime, end: datetime) -> Firings:
     span = "..".join(moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") for moment in (start, end))
     guarded = [case for pull in pulls for case in pull.guards if case.guard is not None]
     found: dict[tuple[str, Guard], Firing] = {}
+    unread: list[Unread] = []
     for run in github.strony(api, f"{CI_RUNS}&created={span}", "workflow_runs"):
         created = datetime.fromisoformat(str(run["created_at"]))
         if not start <= created < end:
@@ -452,10 +484,25 @@ def firings(api: github.GitHub, pulls: Sequence[Reviewed], start: datetime, end:
         owner = _owner(pulls, str(run["head_branch"]), created)
         earlier = [case for case in guarded if case.when < created]
         for job in github.strony(api, f"{github.REPO}/actions/runs/{run['id']}/jobs", "jobs"):
-            if job["conclusion"] in ponow_ci.FAILED_JOB and job["name"] != github.REQUIRED:
-                for guard in _fired(job, ponow_ci.log_zadania(api, job), earlier):
-                    found[owner, guard] = Firing(owner, guard, tuple(case for case in earlier if guard.arguments and case.guard == guard))
-    return sorted(found.values(), key=lambda firing: (_number(firing.owner), firing.owner, str(firing.guard)))
+            if job["conclusion"] not in ponow_ci.FAILED_JOB or job["name"] == github.REQUIRED:
+                continue
+            try:
+                log = ponow_ci.log_zadania(api, job)
+            except github.BLEDY_API as error:
+                if not github.chwilowy(error):
+                    raise
+                unread.append(Unread(owner, str(job["name"]), int(run["id"]), _reason(error)))
+                continue
+            for guard in _fired(job, log, earlier):
+                found[owner, guard] = Firing(owner, guard, tuple(case for case in earlier if guard.arguments and case.guard == guard))
+    fired = sorted(found.values(), key=lambda firing: (_number(firing.owner), firing.owner, str(firing.guard)))
+    return Firings(tuple(fired), tuple(unread))
+
+
+def _reason(error: github.BladApi | subprocess.TimeoutExpired) -> str:
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"gh api bez odpowiedzi przez {error.timeout:g} s"
+    return " ".join(error.stderr.split())
 
 
 def _owner(pulls: Sequence[Reviewed], branch: str, created: datetime) -> str:
@@ -604,7 +651,7 @@ def _own(issues: Sequence[dict[str, object]]) -> list[dict[str, object]]:
     return sorted((issue for issue in issues if issue["title"] == TITLE), key=lambda issue: int(str(issue["number"])))
 
 
-def _publish(api: github.GhApi, registry: Sequence[dict[str, object]], text: str, dry: bool) -> list[str]:
+def _publish(api: github.GitHub, registry: Sequence[dict[str, object]], text: str, dry: bool) -> list[str]:
     action, lines = _action(registry, text)
     if isinstance(action, github.Zaloz):
         lines += github.zaloz_etykiety(api, rejestr_korzeni.LABELS, PREFIX, zapis=not dry)
@@ -626,10 +673,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.tresc_z is not None and (args.tydzien is not None or args.cron or args.ponowny_dowod or args.tresc_do is not None):
         parser.error("--tresc-z zapisuje treść gotowego pomiaru, więc bez --tydzien, --cron, --ponowny-dowod i --tresc-do")
     now = datetime.now(UTC)
+    api = github.ZPonowieniem(github.GhApi())
     try:
         if args.tresc_z is not None:
             text = args.tresc_z.read_bytes().decode("utf-8")
-            lines = _publish(github.GhApi(), github.issues(github.GhApi(), rejestr_korzeni.REGISTRY, "open"), text, args.bez_zapisu)
+            lines = _publish(api, github.issues(api, rejestr_korzeni.REGISTRY, "open"), text, args.bez_zapisu)
             summary = f"{PREFIX} OK | treść z {args.tresc_z}"
         else:
             if args.cron and not on_time(args.cron, now):
@@ -646,7 +694,6 @@ def main(argv: list[str] | None = None) -> int:
             commit = week_commit(end)
             moved = strazniki_przeniesione.at(ROOT, commit)
             proving = moved_guards(pulls, moved)
-            api = github.GhApi()
             fired = firings(api, proving, start, end)
             widened = [widening for widening in widenings(end) if widening.when >= deployed]
             weeded = weeds(github.issues(api, rejestr_korzeni.WEED, "open"))
@@ -663,8 +710,9 @@ def main(argv: list[str] | None = None) -> int:
                 lines = _publish(api, registry, text, args.bez_zapisu)
             occurrences = sum(_inside(occurrence.when, start, end) for pull in pulls for occurrence in pull.occurrences)
             failed = f", {sum(reproof.failure is not None for reproof in reproved.proved)} strażników bez DOWÓD OK" if reproved is not None else ""
+            unread = f" ({len(fired.unread)} logów zadań nieprzeczytanych)" if fired.unread else ""
             summary = (
-                f"{PREFIX} OK | tydzień {week.isoformat()}: {occurrences} wystąpień, {len(fired)} odpaleń strażników,"
+                f"{PREFIX} OK | tydzień {week.isoformat()}: {occurrences} wystąpień, {len(fired.fired)} odpaleń strażników{unread},"
                 f" {sum(_inside(widening.when, start, end) for widening in widened)} poszerzeń reguł, {len(_guards(pulls, start, end))} Ważnych w wątkach strażnika{failed}"
             )
     except (subprocess.SubprocessError, OSError, ValueError, KeyError, yaml.YAMLError, github.BladApi) as error:
