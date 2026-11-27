@@ -46,7 +46,7 @@ się zagnieżdża, taki węzeł liczy.
 | Selektor | Przywrócenie błędu na kopii HEAD PR scalonego z bazą | Dowód przechodzi, gdy |
 |---|---|---|
 | ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na drzewie bez znalezisk w żadnym kroku narzędzia, po przywróceniu znalezisko któregoś kroku w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi w drzewie bez zmian, czyli poprawka leży obok) |
-| ``mypy``, gdy przywrócenie nie wykryło, a Ważne ma blok mutacji recenzenta | każda mutacja najnowszego bloku ``### Mutacja W<n> r<k>`` tego Ważnego (``mutacja_recenzenta``) osobno na kopii HEAD PR scalonego z bazą (``silnik_mutacji.edited``: kotwica dokładnie raz) | z każdą mutacją znalezisko kroku mypy w linii, którą ta mutacja dodała albo zmieniła (``_added``), z kodem spoza ``_NOT_REJECTED`` (składnia, nazwa albo moduł, których nie ma, ``silnik_mutacji.MYPY_LEFTOVER``), a ta sama mutacja na kopii z plikami ``Gdzie`` z FAIL (słaby typ, kotwica też dokładnie raz) takiego znaleziska w swoich liniach nie daje |
+| ``mypy``, gdy przywrócenie nie wykryło, a Ważne ma blok mutacji recenzenta | każda mutacja najnowszego bloku ``### Mutacja W<n> r<k>`` tego Ważnego (``mutacja_recenzenta``) osobno na kopii HEAD PR scalonego z bazą (``silnik_mutacji.edited``: kotwica dokładnie raz) | z każdą mutacją znalezisko kroku mypy w linii, którą ta mutacja dodała albo zmieniła (``_added``), z kodem spoza ``_NOT_REJECTED`` (składnia, nazwa albo moduł, których nie ma, ``silnik_mutacji.MYPY_LEFTOVER``), a ta sama mutacja na drzewie FAIL (``_failed_tree``: każdy plik z SHA werdyktu, kotwica też dokładnie raz) przechodzi mypy bez żadnego znaleziska; znalezisko drzewa FAIL poza blokiem to odmowa |
 | ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` na drzewie ``srodowisko_ci.built`` | Ważne stoi w polu ``metadata.przypadki`` reguły w drzewie (jedyna lista jej przypadków), ast-grep środowiska ma wersję ast-grepa dowodu, a reguła łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
 | ``pytest <plik>::<test>`` | mutacje recenzenta z najnowszego bloku ``### Mutacja W<n> r<k>`` tego Ważnego w werdyktach PR (``mutacja_recenzenta``), każda naniesiona silnikiem ``tools/mutacje.py`` (``silnik_mutacji.judged``: kotwica dokładnie raz) na kopię HEAD PR scalonego z bazą | węzeł (jeden test albo jego parametr) bez mutacji przechodzi, z każdą mutacją bloku biegnie i pada (``WYKRYTA`` jak w ``tools/mutacje.py``: ``silnik_mutacji.judged``, także gdy węzła z mutacją nie ma), a po nich bez mutacji przechodzi znowu; każdy bieg w osobnym środowisku toru Linux zadania pytest (``prove_test``), w piaskownicy |
 | ``brak - proza`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
@@ -58,9 +58,10 @@ Słaby typ w pliku, który go definiuje (``Gdzie`` to definicja), przywrócony z
 ``Gdzie``: drzewo FAIL nie ma kodu, który ze słabości korzysta (podklasa, ``copy.replace``, pole czytane obok faktu),
 bo ten kod stoi w sondzie recenzenta, a znaleziska u wołających to dryf API (ADR 0042, aneks „Zła postać recenzenta przy
 mypy”). Ten kod pisze więc recenzent blokiem mutacji, jak przy teście, a dowód liczy tylko odrzucenie w jego liniach,
-które znika, gdy pliki ``Gdzie`` wracają z FAIL: mutacja, która sam typ osłabia, daje znaleziska u wołających, a blok
-z kodem odrzucanym z innego powodu (brak adnotacji, zły argument mutacji zachowania) odrzuca też słaby typ, więc żaden
-z nich nie jest wykryciem. Wierność bloku wobec Ważnego ocenia recenzent następnej rundy, jak przy teście.
+którego ta sama mutacja na całym drzewie FAIL nie daje: mutacja, która sam typ osłabia, daje znaleziska u wołających,
+a blok z kodem odrzucanym z innego powodu (brak adnotacji, zły argument mutacji zachowania) mypy zgłasza też w FAIL,
+więc żaden z nich nie jest wykryciem. Drzewo FAIL w całości, a nie same pliki ``Gdzie``, bo plik z FAIL obok plików
+HEAD bierze nazwy, których HEAD nie ma, a mypy daje im ``Any``. Wierność bloku wobec Ważnego ocenia recenzent następnej rundy, jak przy teście.
 
 Dowód testu nie pyta, dlaczego test padł, i nie przenosi kodu z FAIL: drzewo biegu różni się od HEAD tylko mutacją
 z bloku, więc węzeł, który bez niej przechodzi, a z nią pada, pada przez tę i tylko tę zmianę (ADR 0042, aneks; trzy
@@ -423,9 +424,12 @@ def _restored(root: Path, guard: Guard, environment: Environment, case: Case, ow
 def _typed(root: Path, guard: Guard, environment: Environment, case: Case, restored: Outcome) -> Outcome:
     """Dowód ``mypy`` złą postacią recenzenta, gdy przywrócenie z FAIL (``restored``) jej nie wykryło: każda mutacja
     najnowszego bloku ``case.mutation`` na kopii środowiska daje znalezisko mypy spoza ``_NOT_REJECTED`` w linii, którą
-    sama dodała albo zmieniła, a z plikami ``Gdzie`` z FAIL (słaby typ) w tych liniach go nie daje. Słaby typ w pliku
-    definicji wraca z FAIL bez kodu, który z niego korzysta, więc mypy nie ma czego odrzucić, a znaleziska u wołających
-    to dryf API; blok wstawia ten kod, a odrzucić ma go typ, który poprawka zmieniła w ``Gdzie``."""
+    sama dodała albo zmieniła, a ta sama mutacja na całym drzewie FAIL (``_failed_tree``) przechodzi mypy bez żadnego
+    znaleziska. Słaby typ w pliku definicji wraca z FAIL bez kodu, który z niego korzysta, więc mypy nie ma czego
+    odrzucić, a znaleziska u wołających to dryf API; blok wstawia ten kod, a odrzucić ma go typ, który zmieniła poprawka.
+    Drzewo FAIL w całości, a nie same pliki ``Gdzie``, bo plik z FAIL obok plików HEAD importuje nazwy, których HEAD
+    nie ma, a mypy daje im ``Any``, więc typ z FAIL wyszedłby słabszy, niż był (#2618 r1 W1); znalezisko drzewa FAIL
+    poza blokiem znaczy to samo, więc kończy dowód odmową."""
 
     label = f"{case.label} | {case.failed[:8]}"
     tried = f"przywrócenie z FAIL: {restored.line.split(' | ', 3)[-1]}"
@@ -435,33 +439,48 @@ def _typed(root: Path, guard: Guard, environment: Environment, case: Case, resto
         mutations = mutacja_recenzenta.mutations(case.mutation, (str(guard),)) if case.mutation is not None else []
     except ValueError as error:
         return Outcome(False, f"{label} | ODMOWA | {error}: {renew}; {tried}")
-    paths = dict.fromkeys(path for path, _, _ in case.places)
-    weak = {path: repo.blob(root, case.failed, path) for path in paths if _text(root, case.failed, path) != _text(root, environment.tree, path)}
+    failed = _failed_tree(root, environment, case)
     shown = []
     for mutation in mutations:
-        ran, inside = _rejections(guard, environment, {}, mutation)
+        ran, own = _with_block(guard, environment, {}, mutation)
         if isinstance(ran, str):
             return Outcome(False, f"{label} | ODMOWA | {mutation.name}: {ran} na HEAD scalonym z bazą: {renew}; {tried}")
         if ran.written:
             return Outcome(False, f"{label} | {_writes(ran)}")
+        inside = [finding for finding in own if _rejected(finding[2])]
         if not inside:
             outside = f"znaleziska poza liniami bloku albo bez odrzucenia typu: {_shown(ran.findings)}" if ran.findings else f"bez znaleziska (kod {ran.code})"
             return Outcome(False, f"{label} | NIEWYKRYTA | z bloku {named}: {mutation.name}: {outside}; {tried}")
-        weakened, kept = _rejections(guard, environment, weak, mutation)
-        if isinstance(weakened, str):
-            return Outcome(False, f"{label} | ODMOWA | {mutation.name}: {weakened} z plikami Gdzie z FAIL: {renew}; {tried}")
-        if weakened.written:
-            return Outcome(False, f"{label} | {_writes(weakened)}")
+        weak, kept = _with_block(guard, environment, failed, mutation)
+        if isinstance(weak, str):
+            return Outcome(False, f"{label} | ODMOWA | {mutation.name}: {weak} w drzewie FAIL: {renew}; {tried}")
+        if weak.written:
+            return Outcome(False, f"{label} | {_writes(weak)}")
+        if weak.code != 0:
+            return Outcome(False, f"{label} | ODMOWA | {mutation.name}: w drzewie FAIL krok skończył się kodem {weak.code} bez znalezisk ({weak.last}), więc typu z FAIL nie ma z czym porównać")
         if kept:
-            return Outcome(False, f"{label} | NIEWYKRYTA | z bloku {named}: {mutation.name}: mypy odrzuca ją też z plikami Gdzie z FAIL ({_shown(kept)}), więc nie zamyka jej typ z Gdzie")
+            return Outcome(False, f"{label} | NIEWYKRYTA | z bloku {named}: {mutation.name}: mypy zgłasza ją też w drzewie FAIL ({_shown(kept)}), więc nie zamyka jej typ z poprawki")
+        if weak.findings:
+            return Outcome(
+                False,
+                f"{label} | ODMOWA | {mutation.name}: drzewo FAIL z blokiem ma znaleziska mypy poza blokiem ({_shown(weak.findings)}), a przy nich typ z FAIL "
+                "może być słabszy, niż był (nazwa z nieudanego importu to Any), więc porównanie niczego nie dowodzi",
+            )
         shown.append(f"{mutation.name} → {_shown(inside)}")
     return Outcome(True, f"{label} | WYKRYTA | z bloku {named}: {'; '.join(shown)}")
 
 
-def _rejections(guard: Guard, environment: Environment, base: Mapping[str, bytes | None], mutation: Mutation) -> tuple[_Ran | str, list[tuple[str, int, str]]]:
+def _failed_tree(root: Path, environment: Environment, case: Case) -> dict[str, bytes | None]:
+    """Treść z SHA werdyktu FAIL każdego pliku, którym drzewo środowiska się od niego różni (``None``: pliku w FAIL nie
+    ma), czyli kopia środowiska z nimi to drzewo FAIL z narzędziami środowiska."""
+
+    return {path: repo.blob(root, case.failed, path) for path in sorted(repo.changed(root, case.failed, environment.tree))}
+
+
+def _with_block(guard: Guard, environment: Environment, base: Mapping[str, bytes | None], mutation: Mutation) -> tuple[_Ran | str, list[tuple[str, int, str]]]:
     """Bieg mypy z mutacją ``mutation`` naniesioną na kopię środowiska z plikami ``base`` (``None``: plik usunięty) i
-    odrzucenia typu (``_rejected``) w liniach, które mutacja dodała albo zmieniła (``_added``); powód zamiast biegu,
-    gdy kotwicy nie ma w tym drzewie dokładnie raz (``silnik_mutacji.edited``)."""
+    jego znaleziska w liniach, które mutacja dodała albo zmieniła (``_added``); powód zamiast biegu, gdy kotwicy nie
+    ma w tym drzewie dokładnie raz (``silnik_mutacji.edited``)."""
 
     found = silnik_mutacji.current(environment.copy, mutation.edits)
     if isinstance(found, str):
@@ -472,7 +491,7 @@ def _rejections(guard: Guard, environment: Environment, base: Mapping[str, bytes
         return after, []
     ran = _run(guard, environment, {**base, **{file.as_posix(): text.encode("utf-8") for file, text in after.items()}})
     added = {file.as_posix(): _added(texts[file], text) for file, text in after.items()}
-    return ran, [finding for finding in ran.findings if finding[1] in added.get(finding[0], set()) and _rejected(finding[2])]
+    return ran, [finding for finding in ran.findings if finding[1] in added.get(finding[0], set())]
 
 
 def _added(before: str, after: str) -> set[int]:
@@ -495,8 +514,15 @@ def _listed(paths: Sequence[str]) -> str:
 
 
 def _write(path: Path, content: bytes | None) -> None:
+    """Zapis treści ``content`` pod ``path``; ``None`` usuwa plik i katalogi nad nim, które zostały puste, bo drzewo
+    gita pustych katalogów nie ma, a glob ``files`` mypy (``.agents/skills/*/scripts``) wymienia każdy istniejący."""
+
     if content is None:
         path.unlink(missing_ok=True)
+        for parent in path.parents:
+            if not parent.is_dir() or any(parent.iterdir()):
+                break
+            parent.rmdir()
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)

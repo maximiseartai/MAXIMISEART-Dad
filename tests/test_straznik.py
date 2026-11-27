@@ -313,8 +313,8 @@ WRITES = {"pyproject.toml": PYPROJECT.format(mypy="", ruff="fix = true", banned=
         ("mypy", _block(("kod/pamiec.py", "dni: int) -> None:", "dni: str) -> None:"), name="pole napisem"), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: pole napisem: znaleziska poza liniami bloku albo bez odrzucenia typu: kod/pamiec.py:11 [arg-type]"),
         ("mypy", _block(("kod/uzycie.py", CALLER, "def _zla() -> None:\n    Pamiecc(0)\n\n\n" + CALLER), name="literówka"), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: literówka: znaleziska poza liniami bloku albo bez odrzucenia typu: kod/uzycie.py:5 [name-defined]"),
         ("mypy", _block(("kod/uzycie.py", "class Pamiec(", "class _Pusta(Pamiec):"), name="stara kotwica"), {}, "| ODMOWA | stara kotwica: kotwicy nie ma dokładnie raz w kod/uzycie.py"),
-        ("mypy", _block(("kod/uzycie.py", CALLER, "def _zla() -> Pamiec:\n    return Pamiec('a')\n\n\n" + CALLER), name="napis"), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: napis: mypy odrzuca ją też z plikami Gdzie z FAIL (kod/uzycie.py:5 [arg-type]"),
-        ("mypy", _block(("kod/pamiec.py", "def z_pliku() -> Pamiec:\n", "class _Pusta(Pamiec):\n    pass\n\n\ndef z_pliku() -> Pamiec:\n"), name="kotwica z HEAD"), {}, "| ODMOWA | kotwica z HEAD: kotwicy nie ma dokładnie raz w kod/pamiec.py: 'def z_pliku() -> Pamiec:' z plikami Gdzie z FAIL"),
+        ("mypy", _block(("kod/uzycie.py", CALLER, "def _zla() -> Pamiec:\n    return Pamiec('a')\n\n\n" + CALLER), name="napis"), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: napis: mypy zgłasza ją też w drzewie FAIL (kod/uzycie.py:5 [arg-type]"),
+        ("mypy", _block(("kod/pamiec.py", "def z_pliku() -> Pamiec:\n", "class _Pusta(Pamiec):\n    pass\n\n\ndef z_pliku() -> Pamiec:\n"), name="kotwica z HEAD"), {}, "| ODMOWA | kotwica z HEAD: kotwicy nie ma dokładnie raz w kod/pamiec.py: 'def z_pliku() -> Pamiec:' w drzewie FAIL"),
         ("mypy", _block(("kod/uzycie.py", CALLER, "import os\n\n\nclass _Pusta(Pamiec):\n    pass\n\n\n" + CALLER), name="podklasa z importem"), WRITES, "| KROK PISZE PLIKI | po kroku ruff: kod/uzycie.py"),
         ("mypy", json.dumps([*json.loads(SUBCLASS), {"nazwa": "bez final", "zmiany": [["kod/pamiec.py", "@final\nclass Pamiec:", "class Pamiec:"]]}]), {}, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: bez final: bez znaleziska (kod 0)"),
         ("ruff", _block(("kod/uzycie.py", CALLER, "import os\n\n\n" + CALLER), name="nieużyty import"), {}, "| NIEWYKRYTA | kod/pamiec.py: bez znaleziska (kod 0)"),
@@ -340,13 +340,76 @@ def test_dowod_mypy_slabego_typu_w_pliku_definicji_liczy_odrzucenie_zlej_postaci
     """Słaby typ w pliku definicji (9 z 12 Ważnych ``typ`` z #2466): FAIL ma ``Pamiec`` bez ``@final``, a HEAD ją domyka
     i dodaje ``z_pliku``, której używa ``uzycie.py``.
     Przywrócenie ``pamiec.py`` z FAIL daje tylko ``attr-defined`` u wołającego (dryf), więc dowód ``mypy`` bierze blok
-    recenzenta: wykryciem jest odrzucenie typu w linii, którą blok wstawił, gdy z ``pamiec.py`` z FAIL (słaby typ) ta
-    sama linia przechodzi, a nie znalezisko poza nią po osłabieniu typu, nazwa, której nie ma, postać odrzucana też
+    recenzenta: wykryciem jest odrzucenie typu w linii, którą blok wstawił, gdy na drzewie FAIL (słaby typ) ta sama
+    linia przechodzi, a nie znalezisko poza nią po osłabieniu typu, nazwa, której nie ma, postać odrzucana też
     przy słabym typie ani zakaz ruff (blok czyta tylko ``mypy``)."""
 
     pull = _pull(tmp_path, FINAL_FAIL, {**FINAL_FIX, **head})
 
     outcome = pull.prove(guard, DEFINITION, scopes=DEFINITION, mutation=mutation)
+
+    assert state in outcome.line, outcome.line
+    assert outcome.detected is ("| WYKRYTA |" in state), outcome.line
+
+
+ALIAS_FAIL = {
+    "kod/typy.py": "Dni = int\n",
+    "kod/pamiec.py": "from kod.typy import Dni\n\n\nclass Pamiec:\n    def __init__(self, dni: Dni) -> None:\n        self.dni = dni\n",
+    "kod/uzycie.py": FINAL_FAIL["kod/uzycie.py"],
+}
+ALIAS_FIX = {
+    "kod/typy.py": "LiczbaDni = int\n",
+    "kod/pamiec.py": (
+        "from typing import final\n\nfrom kod.typy import LiczbaDni\n\n\n@final\nclass Pamiec:\n"
+        "    def __init__(self, dni: LiczbaDni) -> None:\n        self.dni = dni\n"
+    ),
+    "kod/uzycie.py": FINAL_FAIL["kod/uzycie.py"],
+}
+
+
+SCRIPTS = PYPROJECT.format(mypy="", ruff="", banned="").replace('files = ["kod"]', 'files = ["kod", "narzedzia/*/skrypty"]')
+AS_TEXT = _block(("kod/uzycie.py", CALLER, "def _zla() -> str:\n    return Pamiec(1).dni\n\n\n" + CALLER), name="liczba jako napis")
+
+
+@wymaga_ruff_i_mypy
+@pytest.mark.parametrize(
+    ("failed", "fixed", "mutation", "state"),
+    [
+        (ALIAS_FAIL, ALIAS_FIX, AS_TEXT, "| NIEWYKRYTA | z bloku ### Mutacja W1 r1: liczba jako napis: mypy zgłasza ją też w drzewie FAIL (kod/uzycie.py:5 [return-value]"),
+        (
+            {**FINAL_FAIL, "kod/zly.py": "LICZBA: int = 'a'\n"},
+            {**FINAL_FIX, "kod/zly.py": "LICZBA: int = 1\n"},
+            SUBCLASS,
+            "| ODMOWA | podklasa: drzewo FAIL z blokiem ma znaleziska mypy poza blokiem (kod/zly.py:1 [assignment]",
+        ),
+        (
+            {**FINAL_FAIL, "pyproject.toml": PYPROJECT.format(mypy="", ruff="", banned="").replace('files = ["kod"]', 'files = ["nie_ma"]')},
+            {**FINAL_FIX, "pyproject.toml": PYPROJECT.format(mypy="", ruff="", banned="")},
+            SUBCLASS,
+            "| ODMOWA | podklasa: w drzewie FAIL krok skończył się kodem 2 bez znalezisk",
+        ),
+        (
+            {**FINAL_FAIL, "pyproject.toml": SCRIPTS, "narzedzia/b/skrypty/b.py": "B = 1\n"},
+            {**FINAL_FIX, "pyproject.toml": SCRIPTS, "narzedzia/a/skrypty/a.py": "A = 1\n"},
+            SUBCLASS,
+            "| WYKRYTA | z bloku ### Mutacja W1 r1: podklasa → kod/uzycie.py:4 [misc]",
+        ),
+    ],
+    ids=[
+        "plik-gdzie-z-fail-importuje-nazwe-ktorej-head-nie-ma",
+        "drzewo-fail-z-bledem-mypy-poza-blokiem",
+        "mypy-bez-wyniku-w-drzewie-fail",
+        "katalog-skryptow-tylko-na-head-znika-z-drzewa-fail",
+    ],
+)
+def test_porownanie_z_fail_biegnie_na_calym_drzewie_fail(tmp_path: Path, failed: dict[str, str], fixed: dict[str, str], mutation: str, state: str) -> None:
+    """Sonda #2618 r1 W1: plik ``Gdzie`` z FAIL obok plików HEAD importuje alias, którego HEAD już nie ma, więc mypy daje
+    ``dni`` typ ``Any`` i postać, którą typ z FAIL też odrzuca, wyglądała na zamkniętą poprawką. Na całym drzewie FAIL
+    alias jest, więc mypy zgłasza ją tam tak samo; drzewo FAIL ze znaleziskiem poza blokiem to odmowa porównania."""
+
+    pull = _pull(tmp_path, failed, fixed)
+
+    outcome = pull.prove("mypy", (("kod/pamiec.py", 4, 4),), scopes=(("kod/pamiec.py", 4, 6),), mutation=mutation)
 
     assert state in outcome.line, outcome.line
     assert outcome.detected is ("| WYKRYTA |" in state), outcome.line
