@@ -297,10 +297,10 @@ class Window:
     def opens(self, day: date) -> bool:
         return self.rollout <= day <= self.today and period_of(day).token not in self.closed
 
-    def closes(self, day: date) -> bool:
-        """Dzień od dnia wdrożenia do dziś w okresie z Plikiem zbiorczym."""
+    def covers(self, day: date) -> bool:
+        """Dzień od dnia wdrożenia do dziś: otwarty albo w okresie z Plikiem zbiorczym."""
 
-        return self.rollout <= day <= self.today and period_of(day).token in self.closed
+        return self.rollout <= day <= self.today
 
 
 @dataclass(frozen=True)
