@@ -75,8 +75,8 @@ class WindowRead:
 def read_window(inputs: ReportInputs) -> WindowRead:
     """Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``, z rokiem literówki czytanym od dnia przyjścia
     maila): od nieznanego nadawcy z dniem otwartym w ``inputs.window``, a od Wykonawcy z co najmniej jednym Wpisem (mail
-    bez Wpisów nie jest raportem, ADR 0041) i z dniem otwartym, z dniem w okresie
-    z Plikiem zbiorczym od dnia wdrożenia (``Window.closes``) albo z każdym innym dniem, gdy temat jest pomylony (ADR
+    bez Wpisów nie jest raportem, ADR 0041) i z dniem od dnia wdrożenia do dziś, otwartym albo w okresie z Plikiem
+    zbiorczym (``Window.covers``), albo z każdym innym dniem, gdy temat jest pomylony (ADR
     0029: numery zleceń z innego dnia wygrywają z datą, także z datą po dziś); inne maile pomija po cichu. Temat ze
     słowem ``raport`` bez dnia zleceń daje raport z błędem tematu (``ReadUnreadable``), gdy mail z Wpisami przyszedł od
     Wykonawcy w dniu otwartym. Wpis zaczyna numer z co najmniej tyloma cyframi, ile ma najkrótszy numer odczytanego
@@ -103,7 +103,7 @@ def read_window(inputs: ReportInputs) -> WindowRead:
                 strangers.append(UnknownSender(mail.id, mail.sender, found))
             case date() if worker is not None:
                 report = ReadReport(mail.id, mail.arrived, worker, found, _entries.entries(mail.text, digits))
-                if report.entries and (window.opens(found) or window.closes(found) or _days(board, report) != {found}):
+                if report.entries and (window.covers(found) or _days(board, report) != {found}):
                     read.append(report)
             case date():
                 continue

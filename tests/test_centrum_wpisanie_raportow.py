@@ -855,6 +855,29 @@ def test_zapis_na_scalone_komorki_zlecenia_zatrzymuje_do_maksa_a_logi_maja_zapla
     ]
 
 
+def test_dopisanie_zlecenia_przez_scalenie_w_przesuwanych_wierszach_zatrzymuje_do_maksa_z_arkuszem_dopisania(
+    tmp_path: Path,
+) -> None:
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000077 tak montaż")])
+    merged = '<mergeCells count="1"><mergeCell ref="A3:A5"/>'
+    rewrite_parts(
+        centrum.register,
+        lambda name, data: data.replace(b"<hyperlinks>", f"{merged}</mergeCells><hyperlinks>".encode(), 1)
+        if name == "xl/worksheets/sheet2.xml"
+        else data,
+    )
+    before = centrum.register.read_bytes()
+
+    result = _stopped(centrum)
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == (
+        "for_maks",
+        "Zlecenia mają układ, do którego narzędzie nie wpisuje raportów. INTERMAX nie został zmieniony.",
+    )
+    assert result["stops"][0]["where"].endswith(f", arkusz {ORDER_SHEET}")
+    assert centrum.register.read_bytes() == before
+
+
 def _unreadable_border(register: Path) -> None:
     rewrite_parts(
         register,
@@ -1284,6 +1307,19 @@ def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja
     assert (_entering(centrum, again)["changes"], _entering(centrum, again)["moves"]) == ([], [])
     assert centrum.register.read_bytes() == after
     assert _worker(_view(centrum), "anna.kowalska")["notes"] == anna["notes"]
+
+
+def test_wykonawca_bez_zlecen_dnia_po_przekazaniu_jedynego_zlecenia_ma_w_widoku_raporty_dzien_z_informacja_o_przekazaniu(
+    tmp_path: Path,
+) -> None:
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
+    centrum = entering_centrum(tmp_path, intermax, [report(ANNA, SUBJECT, "40000001 tak spawgnd")])
+
+    _finished(centrum)
+    jan = _worker(_view(centrum), "jan.testowy")
+
+    assert jan["notes"] == [{"number": "40000001", "text": "przekazane anna.kowalska"}]
+    assert (jan["orders"], jan["orders_detail"]) == (0, [])
 
 
 def _started(register: Path, number: int) -> tuple[object, str]:
@@ -1888,6 +1924,25 @@ def test_plik_pamieci_sprzed_przeniesien_czyta_sie_a_nastepny_zapis_ma_przeniesi
     ]
 
 
+def test_logi_klikniecia_maja_pamiec_zlecen_dnia_po_numerach_wiec_odtworzenie_nie_zalezy_od_kolejnosci_zbioru(
+    tmp_path: Path,
+) -> None:
+    numbers = range(40000001, 40000008)
+    intermax = Intermax(ordered=tuple(_order(9, 8 + index, "jan.testowy", number) for index, number in enumerate(numbers)), raw=())
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "\n".join(f"{number} tak montaż" for number in numbers))])
+    place = {"day": "2026-11-09", "worker": "jan.testowy", "origin_day": "2026-11-09", "origin_worker": "jan.testowy"}
+    moves = [
+        {"number": str(number), **place, "origin_name": "jan.testowy", "since": "2026-11-09T16:00:00+00:00", "overridden": False, "added": False}
+        for number in reversed(numbers)
+    ]
+    memory = {"schema_version": 4, "rollout": "2026-11-09", "own": [], "moves": moves, "requested": []}
+    _state(centrum).write_text(json.dumps(memory), encoding="utf-8")
+
+    view = _finished(centrum)
+
+    assert [move["number"] for move in _entering(centrum, view)["moves_before"]] == list(numbers)
+
+
 @pytest.mark.parametrize(
     ("day", "worker"),
     [
@@ -2250,6 +2305,9 @@ def test_plik_wyniku_sprzed_kodow_przyciskow_i_dni_z_tematu_czyta_sie_bez_nich(t
     assert orders
     assert {(tuple(order["codes"]), order["no_code"], order["request"]) for order in orders} == {((), False, None)}
     assert {(tuple(day["mistaken_subjects"]), tuple(day["overtaken_subjects"])) for day in days} == {((), ())}
+    assert {order["state"] for order in orders if order["number"] in {"40000001", "40000002"}} == {"without_report"}, (
+        "zlecenie bez Wpisu z wyniku sprzed raportów z błędem tematu nie ma Wpisu w takim raporcie"
+    )
     assert {(problem["request"], problem["faulty_subject"]) for day in days for problem in day["problems"]} == {(None, None)}
 
 

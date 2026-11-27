@@ -25,7 +25,7 @@ _COLUMNS = tuple(ReportColumn)
 
 def reconcile(
     targets: Mapping[OrderKey, tuple[RegisterOrder, ReportEntry]],
-    orders: Iterable[RegisterOrder],
+    orders: tuple[RegisterOrder, ...],
     memory: OwnEntries,
     kept: frozenset[Kept],
 ) -> tuple[tuple[CellChange, ...], tuple[ManualDifference, ...], OwnEntries]:
@@ -41,7 +41,6 @@ def reconcile(
     późniejsza poprawka nie nadpisała taty.
     """
 
-    orders = tuple(orders)
     remembered = {(entry.key, entry.column): entry.value for entry in memory.entries}
     current: defaultdict[tuple[OrderKey, ReportColumn], set[str | None]] = defaultdict(set)
     for order in orders:
