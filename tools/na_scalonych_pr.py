@@ -115,7 +115,8 @@ Dowód strażnika (``--straznik SELEKTOR --z-commita <HEAD PR>`` z ``--wazne``) 
 Ważnego w sekcji ``## Korzeń``. ``ast-grep <id>`` idzie dowodem reguły o tym id (wyżej, z ``RULE_PRS`` ostatnimi PR-ami),
 gdy reguła na HEAD ma to Ważne w polu ``metadata.przypadki``, jedynej liście jej przypadków; każdy inny selektor idzie
 dowodem ``straznik.prove`` albo warunkiem wyjątku ``straznik.exempt``, które opisuje ``ZASADY`` ``tools/lib/straznik.py``,
-z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyktu; ``pytest <węzeł>`` idzie dowodem
+z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyktu (``mypy`` bez wykrycia także
+z najnowszym blokiem ``### Mutacja W<n> r<k>`` tego Ważnego, jak test); ``pytest <węzeł>`` idzie dowodem
 ``straznik.prove_test`` z najnowszym blokiem ``### Mutacja W<n> r<k>`` tego Ważnego we wszystkich werdyktach PR
 (``mutacja_recenzenta``), a gdy wpis Ważnego z tym selektorem w ``tools/lib/strazniki_przeniesione.toml`` drzewa
 ``--z-commita`` ma mutację, z nią (``strazniki_przeniesione``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``),

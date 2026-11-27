@@ -1,12 +1,13 @@
 """Blok mutacji recenzenta ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md), aneks „Test jako
 strażnik z mutacją recenzenta”): zła postać, którą dowód strażnika ``pytest <węzeł>`` (``straznik.prove_test``) nanosi
-na HEAD PR, a której autor nie pisze.
+na HEAD PR, a dowód ``mypy`` (``straznik.prove``), gdy przywrócenie plików z ``Gdzie`` jej nie wykryło (aneks „Zła
+postać recenzenta przy mypy”), i której autor nie pisze.
 
 W werdykcie blok to nagłówek ``### Mutacja W<n> r<k>`` (``HEADING``: Ważne ``W<n>`` werdyktu ``FAIL`` rundy ``k``)
 i pod nim jeden blok kodu ``` bez nazwy języka (GitHub renderuje blok z nazwą języka jako ``<div>`` ze ściśniętymi
 spacjami, więc kotwica nie przeszłaby nietknięta) z JSON w postaci pliku ``tools/mutacje.py --plik``
 (``silnik_mutacji.FILE_SHAPE``), z samymi kluczami ``nazwa`` i ``zmiany``, bo polecenie daje selektor strażnika. Blok
-nie zmienia ``tests/``, bo zła postać to kod, który test ma złapać, a katalog ścieżki porównuje kluczem
+nie zmienia ``tests/``, bo zła postać to kod, który strażnik ma złapać, a katalog ścieżki porównuje kluczem
 ``repo.folded``, tym samym, którym środowisko Required CI odmawia na Macu drzewa ze ścieżkami różnymi tylko wielkością
 liter: APFS nanosi ``Tests/…`` na plik w ``tests/``. Postać sprawdza szablon werdyktu (``szablon_werdyktu``) przy
 ``--werdykt`` i przy zgodzie na merge. Blok może stać w werdykcie ``FAIL``, który zgłosił Ważne, i w każdym późniejszym
@@ -48,9 +49,9 @@ def mutations(block: Block, command: tuple[str, ...]) -> list[Mutation]:
     if not found:
         raise ValueError(f"blok ### {block}: lista bez wpisu, a dowód potrzebuje co najmniej jednej mutacji")
     if any(mutation.command != command or mutation.expected is not None for mutation in found):
-        raise ValueError(f"blok ### {block}: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika pytest")
+        raise ValueError(f"blok ### {block}: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika (pytest <węzeł> albo mypy)")
     if tested := sorted({edit.file.as_posix() for mutation in found for edit in mutation.edits if [repo.folded(part) for part in edit.file.parts[:1]] == [TESTS]}):
-        raise ValueError(f"blok ### {block}: zmiana w {', '.join(tested)}: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test")
+        raise ValueError(f"blok ### {block}: zmiana w {', '.join(tested)}: zła postać to kod, konfiguracja albo reguła, które strażnik ma złapać, a nie test")
     return found
 
 
