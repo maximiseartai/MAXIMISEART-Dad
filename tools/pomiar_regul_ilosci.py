@@ -170,7 +170,7 @@ def _groups(group: list[Row]) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Pomiar Reguł ilości na Plikach zbiorczych wypełnionych przez tatę.")
+    parser = argparse.ArgumentParser(description=OPIS)
     parser.add_argument("pliki", nargs="+", type=Path, help="Pliki zbiorcze wypełnione przez tatę")
     for path in parser.parse_args(argv).pliki:
         measured, undated = rows(path)

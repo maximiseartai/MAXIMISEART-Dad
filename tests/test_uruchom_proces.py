@@ -9,6 +9,7 @@ import itertools
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -508,7 +509,7 @@ def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa_w_kolejnosci_katalogu_pr
 
 _METRICS = "Plik metryk JSONL."
 _DRY_RUN = ("--dry-run", False, False, "Podgląd bez zapisu.")
-_FLAGS = {
+_FLAGS: dict[str, list[tuple[str, bool, object, str]]] = {
     "settlement": [
         ("--source", True, None, "Plik zbiorczy."),
         ("--wykonawcy", False, CONFIG_DIR / WORKERS_FILE, "Lista Wykonawców (plik wykonawcy.yaml)."),
@@ -561,6 +562,23 @@ def test_kazdy_proces_ma_te_same_flagi_wymagalnosc_domyslne_i_pomoc_co_przed_kat
         for name, process in processes.choices.items()
     }
     assert flags == _FLAGS
+
+
+def test_opis_uzycia_wymienia_kazda_flage_kazdego_procesu_w_nawiasie_tylko_gdy_nie_jest_wymagana() -> None:
+    completed = _completed("--help")
+    usage = completed.stdout.split("Użycie (z katalogu repozytorium):\n\n", 1)[1].split("\n\n", 1)[0]
+    documented: dict[str, dict[str, bool]] = {}
+    flags: dict[str, bool] = {}
+    for line in usage.splitlines():
+        words = line.split()
+        if words[:2] == ["python", "tools/uruchom_proces.py"]:
+            flags = documented.setdefault(words[2], {})
+        flags.update({flag: bracket == "[" for bracket, flag in re.findall(r"(\[?)(--[a-z-]+)", line)})
+
+    assert (completed.returncode, documented) == (
+        0,
+        {process: {option: not required for option, required, _, _ in process_flags} for process, process_flags in _FLAGS.items()},
+    )
 
 
 def _tool_copy(tmp_path: Path) -> Path:

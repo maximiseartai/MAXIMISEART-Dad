@@ -34,8 +34,10 @@ from __future__ import annotations
 import ast
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
+import os
 import posixpath
 import re
+import subprocess
 import sys
 from typing import get_args
 
@@ -191,6 +193,27 @@ def test_pierwsze_zdanie_narzedzia_to_jedna_linia_o_dlugosci_spisu() -> None:
             f"Zacznij OPIS jednym zdaniem {MIN_CHARS}–{MAX_CHARS} znaków zakończonym kropką: co narzędzie robi i kiedy "
             "go użyć, słowami sytuacji agenta; szczegóły daj w następnych akapitach.",
         ]
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="tekst --help nie zależy od systemu")
+@pytest.mark.parametrize("tool", _tools(), ids=lambda path: path.name)
+def test_pomoc_narzedzia_pokazuje_cala_jego_stala_opis(tool: Path) -> None:
+    completed = subprocess.run(
+        [sys.executable, str(tool), "--help"],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        timeout=60,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert " ".join(_description(tool).split()) in " ".join(completed.stdout.split()), (
+        f"{tool.name}: --help nie pokazuje stałej OPIS, którą czyta spis narzędzi; daj argparse.ArgumentParser(description=OPIS)"
     )
 
 

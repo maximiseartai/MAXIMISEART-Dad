@@ -26,7 +26,7 @@ from rozliczenia.message import Message as EngineMessage
 from rozliczenia.quantity_engine import RulesProblem
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
+from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, EndEntry, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.comment_versions import OwnLogs, post_of
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
@@ -66,7 +66,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from atrapy.dziennik_wyceny import begun_line, journal_path, left_journal, start_line
+from atrapy.dziennik_wyceny import begun_line, end_line, journal_path, left_journal, start_line
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import PERIOD
 from tests.fixtures.run_cards import first_view, restored, unlisted
@@ -679,6 +679,14 @@ def test_dziennik_zostawiony_przez_poprzednia_prace_ma_liczbe_zlecen_z_wpisu_zac
     [left] = on_disk(tmp_path).left_behind()
 
     assert left.journal is not None and (left.journal.total, left.journal.progress.total) == (3, 3)
+
+
+def test_wpis_konca_uruchomienia_z_dziennika_poprzedniej_pracy_to_koniec_bez_wyniku_a_nie_linia_pominieta(tmp_path: Path) -> None:
+    left_journal(tmp_path, start(), begun_line(SECOND + timedelta(minutes=1), row=7, place=1, total=3), end_line(SECOND + timedelta(minutes=9)))
+
+    [left] = on_disk(tmp_path).left_behind()
+
+    assert left.journal is not None and (left.journal.end, left.journal.interruption.omitted) == (EndEntry(None), 0)
 
 
 def test_postep_z_dziennika_ma_tylko_uruchomienie_ktore_go_pisze(tmp_path: Path) -> None:
