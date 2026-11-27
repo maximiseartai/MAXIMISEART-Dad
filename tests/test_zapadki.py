@@ -733,6 +733,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "historia-w-docstringu": "historię zmiany zostaw w opisie PR,",
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
+    "komunikat-boxa-podlancuchem": "bierz własność porażki z junit",
     "dyrektywa-mypy-recznie": "użyj mypy.util.get_mypy_comments",
     "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
     "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
@@ -818,6 +819,7 @@ REGULY_CALEGO_DRZEWA: Final = (
     "historia-w-docstringu",
     "komentarz-przez-startswith",
     "komentarz-w-src",
+    "komunikat-boxa-podlancuchem",
     "kotwica-konca-linii",
     "krok-mypy-ruff-poza-krokami",
     "lokator-tytulu-okna",
@@ -2381,6 +2383,7 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "break-skryptu-pythona-to-czekanie": (("tools", "hooks"), ".py"),
     "reszta-tekstu-od-kazdego-trafienia": (("tools",), ".py"),
     "krok-mypy-ruff-poza-krokami": (("tools",), ".py"),
+    "komunikat-boxa-podlancuchem": (("tools",), ".py"),
     "stosunek-czasow-sciany": (("tests",), ".py"),
     "dyrektywa-mypy-recznie": (("tests",), ".py"),
     "follow-symlinks-tylko-posix": (("tests",), ".py"),
@@ -2388,6 +2391,7 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "pytest-current-test-poza-testami": (("tools",), ".py"),
 }
 _SYS = "import sys\n\n"
+_KROK = "import wynik_kroku\n\n\ndef infra(wyjscie: str) -> bool:\n    return "
 _ZEGAR = "import time\n\n\ndef test_stosunek() -> None:\n    start = time.perf_counter()\n    srodek = time.perf_counter()\n"
 _DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
 _OS = "import os\n\n"
@@ -2407,6 +2411,11 @@ _PROBKI_REGUL_POWROTOW: Final = [
     pytest.param("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', [], id="nazwy-narzedzi-bez-polecenia-przechodza"),
     pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--strict", "format"]\n', [3], id="mypy-z-opcjami"),
     pytest.param("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "ruff", "format", "--check"]\n', [], id="ruff-format-przechodzi"),
+    pytest.param("komunikat-boxa-podlancuchem", f"{_KROK}wynik_kroku.KOMUNIKAT in wyjscie\n", [5], id="komunikat-in"),
+    pytest.param("komunikat-boxa-podlancuchem", f"{_KROK}wynik_kroku.KOMUNIKAT not in wyjscie\n", [5], id="komunikat-not-in"),
+    pytest.param("komunikat-boxa-podlancuchem", "from wynik_kroku import KOMUNIKAT\n\n\ndef infra(wyjscie: str) -> bool:\n    return KOMUNIKAT in wyjscie\n", [5], id="komunikat-z-from-importu"),
+    pytest.param("komunikat-boxa-podlancuchem", "import wynik_kroku\n\n\ndef komunikat() -> str:\n    return wynik_kroku.KOMUNIKAT\n", [], id="komunikat-bez-porownania-przechodzi"),
+    pytest.param("komunikat-boxa-podlancuchem", f'{_KROK}"OK" in wyjscie\n', [], id="inny-napis-w-wyjsciu-przechodzi"),
     pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / (srodek - start) < 2\n", [7], id="stosunek-perf-counter"),
     pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.monotonic() - start) / (time.monotonic() - srodek) < 2\n", [7], id="stosunek-monotonic"),
     pytest.param("stosunek-czasow-sciany", f"{_ZEGAR}    assert time.perf_counter() - srodek < start\n", [], id="roznica-bez-stosunku-przechodzi"),
@@ -2841,6 +2850,10 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "program bez -m": 'POLECENIE = ["mypy", "--no-incremental"]\n',
         "narzędzie w zmiennej": f'{_SYS}NARZEDZIE = "mypy"\nPOLECENIE = [sys.executable, "-m", NARZEDZIE]\n',
         "polecenie w jednym napisie": 'POLECENIE = "python -m mypy --no-incremental"\n',
+    },
+    "komunikat-boxa-podlancuchem": {
+        "tekst komunikatu w literale": 'def infra(wyjscie: str) -> bool:\n    return "KROK: powtórz bieg" in wyjscie\n',
+        "szukanie przez find": f"{_KROK}wyjscie.find(wynik_kroku.KOMUNIKAT) >= 0\n",
     },
     "stosunek-czasow-sciany": {
         "stosunek zapisany mnożeniem": f"{_ZEGAR}    assert time.perf_counter() - srodek < 2 * (srodek - start)\n",

@@ -1,0 +1,21 @@
+id: komunikat-boxa-podlancuchem
+language: python
+severity: error
+message: >-
+  porażki kroku nie rozpoznaje podłańcuch stałej KOMUNIKAT w wyjściu kroku (komunikat może stać w wyjściu prawdziwej
+  porażki): bierz własność porażki z junit (wyniki_testow) albo kod wyjścia sesji pluginu
+files:
+  - tools/**/*.py
+  - .agents/skills/*/scripts/**/*.py
+metadata:
+  przypadki:
+    - 2290/W1/r1
+rule:
+  kind: comparison_operator
+  all:
+    - has:
+        field: operators
+        regex: '^(not )?in$'
+    - has:
+        nthChild: 1
+        regex: '(^|\.)KOMUNIKAT$'
