@@ -345,9 +345,10 @@ def test_odrzucone_haslo_skrzynki_raportow_nie_trafia_do_api_strumienia_logow_zg
             tmp_path,
             INTERMAX,
             surroundings=surroundings,
-            inbox=ImapInbox(lambda: read_snapshot(tool.config).inbox, connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port)),
+            inbox_connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port),
         )
         started = centrum.start()
+        assert started.status_code == 200, started.text
         events = _events_until_finished(centrum)
     view = events[-1]["view"]
     diagnosis = centrum.client.post(f"/api/runs/{view['run']['id']}/diagnosis")
@@ -4151,6 +4152,29 @@ def test_zgloszenie_przypomnien_z_narzedzia_bez_commitu_gita_ma_commit_nieznany(
     [issue] = box.sent
     body = issue.body.splitlines()
     assert body[body.index("## Narzędzie") + 2] == "- Commit: nieznany"
+
+
+def test_zgloszenie_przypomnien_ma_zmiany_ustawien_z_30_dni_z_wlaczeniem_i_stopka_przypomnien(tmp_path: Path) -> None:
+    write_report_key(ToolDirectory(tmp_path))
+    surroundings = Surroundings()
+    centrum = entering_centrum(tmp_path, INTERMAX, surroundings=surroundings, reminder_mailbox=FakeMailbox(send_outcome=PasswordRejected()))
+    _reminders_set_up(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    box = surroundings.report_box
+    assert box.wait_until(lambda fake: len(fake.sent) == 1)
+    centrum.client.stop()
+
+    [issue] = box.sent
+    body = issue.body.splitlines()
+    start = body.index("## Zmiany Ustawień (30 dni)") + 2
+    changes = body[start : body.index("", start)]
+    assert [line.split(" · ", 2)[2] for line in changes if f" · {REMINDERS_FILE} · " in line] == [
+        f"{REMINDERS_FILE} · przypomnienia.stopka: zmieniono",
+        f"{REMINDERS_FILE} · przypomnienia.wlaczone: nie → tak; przypomnienia.wlaczone_od: nie ustawiono → 2026-11-09",
+    ], changes
 
 
 def _failures_in_log(centrum: EnteringCentrum) -> list[str]:

@@ -1371,7 +1371,7 @@ def test_start_centrum_zamyka_dziennik_wyceny_wersja_zastepcza_po_strazniku_z_te
     else:
         assert not isinstance(closing, Drop)
         sent = post_of(closing)
-        assert sent == post_of(wanted)
+        assert sent.to_json() == post_of(wanted).to_json()
         archived = "" if sent.archive is None else gzip.decompress(sent.archive.packed()).decode("utf-8")
         assert any("[adres]" in text for text in (*sent.parts, archived)), "wersja ma wartość z kolumny ADRES, którą strażnik maskuje"
         assert [text for text in (*sent.parts, archived) if ADDRESS in text] == [], "wartość z kolumny ADRES po strażniku"

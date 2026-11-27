@@ -177,12 +177,6 @@ class LogsPost(metaclass=WithoutSubclasses, refusal=_NO_POST_SUBCLASSES):
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError(_NO_POST_SUBCLASSES)
 
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, LogsPost) and self.__post == other.__post
-
-    def __hash__(self) -> int:
-        return hash(self.__post)
-
     def __repr__(self) -> str:
         return f"LogsPost({self.__post!r})"
 

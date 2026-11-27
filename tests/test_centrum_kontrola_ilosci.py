@@ -20,6 +20,7 @@ from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.centrum.outbox import Outbox, Post
+from rozliczenia.centrum.quantity_rules_preview import SHOWN_ROWS
 from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -1088,6 +1089,45 @@ def test_podglad_legendy_ma_opis_technika_po_strazniku_bez_adresu_numerow_zlecen
     leaked = (address, orange, "600-123-456", "Kwiatowa", *FORBIDDEN, "2026-09-08", "08.09", "10:15")
     assert [marker for marker in leaked if marker in response.text] == []
     assert [row["description"] for row in response.json()["rows"]] == ["rt2 [adres]"]
+
+
+def test_podglad_legendy_nie_liczy_wiersza_usterki_z_nowym_kodem_ktory_w_usterce_sie_nie_liczy(tmp_path: Path) -> None:
+    fault_with_new_code: dict[str, CellValue] = {"C": "pr", "D": "usterka", "K": "kabel", "G": FRI.replace(hour=10), "V": 1, "AI": 1}
+    centrum = centrum_with(tmp_path, [fault_with_new_code])
+    run_to_end(centrum, dry_run=False)
+    not_in_fault: dict[str, Any] = {"spellings": ["kabel"], "column": {"kind": "fixed", "column": "Y"}, "value": 1, "amount": None, "fills": [], "counts_in_fault": False}
+    counted_in_fault = not_in_fault | {"counts_in_fault": True}
+
+    previews = [legend_previewed(centrum, {"kind": "add", "code": code}) for code in (not_in_fault, counted_in_fault)]
+
+    assert [(preview["changed"], len(preview["rows"])) for preview in previews] == [(0, 0), (1, 1)]
+
+
+def test_podglad_reguly_i_legendy_pokazuje_najwyzej_shown_rows_wierszy_a_reszte_liczy_w_more(tmp_path: Path) -> None:
+    rows: list[dict[str, CellValue]] = [
+        {"C": "pr", "D": "nokia", "K": "spawpg", "G": WED.replace(hour=8) + timedelta(minutes=10 * index), "V": 1, "Z": 1, "AB": 1, "AS": 70}
+        for index in range(SHOWN_ROWS + 1)
+    ]
+    centrum = centrum_with(tmp_path, rows)
+    settled_copy(centrum, "22_28_09_2026")
+
+    rule = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+    legend = legend_previewed(centrum, {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}})
+
+    assert [(preview["changed"], len(preview["rows"]), preview["more"]) for preview in (rule, legend)] == [
+        (SHOWN_ROWS + 1, SHOWN_ROWS, 1)
+    ] * 2
+
+
+def test_podglad_reguly_bez_wskazanego_folderu_okresow_nie_ma_na_czym_policzyc_a_zdanie_reguly_ma(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    saved = centrum.client.put("/api/settings/folders", json={"order_register": None, "periods_directory": None})
+    assert saved.status_code == 200, saved.text
+
+    preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    shown = "".join(part.get("text", part.get("letter", "")) for part in preview["sentence"])
+    assert (preview["state"], shown) == ("no_periods_directory", "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 1 w Z.")
 
 
 SUGGESTIONS_URL = "/api/settings/devices/suggestions"

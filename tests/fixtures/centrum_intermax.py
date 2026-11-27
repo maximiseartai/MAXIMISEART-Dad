@@ -22,6 +22,7 @@ from rozliczenia.centrum.settings.proposal import ReleaseChange
 from fastapi import FastAPI
 
 from rozliczenia.worker_report_inbox import (
+    ImapConnect,
     InboxAccess,
     InboxUnreachable,
     PasswordRejected,
@@ -34,6 +35,7 @@ from tests.fixtures.centrum import (
     CentrumClient,
     FakePlatform,
     HandRhythm,
+    FAKE,
     ToolDirectory,
     centrum_app,
     finished_view,
@@ -244,7 +246,7 @@ class EnteringCentrum:
     register: Path
     layout: Layout
     tmp_path: Path
-    inbox: WorkerReportInbox
+    inbox: WorkerReportInbox | None
     engines: Engines
     disk: FaultyDisk
     moment: list[datetime]
@@ -299,10 +301,12 @@ def entering_centrum(
     periods: bool = True,
     reminder_mailbox: ReminderMailbox | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = (),
+    inbox_connect: ImapConnect | None = None,
 ) -> EnteringCentrum:
     """Centrum po wskazaniu INTERMAX ``intermax`` z Wykonawcami ``WORKERS`` i adresami ``SENDERS`` (``addresses``: inna
     treść pliku adresów); Skrzynka raportów to ``inbox``, a bez niej atrapa, która oddaje ``mails`` i ma plik dostępu w
-    stanie ``access``. ``periods``: tata wskazał też pusty folder okresów ``EnteringCentrum.periods_directory``.
+    stanie ``access``, albo z ``inbox_connect`` skrzynka samego Centrum z pliku dostępu, którą ma tata (wtedy
+    ``EnteringCentrum.inbox`` to ``None``). ``periods``: tata wskazał też pusty folder okresów ``EnteringCentrum.periods_directory``.
     ``reminder_mailbox``: skrzynka pracy Przypomnień o raporcie (bez niej ``FakeMailbox``), której sprawdzenie test
     woła przez ``EnteringCentrum.rhythm``. ``release_changes``: zmiany Ustawień z Wydania, które Centrum stosuje przy
     każdym starcie. Chwila procesu to ostatni element ``EnteringCentrum.moment`` (na starcie ``ENTERING_NOW``), a
@@ -319,7 +323,8 @@ def entering_centrum(
     write_worker_list(tool.worker_list, worker_list(WORKERS, listed))
     surroundings = surroundings or Surroundings()
     engines = Engines(tool.metrics)
-    inbox = inbox or FakeInbox(mails, access)
+    if inbox_connect is None:
+        inbox = inbox or FakeInbox(mails, access)
     disk = FaultyDisk()
     moment = [ENTERING_NOW]
     onedrive = surroundings.onedrive
@@ -341,6 +346,7 @@ def entering_centrum(
             template_check=surroundings.template_check,
             now=lambda: moment[-1].astimezone(),
             worker_report_inbox=inbox,
+            inbox_connect=FAKE if inbox_connect is None else inbox_connect,
             intermax_disk=disk.disk(),
             reminder_mailbox=mailbox,
             reminder_rhythm=rhythm,

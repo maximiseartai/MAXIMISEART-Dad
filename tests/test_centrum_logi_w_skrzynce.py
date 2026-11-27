@@ -784,6 +784,17 @@ def test_wzorzec_z_wartoscia_w_kolumnie_adres_nie_idzie_do_archiwum_a_logi_maja_
     assert (box(centrum).templates(ARCHIVE), list(box(centrum).archived(ARCHIVE))) == ({}, [f"{local_path(centrum, run_id).name}.gz"])
 
 
+def test_wzorzec_otwarty_w_excelu_idzie_do_archiwum_okresu_z_ostatniej_zapisanej_wersji(tmp_path: Path) -> None:
+    centrum = watched_centrum(tmp_path)
+    template = centrum.configuration.worker_template.read_bytes()
+    excel_lock(centrum.configuration.worker_template).write_bytes(b"")
+
+    run_to_end(centrum, dry_run=True)
+
+    assert wait_for(lambda: queued_logs(centrum) == [])
+    assert box(centrum).templates(ARCHIVE) == {asset_name(hashlib.sha256(template).hexdigest()): template}
+
+
 def test_wzorzec_ktory_juz_jest_w_archiwum_okresu_nie_idzie_drugi_raz(tmp_path: Path) -> None:
     """Ta sama nazwa Wzorca w Archiwum to te same bajty, więc Wzorzec, który już tam jest (np. z poprzedniej pracy
     Centrum), zostaje bez zmian, a Kolejka wysyłki dostarcza Logi bez drugiej wysyłki Wzorca, którą GitHub by odrzucił."""

@@ -495,6 +495,20 @@ def test_plik_konfiguracji_usuniety_w_nowej_wersji_zostaje_u_taty(
     assert repository.read("config/stawki.yaml") == RATES
 
 
+def test_plik_konfiguracji_ktory_tata_usunal_a_nowa_wersja_tez_usuwa_to_zmiana_na_komputerze_a_klon_zostaje(
+    tmp_path: Path,
+) -> None:
+    repository = tool_repository(tmp_path / "repozytoria", {**FIRST_VERSION, "config/stawki.yaml": RATES})
+    before = repository.head()
+    repository.publish({"config/stawki.yaml": None})
+    (repository.clone / "config" / "stawki.yaml").unlink()
+
+    result = update(repository)
+
+    assert result == UpdateResult("ZMIANY_NA_KOMPUTERZE", before=before, after=None)
+    assert (repository.head(), (repository.clone / "config" / "stawki.yaml").exists()) == (before, False)
+
+
 @NO_ACCESS_ON_WINDOWS
 def test_plik_konfiguracji_bez_dostepu_usuniety_w_nowej_wersji_zatrzymuje_aktualizacje_na_kopii(tmp_path: Path) -> None:
     name = "config/bez-dostepu/stawki.yaml"
