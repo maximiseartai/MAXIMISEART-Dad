@@ -618,6 +618,9 @@ _STRING_BEFORE_FUTURE = '"""Moduł."""\n\n"""Komentarz przeniesiony w napis."""\
 
 _ESCAPE_COMMENT = 'PATH = "Praca"  # folder Praca Maks\\Reguły ilości\n'.encode()
 _ESCAPE_STRING = 'PATH = "Praca"\n"""folder Praca Maks\\Reguły ilości"""\n'.encode()
+_ANNOTATION_WARNING = b"X: (1 is 1) = True\n"
+_UNICODE_ESCAPE = b"# coding: unicode_escape\nPATH = 1\n"
+_UNICODE_ESCAPE_COMMENT = b"# coding: unicode_escape\nPATH = 1  # C:\\dane\n"
 
 
 def _compiler_refusal(source: bytes) -> str:
@@ -626,9 +629,9 @@ def _compiler_refusal(source: bytes) -> str:
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        with pytest.raises(SyntaxError) as refused:
+        with pytest.raises((SyntaxError, DeprecationWarning)) as refused:
             compile(source, "src/modul.py", "exec", dont_inherit=True)
-    return str(refused.value.msg)
+    return str(refused.value.msg) if isinstance(refused.value, SyntaxError) else f"DeprecationWarning: {refused.value}"
 
 
 def _refused(side: str, source: bytes) -> tuple[int, list[str]]:
@@ -648,6 +651,8 @@ def _refused(side: str, source: bytes) -> tuple[int, list[str]]:
         (_FUTURE, _STRING_BEFORE_FUTURE, _refused("HEAD", _STRING_BEFORE_FUTURE)),
         (b"X = 1\nreturn X\n", b"X = 1\nreturn X  # komentarz\n", _refused("bazie", b"X = 1\nreturn X\n")),
         (_ESCAPE_COMMENT, _ESCAPE_STRING, _refused("HEAD", _ESCAPE_STRING)),
+        (_ANNOTATION_WARNING, _ANNOTATION_WARNING + b"# komentarz\n", _refused("bazie", _ANNOTATION_WARNING)),
+        (_UNICODE_ESCAPE, _UNICODE_ESCAPE_COMMENT, _refused("HEAD", _UNICODE_ESCAPE_COMMENT)),
     ],
     ids=[
         "stala-pod-deklaracja-latin-1",
@@ -660,6 +665,8 @@ def _refused(side: str, source: bytes) -> tuple[int, list[str]]:
         "napis-przed-from-future",
         "obie-strony-odrzuca-kompilator",
         "ostrzezenie-kompilatora",
+        "ostrzezenie-adnotacji-bez-from-future-narzedzia",
+        "ostrzezenie-dekodera-deklaracji-kodowania",
     ],
 )
 def test_tryb_ast_czyta_bajty_jak_interpreter_i_widzi_kazda_zmiane_drzewa_poza_napisami(
