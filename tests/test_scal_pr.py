@@ -485,7 +485,7 @@ def test_pomoc_podaje_niepuste_zasady_kazdego_modulu_bramek_z_przykladami_polece
     assert "tools/scal_pr.py 336 --werdykt" in shown
 
 
-def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_sprzatanie_usuwa_tylko_galaz_pr(tmp_path: Path) -> None:
+def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_wyjscie_sprzatania_widac_a_usuwa_ono_tylko_galaz_pr(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, real_checks=True)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     main = github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
@@ -503,6 +503,7 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_sprzatanie_usuwa_tylko_ga
     assert git(github.origin, "rev-list", "--parents", "-n", "1", merge_commit).split()[1:] == [main, head]
     assert github.merges() == [["pr", "merge", "1", "--merge", "--match-head-commit", head]]
     assert (github.checkout / "posprzatane").read_text(encoding="utf-8") == "--usun --galaz pr-1"
+    assert "SPRZĄTANIE OK | 0 usuniętych" in merged.stdout.splitlines()
     assert "SCAL KOLEJKA" not in merged.stdout
 
 
@@ -548,16 +549,20 @@ def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
     return _pull(comments=[verdict for verdict in written if "createdAt" in verdict], reviews=[verdict for verdict in written if "submittedAt" in verdict])
 
 
+MERGE_RUN = {"databaseId": 4242, "url": "https://github.com/o/r/actions/runs/4242"}
+
+
 @pytest.mark.parametrize(
-    ("conclusion", "own"),
+    ("runs", "own"),
     [
-        ("", "run commitu merge'a 4242 https://github.com/o/r/actions/runs/4242, o ile nowszy push nie anuluje go, zanim ruszy"),
-        ("cancelled", "run commitu merge'a 4242 anulowany, więc rozstrzyga run późniejszego commitu z gh run list --workflow CI --event push --branch main"),
+        (json.dumps([{**MERGE_RUN, "conclusion": ""}]), "run commitu merge'a 4242 https://github.com/o/r/actions/runs/4242, o ile nowszy push nie anuluje go, zanim ruszy"),
+        (json.dumps([{**MERGE_RUN, "conclusion": "cancelled"}]), "run commitu merge'a 4242 anulowany, więc rozstrzyga run późniejszego commitu z gh run list --workflow CI --event push --branch main"),
         (None, "runu commitu merge'a jeszcze nie ma, runy pokaże gh run list --workflow CI --event push --branch main"),
+        ("<html>502 Bad Gateway</html>", "runu commitu merge'a jeszcze nie ma, runy pokaże gh run list --workflow CI --event push --branch main"),
     ],
-    ids=["run-czeka", "run-anulowany", "runu-jeszcze-nie-ma"],
+    ids=["run-czeka", "run-anulowany", "runu-jeszcze-nie-ma", "odpowiedz-gh-to-nie-json"],
 )
-def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany_run_z_merge_em(tmp_path: Path, conclusion: str | None, own: str) -> None:
+def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany_run_z_merge_em(tmp_path: Path, runs: str | None, own: str) -> None:
     """Czerwony `main` po własnym merge'u nie wracał do wątku, który scalał (#911, #971), a run commitu merge'a anuluje
     nowszy push na `main`, gdy czeka za trwającym (#1449: runy merge'ów #1439, #1418, #1434 anulowane po 2 min, czerwień
     przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a, tylko mówi, że wątek nie
@@ -566,9 +571,8 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.comment(1, PASS.format(head=head))
-    if conclusion is not None:
-        run = {"databaseId": 4242, "url": "https://github.com/o/r/actions/runs/4242", "conclusion": conclusion}
-        (github.bin / "runs.json").write_text(json.dumps([run]), encoding="utf-8")
+    if runs is not None:
+        (github.bin / "runs.json").write_text(runs, encoding="utf-8")
 
     merged = github.run("1")
 
@@ -3323,6 +3327,18 @@ def test_wazne_ze_straznikiem_scala_sie_po_dowodzie_ok_z_kodu_bazy(tmp_path: Pat
     assert _proofs(github) == [_proof_arguments(head, "1/W1/r1")]
 
 
+def test_recenzja_zadajaca_zmian_bez_linii_werdyktu_nie_jest_runda_wiec_wazne_pierwszego_fail_to_nadal_r1(tmp_path: Path) -> None:
+    github, head = _guard_pull(tmp_path, "straznik-c", "Przegląd po zielonym CI.", passed=False)
+    github.review(1, "Popraw nazwę funkcji, zanim zacznę przegląd.", state="CHANGES_REQUESTED")
+    github.comment(1, FAIL_W1.format(commit=OLD))
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    assert _proofs(github) == [_proof_arguments(head, "1/W1/r1")]
+
+
 @pytest.mark.parametrize("proof", [PROOF_REFUSED, (0, "DOWÓD ZAWIESZONY"), (1, PROOF_OK[1])], ids=["dowod-odmawia", "bez-linii-dowod-ok", "dowod-ok-z-kodem-bledu"])
 def test_straznik_bez_dowodu_ok_nie_scala_sie(tmp_path: Path, proof: tuple[int, str]) -> None:
     """Sonda (b) z ADR 0042 na bramce: strażnik, którego dowód nie przechodzi, nie scala PR, a przechodzi tylko kod 0
@@ -3904,23 +3920,27 @@ def _guard_proofs_line(github: MergeGitHub, tmp_path: Path) -> list[dict[str, ob
 
 
 @pytest.mark.parametrize(
-    ("proof", "fields", "entry"),
+    ("proof", "fields", "entry", "log"),
     [
-        (PROOF_OK, {}, {"pominiety": False, "przyczyny": []}),
-        (PROOF_REFUSED, {}, {"pominiety": False, "przyczyny": [{"tekst": "strażnik: Ważne 1/W1/r1 ma Strażnik: ", "oczekuje": False}]}),
-        (PROOF_OK, {"isDraft": True}, {"pominiety": True, "przyczyny": []}),
-        (PROOF_OK, {"baseRefName": "wydanie"}, {"pominiety": True, "przyczyny": []}),
+        (PROOF_OK, {}, {"pominiety": False, "przyczyny": []}, "przechodzi"),
+        (PROOF_REFUSED, {}, {"pominiety": False, "przyczyny": [{"tekst": "strażnik: Ważne 1/W1/r1 ma Strażnik: ", "oczekuje": False}]}, "strażnik: Ważne 1/W1/r1 ma Strażnik: "),
+        (PROOF_OK, {"isDraft": True}, {"pominiety": True, "przyczyny": []}, "pominięty: warunki 1–4 odmawiają"),
+        (PROOF_OK, {"baseRefName": "wydanie"}, {"pominiety": True, "przyczyny": []}, "pominięty: PR do wydanie, a status dostają PR-y do main"),
     ],
     ids=["dowod-ok", "dowod-odmawia", "szkic-bez-dowodu", "pr-do-innej-galezi-bez-dowodu"],
 )
-def test_job_dowodu_dopisuje_warunek_5_dla_head_a_przy_odmowie_warunkow_1_4_go_pomija(
-    tmp_path: Path, proof: tuple[int, str], fields: dict[str, object], entry: dict[str, object]
+def test_job_dowodu_dopisuje_warunek_5_dla_head_a_przy_odmowie_warunkow_1_4_go_pomija_i_mowi_to_w_logu(
+    tmp_path: Path, proof: tuple[int, str], fields: dict[str, object], entry: dict[str, object], log: str
 ) -> None:
     github, head = _guard_pull(tmp_path, "straznik-c", proof=proof)
     github.update(1, **fields)
+    output = tmp_path / "dowody.jsonl"
 
-    [written] = _guard_proofs_line(github, tmp_path)
+    answered = _status(github, "1", "--dowod-straznikow", str(output))
 
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered).startswith(f"DOWÓD STRAŻNIKÓW | #1 {head[:7]} | {log}"), answered.stdout
+    [written] = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
     reasons = cast(list[dict[str, object]], written.pop("przyczyny"))
     expected = cast(list[dict[str, object]], entry["przyczyny"])
     assert written == {"numer": 1, "sha": head, "pominiety": entry["pominiety"]}
@@ -3951,6 +3971,7 @@ def test_job_dowodu_dla_pr_bez_czego_dowodzic_nie_czeka_na_warunki_1_4(tmp_path:
         ([{"numer": 1, "sha": OLD, "pominiety": False, "przyczyny": []}], "success", "pending", "oczekuje: strażnik: dowód policzony dla innego HEAD niż {short}, policzy go następny run"),
         ([{"numer": 1, "sha": "{head}", "pominiety": True, "przyczyny": []}], "success", "pending", "oczekuje: strażnik: dowód pominięty w tym runie, bo warunki 1–4 odmawiały; policzy go następny run"),
         ([{"numer": 2, "sha": "{head}", "pominiety": False, "przyczyny": []}], "failure", "failure", "strażnik: job dowod nie podał wyniku dla #1 (wynik joba: failure), uruchom ponownie"),
+        ([{"numer": 2, "sha": "{head}", "pominiety": False, "przyczyny": []}], "", "failure", "strażnik: job dowod nie podał wyniku dla #1 (wynik joba: ?), uruchom ponownie"),
         (None, "", "failure", "strażnik: --status bierze warunek 5 z joba dowod workflow werdykt-i-bramka.yml w zmiennej DOWODY_STRAZNIKOW, a jej nie ma"),
         (
             [{"numer": 1, "sha": "{head}", "pominiety": False, "przyczyny": []}, {"numer": 1, "sha": "{head}", "pominiety": False, "przyczyny": [{"tekst": "strażnik: dowód NIEWYKRYTA", "oczekuje": False}]}],
@@ -3959,7 +3980,7 @@ def test_job_dowodu_dla_pr_bez_czego_dowodzic_nie_czeka_na_warunki_1_4(tmp_path:
             "strażnik: dowód NIEWYKRYTA",
         ),
     ],
-    ids=["dowod-ok", "dowod-odmawia", "dowod-czeka-na-github", "dowod-innego-head", "dowod-pominiety", "bez-wyniku-dla-pr", "bez-zmiennej", "linia-dopisana-przed-dowodem"],
+    ids=["dowod-ok", "dowod-odmawia", "dowod-czeka-na-github", "dowod-innego-head", "dowod-pominiety", "bez-wyniku-dla-pr", "bez-wyniku-dla-pr-i-joba", "bez-zmiennej", "linia-dopisana-przed-dowodem"],
 )
 def test_status_bierze_warunek_5_z_joba_dowodu_dla_tego_head_i_sam_go_nie_liczy(
     tmp_path: Path, proofs: list[dict[str, object]] | None, job: str, state: str, description: str
