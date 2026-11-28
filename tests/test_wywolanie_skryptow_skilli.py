@@ -9,6 +9,7 @@ import ast
 from collections.abc import Iterator
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 from typing import Any
@@ -142,6 +143,29 @@ def test_przerwane_sprzatanie_zostawia_znacznik_a_ponowne_konczy_prace(
     assert (root / skrypt_skilla.MARKER).is_file()
     done = _script(CLEANUPS[0], "--root", str(root), cwd=tmp_path)
     assert done.returncode == 0, done.stdout + done.stderr
+    assert not root.exists()
+
+
+def test_sprzatanie_usuwa_pliki_tylko_do_odczytu_takze_w_podkatalogu_jak_obiekty_gita_na_windowsie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = skrypt_skilla.create_run_root(tmp_path / "run")
+    objects = root / "repo" / ".git" / "objects" / "ab"
+    objects.mkdir(parents=True)
+    for locked in (objects / "cdef", root / "wynik.json"):
+        locked.write_text("obiekt\n", encoding="utf-8")
+        locked.chmod(stat.S_IREAD)
+    unlink = os.unlink
+
+    def like_windows(path: Any, *arguments: Any, **options: Any) -> None:
+        # ZEWNĘTRZNE: Windows nie usuwa pliku tylko do odczytu, a git zapisuje tak swoje obiekty (https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-deletefilea)
+        if not os.stat(path, dir_fd=options.get("dir_fd")).st_mode & stat.S_IWUSR:
+            raise PermissionError(13, "plik tylko do odczytu", os.fsdecode(path))
+        unlink(path, *arguments, **options)
+
+    monkeypatch.setattr(os, "unlink", like_windows)
+    skrypt_skilla.remove_run_root(root)
+
     assert not root.exists()
 
 

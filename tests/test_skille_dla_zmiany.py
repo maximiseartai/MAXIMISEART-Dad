@@ -164,7 +164,7 @@ LICZY = ("LICZY CI", "LICZY MAIN", "LICZY NOC")
     ],
     ids=["pilnuje", "folder skilla"],
 )
-def test_liczy_ci_main_i_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_plan_pull_requestu_pushu_i_nocy(
+def test_liczy_ci_main_i_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_plan_pull_requestu_pushu_i_nocy_a_co_dalej_nazywa_kazda(
     tmp_path: Path, changed: str, counted: list[str]
 ) -> None:
     base = _repo(tmp_path, AGREEING)
@@ -175,6 +175,8 @@ def test_liczy_ci_main_i_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_p
 
     assert _skills(result) == ["verify-a"]
     assert [line for line in result.stdout.splitlines() if line.startswith(LICZY)] == counted
+    [what_next] = [line for line in result.stdout.splitlines() if line.startswith("CO DALEJ: ")]
+    assert [line.partition(":")[0] for line in counted if f"z linii {line.partition(':')[0]} " not in what_next] == []
 
 
 MODEL_SCRIPT = (
